@@ -400,7 +400,7 @@
   flex-wrap: wrap;
   flex: 1;
   overflow: hidden;
-  gap: 1px;
+  gap: 4px;
   padding-left: 6px;
 }
 
@@ -469,8 +469,9 @@
 }
 
 .wt-tab-claude-active .wt-tab-label::before {
-  content: "\25cf ";
+  content: "\25cf";
   color: #38a169;
+  margin-right: 4px;
 }
 
 .wt-tab-claude-idle .wt-tab-label {
