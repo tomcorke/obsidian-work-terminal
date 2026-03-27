@@ -659,7 +659,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  padding-left: 6px;
+  padding: 6px 0 0 6px;
   box-sizing: border-box;
 }
 
