@@ -84,10 +84,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     const settings = data.settings || {};
     const value = settings[key] ?? CORE_DEFAULTS[key];
 
-    new Setting(containerEl)
+    const setting = new Setting(containerEl)
       .setName(name)
       .setDesc(description)
-      .addTextArea((ta) =>
+      .addTextArea((ta) => {
         ta
           .setValue(String(value))
           .onChange(async (newValue) => {
@@ -95,8 +95,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
             if (!d.settings) d.settings = {};
             d.settings[key] = newValue;
             await this.plugin.saveData(d);
-          })
-      );
+          });
+        ta.inputEl.style.width = "100%";
+        ta.inputEl.style.minHeight = "80px";
+      });
+    // Let the textarea span the full width below the label
+    setting.settingEl.style.flexWrap = "wrap";
+    setting.controlEl.style.width = "100%";
   }
 
   private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {
