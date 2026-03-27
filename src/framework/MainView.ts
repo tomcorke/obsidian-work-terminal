@@ -120,7 +120,7 @@ export class MainView extends ItemView {
 
   private createDivider(container: HTMLElement): HTMLElement {
     const divider = container.createDiv({ cls: "wt-divider" });
-    divider.style.cssText = "width: 5px; cursor: col-resize; flex-shrink: 0; background: transparent;";
+    divider.style.cssText = "width: 5px; cursor: col-resize; flex-shrink: 0;";
 
     let startX = 0;
     let startWidth = 0;
