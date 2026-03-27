@@ -491,6 +491,18 @@ export class TerminalPanelView {
     return this.persistedSessions.filter((s) => s.taskPath === itemId);
   }
 
+  /**
+   * Broadcast current Claude state for all items with sessions.
+   * Call after initial list render to sync state indicators that may have been
+   * set before the ListPanel existed (e.g. recovered from hot-reload).
+   */
+  broadcastClaudeStates(): void {
+    for (const itemId of this.tabManager.getSessionItemIds()) {
+      const state = this.tabManager.getClaudeState(itemId);
+      this.onClaudeStateChange(itemId, state);
+    }
+  }
+
   rekeyItem(oldId: string, newId: string): void {
     this.tabManager.rekeyItem(oldId, newId);
   }

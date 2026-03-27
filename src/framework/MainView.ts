@@ -95,6 +95,10 @@ export class MainView extends ItemView {
     if (recoveredId) {
       this.listPanel?.selectById(recoveredId);
     }
+
+    // Broadcast Claude states for any recovered sessions so ListPanel
+    // picks up state indicators that were set before it existed.
+    this.terminalPanel?.broadcastClaudeStates();
   }
 
   private buildLayout(container: HTMLElement): void {
