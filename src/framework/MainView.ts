@@ -275,6 +275,7 @@ export class MainView extends ItemView {
       mover,
       this.pluginRef,
       this.terminalPanel,
+      settings,
       // onSelect callback
       (item: WorkItem | null) => {
         this.terminalPanel?.setActiveItem(item?.id ?? null);

@@ -26,6 +26,7 @@ export class ListPanel {
   private plugin: Plugin;
   private terminalPanel: TerminalPanelView;
 
+  private settings: Record<string, any>;
   private onSelect: (item: WorkItem | null) => void;
   private onCustomOrderChange: (order: Record<string, string[]>) => void;
 
@@ -56,6 +57,7 @@ export class ListPanel {
     mover: WorkItemMover,
     plugin: Plugin,
     terminalPanel: TerminalPanelView,
+    settings: Record<string, any>,
     onSelect: (item: WorkItem | null) => void,
     onCustomOrderChange: (order: Record<string, string[]>) => void
   ) {
@@ -64,6 +66,7 @@ export class ListPanel {
     this.mover = mover;
     this.plugin = plugin;
     this.terminalPanel = terminalPanel;
+    this.settings = settings;
     this.onSelect = onSelect;
     this.onCustomOrderChange = onCustomOrderChange;
 
@@ -288,16 +291,22 @@ export class ListPanel {
     return (this.plugin as any).app;
   }
 
-  private insertAfter(existingId: string, _newItem: WorkItem, columnId: string): void {
-    const order = this.customOrder[columnId] || [];
-    const existingIdx = order.indexOf(existingId);
-    if (existingIdx >= 0) {
-      order.splice(existingIdx + 1, 0, _newItem.id);
-    } else {
-      order.push(_newItem.id);
+  private async insertAfter(existingId: string, newItem: WorkItem, columnId: string): Promise<void> {
+    if (!this.adapter.onItemCreated) {
+      console.warn("[work-terminal] insertAfter: adapter has no onItemCreated");
+      return;
     }
-    this.customOrder[columnId] = order;
-    this.onCustomOrderChange(this.customOrder);
+
+    try {
+      await this.adapter.onItemCreated(newItem.title, {
+        ...this.settings,
+        _columnId: columnId,
+        _splitFromId: existingId,
+      });
+      console.log(`[work-terminal] Split task created: "${newItem.title}" after ${existingId}`);
+    } catch (err) {
+      console.error("[work-terminal] Split task creation failed:", err);
+    }
   }
 
   private async deleteItem(item: WorkItem): Promise<void> {
