@@ -271,17 +271,32 @@ export class TerminalPanelView {
       });
     }
 
-    // Move to Item submenu
+    // Move to Item submenu - grouped by column with headers
     if (this.allItems.length > 0) {
       menu.addSeparator();
       const activeItemId = this.tabManager.getActiveItemId();
-      for (const workItem of this.allItems) {
-        if (workItem.id === activeItemId) continue;
+      const excludedStates = new Set(["done", "abandoned", "archive"]);
+      const available = this.allItems.filter(
+        (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state)
+      );
+
+      const columns = this.adapter.config.columns;
+      for (const col of columns) {
+        if (excludedStates.has(col.id)) continue;
+        const inColumn = available.filter((wi) => wi.state === col.id);
+        if (inColumn.length === 0) continue;
+
+        // Section header (disabled item acts as label)
         menu.addItem((item) => {
-          item.setTitle(`Move to: ${workItem.title}`).onClick(() => {
-            this.moveTabToItem(tab, index, workItem.id);
-          });
+          item.setTitle(col.label).setDisabled(true);
         });
+        for (const workItem of inColumn) {
+          menu.addItem((item) => {
+            item.setTitle(workItem.title).onClick(() => {
+              this.moveTabToItem(tab, index, workItem.id);
+            });
+          });
+        }
       }
     }
 

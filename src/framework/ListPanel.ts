@@ -475,7 +475,9 @@ export class ListPanel {
     const total = counts.shells + counts.claudes;
     if (total === 0) return;
 
-    const badgeEl = cardEl.createDiv({ cls: "wt-session-badge" });
+    // Place badge in meta row if available, otherwise card root
+    const metaRow = cardEl.querySelector(".wt-card-meta") || cardEl;
+    const badgeEl = metaRow.createDiv({ cls: "wt-session-badge" });
     if (counts.claudes > 0 && counts.shells > 0) {
       badgeEl.addClass("wt-badge-mixed");
     } else if (counts.claudes > 0) {
