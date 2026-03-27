@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { TaskPromptBuilder } from "./TaskPromptBuilder";
 import type { WorkItem } from "../../core/interfaces";
 
-function makeItem(overrides: Partial<WorkItem> = {}, metaOverrides: Record<string, any> = {}): WorkItem {
+function makeItem(
+  overrides: Partial<WorkItem> = {},
+  metaOverrides: Record<string, any> = {},
+): WorkItem {
   return {
     id: "test-id",
     path: "2 - Areas/Tasks/active/task.md",
@@ -34,9 +37,18 @@ describe("TaskPromptBuilder", () => {
   });
 
   it("includes deadline when present", () => {
-    const item = makeItem({}, {
-      priority: { score: 50, deadline: "2026-04-01", impact: "medium", "has-blocker": false, "blocker-context": "" },
-    });
+    const item = makeItem(
+      {},
+      {
+        priority: {
+          score: 50,
+          deadline: "2026-04-01",
+          impact: "medium",
+          "has-blocker": false,
+          "blocker-context": "",
+        },
+      },
+    );
     const prompt = builder.buildPrompt(item, "/path");
     expect(prompt).toContain("Deadline: 2026-04-01");
   });
@@ -48,9 +60,18 @@ describe("TaskPromptBuilder", () => {
   });
 
   it("includes blocker when has-blocker is true", () => {
-    const item = makeItem({}, {
-      priority: { score: 50, deadline: "", impact: "medium", "has-blocker": true, "blocker-context": "Waiting on API team" },
-    });
+    const item = makeItem(
+      {},
+      {
+        priority: {
+          score: 50,
+          deadline: "",
+          impact: "medium",
+          "has-blocker": true,
+          "blocker-context": "Waiting on API team",
+        },
+      },
+    );
     const prompt = builder.buildPrompt(item, "/path");
     expect(prompt).toContain("Blocker: Waiting on API team");
   });

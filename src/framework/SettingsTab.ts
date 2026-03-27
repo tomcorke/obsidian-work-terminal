@@ -43,11 +43,36 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Core settings section
     containerEl.createEl("h2", { text: "Core" });
 
-    this.addCoreSetting(containerEl, "core.claudeCommand", "Claude command", "Path or name of the Claude CLI binary");
-    this.addCoreTextArea(containerEl, "core.claudeExtraArgs", "Default Claude arguments", "Arguments passed to every Claude session (space-separated). Applied to both + Claude and + Claude (ctx).");
-    this.addCoreTextArea(containerEl, "core.additionalAgentContext", "Claude (ctx) prompt template", "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. Button hidden when empty.");
-    this.addCoreSetting(containerEl, "core.defaultShell", "Default shell", "Shell used for new terminal tabs");
-    this.addCoreSetting(containerEl, "core.defaultTerminalCwd", "Default terminal CWD", "Working directory for new terminals (supports ~)");
+    this.addCoreSetting(
+      containerEl,
+      "core.claudeCommand",
+      "Claude command",
+      "Path or name of the Claude CLI binary",
+    );
+    this.addCoreTextArea(
+      containerEl,
+      "core.claudeExtraArgs",
+      "Default Claude arguments",
+      "Arguments passed to every Claude session (space-separated). Applied to both + Claude and + Claude (ctx).",
+    );
+    this.addCoreTextArea(
+      containerEl,
+      "core.additionalAgentContext",
+      "Claude (ctx) prompt template",
+      "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. Button hidden when empty.",
+    );
+    this.addCoreSetting(
+      containerEl,
+      "core.defaultShell",
+      "Default shell",
+      "Shell used for new terminal tabs",
+    );
+    this.addCoreSetting(
+      containerEl,
+      "core.defaultTerminalCwd",
+      "Default terminal CWD",
+      "Working directory for new terminals (supports ~)",
+    );
 
     // Adapter settings section
     const schema = this.adapter.config.settingsSchema;
@@ -59,7 +84,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     }
   }
 
-  private async addCoreSetting(containerEl: HTMLElement, key: keyof CoreSettings, name: string, description: string): Promise<void> {
+  private async addCoreSetting(
+    containerEl: HTMLElement,
+    key: keyof CoreSettings,
+    name: string,
+    description: string,
+  ): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
     const value = settings[key] ?? CORE_DEFAULTS[key];
@@ -68,18 +98,21 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .setName(name)
       .setDesc(description)
       .addText((text) =>
-        text
-          .setValue(String(value))
-          .onChange(async (newValue) => {
-            const d = (await this.plugin.loadData()) || {};
-            if (!d.settings) d.settings = {};
-            d.settings[key] = newValue;
-            await this.plugin.saveData(d);
-          })
+        text.setValue(String(value)).onChange(async (newValue) => {
+          const d = (await this.plugin.loadData()) || {};
+          if (!d.settings) d.settings = {};
+          d.settings[key] = newValue;
+          await this.plugin.saveData(d);
+        }),
       );
   }
 
-  private async addCoreTextArea(containerEl: HTMLElement, key: keyof CoreSettings, name: string, description: string): Promise<void> {
+  private async addCoreTextArea(
+    containerEl: HTMLElement,
+    key: keyof CoreSettings,
+    name: string,
+    description: string,
+  ): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
     const value = settings[key] ?? CORE_DEFAULTS[key];
@@ -88,14 +121,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .setName(name)
       .setDesc(description)
       .addTextArea((ta) => {
-        ta
-          .setValue(String(value))
-          .onChange(async (newValue) => {
-            const d = (await this.plugin.loadData()) || {};
-            if (!d.settings) d.settings = {};
-            d.settings[key] = newValue;
-            await this.plugin.saveData(d);
-          });
+        ta.setValue(String(value)).onChange(async (newValue) => {
+          const d = (await this.plugin.loadData()) || {};
+          if (!d.settings) d.settings = {};
+          d.settings[key] = newValue;
+          await this.plugin.saveData(d);
+        });
         ta.inputEl.style.width = "100%";
         ta.inputEl.style.minHeight = "80px";
       });
@@ -111,31 +142,25 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     const defaultVal = this.adapter.config.defaultSettings[field.key] ?? field.default;
     const value = settings[key] ?? defaultVal;
 
-    const setting = new Setting(containerEl)
-      .setName(field.name)
-      .setDesc(field.description);
+    const setting = new Setting(containerEl).setName(field.name).setDesc(field.description);
 
     if (field.type === "text") {
       setting.addText((text) =>
-        text
-          .setValue(String(value))
-          .onChange(async (newValue) => {
-            const d = (await this.plugin.loadData()) || {};
-            if (!d.settings) d.settings = {};
-            d.settings[key] = newValue;
-            await this.plugin.saveData(d);
-          })
+        text.setValue(String(value)).onChange(async (newValue) => {
+          const d = (await this.plugin.loadData()) || {};
+          if (!d.settings) d.settings = {};
+          d.settings[key] = newValue;
+          await this.plugin.saveData(d);
+        }),
       );
     } else if (field.type === "toggle") {
       setting.addToggle((toggle) =>
-        toggle
-          .setValue(!!value)
-          .onChange(async (newValue) => {
-            const d = (await this.plugin.loadData()) || {};
-            if (!d.settings) d.settings = {};
-            d.settings[key] = newValue;
-            await this.plugin.saveData(d);
-          })
+        toggle.setValue(!!value).onChange(async (newValue) => {
+          const d = (await this.plugin.loadData()) || {};
+          if (!d.settings) d.settings = {};
+          d.settings[key] = newValue;
+          await this.plugin.saveData(d);
+        }),
       );
     }
   }
@@ -156,7 +181,10 @@ export async function loadSetting(plugin: Plugin, key: string): Promise<any> {
 /**
  * Load all settings as a flat object (merged defaults + saved).
  */
-export async function loadAllSettings(plugin: Plugin, adapter: AdapterBundle): Promise<Record<string, any>> {
+export async function loadAllSettings(
+  plugin: Plugin,
+  adapter: AdapterBundle,
+): Promise<Record<string, any>> {
   const data = (await plugin.loadData()) || {};
   const saved = data.settings || {};
   const result: Record<string, any> = { ...CORE_DEFAULTS };

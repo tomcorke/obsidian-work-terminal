@@ -17,12 +17,20 @@ import type { ChildProcess } from "child_process";
  * from the terminal.
  */
 export function attachBubbleCapture(containerEl: HTMLElement): void {
-  containerEl.addEventListener("keydown", (e: KeyboardEvent) => {
-    e.stopPropagation();
-  }, false);
-  containerEl.addEventListener("keyup", (e: KeyboardEvent) => {
-    e.stopPropagation();
-  }, false);
+  containerEl.addEventListener(
+    "keydown",
+    (e: KeyboardEvent) => {
+      e.stopPropagation();
+    },
+    false,
+  );
+  containerEl.addEventListener(
+    "keyup",
+    (e: KeyboardEvent) => {
+      e.stopPropagation();
+    },
+    false,
+  );
 }
 
 /**
@@ -37,10 +45,10 @@ export function attachBubbleCapture(containerEl: HTMLElement): void {
 export function attachCapturePhase(
   containerEl: HTMLElement,
   getProcess: () => ChildProcess | null,
-  onSearch?: () => void
+  onSearch?: () => void,
 ): () => void {
   const textareaEl = containerEl.querySelector(
-    ".xterm-helper-textarea"
+    ".xterm-helper-textarea",
   ) as HTMLTextAreaElement | null;
 
   const handler = (e: KeyboardEvent) => {

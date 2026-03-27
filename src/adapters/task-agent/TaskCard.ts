@@ -1,15 +1,6 @@
 import type { MenuItem } from "obsidian";
-import type {
-  WorkItem,
-  CardRenderer,
-  CardActionContext,
-} from "../../core/interfaces";
-import {
-  KANBAN_COLUMNS,
-  COLUMN_LABELS,
-  SOURCE_LABELS,
-  type KanbanColumn,
-} from "./types";
+import type { WorkItem, CardRenderer, CardActionContext } from "../../core/interfaces";
+import { KANBAN_COLUMNS, COLUMN_LABELS, SOURCE_LABELS, type KanbanColumn } from "./types";
 
 export class TaskCard implements CardRenderer {
   render(item: WorkItem, ctx: CardActionContext): HTMLElement {
@@ -105,10 +96,7 @@ export class TaskCard implements CardRenderer {
     return card;
   }
 
-  getContextMenuItems(
-    item: WorkItem,
-    ctx: CardActionContext
-  ): MenuItem[] {
+  getContextMenuItems(item: WorkItem, ctx: CardActionContext): MenuItem[] {
     const items: MenuItem[] = [];
     const meta = (item.metadata || {}) as Record<string, any>;
 

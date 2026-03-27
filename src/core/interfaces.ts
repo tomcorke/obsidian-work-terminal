@@ -178,12 +178,19 @@ export interface AdapterBundle {
    * and kicks off background enrichment. Returns the new item's UUID, column,
    * and an enrichmentDone promise for tracking when background work finishes.
    */
-  onItemCreated?(title: string, settings: Record<string, unknown>): Promise<{ id: string; columnId: string; enrichmentDone?: Promise<void> } | void>;
+  onItemCreated?(
+    title: string,
+    settings: Record<string, unknown>,
+  ): Promise<{ id: string; columnId: string; enrichmentDone?: Promise<void> } | void>;
   /**
    * Split an existing item: create a new task file with a related reference
    * to the source item. Returns the vault path and UUID of the new file.
    */
-  onSplitItem?(sourceItem: WorkItem, columnId: string, settings: Record<string, unknown>): Promise<{ path: string; id: string } | null>;
+  onSplitItem?(
+    sourceItem: WorkItem,
+    columnId: string,
+    settings: Record<string, unknown>,
+  ): Promise<{ path: string; id: string } | null>;
   /**
    * Transform a detected Claude session rename label before applying it.
    * Called when Claude outputs "Session renamed to: <name>".
@@ -198,8 +205,16 @@ export interface AdapterBundle {
  */
 export abstract class BaseAdapter implements AdapterBundle {
   abstract config: PluginConfig;
-  abstract createParser(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemParser;
-  abstract createMover(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemMover;
+  abstract createParser(
+    app: App,
+    basePath: string,
+    settings?: Record<string, unknown>,
+  ): WorkItemParser;
+  abstract createMover(
+    app: App,
+    basePath: string,
+    settings?: Record<string, unknown>,
+  ): WorkItemMover;
   abstract createCardRenderer(): CardRenderer;
   abstract createPromptBuilder(): WorkItemPromptBuilder;
 
@@ -219,11 +234,18 @@ export abstract class BaseAdapter implements AdapterBundle {
     // no-op by default
   }
 
-  async onItemCreated(_title: string, _settings: Record<string, unknown>): Promise<{ id: string; columnId: string; enrichmentDone?: Promise<void> } | void> {
+  async onItemCreated(
+    _title: string,
+    _settings: Record<string, unknown>,
+  ): Promise<{ id: string; columnId: string; enrichmentDone?: Promise<void> } | void> {
     // no-op by default
   }
 
-  async onSplitItem(_sourceItem: WorkItem, _columnId: string, _settings: Record<string, unknown>): Promise<{ path: string; id: string } | null> {
+  async onSplitItem(
+    _sourceItem: WorkItem,
+    _columnId: string,
+    _settings: Record<string, unknown>,
+  ): Promise<{ path: string; id: string } | null> {
     return null;
   }
 

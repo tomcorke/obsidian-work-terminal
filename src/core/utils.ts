@@ -20,9 +20,9 @@ export function stripAnsi(s: string): string {
   let result = s.replace(/\x1b\[(\d+)C/g, (_match, n) => " ".repeat(parseInt(n, 10)));
   // Stage 2: Strip remaining ANSI sequences (CSI, OSC, other ESC sequences)
   result = result.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ""); // CSI sequences
-  result = result.replace(/\x1b\][^\x07]*\x07/g, "");     // OSC sequences (ESC]...BEL)
-  result = result.replace(/\x1b\][^\x1b]*\x1b\\/g, "");   // OSC sequences (ESC]...ST)
-  result = result.replace(/\x1b[^[\]]/g, "");              // Other ESC sequences
+  result = result.replace(/\x1b\][^\x07]*\x07/g, ""); // OSC sequences (ESC]...BEL)
+  result = result.replace(/\x1b\][^\x1b]*\x1b\\/g, ""); // OSC sequences (ESC]...ST)
+  result = result.replace(/\x1b[^[\]]/g, ""); // Other ESC sequences
   // Strip control characters except tab (0x09), newline (0x0a), carriage return (0x0d)
   result = result.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
   return result;

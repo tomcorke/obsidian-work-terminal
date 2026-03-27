@@ -33,7 +33,7 @@ describe("ClaudeSessionRename", () => {
 
   it("strips ANSI sequences before matching", () => {
     const data = Buffer.from(
-      "  \x1b[32m\u2514\x1b[0m Session renamed to: \x1b[1mansi-name\x1b[0m\n"
+      "  \x1b[32m\u2514\x1b[0m Session renamed to: \x1b[1mansi-name\x1b[0m\n",
     );
     const result = monitor.processChunk(data);
     expect(result).toBe("ansi-name");
@@ -52,7 +52,7 @@ describe("ClaudeSessionRename", () => {
 
   it("handles multiple lines, returning the last rename", () => {
     const data = Buffer.from(
-      "line one\n\u2514 Session renamed to: first\nline two\n\u2514 Session renamed to: second\n"
+      "line one\n\u2514 Session renamed to: first\nline two\n\u2514 Session renamed to: second\n",
     );
     const result = monitor.processChunk(data);
     expect(result).toBe("second");
