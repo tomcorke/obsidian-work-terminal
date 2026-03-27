@@ -67,9 +67,26 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - Command palette: "Work Terminal: Reload Plugin (preserve terminals)"
 - CDP: `node cdp.js`
 
-## Commit discipline
+## Development rules
 
-Commit each discrete change individually with a clear message. Do not batch unrelated changes.
+### Commits
+Commit each discrete change individually with a clear message. Do not batch unrelated changes. Commit regularly - do not accumulate large uncommitted diffs.
+
+### Issue tracking
+Use GitHub Issues as the project TODO list (`gh issue list`, `gh issue create`, `gh issue close`).
+- Log new TODOs, feature requests, and bugs as GitHub issues.
+- When starting work on something, find or create the matching issue and reference it in commits.
+- Add progress notes and findings as issue comments (`gh issue comment`).
+- Close issues when the work is done and committed.
+
+### Debugger-driven development
+When Obsidian is running with remote debugging enabled (check by hitting `http://localhost:8315/json`):
+- **After code changes**: reload the plugin via `node cdp.js` (preserves terminal sessions) rather than asking the user to reload manually.
+- **While debugging**: use CDP to inspect DOM, evaluate expressions, read console logs, and check plugin state before asking the user to perform manual actions. Only ask the user when the debugger cannot see or do what's needed (e.g. visual confirmation, manual interaction with specific UI elements).
+- **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. No arguments = trigger plugin reload.
+
+### Testing
+Run `npx vitest run` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
 
 ## Known constraints
 
