@@ -8,6 +8,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 import { StringDecoder } from "string_decoder";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
@@ -125,6 +126,13 @@ export class TerminalTab {
     }));
 
     this.terminal.open(this.containerEl);
+
+    // WebGL renderer - GPU-accelerated rendering, fall back to canvas
+    try {
+      this.terminal.loadAddon(new WebglAddon());
+    } catch (e) {
+      console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
+    }
 
     // File path link provider - Cmd+click on paths like src/main.ts:42
     this.registerFilePathLinks();
