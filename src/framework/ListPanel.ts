@@ -173,14 +173,18 @@ export class ListPanel {
         // Drag source
         this.setupDragSource(cardEl, item, col.id);
 
-        // Session badges
-        this.renderSessionBadges(cardEl, item);
-
-        // Claude state indicators
+        // Claude state indicators (applied as class on card wrapper)
         this.renderClaudeStateIndicator(cardEl, item);
 
-        // Move-to-top button
-        this.renderMoveToTop(cardEl, item);
+        // Actions container: session badge + move-to-top (top-right)
+        const actionsEl = cardEl.querySelector(".wt-card-actions");
+        if (actionsEl) {
+          this.renderSessionBadges(actionsEl as HTMLElement, item);
+          this.renderMoveToTop(actionsEl as HTMLElement, item);
+        } else {
+          this.renderSessionBadges(cardEl, item);
+          this.renderMoveToTop(cardEl, item);
+        }
 
         // Resume badge
         this.renderResumeBadge(cardEl, item);
@@ -470,14 +474,12 @@ export class ListPanel {
   // Badges and indicators
   // ---------------------------------------------------------------------------
 
-  private renderSessionBadges(cardEl: HTMLElement, item: WorkItem): void {
+  private renderSessionBadges(containerEl: HTMLElement, item: WorkItem): void {
     const counts = this.terminalPanel.getSessionCounts(item.id);
     const total = counts.shells + counts.claudes;
     if (total === 0) return;
 
-    // Place badge in meta row if available, otherwise card root
-    const metaRow = cardEl.querySelector(".wt-card-meta") || cardEl;
-    const badgeEl = metaRow.createDiv({ cls: "wt-session-badge" });
+    const badgeEl = containerEl.createDiv({ cls: "wt-session-badge" });
     if (counts.claudes > 0 && counts.shells > 0) {
       badgeEl.addClass("wt-badge-mixed");
     } else if (counts.claudes > 0) {
@@ -505,8 +507,8 @@ export class ListPanel {
     }
   }
 
-  private renderMoveToTop(cardEl: HTMLElement, item: WorkItem): void {
-    const btn = cardEl.createDiv({ cls: "wt-move-to-top", attr: { title: "Move to top" } });
+  private renderMoveToTop(containerEl: HTMLElement, item: WorkItem): void {
+    const btn = containerEl.createDiv({ cls: "wt-move-to-top", attr: { title: "Move to top" } });
     btn.textContent = "\u2191";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -602,7 +604,8 @@ export class ListPanel {
       // Remove existing badges
       cardEl.querySelectorAll(".wt-session-badge").forEach((el) => el.remove());
       cardEl.querySelectorAll(".wt-resume-badge").forEach((el) => el.remove());
-      this.renderSessionBadges(cardEl, item);
+      const actionsEl = cardEl.querySelector(".wt-card-actions") as HTMLElement || cardEl;
+      this.renderSessionBadges(actionsEl, item);
       this.renderResumeBadge(cardEl, item);
     }
   }
