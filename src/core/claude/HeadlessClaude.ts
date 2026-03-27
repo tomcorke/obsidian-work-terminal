@@ -9,34 +9,11 @@ import { expandTilde, electronRequire } from "../utils";
 
 const TIMEOUT_MS = 120_000;
 
-const PLUGIN_DIRS = ["tc-services", "tc-tools", "tc-tasks", "tc-core"];
-
-function resolvePluginBase(): string {
-  const home = process.env.HOME || "";
-  return `${home}/working/claude-sandbox/plugins`;
-}
-
-function buildPluginArgs(): string[] {
-  const fs = electronRequire("fs") as typeof import("fs");
-  const base = resolvePluginBase();
-  const args: string[] = [];
-
-  for (const dir of PLUGIN_DIRS) {
-    const full = `${base}/${dir}`;
-    try {
-      if (fs.existsSync(full)) {
-        args.push("--plugin-dir", full);
-      }
-    } catch { /* skip */ }
-  }
-
-  return args;
-}
-
 export function spawnHeadlessClaude(
   prompt: string,
   cwd: string,
-  claudeCommand = "claude"
+  claudeCommand = "claude",
+  extraArgs = ""
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const cp = electronRequire("child_process") as typeof import("child_process");
@@ -44,14 +21,14 @@ export function spawnHeadlessClaude(
     const resolvedCmd = resolveCommand(claudeCommand);
     const resolvedCwd = expandTilde(cwd);
 
-    const args = [
-      "--dangerously-skip-permissions",
-      ...buildPluginArgs(),
-      "-p",
-      prompt,
-      "--output-format",
-      "text",
-    ];
+    const args: string[] = [];
+
+    // Include user-configured extra args (permissions, plugin dirs, etc.)
+    if (extraArgs) {
+      args.push(...extraArgs.split(/\s+/).filter(Boolean));
+    }
+
+    args.push("-p", prompt, "--output-format", "text");
 
     const proc = cp.spawn(resolvedCmd, args, {
       cwd: resolvedCwd,

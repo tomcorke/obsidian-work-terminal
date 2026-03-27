@@ -37,6 +37,7 @@ export async function handleItemCreated(
   const columnId = (settings._columnId || "todo") as KanbanColumn;
   const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
   const claudeCommand = settings["core.claudeCommand"] || "claude";
+  const claudeExtraArgs = settings["core.claudeExtraArgs"] || "";
 
   const id = crypto.randomUUID();
   const content = generateTaskContent(title, columnId, undefined, id);
@@ -61,7 +62,7 @@ export async function handleItemCreated(
     RENAME_INSTRUCTION;
 
   const home = process.env.HOME || "/";
-  const enrichmentDone = spawnHeadlessClaude(enrichPrompt, home, claudeCommand).then(
+  const enrichmentDone = spawnHeadlessClaude(enrichPrompt, home, claudeCommand, claudeExtraArgs).then(
     (result) => {
       if (result.exitCode === 0) {
         console.log(`[work-terminal] Background enrich completed: ${filePath}`);
