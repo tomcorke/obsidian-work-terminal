@@ -240,6 +240,10 @@ export class MainView extends ItemView {
       (path: string, success: boolean) => {
         // Placeholder resolution callback
         this.listPanel?.resolvePlaceholder(path, success);
+      },
+      (id: string, columnId: string) => {
+        // New item created - prepend to top of column
+        this.listPanel?.prependToColumn(id, columnId);
       }
     );
 

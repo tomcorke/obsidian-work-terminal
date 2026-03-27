@@ -294,6 +294,15 @@ export class ListPanel {
     this.selectItem(item);
   }
 
+  prependToColumn(id: string, columnId: string): void {
+    const order = this.customOrder[columnId] || [];
+    // Avoid duplicates
+    if (!order.includes(id)) {
+      this.customOrder[columnId] = [id, ...order];
+      this.onCustomOrderChange(this.customOrder);
+    }
+  }
+
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
     if (!file) return;
@@ -306,6 +315,18 @@ export class ListPanel {
 
   private get app() {
     return (this.plugin as any).app;
+  }
+
+  private resolveVaultPath(): string {
+    const adapter = this.app.vault.adapter as any;
+    let vaultPath: string = adapter.basePath || adapter.getBasePath?.() || "";
+    const home = process.env.HOME || "";
+    if (vaultPath.startsWith("~/") || vaultPath === "~") {
+      vaultPath = home + vaultPath.slice(1);
+    } else if (!vaultPath.startsWith("/") && home) {
+      vaultPath = home + "/" + vaultPath;
+    }
+    return vaultPath;
   }
 
   private async insertAfter(existingId: string, newItem: WorkItem, columnId: string): Promise<void> {
@@ -340,10 +361,15 @@ export class ListPanel {
       }
       console.log(`[work-terminal] Split task created: ${result.path} (id: ${result.id})`);
 
+      // Resolve full filesystem paths (CWD may differ from vault location)
+      const vaultBase = this.resolveVaultPath();
+      const sourceFullPath = `${vaultBase}/${sourceItem.path}`;
+      const newFullPath = `${vaultBase}/${result.path}`;
+
       // Build the split-scoping prompt
       const prompt =
-        `Read the task file at "${sourceItem.path}". ` +
-        `A new split task has been created at "${result.path}" as a sub-scope of the original. ` +
+        `Read the task file at "${sourceFullPath}". ` +
+        `A new split task has been created at "${newFullPath}" as a sub-scope of the original. ` +
         `Ask the user what the scope of this new split task should be. ` +
         `Once the user answers, immediately update the new task file: ` +
         `set the title, write a brief description with relevant context and references from the original task, ` +

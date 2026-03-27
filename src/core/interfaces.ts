@@ -166,10 +166,11 @@ export interface AdapterBundle {
   /** Detach the detail view leaf on close/reload. */
   detachDetailView?(): void;
   /**
-   * Called after a new item is created via the PromptBox. Use for background
-   * enrichment (e.g. headless Claude).
+   * Called after a new item is created via the PromptBox. Creates the file
+   * and kicks off background enrichment. Returns the new item's UUID and column
+   * so the framework can prepend it to the custom order.
    */
-  onItemCreated?(path: string, settings: Record<string, unknown>): Promise<void>;
+  onItemCreated?(title: string, settings: Record<string, unknown>): Promise<{ id: string; columnId: string } | void>;
   /**
    * Split an existing item: create a new task file with a related reference
    * to the source item. Returns the vault path and UUID of the new file.
@@ -202,7 +203,7 @@ export abstract class BaseAdapter implements AdapterBundle {
     // no-op by default
   }
 
-  async onItemCreated(_path: string, _settings: Record<string, unknown>): Promise<void> {
+  async onItemCreated(_title: string, _settings: Record<string, unknown>): Promise<{ id: string; columnId: string } | void> {
     // no-op by default
   }
 

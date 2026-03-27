@@ -15,6 +15,7 @@ export class PromptBox {
   private settings: Record<string, any>;
   private onPlaceholderAdd: (path: string) => void;
   private onPlaceholderResolve: (path: string, success: boolean) => void;
+  private onNewItemCreated: (id: string, columnId: string) => void;
   private expanded = false;
 
   constructor(
@@ -23,13 +24,15 @@ export class PromptBox {
     plugin: Plugin,
     settings: Record<string, any>,
     onPlaceholderAdd: (path: string) => void,
-    onPlaceholderResolve: (path: string, success: boolean) => void
+    onPlaceholderResolve: (path: string, success: boolean) => void,
+    onNewItemCreated: (id: string, columnId: string) => void
   ) {
     this.adapter = adapter;
     this.plugin = plugin;
     this.settings = settings;
     this.onPlaceholderAdd = onPlaceholderAdd;
     this.onPlaceholderResolve = onPlaceholderResolve;
+    this.onNewItemCreated = onNewItemCreated;
 
     this.containerEl = parentEl.createDiv({ cls: "wt-prompt-box" });
 
@@ -104,11 +107,14 @@ export class PromptBox {
     try {
       // Adapter handles actual file creation
       if (this.adapter.onItemCreated) {
-        await this.adapter.onItemCreated(title, {
+        const result = await this.adapter.onItemCreated(title, {
           ...this.settings,
           _columnId: columnId,
           _placeholderPath: placeholderPath,
         });
+        if (result && result.id) {
+          this.onNewItemCreated(result.id, result.columnId);
+        }
       }
       this.onPlaceholderResolve(placeholderPath, true);
     } catch (err) {

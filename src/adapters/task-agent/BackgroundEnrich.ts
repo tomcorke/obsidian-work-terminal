@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 import { spawnHeadlessClaude } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource } from "./TaskFileTemplate";
+import { expandTilde } from "../../core/utils";
 import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
 
 const RENAME_INSTRUCTION =
@@ -9,17 +10,31 @@ const RENAME_INSTRUCTION =
   `TASK-YYYYMMDD-HHMM-slugified-title.md (use the existing date prefix, ` +
   `replace the "pending-XXXXXXXX" segment with a slug of the final title).`;
 
+function resolveVaultPath(app: App): string {
+  const adapter = app.vault.adapter as any;
+  let vaultPath: string = adapter.basePath || adapter.getBasePath?.() || "";
+  if (vaultPath.startsWith("~/") || vaultPath === "~") {
+    vaultPath = expandTilde(vaultPath);
+  }
+  return vaultPath;
+}
+
+function resolveFullPath(app: App, vaultRelativePath: string): string {
+  return `${resolveVaultPath(app)}/${vaultRelativePath}`;
+}
+
 export async function handleItemCreated(
   app: App,
   title: string,
   settings: Record<string, any>
-): Promise<void> {
+): Promise<{ id: string; columnId: string }> {
   const columnId = (settings._columnId || "todo") as KanbanColumn;
   const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
   const claudeCommand = settings["core.claudeCommand"] || "claude";
 
   // Generate file content with a pending filename (Claude will rename after enrichment)
-  const content = generateTaskContent(title, columnId);
+  const id = crypto.randomUUID();
+  const content = generateTaskContent(title, columnId, undefined, id);
   const filename = generatePendingFilename();
   const folderName = STATE_FOLDER_MAP[columnId] || "todo";
   const folderPath = `${basePath}/${folderName}`;
@@ -35,27 +50,31 @@ export async function handleItemCreated(
   await app.vault.create(filePath, content);
   console.log(`[work-terminal] Task created: ${filePath}`);
 
-  // Spawn background enrichment (fire and don't let failures propagate)
-  try {
-    const enrichPrompt =
-      `/tc-tasks:task-agent --fast The task file at ${filePath} was just created with minimal data. ` +
-      `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
-      RENAME_INSTRUCTION;
+  // Fire-and-forget background enrichment (don't block the UI)
+  const fullPath = resolveFullPath(app, filePath);
+  const enrichPrompt =
+    `/tc-tasks:task-agent --fast The task file at ${fullPath} was just created with minimal data. ` +
+    `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
+    RENAME_INSTRUCTION;
 
-    const home = process.env.HOME || "/";
-    const result = await spawnHeadlessClaude(enrichPrompt, home, claudeCommand);
-
-    if (result.exitCode === 0) {
-      console.log(`[work-terminal] Background enrich completed: ${filePath}`);
-    } else {
-      console.error(
-        `[work-terminal] Background enrich failed (exit ${result.exitCode}):`,
-        result.stderr.slice(0, 500)
-      );
+  const home = process.env.HOME || "/";
+  spawnHeadlessClaude(enrichPrompt, home, claudeCommand).then(
+    (result) => {
+      if (result.exitCode === 0) {
+        console.log(`[work-terminal] Background enrich completed: ${filePath}`);
+      } else {
+        console.error(
+          `[work-terminal] Background enrich failed (exit ${result.exitCode}):`,
+          result.stderr.slice(0, 500)
+        );
+      }
+    },
+    (err) => {
+      console.error("[work-terminal] Background enrich error:", err);
     }
-  } catch (err) {
-    console.error("[work-terminal] Background enrich error:", err);
-  }
+  );
+
+  return { id, columnId };
 }
 
 export async function handleSplitTaskCreated(
@@ -83,4 +102,4 @@ export async function handleSplitTaskCreated(
   return { path: filePath, id };
 }
 
-export { RENAME_INSTRUCTION };
+export { RENAME_INSTRUCTION, resolveFullPath };

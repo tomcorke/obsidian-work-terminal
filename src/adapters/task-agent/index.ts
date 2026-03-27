@@ -61,11 +61,11 @@ export class TaskAgentAdapter extends BaseAdapter {
   async onItemCreated(
     title: string,
     settings: Record<string, any>
-  ): Promise<void> {
+  ): Promise<{ id: string; columnId: string }> {
     if (!this._app) {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
     }
-    await handleItemCreated(this._app, title, settings);
+    return handleItemCreated(this._app, title, settings);
   }
 
   async onSplitItem(
