@@ -59,7 +59,10 @@ export class SessionPersistence {
     const data = (await plugin.loadData()) || {};
     data.persistedSessions = persisted;
     await plugin.saveData(data);
-    console.log("[work-terminal] Saved", persisted.length, "Claude sessions to disk");
+    // Only log when there are sessions to save (avoid noise from periodic persist)
+    if (persisted.length > 0) {
+      console.log("[work-terminal] Saved", persisted.length, "Claude sessions to disk");
+    }
   }
 
   /**
@@ -102,10 +105,17 @@ export class SessionPersistence {
     persistFn: () => Promise<void>,
     intervalMs: number = 30_000
   ): () => void {
+    let isPersisting = false;
     const id = setInterval(() => {
-      persistFn().catch((err) =>
-        console.error("[work-terminal] Periodic persist failed:", err)
-      );
+      if (isPersisting) return;
+      isPersisting = true;
+      persistFn()
+        .catch((err) =>
+          console.error("[work-terminal] Periodic persist failed:", err)
+        )
+        .finally(() => {
+          isPersisting = false;
+        });
     }, intervalMs);
     return () => clearInterval(id);
   }

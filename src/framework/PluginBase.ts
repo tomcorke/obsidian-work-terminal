@@ -87,8 +87,9 @@ export abstract class PluginBase extends Plugin {
     // Best-effort persist as backup - onClose() should have already persisted,
     // but Obsidian may not always honor async cleanup in onClose during shutdown.
     if (!this._isReloading) {
-      const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-      if (leaf) {
+      // Iterate all leaves to persist sessions from every open Work Terminal view
+      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+      for (const leaf of leaves) {
         const view = leaf.view as any;
         const sessions = view?.terminalPanel?.tabManager?.getSessions?.();
         if (sessions) {

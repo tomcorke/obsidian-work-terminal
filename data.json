@@ -1,0 +1,129 @@
+{
+  "persistedSessions": [
+    {
+      "version": 1,
+      "taskPath": "a3f927d0-0c4c-41ba-8c33-e780a22063cf",
+      "claudeSessionId": "931ec2c0-3ed2-4664-a121-f24a115a5ab8",
+      "label": "Claude (ctx)",
+      "sessionType": "claude-with-context",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "cf546390-94f8-409c-90c6-31d62ee8bb70",
+      "claudeSessionId": "8ca50c01-c9c8-4fa2-9ff1-cbf9b993aae9",
+      "label": "Claude (ctx)",
+      "sessionType": "claude-with-context",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "ff84cd30-5c73-42a3-b956-00ff07359ff0",
+      "claudeSessionId": "b2e7ce10-ee7b-4d94-b9e4-ab0b3dc96fa8",
+      "label": "Claude",
+      "sessionType": "claude",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "af4e2958-bfa8-4d15-b7b9-007d75a8dc6c",
+      "claudeSessionId": "01db6bde-d544-441f-8e14-e763d524241e",
+      "label": "Claude",
+      "sessionType": "claude",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "af4e2958-bfa8-4d15-b7b9-007d75a8dc6c",
+      "claudeSessionId": "66d7b327-933b-4988-889f-56ea2b73eafe",
+      "label": "Claude",
+      "sessionType": "claude",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "6834ffd2-eeb3-41de-b5fa-7f11dba8cdd6",
+      "claudeSessionId": "af38b722-a8ef-48c5-ac9f-6a08e88f8c5b",
+      "label": "Claude",
+      "sessionType": "claude",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "d0ec737e-f36c-4aed-80fe-8fd702bdb33f",
+      "claudeSessionId": "7f2d7cb1-5524-44f2-919d-f51ec47b719c",
+      "label": "Claude",
+      "sessionType": "claude",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "e28d96de-a94c-4cbb-bd07-2bd1adf4a19e",
+      "claudeSessionId": "0ad0d214-af16-4d9e-ac8c-07e1e350fd18",
+      "label": "Claude",
+      "sessionType": "claude",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "d4e7801a-7057-413e-9991-7458694ee67d",
+      "claudeSessionId": "def65a18-0df2-4f4c-af87-b33092c59cbf",
+      "label": "auto-gh-issue-workers",
+      "sessionType": "claude-with-context",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "d4e7801a-7057-413e-9991-7458694ee67d",
+      "claudeSessionId": "bdef3738-8595-430f-8e60-47dea6f127bf",
+      "label": "Split scope",
+      "sessionType": "claude-with-context",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    },
+    {
+      "version": 1,
+      "taskPath": "75c5012e-96fd-47c6-ae8f-b34b6607482c",
+      "claudeSessionId": "91a88fbf-46ba-4ddc-8f48-44b2c9199e86",
+      "label": "Claude (ctx)",
+      "sessionType": "claude-with-context",
+      "savedAt": "2026-03-27T19:42:00.528Z"
+    }
+  ],
+  "customOrder": {
+    "active": [
+      "75c5012e-96fd-47c6-ae8f-b34b6607482c",
+      "07696166-a8f0-42ce-9497-f30c53198b2d",
+      "a3f927d0-0c4c-41ba-8c33-e780a22063cf",
+      "e28d96de-a94c-4cbb-bd07-2bd1adf4a19e",
+      "8049de80-2c45-47c5-b6a4-d699db8d7c03",
+      "cf546390-94f8-409c-90c6-31d62ee8bb70",
+      "af4e2958-bfa8-4d15-b7b9-007d75a8dc6c",
+      "6834ffd2-eeb3-41de-b5fa-7f11dba8cdd6",
+      "ff84cd30-5c73-42a3-b956-00ff07359ff0",
+      "38ecf319-d78d-40cf-b9c4-636f91a39f97"
+    ],
+    "todo": [
+      "5afa956d-3466-4209-93ef-ac57573f452f",
+      "38ecf319-d78d-40cf-b9c4-636f91a39f97",
+      "188df684-2c05-423f-a04a-c15d4cecc92d",
+      "98f79d21-f481-4876-b3d3-226acdfb6301",
+      "3586a076-c548-48fe-b781-ba66360cb6cb",
+      "3e878190-3c63-4941-b933-1994e5087fa2",
+      "adfabec4-8aaf-49d7-ae8e-2c133c087dbb",
+      "2ba60862-3737-4371-a7d3-4da17af29760",
+      "167419ba-6336-44b1-80b4-c1d8fc6aa9fc"
+    ],
+    "priority": [
+      "d0ec737e-f36c-4aed-80fe-8fd702bdb33f",
+      "8049de80-2c45-47c5-b6a4-d699db8d7c03",
+      "e28d96de-a94c-4cbb-bd07-2bd1adf4a19e",
+      "d4e7801a-7057-413e-9991-7458694ee67d",
+      "75c5012e-96fd-47c6-ae8f-b34b6607482c"
+    ]
+  },
+  "settings": {
+    "core.defaultTerminalCwd": "~/working/claude-sandbox",
+    "core.claudeExtraArgs": "--dangerously-skip-permissions\n --plugin-dir /Users/TomCorke/working/claude-sandbox/plugins/tc-services\n--plugin-dir /Users/TomCorke/working/claude-sandbox/plugins/tc-tools\n--plugin-dir /Users/TomCorke/working/claude-sandbox/plugins/tc-tasks\n--plugin-dir /Users/TomCorke/working/claude-sandbox/plugins/tc-core",
+    "core.additionalAgentContext": "Read the task file at \"$filePath\".\nConfirm you have read it with a single line summary of status.\nBe ready to work.\nYou may use /tc-tasks:task-agent for full task workflow."
+  }
+}
