@@ -36,9 +36,15 @@ export class TaskCard implements CardRenderer {
     // Meta row
     const metaRow = card.createDiv({ cls: "wt-card-meta" });
 
-    // Source badge
-    const sourceBadge = metaRow.createSpan({ cls: "wt-card-source" });
-    sourceBadge.textContent = SOURCE_LABELS[source.type] || "---";
+    // Source badge - hide for CLI-created tasks, show Jira key when available
+    if (source.type !== "prompt") {
+      const sourceBadge = metaRow.createSpan({ cls: "wt-card-source" });
+      if (source.type === "jira" && source.id) {
+        sourceBadge.textContent = source.id.toUpperCase();
+      } else {
+        sourceBadge.textContent = SOURCE_LABELS[source.type] || "---";
+      }
+    }
 
     // Ingesting indicator
     if (ingesting) {
