@@ -10,7 +10,7 @@
  * Handles vault events (create/delete/rename) with debounced refresh and
  * delete-create rename detection for shell mv operations.
  */
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import type { Plugin, EventRef } from "obsidian";
 import type { AdapterBundle, WorkItem } from "../core/interfaces";
 import { VIEW_TYPE } from "./PluginBase";
@@ -272,26 +272,37 @@ export class MainView extends ItemView {
     );
   }
 
-  private handleCreate(path: string): void {
+  private async handleCreate(path: string): Promise<void> {
     // Check if this resolves a pending rename
     for (const [oldPath, pending] of this.pendingRenames) {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (!file) continue;
 
-      // Try UUID match first
+      // Try UUID match first.
+      // On just-created files the metadata cache is often empty (race condition),
+      // so fall back to reading the raw file content.
       if (pending.uuid) {
-        const cache = this.app.metadataCache.getCache(path);
-        const newUuid = cache?.frontmatter?.id;
+        let newUuid = this.app.metadataCache.getCache(path)?.frontmatter?.id ?? null;
+        if (!newUuid && file instanceof TFile) {
+          try {
+            const content = await this.app.vault.cachedRead(file);
+            const match = content.match(/^id:\s*(.+)$/m);
+            if (match) newUuid = match[1].trim();
+          } catch {
+            // File may not be readable yet; fall through to folder heuristic
+          }
+        }
         if (newUuid && newUuid === pending.uuid) {
           this.completeRename(oldPath, path);
           return;
         }
       }
 
-      // Folder heuristic fallback: same parent folder
+      // Folder heuristic fallback: same parent folder.
+      // Works even when the old entry has a UUID (covers metadata cache misses).
       const oldFolder = oldPath.substring(0, oldPath.lastIndexOf("/"));
       const newFolder = path.substring(0, path.lastIndexOf("/"));
-      if (oldFolder === newFolder && !pending.uuid) {
+      if (oldFolder === newFolder) {
         this.completeRename(oldPath, path);
         return;
       }
@@ -318,6 +329,8 @@ export class MainView extends ItemView {
     // Obsidian's own rename event - update sessions directly
     this.terminalPanel?.rekeyItem(oldPath, newPath);
     this.listPanel?.rekeyCustomOrder(oldPath, newPath);
+    // Persist updated session paths to disk so they survive a full reload
+    this.terminalPanel?.persistSessions();
   }
 
   private completeRename(oldPath: string, newPath: string): void {
@@ -328,6 +341,8 @@ export class MainView extends ItemView {
     }
     this.terminalPanel?.rekeyItem(oldPath, newPath);
     this.listPanel?.rekeyCustomOrder(oldPath, newPath);
+    // Persist updated session paths to disk so they survive a full reload
+    this.terminalPanel?.persistSessions();
   }
 
   private scheduleRefresh(): void {
