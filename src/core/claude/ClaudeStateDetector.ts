@@ -1,0 +1,196 @@
+/**
+ * Standalone Claude state detection from xterm.js terminal buffer.
+ *
+ * Reads the terminal screen buffer directly to determine Claude CLI state,
+ * avoiding the fundamental problem of classifying raw stdout (status line
+ * redraws produce continuous output even when idle).
+ */
+import type { Terminal } from "@xterm/xterm";
+import { stripAnsi } from "../utils";
+
+export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
+
+export class ClaudeStateDetector {
+  private _state: ClaudeState = "inactive";
+  private _timer: ReturnType<typeof setInterval> | null = null;
+  private _suppressActiveUntil = 0;
+  private _recentCleanLines: string[] = [];
+  onChange?: (state: ClaudeState) => void;
+
+  constructor(
+    private terminal: Terminal,
+    private isVisible: () => boolean
+  ) {}
+
+  get state(): ClaudeState {
+    return this._state;
+  }
+
+  /**
+   * Start periodic state checking.
+   * @param suppressActive If true, suppress "active" detection for 2s (used after reload).
+   */
+  start(suppressActive = false): void {
+    this._state = suppressActive ? "idle" : "active";
+    if (suppressActive) this._suppressActiveUntil = Date.now() + 2000;
+    this._timer = setInterval(() => this._check(), 2000);
+  }
+
+  stop(): void {
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+  }
+
+  /**
+   * Track output data for pattern matching. Call on each chunk of stdout/stderr.
+   * Buffers recent clean lines (last 30) for waiting-state detection.
+   */
+  trackOutput(data: Buffer | string): void {
+    const text = typeof data === "string" ? data : data.toString("utf8");
+    const lines = stripAnsi(text)
+      .split(/\r\n|\n|\r/)
+      .filter(l => l.trim().length > 0);
+
+    this._recentCleanLines.push(...lines);
+    if (this._recentCleanLines.length > 30) {
+      this._recentCleanLines = this._recentCleanLines.slice(-30);
+    }
+  }
+
+  /**
+   * Read the visible terminal screen content for state detection.
+   * Uses xterm.js buffer API to get the actual rendered lines, which is
+   * far more reliable than trying to classify raw stdout chunks.
+   */
+  private _readScreen(): string[] {
+    const buf = this.terminal.buffer.active;
+    const lines: string[] = [];
+    // The cursor position (baseY + cursorY) marks where content ends; rows below
+    // are empty padding. Reading from the bottom of buf.length would miss
+    // everything when the terminal is taller than the content.
+    const contentEnd = buf.baseY + buf.cursorY + 2;
+    const start = Math.max(0, contentEnd - 30);
+    for (let i = start; i < contentEnd; i++) {
+      const line = buf.getLine(i);
+      if (line) {
+        const text = line.translateToString(true).trim();
+        if (text.length > 0) lines.push(text);
+      }
+    }
+    return lines;
+  }
+
+  private _check(): void {
+    // Read the terminal screen directly to determine Claude's state.
+    const screenLines = this._readScreen();
+
+    // Check for waiting patterns first (highest priority).
+    // Suppress waiting if the tab is currently visible - the user can already see it.
+    if (this._looksLikeWaiting(screenLines)) {
+      this._setState(this.isVisible() ? "idle" : "waiting");
+      return;
+    }
+
+    // Need screen content for idle/active detection
+    if (screenLines.length === 0) return;
+
+    // Claude's status bar always shows ">" even when actively working.
+    // To distinguish idle from active, look for structural indicators in the
+    // last few lines only (near the status bar).
+    //   \u2733 <text>... - spinner line with ellipsis means work in progress
+    //   \u23bf  <text>... - tool output with ellipsis means tool still running
+    const tail = screenLines.slice(-6);
+    const hasActiveIndicator = tail.some(line =>
+      /^\s*\u2733.*\u2026/.test(line) ||    // spinner with ellipsis = in progress
+      /^\s*\u23bf\s+.*\u2026/.test(line)    // tool output with ellipsis = running
+    );
+
+    if (hasActiveIndicator) {
+      // During post-reload grace period, treat "active" as "idle"
+      if (Date.now() < this._suppressActiveUntil) {
+        this._setState("idle");
+      } else {
+        this._setState("active");
+      }
+    } else {
+      // Real output clears the suppression early
+      this._suppressActiveUntil = 0;
+      this._setState("idle");
+    }
+  }
+
+  /**
+   * Check if Claude is waiting for user input by inspecting both the terminal
+   * screen buffer and recent output lines. The screen buffer is the primary
+   * source since it shows the current rendered state.
+   */
+  private _looksLikeWaiting(screenLines?: string[]): boolean {
+    // Merge screen lines and recent output for comprehensive detection
+    const sources = [
+      ...(screenLines || []),
+      ...(this._recentCleanLines || []).slice(-15),
+    ];
+    if (sources.length === 0) return false;
+
+    const tail = sources.slice(-20);
+
+    for (let i = tail.length - 1; i >= Math.max(0, tail.length - 15); i--) {
+      const line = tail[i].trim();
+
+      // Interactive selection UI: "Enter to select", "up/down to navigate"
+      if (/Enter to select|to navigate/i.test(line)) return true;
+
+      // Permission prompt patterns: "Allow", "allowOnce", "denyOnce"
+      if (/\bAllow\b.*\?/i.test(line)) return true;
+      if (/\ballowOnce\b|\bdenyOnce\b|\ballowAlways\b/i.test(line)) return true;
+
+      // AskUserQuestion patterns: numbered options with ">" selector or "(N)"
+      if (/^\s*[>\u276f]\s*\d+\.\s+\S/.test(line)) return true;
+      if (/^\s*\(?\d+\)?\s+\S/.test(line) && i > 0) {
+        for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+          if (tail[j].trim().endsWith("?")) return true;
+        }
+      }
+
+      // Generic question pattern: line ends with "?" and is near the bottom
+      if (i >= tail.length - 5 && line.endsWith("?") && line.length > 10) return true;
+
+      // "Yes" / "No" option pair
+      if (/^\s*(Yes|No)\s*$/i.test(line)) return true;
+    }
+
+    return false;
+  }
+
+  /** Clear the waiting state (e.g. when the user activates this tab). */
+  clearWaiting(): void {
+    if (this._state === "waiting") {
+      this._setState("idle");
+    }
+  }
+
+  private _setState(s: ClaudeState): void {
+    if (this._state === s) return;
+    this._state = s;
+    this.onChange?.(s);
+  }
+}
+
+/**
+ * Aggregate multiple Claude states into a single state.
+ * Priority: waiting > active > idle > inactive.
+ */
+export function aggregateState(states: ClaudeState[]): ClaudeState {
+  for (const s of states) {
+    if (s === "waiting") return "waiting";
+  }
+  for (const s of states) {
+    if (s === "active") return "active";
+  }
+  for (const s of states) {
+    if (s === "idle") return "idle";
+  }
+  return "inactive";
+}
