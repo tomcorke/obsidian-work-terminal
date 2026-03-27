@@ -37,6 +37,7 @@ export class TerminalTab {
   private fitAddon: FitAddon;
   private resizeObserver: ResizeObserver;
   private _documentCleanups: (() => void)[] = [];
+  private _resizeDebounce: ReturnType<typeof setTimeout> | null = null;
 
   // Minimum container width for fitAddon.fit(). When the plugin view is
   // momentarily narrow (e.g. switching between plugins), skip the fit so the
@@ -163,13 +164,20 @@ export class TerminalTab {
       }
     });
 
-    // Resize observer - skip fit when hidden to avoid zero-dimension issues
+    // Resize observer - debounced to avoid fitting during tab transition
+    // animations where the container has intermediate (narrow) widths.
     this.resizeObserver = new ResizeObserver(() => {
       if (this.containerEl.hasClass("hidden")) return;
-      requestAnimationFrame(() => {
+      if (this._resizeDebounce) clearTimeout(this._resizeDebounce);
+      this._resizeDebounce = setTimeout(() => {
         if (this.containerEl.hasClass("hidden")) return;
+        const prevCols = this.terminal.cols;
         this.safeFit();
-      });
+        // If columns changed, scroll to bottom to prevent losing position
+        if (this.terminal.cols !== prevCols) {
+          this.terminal.scrollToBottom();
+        }
+      }, 100);
     });
     this.resizeObserver.observe(this.containerEl);
   }
@@ -571,14 +579,20 @@ export class TerminalTab {
     // Scroll-to-bottom button
     attachScrollButton(stored.containerEl, stored.terminal);
 
-    // Re-attach resize observer
+    // Re-attach resize observer - debounced to avoid fitting during transitions
     stored.resizeObserver.disconnect();
+    tab._resizeDebounce = null;
     tab.resizeObserver = new ResizeObserver(() => {
       if (stored.containerEl.hasClass("hidden")) return;
-      requestAnimationFrame(() => {
+      if (tab._resizeDebounce) clearTimeout(tab._resizeDebounce);
+      tab._resizeDebounce = setTimeout(() => {
         if (stored.containerEl.hasClass("hidden")) return;
+        const prevCols = tab.terminal.cols;
         try { tab.fitAddon.fit(); } catch { /* ignore */ }
-      });
+        if (tab.terminal.cols !== prevCols) {
+          tab.terminal.scrollToBottom();
+        }
+      }, 100);
     });
     tab.resizeObserver.observe(stored.containerEl);
 
@@ -600,6 +614,10 @@ export class TerminalTab {
     if (this._stateTimer) {
       clearInterval(this._stateTimer);
       this._stateTimer = null;
+    }
+    if (this._resizeDebounce) {
+      clearTimeout(this._resizeDebounce);
+      this._resizeDebounce = null;
     }
     // Remove document-level keyboard listeners
     for (const cleanup of this._documentCleanups) {
