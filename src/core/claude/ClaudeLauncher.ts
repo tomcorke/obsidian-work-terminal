@@ -60,7 +60,9 @@ export function buildClaudeArgs(
     if (settings.additionalAgentContext) {
       fullPrompt += "\n\n" + settings.additionalAgentContext;
     }
-    args.push("-p", fullPrompt);
+    // Pass as positional arg (initial message in interactive session),
+    // not -p (which is one-shot print mode that exits after response).
+    args.push(fullPrompt);
   }
   return args;
 }

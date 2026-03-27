@@ -45,7 +45,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
     this.addCoreSetting(containerEl, "core.claudeCommand", "Claude command", "Path or name of the Claude CLI binary");
     this.addCoreTextArea(containerEl, "core.claudeExtraArgs", "Claude extra args", "Additional arguments passed to Claude CLI (space-separated)");
-    this.addCoreTextArea(containerEl, "core.additionalAgentContext", "Additional agent context", "Extra context appended to Claude prompts");
+    this.addCoreTextArea(containerEl, "core.additionalAgentContext", "Claude (ctx) prompt template", "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. Button hidden when empty.");
     this.addCoreSetting(containerEl, "core.defaultShell", "Default shell", "Shell used for new terminal tabs");
     this.addCoreSetting(containerEl, "core.defaultTerminalCwd", "Default terminal CWD", "Working directory for new terminals (supports ~)");
 

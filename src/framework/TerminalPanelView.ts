@@ -155,8 +155,10 @@ export class TerminalPanelView {
     const claudeBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn wt-spawn-claude", text: "+ Claude" });
     claudeBtn.addEventListener("click", () => this.spawnClaude());
 
-    const claudeCtxBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn wt-spawn-claude-ctx", text: "+ Claude (ctx)" });
-    claudeCtxBtn.addEventListener("click", () => this.spawnClaudeWithContext());
+    if (this.settings["core.additionalAgentContext"]) {
+      const claudeCtxBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn wt-spawn-claude-ctx", text: "+ Claude (ctx)" });
+      claudeCtxBtn.addEventListener("click", () => this.spawnClaudeWithContext());
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -386,14 +388,33 @@ export class TerminalPanelView {
       return;
     }
 
-    const prompt = this.promptBuilder.buildPrompt(item, item.path);
+    const template = this.settings["core.additionalAgentContext"] || "";
+    if (!template) {
+      new Notice("Set 'Additional agent context' in settings to use Claude (ctx)");
+      return;
+    }
+
+    // Resolve full file path for $filePath placeholder
+    const fullPath = expandTilde(
+      (this.settings["core.defaultTerminalCwd"] || "~") === "~"
+        ? item.path
+        : item.path
+    );
+
+    // Substitute placeholders in the template
+    const prompt = template
+      .replace(/\$title/g, item.title)
+      .replace(/\$state/g, item.state)
+      .replace(/\$filePath/g, item.path)
+      .replace(/\$id/g, item.id);
+
     const claudeCmd = this.settings["core.claudeCommand"] || "claude";
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
+    // Pass prompt but omit additionalAgentContext (it IS the prompt template)
     const args = buildClaudeArgs(
       {
         claudeExtraArgs: this.settings["core.claudeExtraArgs"],
-        additionalAgentContext: this.settings["core.additionalAgentContext"],
       },
       sessionId,
       prompt
