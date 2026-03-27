@@ -303,10 +303,10 @@
 
 @keyframes wt-waiting-card-glow {
   0%, 100% {
-    background: linear-gradient(to left, rgba(214, 158, 46, 0.1) 0%, rgba(214, 158, 46, 0.04) 50%, transparent 100%);
+    background: linear-gradient(to left, rgba(214, 158, 46, 0.2) 0%, rgba(214, 158, 46, 0.06) 50%, transparent 100%);
   }
   50% {
-    background: linear-gradient(to left, rgba(214, 158, 46, 0.7) 0%, rgba(214, 158, 46, 0.12) 50%, transparent 100%);
+    background: linear-gradient(to left, rgba(214, 158, 46, 0.45) 0%, rgba(214, 158, 46, 0.15) 50%, transparent 100%);
   }
 }
 
