@@ -49,9 +49,6 @@ export class ListPanel {
   // Background enrichment tracking
   private ingestingIds: Set<string> = new Set();
 
-  // Pending split: select + spawn Claude after next render picks up the new item
-  private pendingSplit: { id: string; prompt: string } | null = null;
-
   // Drag state
   private dragSourceId: string | null = null;
   private dragSourceColumn: string | null = null;
@@ -218,17 +215,6 @@ export class ListPanel {
     }
 
     this.applyFilter();
-
-    // Check for pending split: select the new item and spawn Claude
-    if (this.pendingSplit) {
-      const splitItem = this.items.find((i) => i.id === this.pendingSplit!.id);
-      if (splitItem) {
-        const { prompt } = this.pendingSplit;
-        this.pendingSplit = null;
-        this.selectItem(splitItem);
-        this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope");
-      }
-    }
   }
 
   private sortItems(items: WorkItem[], columnId: string): WorkItem[] {
@@ -409,8 +395,19 @@ export class ListPanel {
         `Then rename the file to match the convention TASK-YYYYMMDD-HHMM-slugified-title.md ` +
         `(use the existing date prefix, replace the "pending-XXXXXXXX" segment with a slug of the final title).`;
 
-      // Defer select + spawn until the vault watcher refreshes and the new item appears
-      this.pendingSplit = { id: result.id, prompt };
+      // Select the new item directly (construct a minimal WorkItem rather than
+      // waiting for MetadataCache to index the file, which can be unreliable
+      // for newly-created files).
+      const newItem: WorkItem = {
+        id: result.id,
+        path: result.path,
+        title: `Split from: ${sourceItem.title}`,
+        state: columnId,
+        metadata: {},
+      };
+      this.items.push(newItem);
+      this.selectItem(newItem);
+      this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope");
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
     }
