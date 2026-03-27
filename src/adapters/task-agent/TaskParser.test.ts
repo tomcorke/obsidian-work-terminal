@@ -4,7 +4,7 @@ import type { App, TFile, CachedMetadata } from "obsidian";
 
 function mockApp(
   files: Array<{ path: string; name: string; basename: string; extension: string }>,
-  caches: Record<string, CachedMetadata | null>
+  caches: Record<string, CachedMetadata | null>,
 ): App {
   return {
     metadataCache: {
@@ -36,7 +36,12 @@ function mockApp(
   } as unknown as App;
 }
 
-function makeFile(path: string): { path: string; name: string; basename: string; extension: string } {
+function makeFile(path: string): {
+  path: string;
+  name: string;
+  basename: string;
+  extension: string;
+} {
   const name = path.split("/").pop() || "";
   const basename = name.replace(/\.md$/, "");
   return { path, name, basename, extension: "md" };
@@ -50,7 +55,13 @@ function makeFrontmatter(overrides: Record<string, any> = {}) {
       title: "Test Task",
       tags: ["task", "task/active"],
       source: { type: "prompt", id: "p1", url: "", captured: "2026-03-27" },
-      priority: { score: 50, deadline: "", impact: "medium", "has-blocker": false, "blocker-context": "" },
+      priority: {
+        score: 50,
+        deadline: "",
+        impact: "medium",
+        "has-blocker": false,
+        "blocker-context": "",
+      },
       "agent-actionable": false,
       goal: ["improve-perf"],
       created: "2026-03-27T00:00:00Z",
@@ -184,8 +195,20 @@ describe("TaskParser", () => {
     it("excludes abandoned tasks", () => {
       const parser = new TaskParser({} as App, "", defaultSettings);
       const items = [
-        { id: "1", path: "a", title: "A", state: "active", metadata: { priority: { score: 0 }, updated: "" } },
-        { id: "2", path: "b", title: "B", state: "abandoned", metadata: { priority: { score: 0 }, updated: "" } },
+        {
+          id: "1",
+          path: "a",
+          title: "A",
+          state: "active",
+          metadata: { priority: { score: 0 }, updated: "" },
+        },
+        {
+          id: "2",
+          path: "b",
+          title: "B",
+          state: "abandoned",
+          metadata: { priority: { score: 0 }, updated: "" },
+        },
       ];
       const groups = parser.groupByColumn(items);
       expect(groups["active"].length).toBe(1);
@@ -197,8 +220,20 @@ describe("TaskParser", () => {
     it("sorts by score descending", () => {
       const parser = new TaskParser({} as App, "", defaultSettings);
       const items = [
-        { id: "1", path: "a", title: "Low", state: "active", metadata: { priority: { score: 20 }, updated: "" } },
-        { id: "2", path: "b", title: "High", state: "active", metadata: { priority: { score: 80 }, updated: "" } },
+        {
+          id: "1",
+          path: "a",
+          title: "Low",
+          state: "active",
+          metadata: { priority: { score: 20 }, updated: "" },
+        },
+        {
+          id: "2",
+          path: "b",
+          title: "High",
+          state: "active",
+          metadata: { priority: { score: 80 }, updated: "" },
+        },
       ];
       const groups = parser.groupByColumn(items);
       expect(groups["active"][0].title).toBe("High");
@@ -208,8 +243,20 @@ describe("TaskParser", () => {
     it("uses updated timestamp as tiebreaker", () => {
       const parser = new TaskParser({} as App, "", defaultSettings);
       const items = [
-        { id: "1", path: "a", title: "Old", state: "todo", metadata: { priority: { score: 50 }, updated: "2026-03-01" } },
-        { id: "2", path: "b", title: "New", state: "todo", metadata: { priority: { score: 50 }, updated: "2026-03-27" } },
+        {
+          id: "1",
+          path: "a",
+          title: "Old",
+          state: "todo",
+          metadata: { priority: { score: 50 }, updated: "2026-03-01" },
+        },
+        {
+          id: "2",
+          path: "b",
+          title: "New",
+          state: "todo",
+          metadata: { priority: { score: 50 }, updated: "2026-03-27" },
+        },
       ];
       const groups = parser.groupByColumn(items);
       expect(groups["todo"][0].title).toBe("New");

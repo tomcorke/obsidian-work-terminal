@@ -13,13 +13,15 @@ function createMockPlugin(initialData: Record<string, any> = {}) {
   };
 }
 
-function makePersisted(overrides: Partial<{
-  taskPath: string;
-  claudeSessionId: string;
-  label: string;
-  sessionType: string;
-  savedAt: string;
-}> = {}) {
+function makePersisted(
+  overrides: Partial<{
+    taskPath: string;
+    claudeSessionId: string;
+    label: string;
+    sessionType: string;
+    savedAt: string;
+  }> = {},
+) {
   return {
     version: 1 as const,
     taskPath: overrides.taskPath ?? "tasks/my-task.md",
@@ -36,9 +38,27 @@ describe("SessionPersistence", () => {
       const plugin = createMockPlugin();
       const sessions = new Map<string, any[]>();
       sessions.set("task-1", [
-        { isClaudeSession: true, claudeSessionId: "s1", label: "Claude", taskPath: "task-1", sessionType: "claude" },
-        { isClaudeSession: false, claudeSessionId: null, label: "Shell", taskPath: "task-1", sessionType: "shell" },
-        { isClaudeSession: true, claudeSessionId: null, label: "Claude2", taskPath: "task-1", sessionType: "claude" },
+        {
+          isClaudeSession: true,
+          claudeSessionId: "s1",
+          label: "Claude",
+          taskPath: "task-1",
+          sessionType: "claude",
+        },
+        {
+          isClaudeSession: false,
+          claudeSessionId: null,
+          label: "Shell",
+          taskPath: "task-1",
+          sessionType: "shell",
+        },
+        {
+          isClaudeSession: true,
+          claudeSessionId: null,
+          label: "Claude2",
+          taskPath: "task-1",
+          sessionType: "claude",
+        },
       ]);
 
       await SessionPersistence.saveToDisk(plugin, sessions);

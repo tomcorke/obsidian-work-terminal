@@ -13,7 +13,7 @@ export function spawnHeadlessClaude(
   prompt: string,
   cwd: string,
   claudeCommand = "claude",
-  extraArgs = ""
+  extraArgs = "",
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const cp = electronRequire("child_process") as typeof import("child_process");

@@ -8,7 +8,7 @@ export class TaskMover implements WorkItemMover {
   constructor(
     private app: App,
     _basePath: string,
-    private settings: Record<string, any>
+    private settings: Record<string, any>,
   ) {
     this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
   }
@@ -32,10 +32,7 @@ export class TaskMover implements WorkItemMover {
     updated = updated.replace(/^state:\s*.+$/m, `state: ${newColumn}`);
 
     // Update task tag
-    const oldTagPattern = new RegExp(
-      `(- task/)(?:priority|todo|active|done|abandoned)`,
-      "m"
-    );
+    const oldTagPattern = new RegExp(`(- task/)(?:priority|todo|active|done|abandoned)`, "m");
     updated = updated.replace(oldTagPattern, `$1${newColumn}`);
 
     // Update the updated timestamp (no milliseconds)
@@ -51,9 +48,7 @@ export class TaskMover implements WorkItemMover {
       const afterLog = updated.substring(logIndex + "## Activity Log".length);
       const nextSection = afterLog.search(/\n## /);
       const insertPos =
-        nextSection !== -1
-          ? logIndex + "## Activity Log".length + nextSection
-          : updated.length;
+        nextSection !== -1 ? logIndex + "## Activity Log".length + nextSection : updated.length;
       updated =
         updated.substring(0, insertPos).trimEnd() +
         "\n" +
@@ -62,8 +57,7 @@ export class TaskMover implements WorkItemMover {
         updated.substring(insertPos);
     } else {
       // Create Activity Log section if missing
-      updated =
-        updated.trimEnd() + "\n\n## Activity Log\n" + logEntry + "\n";
+      updated = updated.trimEnd() + "\n\n## Activity Log\n" + logEntry + "\n";
     }
 
     // Write updated content first (write-then-move pattern)

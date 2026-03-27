@@ -8,13 +8,7 @@ import {
   STATE_FOLDER_MAP,
 } from "./types";
 
-const VALID_STATES: TaskState[] = [
-  "priority",
-  "todo",
-  "active",
-  "done",
-  "abandoned",
-];
+const VALID_STATES: TaskState[] = ["priority", "todo", "active", "done", "abandoned"];
 
 export class TaskParser implements WorkItemParser {
   basePath: string;
@@ -22,7 +16,7 @@ export class TaskParser implements WorkItemParser {
   constructor(
     private app: App,
     _basePath: string,
-    private settings: Record<string, any>
+    private settings: Record<string, any>,
   ) {
     this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
   }
@@ -44,11 +38,7 @@ export class TaskParser implements WorkItemParser {
     const source = fm.source || {};
     const priority = fm.priority || {};
     const tags: string[] = fm.tags || [];
-    const goal: string[] = Array.isArray(fm.goal)
-      ? fm.goal
-      : fm.goal
-        ? [fm.goal]
-        : [];
+    const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
 
     return {
       id: fm.id || "",
@@ -107,9 +97,7 @@ export class TaskParser implements WorkItemParser {
 
       const files = this.app.vault
         .getMarkdownFiles()
-        .filter(
-          (f) => f.path.startsWith(folderPath + "/") && f.extension === "md"
-        );
+        .filter((f) => f.path.startsWith(folderPath + "/") && f.extension === "md");
 
       for (const file of files) {
         const item = this.parse(file);
@@ -172,10 +160,7 @@ export class TaskParser implements WorkItemParser {
           count++;
         }
       } catch (err) {
-        console.error(
-          `[work-terminal] Failed to backfill ID for ${item.path}:`,
-          err
-        );
+        console.error(`[work-terminal] Failed to backfill ID for ${item.path}:`, err);
       }
     }
     return count;

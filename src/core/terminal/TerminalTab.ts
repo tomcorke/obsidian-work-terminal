@@ -77,7 +77,7 @@ export class TerminalTab {
     sessionType: SessionType,
     preCommand?: string,
     private commandArgs?: string[],
-    claudeSessionId?: string | null
+    claudeSessionId?: string | null,
   ) {
     this.claudeSessionId = claudeSessionId || null;
     this.taskPath = taskPath;
@@ -122,9 +122,11 @@ export class TerminalTab {
 
     // Web links - Cmd+click to open URLs in browser
     const electronShell = electronRequire("electron").shell;
-    this.terminal.loadAddon(new WebLinksAddon((_, uri) => {
-      electronShell.openExternal(uri);
-    }));
+    this.terminal.loadAddon(
+      new WebLinksAddon((_, uri) => {
+        electronShell.openExternal(uri);
+      }),
+    );
 
     // Unicode 11 - correct emoji/CJK character widths
     const unicode11 = new Unicode11Addon();
@@ -151,7 +153,7 @@ export class TerminalTab {
     const captureCleanup = attachCapturePhase(
       this.containerEl,
       () => this.process,
-      () => this.toggleSearchBar()
+      () => this.toggleSearchBar(),
     );
     this._documentCleanups.push(captureCleanup);
 
@@ -263,7 +265,9 @@ export class TerminalTab {
       const width = this.containerEl.clientWidth;
       if (width < TerminalTab.MIN_FIT_WIDTH) return;
       this.fitAddon.fit();
-    } catch { /* ignore fit errors during cleanup */ }
+    } catch {
+      /* ignore fit errors during cleanup */
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -302,13 +306,18 @@ export class TerminalTab {
 
           const startIdx = match.index;
           links.push({
-            range: { start: { x: startIdx + 1, y: lineNumber }, end: { x: startIdx + cleaned.length + 1, y: lineNumber } },
+            range: {
+              start: { x: startIdx + 1, y: lineNumber },
+              end: { x: startIdx + cleaned.length + 1, y: lineNumber },
+            },
             text: cleaned,
             activate: () => {
               // Open in VS Code with line:col if available
               const lineNum = lineColMatch ? lineColMatch[2] : undefined;
               const colNum = lineColMatch ? lineColMatch[3] : undefined;
-              const target = lineNum ? `${absPath}:${lineNum}${colNum ? ":" + colNum : ""}` : absPath;
+              const target = lineNum
+                ? `${absPath}:${lineNum}${colNum ? ":" + colNum : ""}`
+                : absPath;
               const cp = electronRequire("child_process") as typeof import("child_process");
               cp.exec(`code --goto "${target}"`, (err) => {
                 if (err) shell.openPath(absPath);
@@ -365,7 +374,9 @@ export class TerminalTab {
 
     input.addEventListener("input", () => {
       if (input.value) {
-        this.searchAddon.findNext(input.value, { decorations: { activeMatchColorOverviewRuler: "#ffa500" } });
+        this.searchAddon.findNext(input.value, {
+          decorations: { activeMatchColorOverviewRuler: "#ffa500" },
+        });
       } else {
         this.searchAddon.clearDecorations();
       }
@@ -404,14 +415,18 @@ export class TerminalTab {
     const home = process.env.HOME || "";
 
     // Find pty-wrapper.py
-    let wrapperPath: string;
     const candidates = [
       path.join(home, "working/obsidian-work-terminal/pty-wrapper.py"),
       path.join(__dirname, "pty-wrapper.py"),
     ];
-    wrapperPath = candidates.find((p: string) => {
-      try { return fs.existsSync(p); } catch { return false; }
-    }) || candidates[0];
+    const wrapperPath =
+      candidates.find((p: string) => {
+        try {
+          return fs.existsSync(p);
+        } catch {
+          return false;
+        }
+      }) || candidates[0];
 
     const cmd = command || [this.shell, "-i"];
     const args = [wrapperPath, String(cols), String(rows), "--", ...cmd];
@@ -538,7 +553,9 @@ export class TerminalTab {
 
     // Buffer recent clean lines for pattern matching (keep last 30 lines)
     const text = typeof data === "string" ? data : data.toString("utf8");
-    const lines = stripAnsi(text).split(/\r\n|\n|\r/).filter(l => l.trim().length > 0);
+    const lines = stripAnsi(text)
+      .split(/\r\n|\n|\r/)
+      .filter((l) => l.trim().length > 0);
 
     this._recentCleanLines.push(...lines);
     if (this._recentCleanLines.length > 30) {
@@ -588,14 +605,16 @@ export class TerminalTab {
     // so we check both per-line AND a joined tail string.
     const tail = screenLines.slice(-6);
     const tailJoined = tail.join(" ");
-    const hasActiveIndicator = tail.some(line =>
-      /^\s*\u2733.*\u2026/.test(line) ||    // spinner with ellipsis = in progress
-      /^\s*\u23bf\s+.*\u2026/.test(line)    // tool output with ellipsis = running
-    ) || (
+    const hasActiveIndicator =
+      tail.some(
+        (line) =>
+          /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
+          /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
+      ) ||
       // Wrapped lines: spinner char on one visual row, ellipsis on another
-      /\u2733/.test(tailJoined) && /\u2026/.test(tailJoined) &&
-      tail.some(line => /^\s*\u2733/.test(line))
-    );
+      (/\u2733/.test(tailJoined) &&
+        /\u2026/.test(tailJoined) &&
+        tail.some((line) => /^\s*\u2733/.test(line)));
 
     if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
@@ -616,10 +635,7 @@ export class TerminalTab {
    * screen buffer and recent output lines.
    */
   private _looksLikeWaiting(screenLines?: string[]): boolean {
-    const sources = [
-      ...(screenLines || []),
-      ...(this._recentCleanLines || []).slice(-15),
-    ];
+    const sources = [...(screenLines || []), ...(this._recentCleanLines || []).slice(-15)];
     if (sources.length === 0) return false;
 
     const tail = sources.slice(-20);
@@ -734,7 +750,7 @@ export class TerminalTab {
     const captureCleanup = attachCapturePhase(
       stored.containerEl,
       () => tab.process,
-      () => tab.toggleSearchBar()
+      () => tab.toggleSearchBar(),
     );
     tab._documentCleanups = [captureCleanup];
 

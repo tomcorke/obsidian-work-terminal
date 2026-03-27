@@ -6,7 +6,7 @@
       "claudeSessionId": "931ec2c0-3ed2-4664-a121-f24a115a5ab8",
       "label": "Claude (ctx)",
       "sessionType": "claude-with-context",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -14,7 +14,7 @@
       "claudeSessionId": "8ca50c01-c9c8-4fa2-9ff1-cbf9b993aae9",
       "label": "Claude (ctx)",
       "sessionType": "claude-with-context",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -22,7 +22,7 @@
       "claudeSessionId": "b2e7ce10-ee7b-4d94-b9e4-ab0b3dc96fa8",
       "label": "Claude",
       "sessionType": "claude",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -30,7 +30,7 @@
       "claudeSessionId": "01db6bde-d544-441f-8e14-e763d524241e",
       "label": "Claude",
       "sessionType": "claude",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -38,7 +38,7 @@
       "claudeSessionId": "66d7b327-933b-4988-889f-56ea2b73eafe",
       "label": "Claude",
       "sessionType": "claude",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -46,7 +46,7 @@
       "claudeSessionId": "af38b722-a8ef-48c5-ac9f-6a08e88f8c5b",
       "label": "Claude",
       "sessionType": "claude",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -54,7 +54,7 @@
       "claudeSessionId": "7f2d7cb1-5524-44f2-919d-f51ec47b719c",
       "label": "Claude",
       "sessionType": "claude",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -62,7 +62,7 @@
       "claudeSessionId": "0ad0d214-af16-4d9e-ac8c-07e1e350fd18",
       "label": "Claude",
       "sessionType": "claude",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -70,7 +70,7 @@
       "claudeSessionId": "def65a18-0df2-4f4c-af87-b33092c59cbf",
       "label": "auto-gh-issue-workers",
       "sessionType": "claude-with-context",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -78,7 +78,7 @@
       "claudeSessionId": "bdef3738-8595-430f-8e60-47dea6f127bf",
       "label": "Split scope",
       "sessionType": "claude-with-context",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     },
     {
       "version": 1,
@@ -86,7 +86,7 @@
       "claudeSessionId": "91a88fbf-46ba-4ddc-8f48-44b2c9199e86",
       "label": "Claude (ctx)",
       "sessionType": "claude-with-context",
-      "savedAt": "2026-03-27T19:42:00.528Z"
+      "savedAt": "2026-03-27T20:10:56.141Z"
     }
   ],
   "customOrder": {

@@ -16,7 +16,7 @@ const EXTRA_PATH_DIRS = [
  */
 export function augmentPath(): string {
   const existing = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
-  const dirs = EXTRA_PATH_DIRS.map(d => expandTilde(d));
+  const dirs = EXTRA_PATH_DIRS.map((d) => expandTilde(d));
   const all = [...dirs, ...existing.split(":")];
   return [...new Set(all)].join(":");
 }
@@ -34,7 +34,9 @@ export function resolveCommand(cmd: string): string {
     const full = path.join(dir, cmd);
     try {
       if (fs.existsSync(full)) return full;
-    } catch { /* skip inaccessible dirs */ }
+    } catch {
+      /* skip inaccessible dirs */
+    }
   }
   return cmd; // fallback to bare command
 }
@@ -48,7 +50,7 @@ export function buildClaudeArgs(
     additionalAgentContext?: string;
   },
   sessionId: string,
-  prompt?: string
+  prompt?: string,
 ): string[] {
   const args: string[] = [];
   if (settings.claudeExtraArgs) {

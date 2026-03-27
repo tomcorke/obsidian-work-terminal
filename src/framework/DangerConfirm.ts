@@ -24,7 +24,8 @@ export class DangerConfirm extends Modal {
     contentEl.createEl("p", { text: `Are you sure you want to: ${this.label}?` });
 
     const btnContainer = contentEl.createDiv({ cls: "wt-danger-buttons" });
-    btnContainer.style.cssText = "display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;";
+    btnContainer.style.cssText =
+      "display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;";
 
     const cancelBtn = btnContainer.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.close());

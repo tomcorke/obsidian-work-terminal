@@ -11,9 +11,7 @@ describe("generateTaskContent", () => {
   it("includes a UUID id", () => {
     const content = generateTaskContent("Test", "todo");
     // UUID v4 pattern
-    expect(content).toMatch(
-      /id: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
-    );
+    expect(content).toMatch(/id: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
   });
 
   it("sets correct tags for todo column", () => {
@@ -75,9 +73,7 @@ describe("generateTaskFilename", () => {
 
   it("slugifies the title", () => {
     const filename = generateTaskFilename("Fix: Special Characters!");
-    expect(filename).toMatch(
-      /^TASK-\d{8}-\d{4}-fix-special-characters\.md$/
-    );
+    expect(filename).toMatch(/^TASK-\d{8}-\d{4}-fix-special-characters\.md$/);
   });
 
   it("handles empty title", () => {

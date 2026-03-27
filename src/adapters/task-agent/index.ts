@@ -63,7 +63,7 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   async onItemCreated(
     title: string,
-    settings: Record<string, any>
+    settings: Record<string, any>,
   ): Promise<{ id: string; columnId: string }> {
     if (!this._app) {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
@@ -74,7 +74,7 @@ export class TaskAgentAdapter extends BaseAdapter {
   async onSplitItem(
     sourceItem: WorkItem,
     columnId: string,
-    settings: Record<string, any>
+    settings: Record<string, any>,
   ): Promise<{ path: string; id: string } | null> {
     if (!this._app) {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
@@ -83,19 +83,13 @@ export class TaskAgentAdapter extends BaseAdapter {
     const sourceFilename = sourceItem.path.split("/").pop() || sourceItem.path;
     const title = `Split from: ${sourceItem.title}`;
 
-    return handleSplitTaskCreated(
-      this._app,
-      title,
-      columnId as KanbanColumn,
-      basePath,
-      { filename: sourceFilename, title: sourceItem.title }
-    );
+    return handleSplitTaskCreated(this._app, title, columnId as KanbanColumn, basePath, {
+      filename: sourceFilename,
+      title: sourceItem.title,
+    });
   }
 
-  transformSessionLabel(
-    _oldLabel: string,
-    detectedLabel: string
-  ): string {
+  transformSessionLabel(_oldLabel: string, detectedLabel: string): string {
     return detectedLabel;
   }
 }

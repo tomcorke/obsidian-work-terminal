@@ -10,7 +10,7 @@ export function generateTaskContent(
   title: string,
   state: KanbanColumn,
   splitFrom?: SplitSource,
-  existingId?: string
+  existingId?: string,
 ): string {
   const id = existingId || crypto.randomUUID();
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -19,9 +19,7 @@ export function generateTaskContent(
   // Quote the title to handle special characters in YAML
   const safeTitle = `"${title.replace(/"/g, '\\"')}"`;
 
-  const relatedLines = splitFrom
-    ? `\n  - "[[${splitFrom.filename.replace(/\.md$/, "")}]]"`
-    : "";
+  const relatedLines = splitFrom ? `\n  - "[[${splitFrom.filename.replace(/\.md$/, "")}]]"` : "";
   const activitySuffix = splitFrom
     ? ` (split from [[${splitFrom.filename.replace(/\.md$/, "")}]])`
     : "";
