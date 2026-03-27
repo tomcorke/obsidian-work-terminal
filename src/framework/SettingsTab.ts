@@ -2,7 +2,7 @@
  * WorkTerminalSettingsTab - single settings UI combining core framework
  * settings with adapter-provided settings via namespaced keys.
  *
- * Core settings: core.claudeCommand, core.claudeExtraArgs, core.additionalAgentContext,
+ * Core settings: core.claudeCommand, core.claudeExtraArgs (default args), core.additionalAgentContext (ctx template),
  *                core.defaultShell, core.defaultTerminalCwd
  * Adapter settings: adapter.* (from adapter.config.settingsSchema)
  */
@@ -44,7 +44,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Core" });
 
     this.addCoreSetting(containerEl, "core.claudeCommand", "Claude command", "Path or name of the Claude CLI binary");
-    this.addCoreTextArea(containerEl, "core.claudeExtraArgs", "Claude extra args", "Additional arguments passed to Claude CLI (space-separated)");
+    this.addCoreTextArea(containerEl, "core.claudeExtraArgs", "Default Claude arguments", "Arguments passed to every Claude session (space-separated). Applied to both + Claude and + Claude (ctx).");
     this.addCoreTextArea(containerEl, "core.additionalAgentContext", "Claude (ctx) prompt template", "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. Button hidden when empty.");
     this.addCoreSetting(containerEl, "core.defaultShell", "Default shell", "Shell used for new terminal tabs");
     this.addCoreSetting(containerEl, "core.defaultTerminalCwd", "Default terminal CWD", "Working directory for new terminals (supports ~)");

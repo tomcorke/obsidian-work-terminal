@@ -347,19 +347,19 @@ export class TerminalPanelView {
     this.renderTabBar();
   }
 
-  private spawnClaude(): void {
-    const claudeCmd = this.settings["core.claudeCommand"] || "claude";
+  private async spawnClaude(): Promise<void> {
+    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
+    const claudeCmd = fresh["core.claudeCommand"] || this.settings["core.claudeCommand"] || "claude";
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
     const args = buildClaudeArgs(
       {
-        claudeExtraArgs: this.settings["core.claudeExtraArgs"],
-        additionalAgentContext: this.settings["core.additionalAgentContext"],
+        claudeExtraArgs: fresh["core.claudeExtraArgs"] || this.settings["core.claudeExtraArgs"] || "",
       },
       sessionId
     );
 
-    const cwd = expandTilde(this.settings["core.defaultTerminalCwd"] || "~");
+    const cwd = expandTilde(fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~");
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
