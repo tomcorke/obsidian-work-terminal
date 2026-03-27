@@ -375,7 +375,7 @@ export class TerminalPanelView {
     this.renderTabBar();
   }
 
-  private spawnClaudeWithContext(): void {
+  private async spawnClaudeWithContext(): Promise<void> {
     const activeItemId = this.tabManager.getActiveItemId();
     if (!activeItemId) {
       new Notice("Select a task first to launch Claude with context");
@@ -388,18 +388,13 @@ export class TerminalPanelView {
       return;
     }
 
-    const template = this.settings["core.additionalAgentContext"] || "";
+    // Read settings fresh from disk so edits take effect without reload
+    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
+    const template = fresh["core.additionalAgentContext"] || "";
     if (!template) {
-      new Notice("Set 'Additional agent context' in settings to use Claude (ctx)");
+      new Notice("Set 'Claude (ctx) prompt template' in settings to use Claude (ctx)");
       return;
     }
-
-    // Resolve full file path for $filePath placeholder
-    const fullPath = expandTilde(
-      (this.settings["core.defaultTerminalCwd"] || "~") === "~"
-        ? item.path
-        : item.path
-    );
 
     // Substitute placeholders in the template
     const prompt = template
@@ -408,19 +403,17 @@ export class TerminalPanelView {
       .replace(/\$filePath/g, item.path)
       .replace(/\$id/g, item.id);
 
-    const claudeCmd = this.settings["core.claudeCommand"] || "claude";
+    const claudeCmd = fresh["core.claudeCommand"] || this.settings["core.claudeCommand"] || "claude";
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
-    // Pass prompt but omit additionalAgentContext (it IS the prompt template)
+    const extraArgs = fresh["core.claudeExtraArgs"] || this.settings["core.claudeExtraArgs"] || "";
     const args = buildClaudeArgs(
-      {
-        claudeExtraArgs: this.settings["core.claudeExtraArgs"],
-      },
+      { claudeExtraArgs: extraArgs },
       sessionId,
       prompt
     );
 
-    const cwd = expandTilde(this.settings["core.defaultTerminalCwd"] || "~");
+    const cwd = expandTilde(fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~");
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
