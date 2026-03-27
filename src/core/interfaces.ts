@@ -78,7 +78,7 @@ export interface WorkItemParser {
   basePath: string;
   /** Parse a single file into a WorkItem, or null if not a valid item. */
   parse(file: TFile): WorkItem | null;
-  /** Parse raw data into a WorkItem without requiring a TFile. Optional - returns null by default. */
+  /** Parse raw data into a WorkItem without requiring a TFile. Optional; may be omitted by adapters. */
   parseData?(data: Record<string, unknown>): WorkItem | null;
   /** Load all items from the vault. */
   loadAll(): Promise<WorkItem[]>;

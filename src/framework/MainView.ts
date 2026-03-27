@@ -504,6 +504,9 @@ export class MainView extends ItemView {
     // Clean up resize observer
     this.containerObserver?.disconnect();
 
+    // Clear adapter refresh callback to prevent refreshes against disposed DOM
+    this.adapter.requestRefresh = undefined;
+
     // Clean up debounce timer
     if (this.refreshDebounceTimer) {
       clearTimeout(this.refreshDebounceTimer);
