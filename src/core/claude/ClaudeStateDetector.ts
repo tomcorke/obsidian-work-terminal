@@ -19,7 +19,7 @@ export class ClaudeStateDetector {
 
   constructor(
     private terminal: Terminal,
-    private isVisible: () => boolean
+    private isVisible: () => boolean,
   ) {}
 
   get state(): ClaudeState {
@@ -51,7 +51,7 @@ export class ClaudeStateDetector {
     const text = typeof data === "string" ? data : data.toString("utf8");
     const lines = stripAnsi(text)
       .split(/\r\n|\n|\r/)
-      .filter(l => l.trim().length > 0);
+      .filter((l) => l.trim().length > 0);
 
     this._recentCleanLines.push(...lines);
     if (this._recentCleanLines.length > 30) {
@@ -105,14 +105,16 @@ export class ClaudeStateDetector {
     // so we check both per-line AND a joined tail string.
     const tail = screenLines.slice(-6);
     const tailJoined = tail.join(" ");
-    const hasActiveIndicator = tail.some(line =>
-      /^\s*\u2733.*\u2026/.test(line) ||    // spinner with ellipsis = in progress
-      /^\s*\u23bf\s+.*\u2026/.test(line)    // tool output with ellipsis = running
-    ) || (
+    const hasActiveIndicator =
+      tail.some(
+        (line) =>
+          /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
+          /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
+      ) ||
       // Wrapped lines: spinner char on one visual row, ellipsis on another
-      /\u2733/.test(tailJoined) && /\u2026/.test(tailJoined) &&
-      tail.some(line => /^\s*\u2733/.test(line))
-    );
+      (/\u2733/.test(tailJoined) &&
+        /\u2026/.test(tailJoined) &&
+        tail.some((line) => /^\s*\u2733/.test(line)));
 
     if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
@@ -135,10 +137,7 @@ export class ClaudeStateDetector {
    */
   private _looksLikeWaiting(screenLines?: string[]): boolean {
     // Merge screen lines and recent output for comprehensive detection
-    const sources = [
-      ...(screenLines || []),
-      ...(this._recentCleanLines || []).slice(-15),
-    ];
+    const sources = [...(screenLines || []), ...(this._recentCleanLines || []).slice(-15)];
     if (sources.length === 0) return false;
 
     const tail = sources.slice(-20);

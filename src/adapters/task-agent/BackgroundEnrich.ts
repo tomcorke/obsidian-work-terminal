@@ -32,7 +32,7 @@ export interface ItemCreatedResult {
 export async function handleItemCreated(
   app: App,
   title: string,
-  settings: Record<string, any>
+  settings: Record<string, any>,
 ): Promise<ItemCreatedResult> {
   const columnId = (settings._columnId || "todo") as KanbanColumn;
   const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
@@ -62,20 +62,25 @@ export async function handleItemCreated(
     RENAME_INSTRUCTION;
 
   const home = process.env.HOME || "/";
-  const enrichmentDone = spawnHeadlessClaude(enrichPrompt, home, claudeCommand, claudeExtraArgs).then(
+  const enrichmentDone = spawnHeadlessClaude(
+    enrichPrompt,
+    home,
+    claudeCommand,
+    claudeExtraArgs,
+  ).then(
     (result) => {
       if (result.exitCode === 0) {
         console.log(`[work-terminal] Background enrich completed: ${filePath}`);
       } else {
         console.error(
           `[work-terminal] Background enrich failed (exit ${result.exitCode}):`,
-          result.stderr.slice(0, 500)
+          result.stderr.slice(0, 500),
         );
       }
     },
     (err) => {
       console.error("[work-terminal] Background enrich error:", err);
-    }
+    },
   );
 
   return { id, columnId, enrichmentDone };
@@ -86,7 +91,7 @@ export async function handleSplitTaskCreated(
   title: string,
   columnId: KanbanColumn,
   basePath: string,
-  splitFrom: SplitSource
+  splitFrom: SplitSource,
 ): Promise<{ path: string; id: string }> {
   const id = crypto.randomUUID();
   const content = generateTaskContent(title, columnId, splitFrom, id);

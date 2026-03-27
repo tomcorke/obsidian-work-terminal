@@ -25,7 +25,7 @@ export class PromptBox {
     settings: Record<string, any>,
     onPlaceholderAdd: (path: string) => void,
     onPlaceholderResolve: (path: string, success: boolean) => void,
-    onNewItemCreated: (id: string, columnId: string, enrichmentDone?: Promise<void>) => void
+    onNewItemCreated: (id: string, columnId: string, enrichmentDone?: Promise<void>) => void,
   ) {
     this.adapter = adapter;
     this.plugin = plugin;

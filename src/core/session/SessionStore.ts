@@ -22,7 +22,7 @@ export class SessionStore {
   static stash(
     sessions: Map<string, StoredSession[]>,
     activeTaskPath: string | null,
-    activeTabIndex: number
+    activeTabIndex: number,
   ): void {
     window.__workTerminalStore = { sessions, activeTaskPath, activeTabIndex };
     console.log("[work-terminal] Stashed", sessions.size, "task groups for reload");

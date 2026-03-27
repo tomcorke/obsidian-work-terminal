@@ -58,7 +58,7 @@ export class TabManager {
       // idle animations start fully stale (300s ago) instead of fresh.
       const fullyStale = Date.now() - 300_000;
       for (const [itemId, tabs] of this.sessions) {
-        if (tabs.some(t => t.isClaudeSession)) {
+        if (tabs.some((t) => t.isClaudeSession)) {
           this.idleSince.set(itemId, fullyStale);
         }
       }
@@ -139,7 +139,7 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
-    claudeSessionId?: string | null
+    claudeSessionId?: string | null,
   ): TerminalTab | null {
     if (!this.activeItemId) return null;
 
@@ -156,7 +156,7 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
-      claudeSessionId
+      claudeSessionId,
     );
 
     tab.onLabelChange = () => {
@@ -395,13 +395,12 @@ export class TabManager {
   stashAll(): void {
     const stashMap = new Map<string, StoredSession[]>();
     for (const [itemId, tabs] of this.sessions) {
-      stashMap.set(itemId, tabs.map(t => t.stash()));
+      stashMap.set(
+        itemId,
+        tabs.map((t) => t.stash()),
+      );
     }
-    SessionStore.stash(
-      stashMap,
-      this.activeItemId,
-      this.activeTabIndex
-    );
+    SessionStore.stash(stashMap, this.activeItemId, this.activeTabIndex);
     // Clear local references without disposing
     this.sessions.clear();
   }

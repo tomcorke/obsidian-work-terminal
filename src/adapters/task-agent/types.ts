@@ -46,12 +46,7 @@ export const COLUMN_LABELS: Record<KanbanColumn, string> = {
   done: "Done",
 };
 
-export const KANBAN_COLUMNS: KanbanColumn[] = [
-  "priority",
-  "active",
-  "todo",
-  "done",
-];
+export const KANBAN_COLUMNS: KanbanColumn[] = ["priority", "active", "todo", "done"];
 
 export const SOURCE_LABELS: Record<string, string> = {
   jira: "JIRA",

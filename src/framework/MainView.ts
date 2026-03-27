@@ -54,7 +54,11 @@ export class MainView extends ItemView {
   private _beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
   private _origLeafDetach: (() => void) | null = null;
 
-  constructor(leaf: WorkspaceLeaf, adapter: AdapterBundle, plugin: Plugin & { isReloading: boolean }) {
+  constructor(
+    leaf: WorkspaceLeaf,
+    adapter: AdapterBundle,
+    plugin: Plugin & { isReloading: boolean },
+  ) {
     super(leaf);
     this.adapter = adapter;
     this.pluginRef = plugin;
@@ -119,7 +123,7 @@ export class MainView extends ItemView {
             });
           });
         }
-      })
+      }),
     );
 
     // Initial data load
@@ -155,7 +159,7 @@ export class MainView extends ItemView {
       // Check for active sessions
       if (this.terminalPanel?.hasAnySessions()) {
         const confirmed = confirm(
-          "This tab has active terminal sessions. Closing will end them.\n\nClose anyway?"
+          "This tab has active terminal sessions. Closing will end them.\n\nClose anyway?",
         );
         if (!confirmed) return;
       }
@@ -171,14 +175,16 @@ export class MainView extends ItemView {
 
     // Left panel - list
     this.leftPanelEl = container.createDiv({ cls: "wt-left-panel" });
-    this.leftPanelEl.style.cssText = "width: 280px; min-width: 200px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--background-modifier-border);";
+    this.leftPanelEl.style.cssText =
+      "width: 280px; min-width: 200px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--background-modifier-border);";
 
     // Single divider
     this.createDivider(container);
 
     // Right panel - terminals
     this.rightPanelEl = container.createDiv({ cls: "wt-right-panel" });
-    this.rightPanelEl.style.cssText = "flex: 1; min-width: 300px; overflow: hidden; position: relative; display: flex; flex-direction: column;";
+    this.rightPanelEl.style.cssText =
+      "flex: 1; min-width: 300px; overflow: hidden; position: relative; display: flex; flex-direction: column;";
   }
 
   private createDivider(container: HTMLElement): HTMLElement {
@@ -256,10 +262,10 @@ export class MainView extends ItemView {
           this.listPanel?.setIngesting(id);
           enrichmentDone.then(
             () => this.listPanel?.clearIngesting(id),
-            () => this.listPanel?.clearIngesting(id)
+            () => this.listPanel?.clearIngesting(id),
           );
         }
-      }
+      },
     );
 
     // Terminal wrapper for TabManager
@@ -283,7 +289,7 @@ export class MainView extends ItemView {
         this.listPanel?.updateSessionBadges();
         // Persist sessions to disk
         this.terminalPanel?.persistSessions();
-      }
+      },
     );
 
     // ListPanel
@@ -308,9 +314,8 @@ export class MainView extends ItemView {
         const data = (await this.pluginRef.loadData()) || {};
         data.customOrder = order;
         await this.pluginRef.saveData(data);
-      }
+      },
     );
-
   }
 
   // ---------------------------------------------------------------------------
@@ -325,21 +330,21 @@ export class MainView extends ItemView {
       vault.on("create", (file) => {
         this.handleCreate(file.path);
         this.scheduleRefresh();
-      })
+      }),
     );
 
     this.vaultEventRefs.push(
       vault.on("delete", (file) => {
         this.handleDelete(file.path);
         this.scheduleRefresh();
-      })
+      }),
     );
 
     this.vaultEventRefs.push(
       vault.on("rename", (file, oldPath) => {
         this.handleRename(file.path, oldPath);
         this.scheduleRefresh();
-      })
+      }),
     );
 
     // MetadataCache "changed" as fallback for create - frontmatter
@@ -349,7 +354,7 @@ export class MainView extends ItemView {
         if (this.listPanel?.getParser()?.isItemFile(file.path)) {
           this.scheduleRefresh();
         }
-      })
+      }),
     );
   }
 

@@ -70,21 +70,14 @@ export class TaskDetailView {
       const tabGroup = (locationLeaf as any).parent;
       if (tabGroup) {
         this.leafIsOwned = true;
-        this.editorLeaf = (this.app.workspace as any).createLeafInParent(
-          tabGroup,
-          -1
-        );
+        this.editorLeaf = (this.app.workspace as any).createLeafInParent(tabGroup, -1);
         return;
       }
     }
 
     // No editor leaves at all - create a new split off our owner leaf
     this.leafIsOwned = true;
-    this.editorLeaf = this.app.workspace.createLeafBySplit(
-      ownerLeaf,
-      "vertical",
-      false
-    );
+    this.editorLeaf = this.app.workspace.createLeafBySplit(ownerLeaf, "vertical", false);
 
     // Defer width application to let Obsidian's layout pass complete
     setTimeout(() => this.applyMinEditorWidth(), 100);
@@ -163,9 +156,7 @@ export class TaskDetailView {
 
     // Read Obsidian's readable line width from CSS variable, fallback 700px
     const rootStyle = getComputedStyle(document.body);
-    const lineWidthRaw = rootStyle
-      .getPropertyValue("--file-line-width")
-      .trim();
+    const lineWidthRaw = rootStyle.getPropertyValue("--file-line-width").trim();
     const lineWidth = parseInt(lineWidthRaw, 10) || 700;
     const editorWidth = lineWidth + 80;
 

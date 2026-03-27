@@ -7,14 +7,18 @@ import { ClaudeStateDetector, aggregateState, type ClaudeState } from "./ClaudeS
  * baseY=0, cursorY=lines.length - 1, and getLine returns the lines array.
  */
 function mockTerminal(lines: string[]) {
-  const lineObjs = lines.map(text => ({
+  const lineObjs = lines.map((text) => ({
     translateToString: (_trim?: boolean) => text,
   }));
   return {
     buffer: {
       active: {
-        get baseY() { return 0; },
-        get cursorY() { return Math.max(0, lines.length - 1); },
+        get baseY() {
+          return 0;
+        },
+        get cursorY() {
+          return Math.max(0, lines.length - 1);
+        },
         getLine: (i: number) => lineObjs[i] || null,
       },
     },
@@ -77,11 +81,7 @@ describe("ClaudeStateDetector", () => {
     });
 
     it("detects Yes/No as waiting", () => {
-      const terminal = mockTerminal([
-        "  Do you want to continue?",
-        "  Yes",
-        "  No",
-      ]);
+      const terminal = mockTerminal(["  Do you want to continue?", "  Yes", "  No"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 
@@ -91,9 +91,7 @@ describe("ClaudeStateDetector", () => {
     });
 
     it("suppresses waiting to idle when tab is visible", () => {
-      const terminal = mockTerminal([
-        "  Enter to select, up/down to navigate",
-      ]);
+      const terminal = mockTerminal(["  Enter to select, up/down to navigate"]);
       const detector = new ClaudeStateDetector(terminal, () => true);
       detector.start();
 
@@ -105,10 +103,7 @@ describe("ClaudeStateDetector", () => {
 
   describe("active indicator detection", () => {
     it("detects spinner with ellipsis as active", () => {
-      const terminal = mockTerminal([
-        "  some previous output",
-        "  \u2733 Reading files\u2026",
-      ]);
+      const terminal = mockTerminal(["  some previous output", "  \u2733 Reading files\u2026"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 
@@ -118,10 +113,7 @@ describe("ClaudeStateDetector", () => {
     });
 
     it("detects tool output with ellipsis as active", () => {
-      const terminal = mockTerminal([
-        "  some output",
-        "  \u23bf  Running command\u2026",
-      ]);
+      const terminal = mockTerminal(["  some output", "  \u23bf  Running command\u2026"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 
@@ -135,7 +127,7 @@ describe("ClaudeStateDetector", () => {
       // "\u2733 Reading" on one visual row and "files\u2026" on the next
       const terminal = mockTerminal([
         "  some output",
-        "  \u2733 Readi",   // spinner on first wrapped row
+        "  \u2733 Readi", // spinner on first wrapped row
         "  ng files\u2026", // ellipsis on second wrapped row
       ]);
       const detector = new ClaudeStateDetector(terminal, () => false);
@@ -166,9 +158,7 @@ describe("ClaudeStateDetector", () => {
 
   describe("active suppression during grace period", () => {
     it("treats active as idle during suppression", () => {
-      const terminal = mockTerminal([
-        "  \u2733 Reading files\u2026",
-      ]);
+      const terminal = mockTerminal(["  \u2733 Reading files\u2026"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start(true); // suppressActive = true
 
@@ -186,9 +176,7 @@ describe("ClaudeStateDetector", () => {
     });
 
     it("allows active after suppression period expires", () => {
-      const terminal = mockTerminal([
-        "  \u2733 Reading files\u2026",
-      ]);
+      const terminal = mockTerminal(["  \u2733 Reading files\u2026"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start(true);
 
@@ -201,10 +189,7 @@ describe("ClaudeStateDetector", () => {
 
   describe("clean screen -> idle", () => {
     it("returns idle when screen has no active indicators", () => {
-      const terminal = mockTerminal([
-        "  > some prompt",
-        "  Ready for input",
-      ]);
+      const terminal = mockTerminal(["  > some prompt", "  Ready for input"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 
@@ -216,9 +201,7 @@ describe("ClaudeStateDetector", () => {
 
   describe("clearWaiting", () => {
     it("transitions from waiting to idle", () => {
-      const terminal = mockTerminal([
-        "  Enter to select",
-      ]);
+      const terminal = mockTerminal(["  Enter to select"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 
@@ -243,9 +226,7 @@ describe("ClaudeStateDetector", () => {
 
   describe("onChange callback", () => {
     it("fires on state transitions", () => {
-      const terminal = mockTerminal([
-        "  Enter to select",
-      ]);
+      const terminal = mockTerminal(["  Enter to select"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       const changes: ClaudeState[] = [];
       detector.onChange = (s) => changes.push(s);
