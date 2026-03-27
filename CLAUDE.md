@@ -84,6 +84,7 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 - **After code changes**: reload the plugin via `node cdp.js` (preserves terminal sessions) rather than asking the user to reload manually.
 - **While debugging**: use CDP to inspect DOM, evaluate expressions, read console logs, and check plugin state before asking the user to perform manual actions. Only ask the user when the debugger cannot see or do what's needed (e.g. visual confirmation, manual interaction with specific UI elements).
 - **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. No arguments = trigger plugin reload.
+- **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing
 Run `npx vitest run` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
