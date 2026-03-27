@@ -588,7 +588,7 @@ export class TerminalTab {
       tab._resizeDebounce = setTimeout(() => {
         if (stored.containerEl.hasClass("hidden")) return;
         const prevCols = tab.terminal.cols;
-        try { tab.fitAddon.fit(); } catch { /* ignore */ }
+        tab.safeFit();
         if (tab.terminal.cols !== prevCols) {
           tab.terminal.scrollToBottom();
         }
@@ -601,6 +601,12 @@ export class TerminalTab {
     // content from causing a false active flash on all cards after reload.
     tab._suppressActiveUntil = Date.now() + 2000;
     tab.startStateTracking();
+
+    // Scroll to bottom after recovery - terminal buffer is preserved but
+    // viewport resets to top during the DOM re-attach.
+    requestAnimationFrame(() => {
+      stored.terminal.scrollToBottom();
+    });
 
     return tab;
   }

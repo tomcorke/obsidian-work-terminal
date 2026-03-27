@@ -103,6 +103,22 @@ export class MainView extends ItemView {
     });
     this.containerObserver.observe(container);
 
+    // Refit terminals when this leaf becomes active (e.g. switching from
+    // another plugin tab in the same pane). The container size may not
+    // change, so ResizeObserver alone won't trigger.
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        if (leaf === this.leaf) {
+          // Double-rAF: first frame for layout, second for correct dimensions
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              this.terminalPanel?.refitActive();
+            });
+          });
+        }
+      })
+    );
+
     // Initial data load
     await this.refreshList();
 
