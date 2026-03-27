@@ -26,7 +26,7 @@ import {
   augmentPath,
   buildClaudeArgs,
 } from "../core/claude/ClaudeLauncher";
-import { SessionPersistence } from "../core/session/SessionPersistence";
+import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import type { PersistedSession, SessionType } from "../core/session/types";
 import { expandTilde } from "../core/utils";
 import type {
@@ -58,6 +58,9 @@ export class TerminalPanelView {
 
   // Tab rename state
   private renameActive = false;
+
+  // Periodic persist stop function
+  private stopPeriodicPersist: (() => void) | null = null;
 
   constructor(
     panelEl: HTMLElement,
@@ -103,6 +106,12 @@ export class TerminalPanelView {
 
     // Load persisted sessions from disk
     this.loadPersistedSessions();
+
+    // Start periodic disk persist as safety net (every 30s)
+    this.stopPeriodicPersist = SessionPersistence.startPeriodicPersist(
+      () => this.persistSessions(),
+      PERSIST_INTERVAL_MS
+    );
 
     // Initial tab bar render
     this.renderTabBar();
@@ -534,10 +543,13 @@ export class TerminalPanelView {
           // Failed resume - don't remove persisted entry
           console.log("[work-terminal] Resume failed (exited in", lived, "ms), keeping for retry");
         } else {
-          // Successful resume - remove from persisted list
+          // Successful resume - remove from persisted list and re-persist to disk
           this.persistedSessions = this.persistedSessions.filter(
             (s) => s.claudeSessionId !== persisted.claudeSessionId
           );
+          if (this.persistedSessions.length === 0) {
+            SessionPersistence.clearPersistedFromDisk(this.plugin).catch(() => {});
+          }
         }
         origExit?.(code, signal);
       };
@@ -570,7 +582,7 @@ export class TerminalPanelView {
   setTitle(title: string | null): void {
     if (title) {
       this.titleEl.textContent = title;
-      this.titleEl.style.display = "";
+      this.titleEl.style.display = "block";
     } else {
       this.titleEl.textContent = "";
       this.titleEl.style.display = "none";
@@ -627,10 +639,14 @@ export class TerminalPanelView {
   }
 
   stashAll(): void {
+    this.stopPeriodicPersist?.();
+    this.stopPeriodicPersist = null;
     this.tabManager.stashAll();
   }
 
   disposeAll(): void {
+    this.stopPeriodicPersist?.();
+    this.stopPeriodicPersist = null;
     this.tabManager.disposeAll();
   }
 
