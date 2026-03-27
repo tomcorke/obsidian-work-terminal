@@ -18,14 +18,14 @@ export interface WorkItem {
   metadata: Record<string, unknown>;
 }
 
-/** A column in the kanban list panel. Maps to a folder on disk. */
+/** A column in the kanban list panel. Optionally maps to a folder on disk. */
 export interface ListColumn {
   /** Column identifier used as group key. */
   id: string;
   /** Display label shown in the section header. */
   label: string;
-  /** Folder name within the base path. */
-  folderName: string;
+  /** Folder name within the base path. Optional for API-backed adapters that map columns to status values instead of folders. */
+  folderName?: string;
 }
 
 /** A column available for item creation via the PromptBox. */
