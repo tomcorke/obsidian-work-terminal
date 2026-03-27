@@ -6,6 +6,7 @@
  */
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { ChildProcess } from "child_process";
 import { StringDecoder } from "string_decoder";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
@@ -109,7 +110,17 @@ export class TerminalTab {
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
+
+    // Web links - Cmd+click to open URLs in browser
+    const electronShell = electronRequire("electron").shell;
+    this.terminal.loadAddon(new WebLinksAddon((_, uri) => {
+      electronShell.openExternal(uri);
+    }));
+
     this.terminal.open(this.containerEl);
+
+    // File path link provider - Cmd+click on paths like src/main.ts:42
+    this.registerFilePathLinks();
 
     // Scroll-to-bottom button
     attachScrollButton(this.containerEl, this.terminal);
@@ -232,6 +243,65 @@ export class TerminalTab {
       this.fitAddon.fit();
     } catch { /* ignore fit errors during cleanup */ }
   }
+
+  // ---------------------------------------------------------------------------
+  // File path link provider
+  // ---------------------------------------------------------------------------
+
+  /** Register a custom link provider for file paths like src/main.ts:42:10 */
+  private registerFilePathLinks(): void {
+    const fs = electronRequire("fs") as typeof import("fs");
+    const path = electronRequire("path") as typeof import("path");
+    const shell = electronRequire("electron").shell;
+
+    // Match paths with optional line:col - e.g. src/main.ts, ./foo/bar.js:42, /abs/path.ts:10:5
+    const pathRegex = /(?:\.\/|\.\.\/|\/|[a-zA-Z][\w.-]*\/)[^\s:,;'")\]}>]+?(?::\d+(?::\d+)?)?/g;
+
+    this.terminal.registerLinkProvider({
+      provideLinks: (lineNumber: number, callback: (links: any[] | undefined) => void) => {
+        const line = this.terminal.buffer.active.getLine(lineNumber - 1)?.translateToString() || "";
+        const links: any[] = [];
+        let match: RegExpExecArray | null;
+        pathRegex.lastIndex = 0;
+
+        while ((match = pathRegex.exec(line)) !== null) {
+          const raw = match[0];
+          // Strip trailing punctuation that's not part of the path
+          const cleaned = raw.replace(/[.,;:!?)}\]]+$/, "");
+          // Split off line:col suffix
+          const lineColMatch = cleaned.match(/^(.+?):(\d+)(?::(\d+))?$/);
+          const filePath = lineColMatch ? lineColMatch[1] : cleaned;
+
+          // Resolve relative to terminal's cwd
+          const absPath = path.isAbsolute(filePath) ? filePath : path.resolve(this.cwd, filePath);
+
+          // Only create a link if the file exists
+          if (!fs.existsSync(absPath)) continue;
+
+          const startIdx = match.index;
+          links.push({
+            range: { start: { x: startIdx + 1, y: lineNumber }, end: { x: startIdx + cleaned.length + 1, y: lineNumber } },
+            text: cleaned,
+            activate: () => {
+              // Open in VS Code with line:col if available
+              const lineNum = lineColMatch ? lineColMatch[2] : undefined;
+              const colNum = lineColMatch ? lineColMatch[3] : undefined;
+              const target = lineNum ? `${absPath}:${lineNum}${colNum ? ":" + colNum : ""}` : absPath;
+              const cp = electronRequire("child_process") as typeof import("child_process");
+              cp.exec(`code --goto "${target}"`, (err) => {
+                if (err) shell.openPath(absPath);
+              });
+            },
+          });
+        }
+        callback(links.length > 0 ? links : undefined);
+      },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PTY spawn
+  // ---------------------------------------------------------------------------
 
   private spawnPty(cols: number, rows: number, command?: string[]): ChildProcess {
     const cp = electronRequire("child_process") as typeof import("child_process");
