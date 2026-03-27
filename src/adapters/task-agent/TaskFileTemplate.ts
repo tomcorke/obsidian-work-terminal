@@ -1,9 +1,15 @@
 import { slugify } from "../../core/utils";
 import type { KanbanColumn } from "./types";
 
+export interface SplitSource {
+  filename: string;
+  title: string;
+}
+
 export function generateTaskContent(
   title: string,
-  state: KanbanColumn
+  state: KanbanColumn,
+  splitFrom?: SplitSource
 ): string {
   const id = crypto.randomUUID();
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -11,6 +17,13 @@ export function generateTaskContent(
 
   // Quote the title to handle special characters in YAML
   const safeTitle = `"${title.replace(/"/g, '\\"')}"`;
+
+  const relatedLines = splitFrom
+    ? `\n  - "[[${splitFrom.filename.replace(/\.md$/, "")}]]"`
+    : "";
+  const activitySuffix = splitFrom
+    ? ` (split from [[${splitFrom.filename.replace(/\.md$/, "")}]])`
+    : "";
 
   return `---
 id: ${id}
@@ -24,7 +37,7 @@ title: ${safeTitle}
 
 source:
   type: prompt
-  id: ""
+  id: "${splitFrom ? `split-${now.replace(/[:.]/g, "")}` : ""}"
   url: ""
   captured: ${now}
 
@@ -39,7 +52,7 @@ agent-actionable: false
 
 goal: []
 
-related: []
+related: []${relatedLines}
 
 created: ${now}
 updated: ${now}
@@ -47,7 +60,7 @@ updated: ${now}
 # ${title}
 
 ## Activity Log
-- **${dateStr}** - Task created
+- **${dateStr}** - Task created${activitySuffix}
 `;
 }
 

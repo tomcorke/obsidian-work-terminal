@@ -109,6 +109,8 @@ export interface CardActionContext {
   onMoveToColumn(columnId: string): void;
   /** Insert a new item immediately after an existing one in custom order. */
   onInsertAfter(existingId: string, newItem: WorkItem): void;
+  /** Split this item: create a new task with a related reference, then spawn Claude (ctx) to scope it. */
+  onSplitTask(sourceItem: WorkItem): void;
   /** Delete this item (moves to trash). */
   onDelete(): void;
   /** Close all terminal sessions for this item. */
@@ -169,6 +171,11 @@ export interface AdapterBundle {
    */
   onItemCreated?(path: string, settings: Record<string, unknown>): Promise<void>;
   /**
+   * Split an existing item: create a new task file with a related reference
+   * to the source item. Returns the vault path of the new file.
+   */
+  onSplitItem?(sourceItem: WorkItem, columnId: string, settings: Record<string, unknown>): Promise<string | null>;
+  /**
    * Transform a detected Claude session rename label before applying it.
    * Called when Claude outputs "Session renamed to: <name>".
    * Return the label to use (default: return detectedLabel unchanged).
@@ -197,6 +204,10 @@ export abstract class BaseAdapter implements AdapterBundle {
 
   async onItemCreated(_path: string, _settings: Record<string, unknown>): Promise<void> {
     // no-op by default
+  }
+
+  async onSplitItem(_sourceItem: WorkItem, _columnId: string, _settings: Record<string, unknown>): Promise<string | null> {
+    return null;
   }
 
   transformSessionLabel(_oldLabel: string, detectedLabel: string): string {

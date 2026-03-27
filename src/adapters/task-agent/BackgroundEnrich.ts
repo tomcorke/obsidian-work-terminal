@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { spawnHeadlessClaude } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generateTaskFilename } from "./TaskFileTemplate";
+import type { SplitSource } from "./TaskFileTemplate";
 import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
 
 export async function handleItemCreated(
@@ -49,4 +50,28 @@ export async function handleItemCreated(
   } catch (err) {
     console.error("[work-terminal] Background enrich error:", err);
   }
+}
+
+export async function handleSplitTaskCreated(
+  app: App,
+  title: string,
+  columnId: KanbanColumn,
+  basePath: string,
+  splitFrom: SplitSource
+): Promise<string> {
+  const content = generateTaskContent(title, columnId, splitFrom);
+  const filename = generateTaskFilename(title);
+  const folderName = STATE_FOLDER_MAP[columnId] || "todo";
+  const folderPath = `${basePath}/${folderName}`;
+  const filePath = `${folderPath}/${filename}`;
+
+  const folder = app.vault.getAbstractFileByPath(folderPath);
+  if (!folder) {
+    await app.vault.createFolder(folderPath);
+  }
+
+  await app.vault.create(filePath, content);
+  console.log(`[work-terminal] Split task created: ${filePath} (from ${splitFrom.filename})`);
+
+  return filePath;
 }

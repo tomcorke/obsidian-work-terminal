@@ -118,20 +118,10 @@ export class TaskCard implements CardRenderer {
       callback: () => ctx.onMoveToTop(),
     });
 
-    // Split task (insert after)
+    // Split task: create new task with reference, spawn Claude to scope it
     (items as any[]).push({
       title: "Split Task",
-      callback: () => {
-        // Framework handles the insert-after mechanics
-        // Adapter provides the "split" intent
-        ctx.onInsertAfter(item.id, {
-          id: crypto.randomUUID(),
-          path: "",
-          title: `${item.title} (split)`,
-          state: item.state,
-          metadata: {},
-        });
-      },
+      callback: () => ctx.onSplitTask(item),
     });
 
     (items as any[]).push({ separator: true });

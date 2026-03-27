@@ -239,6 +239,9 @@ export class ListPanel {
       onInsertAfter: (existingId: string, newItem: WorkItem) => {
         this.insertAfter(existingId, newItem, currentColumn);
       },
+      onSplitTask: (sourceItem: WorkItem) => {
+        this.splitTask(sourceItem, currentColumn);
+      },
       onDelete: () => this.deleteItem(item),
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
     };
@@ -306,6 +309,35 @@ export class ListPanel {
       console.log(`[work-terminal] Split task created: "${newItem.title}" after ${existingId}`);
     } catch (err) {
       console.error("[work-terminal] Split task creation failed:", err);
+    }
+  }
+
+  private async splitTask(sourceItem: WorkItem, columnId: string): Promise<void> {
+    if (!this.adapter.onSplitItem) {
+      console.warn("[work-terminal] splitTask: adapter has no onSplitItem");
+      return;
+    }
+
+    try {
+      const newPath = await this.adapter.onSplitItem(sourceItem, columnId, this.settings);
+      if (!newPath) {
+        console.error("[work-terminal] splitTask: adapter returned no path");
+        return;
+      }
+      console.log(`[work-terminal] Split task created: ${newPath}`);
+
+      // Build the split-scoping prompt
+      const prompt =
+        `Read the task file at "${sourceItem.path}". ` +
+        `A new split task has been created at "${newPath}" as a sub-scope of the original. ` +
+        `Ask the user what the scope of this new split task should be. ` +
+        `Once the user answers, immediately update the new task file: ` +
+        `set the title, write a brief description with relevant context and references from the original task, ` +
+        `and log the scope in the activity log.`;
+
+      await this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope");
+    } catch (err) {
+      console.error("[work-terminal] splitTask failed:", err);
     }
   }
 

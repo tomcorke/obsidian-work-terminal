@@ -14,7 +14,8 @@ import { TaskMover } from "./TaskMover";
 import { TaskCard } from "./TaskCard";
 import { TaskPromptBuilder } from "./TaskPromptBuilder";
 import { TaskDetailView } from "./TaskDetailView";
-import { handleItemCreated } from "./BackgroundEnrich";
+import { handleItemCreated, handleSplitTaskCreated } from "./BackgroundEnrich";
+import type { KanbanColumn } from "./types";
 
 export class TaskAgentAdapter extends BaseAdapter {
   config: PluginConfig = TASK_AGENT_CONFIG;
@@ -65,6 +66,27 @@ export class TaskAgentAdapter extends BaseAdapter {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
     }
     await handleItemCreated(this._app, title, settings);
+  }
+
+  async onSplitItem(
+    sourceItem: WorkItem,
+    columnId: string,
+    settings: Record<string, any>
+  ): Promise<string | null> {
+    if (!this._app) {
+      throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
+    }
+    const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
+    const sourceFilename = sourceItem.path.split("/").pop() || sourceItem.path;
+    const title = `Split from: ${sourceItem.title}`;
+
+    return handleSplitTaskCreated(
+      this._app,
+      title,
+      columnId as KanbanColumn,
+      basePath,
+      { filename: sourceFilename, title: sourceItem.title }
+    );
   }
 
   transformSessionLabel(
