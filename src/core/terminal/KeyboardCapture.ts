@@ -62,6 +62,12 @@ export function attachCapturePhase(
     } else if (e.altKey && e.key === "d") {
       // ESC d - delete word forward
       seq = "\x1bd";
+    } else if (e.metaKey && e.key === "ArrowLeft") {
+      // Cmd+Left: beginning of line (Ctrl-A)
+      seq = "\x01";
+    } else if (e.metaKey && e.key === "ArrowRight") {
+      // Cmd+Right: end of line (Ctrl-E)
+      seq = "\x05";
     }
 
     if (seq) {
