@@ -1,13 +1,66 @@
 # obsidian-work-terminal
 
-Obsidian plugin: modular work item board with per-item tabbed terminals and adapter-based extensibility.
+Modular Obsidian plugin: work item kanban board with per-item tabbed terminals and adapter-based extensibility.
+
+## Architecture
+
+Three-layer design. Each layer has clear responsibilities and boundaries:
+
+```
+src/
+  core/           # Terminal infrastructure + Claude CLI integration
+    utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
+    interfaces.ts # All extension point interfaces + BaseAdapter
+    terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
+    claude/       # ClaudeLauncher, ClaudeStateDetector, ClaudeSessionRename, HeadlessClaude
+    session/      # SessionStore (window-global), SessionPersistence (disk), types
+
+  framework/      # Obsidian plugin scaffolding - delegates to adapters
+    PluginBase.ts          # Abstract Plugin subclass, view/command/settings registration
+    MainView.ts            # 2-panel ItemView (list | terminals), vault events, rename detection
+    ListPanel.ts           # Column-based kanban, drag-drop, filtering, badges, state indicators
+    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation, resume
+    PromptBox.ts           # Item creation UI with column selector
+    SettingsTab.ts         # Core + adapter namespaced settings
+    DangerConfirm.ts       # Modal confirmation for destructive actions
+
+  adapters/
+    task-agent/   # Task-agent adapter (reference implementation)
+      index.ts             # AdapterBundle assembly extending BaseAdapter
+      types.ts             # TaskFile, TaskState, KanbanColumn, STATE_FOLDER_MAP
+      TaskAgentConfig.ts   # PluginConfig: columns, creationColumns, settings, itemName
+      TaskParser.ts        # MetadataCache parsing, abandoned filtering, goal normalisation
+      TaskMover.ts         # Regex frontmatter updates, write-then-move, activity log
+      TaskCard.ts          # Source/score/goal/blocker badges, compound context menu
+      TaskFileTemplate.ts  # UUID + YAML frontmatter + slug filename generation
+      TaskPromptBuilder.ts # Title/state/path + conditional deadline/blocker
+      TaskDetailView.ts    # MarkdownView via createLeafBySplit, flex sizing
+      BackgroundEnrich.ts  # File creation + headless Claude enrichment
+
+  main.ts         # Entry point: hardcoded import of task-agent adapter
+```
+
+### Extension model
+
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, Claude integration, session persistence, drag-drop, state detection, keyboard capture.
+
+To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`.
+
+### Key design decisions
+
+- **Claude owned by framework, not adapter** - ClaudeLauncher, StateDetector, SessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
+- **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
+- **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
 
 ## Development workflow
 
-- **Build**: `npm run build` (production) or `npm run dev` (watch mode)
-- **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` are already at repo root.
-- **Vault link**: The vault's `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step needed.
-- **Hot reload**: In watch mode, esbuild triggers reload via CDP. Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`.
+- **Build**: `npm run build` (production) or `npm run dev` (watch mode with CDP hot-reload)
+- **Test**: `npx vitest run` (102 tests covering utils, state detection, session types, parser, mover, template, prompt builder)
+- **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
+- **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
+- **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
+- **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. Default: triggers hot-reload.
 
 **IMPORTANT**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
 - `npm run dev` watch mode (preferred - auto-reloads on save)
@@ -18,19 +71,13 @@ Obsidian plugin: modular work item board with per-item tabbed terminals and adap
 
 Commit each discrete change individually with a clear message. Do not batch unrelated changes.
 
-## Architecture
-
-Three-layer design: core (terminal/Claude), framework (Obsidian plugin), adapters (work item implementations).
-
-Source: `src/`
-- Phase 0: `src/main.ts` - minimal smoke test plugin
-- Build: `esbuild.config.mjs` (bundles to plugin dir), `cdp.js` (CDP helper)
-- PTY: `pty-wrapper.py` (Python PTY allocator at repo root)
-
 ## Known constraints
 
-- **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround.
-- **xterm.js CSS**: `require.resolve` unavailable in bundle. Full CSS embedded inline at runtime.
+- **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround. Non-negotiable.
+- **xterm.js CSS**: `require.resolve` unavailable in bundle. Full CSS embedded inline at runtime via `XtermCss.ts`.
 - **Tilde expansion**: Always expand `~` via `process.env.HOME` before passing to spawn.
 - **Node builtins**: Use `window.require` for `child_process`, `fs`, `path`, `os` in Electron. Externalized in esbuild.
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
+- **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Shift+Enter, Option+Backspace, macOptionIsMeta.
+- **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
+- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume).
