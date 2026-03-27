@@ -26,6 +26,13 @@ export function attachScrollButton(containerEl: HTMLElement, terminal: Terminal)
   terminal.onScroll(updateVisibility);
   terminal.onWriteParsed(updateVisibility);
 
+  // Also listen for native scroll on the viewport element, since xterm's
+  // onScroll only fires for programmatic scrolls, not user trackpad/wheel.
+  const viewport = containerEl.querySelector(".xterm-viewport");
+  if (viewport) {
+    viewport.addEventListener("scroll", updateVisibility, { passive: true });
+  }
+
   scrollBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     terminal.scrollToBottom();

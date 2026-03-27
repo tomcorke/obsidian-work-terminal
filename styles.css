@@ -557,7 +557,33 @@
 .wt-terminal-instance {
   width: 100% !important;
   height: 100%;
-  overflow-y: hidden !important;
+  overflow: visible;
+  position: relative;
+}
+
+.wt-scroll-bottom {
+  display: none;
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 16px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.wt-scroll-bottom:hover {
+  opacity: 1;
+  background: var(--background-secondary);
 }
 
 /* Hidden terminals: visibility hidden preserves render state,
