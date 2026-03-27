@@ -77,7 +77,9 @@ Use GitHub Issues as the project TODO list (`gh issue list`, `gh issue create`, 
 - Log new TODOs, feature requests, and bugs as GitHub issues.
 - When starting work on something, find or create the matching issue and reference it in commits.
 - Add progress notes and findings as issue comments (`gh issue comment`).
-- Close issues when the work is done and committed.
+- Use `Closes #N` or `Fixes #N` in commit messages to auto-close issues on push.
+- **After committing**, push to origin so issue references take effect. Do not leave commits unpushed with dangling issue references.
+- **Verify** issues are updated after push: run `gh issue list --state all` to confirm closed issues, and check that investigation-only issues have comments with findings.
 
 ### Debugger-driven development
 When Obsidian is running with remote debugging enabled (check by hitting `http://localhost:8315/json`):
