@@ -3,6 +3,7 @@
  */
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
+import type { SearchAddon } from "@xterm/addon-search";
 import type { ChildProcess } from "child_process";
 
 export type SessionType = "shell" | "claude" | "claude-with-context";
@@ -19,6 +20,7 @@ export interface StoredSession {
   sessionType: SessionType;
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   containerEl: HTMLElement;
   process: ChildProcess | null;
   documentListeners: { event: string; handler: EventListener }[];
