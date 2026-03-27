@@ -1,19 +1,15 @@
 import esbuild from "esbuild";
-import { copyFileSync, mkdirSync } from "fs";
-import { resolve } from "path";
 import http from "http";
 import crypto from "crypto";
 
 const isProduction = process.argv.includes("--production");
 const isWatch = process.argv.includes("--watch");
 
-const pluginDir = resolve(
-  process.env.HOME,
-  "working/obsidian/test-vault/Test/.obsidian/plugins/work-terminal"
-);
-
-mkdirSync(pluginDir, { recursive: true });
-
+/**
+ * Trigger the plugin's hot-reload command via CDP (Chrome DevTools Protocol).
+ * Only fires in watch mode. Fails silently if Obsidian isn't running with
+ * --remote-debugging-port=9222.
+ */
 function triggerHotReload() {
   if (!isWatch) return;
   http.get("http://localhost:9222/json", (res) => {
@@ -83,13 +79,10 @@ function triggerHotReload() {
 
 let isFirstBuild = true;
 
-const copyPlugin = {
-  name: "copy-assets",
+const hotReloadPlugin = {
+  name: "hot-reload",
   setup(build) {
     build.onEnd(() => {
-      copyFileSync("manifest.json", resolve(pluginDir, "manifest.json"));
-      copyFileSync("styles.css", resolve(pluginDir, "styles.css"));
-      console.log("Copied manifest.json and styles.css to plugin dir");
       if (isWatch && !isFirstBuild) {
         triggerHotReload();
       }
@@ -101,7 +94,7 @@ const copyPlugin = {
 const ctx = await esbuild.context({
   entryPoints: ["src/main.ts"],
   bundle: true,
-  outfile: resolve(pluginDir, "main.js"),
+  outfile: "main.js",
   format: "cjs",
   platform: "node",
   external: [
@@ -127,7 +120,7 @@ const ctx = await esbuild.context({
   minify: isProduction,
   sourcemap: isProduction ? false : "inline",
   treeShaking: true,
-  plugins: [copyPlugin],
+  plugins: [hotReloadPlugin],
 });
 
 if (isWatch) {

@@ -5,7 +5,8 @@ Obsidian plugin: modular work item board with per-item tabbed terminals and adap
 ## Development workflow
 
 - **Build**: `npm run build` (production) or `npm run dev` (watch mode)
-- **Deploy**: esbuild copies output to `~/working/obsidian/test-vault/Test/.obsidian/plugins/work-terminal/`
+- **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` are already at repo root.
+- **Vault link**: The vault's `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step needed.
 - **Hot reload**: In watch mode, esbuild triggers reload via CDP. Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`.
 
 **IMPORTANT**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
