@@ -3,7 +3,7 @@
  * drag-drop reordering, filtering, selection, session badges, and
  * Claude state indicators.
  */
-import { Menu } from "obsidian";
+import { Menu, Notice } from "obsidian";
 import type { Plugin, TFile } from "obsidian";
 import type {
   AdapterBundle,
@@ -333,7 +333,11 @@ export class ListPanel {
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
     if (!file) return;
-    await this.mover.move(file, targetColumnId);
+    const success = await this.mover.move(file, targetColumnId);
+    if (!success) {
+      new Notice(`Failed to move "${item.title}" to ${targetColumnId}`);
+      return;
+    }
     // Wait for metadata cache update
     setTimeout(() => {
       this.onCustomOrderChange(this.customOrder);

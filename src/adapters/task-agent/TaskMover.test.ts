@@ -126,14 +126,46 @@ created: 2026-03-26T00:00:00Z
     expect(content).toMatch(/Moved to active \(via kanban board\)/);
   });
 
-  it("does nothing when target is same column", async () => {
+  it("returns true on successful move", async () => {
+    const { app } = createMockApp();
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    const result = await mover.move(file, "active");
+
+    expect(result).toBe(true);
+  });
+
+  it("returns true when target is same column (no-op)", async () => {
     const { app, modify } = createMockApp();
     const mover = new TaskMover(app, "", defaultSettings);
     const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
 
-    await mover.move(file, "todo");
+    const result = await mover.move(file, "todo");
 
+    expect(result).toBe(true);
     expect(modify).not.toHaveBeenCalled();
+  });
+
+  it("returns false for invalid target column", async () => {
+    const { app } = createMockApp();
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    const result = await mover.move(file, "nonexistent");
+
+    expect(result).toBe(false);
+  });
+
+  it("returns false when vault operation fails", async () => {
+    const { app, read } = createMockApp();
+    read.mockRejectedValue(new Error("File not found"));
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    const result = await mover.move(file, "active");
+
+    expect(result).toBe(false);
   });
 
   it("writes content before moving file (write-then-move)", async () => {

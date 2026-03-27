@@ -50,8 +50,8 @@ class StubParser implements WorkItemParser {
 }
 
 class StubMover implements WorkItemMover {
-  async move(_file: TFile, _targetColumnId: string): Promise<void> {
-    // no-op
+  async move(_file: TFile, _targetColumnId: string): Promise<boolean> {
+    return true;
   }
 }
 

@@ -13,67 +13,74 @@ export class TaskMover implements WorkItemMover {
     this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
   }
 
-  async move(file: TFile, targetColumnId: string): Promise<void> {
+  async move(file: TFile, targetColumnId: string): Promise<boolean> {
     const newColumn = targetColumnId as KanbanColumn;
     const targetFolder = STATE_FOLDER_MAP[newColumn];
-    if (!targetFolder) return;
+    if (!targetFolder) return false;
 
-    const content = await this.app.vault.read(file);
+    try {
+      const content = await this.app.vault.read(file);
 
-    // Determine current state from frontmatter
-    const stateMatch = content.match(/^state:\s*(.+)$/m);
-    const oldState = stateMatch ? stateMatch[1].trim() : "todo";
+      // Determine current state from frontmatter
+      const stateMatch = content.match(/^state:\s*(.+)$/m);
+      const oldState = stateMatch ? stateMatch[1].trim() : "todo";
 
-    if (oldState === newColumn) return;
+      if (oldState === newColumn) return true;
 
-    let updated = content;
+      let updated = content;
 
-    // Update state field
-    updated = updated.replace(/^state:\s*.+$/m, `state: ${newColumn}`);
+      // Update state field
+      updated = updated.replace(/^state:\s*.+$/m, `state: ${newColumn}`);
 
-    // Update task tag
-    const oldTagPattern = new RegExp(`(- task/)(?:priority|todo|active|done|abandoned)`, "m");
-    updated = updated.replace(oldTagPattern, `$1${newColumn}`);
+      // Update task tag
+      const oldTagPattern = new RegExp(`(- task/)(?:priority|todo|active|done|abandoned)`, "m");
+      updated = updated.replace(oldTagPattern, `$1${newColumn}`);
 
-    // Update the updated timestamp (no milliseconds)
-    const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
-    updated = updated.replace(/^updated:\s*.+$/m, `updated: ${now}`);
+      // Update the updated timestamp (no milliseconds)
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+      updated = updated.replace(/^updated:\s*.+$/m, `updated: ${now}`);
 
-    // Append to activity log
-    const dateStr = this.formatActivityDate(new Date());
-    const logEntry = `- **${dateStr}** - Moved to ${newColumn} (via kanban board)`;
+      // Append to activity log
+      const dateStr = this.formatActivityDate(new Date());
+      const logEntry = `- **${dateStr}** - Moved to ${newColumn} (via kanban board)`;
 
-    const logIndex = updated.indexOf("## Activity Log");
-    if (logIndex !== -1) {
-      const afterLog = updated.substring(logIndex + "## Activity Log".length);
-      const nextSection = afterLog.search(/\n## /);
-      const insertPos =
-        nextSection !== -1 ? logIndex + "## Activity Log".length + nextSection : updated.length;
-      updated =
-        updated.substring(0, insertPos).trimEnd() +
-        "\n" +
-        logEntry +
-        "\n" +
-        updated.substring(insertPos);
-    } else {
-      // Create Activity Log section if missing
-      updated = updated.trimEnd() + "\n\n## Activity Log\n" + logEntry + "\n";
-    }
-
-    // Write updated content first (write-then-move pattern)
-    await this.app.vault.modify(file, updated);
-
-    // Move file to target folder
-    const newFolderPath = `${this.basePath}/${targetFolder}`;
-    const newPath = `${newFolderPath}/${file.name}`;
-
-    if (file.path !== newPath) {
-      // Ensure target folder exists
-      const folder = this.app.vault.getAbstractFileByPath(newFolderPath);
-      if (!folder) {
-        await this.app.vault.createFolder(newFolderPath);
+      const logIndex = updated.indexOf("## Activity Log");
+      if (logIndex !== -1) {
+        const afterLog = updated.substring(logIndex + "## Activity Log".length);
+        const nextSection = afterLog.search(/\n## /);
+        const insertPos =
+          nextSection !== -1 ? logIndex + "## Activity Log".length + nextSection : updated.length;
+        updated =
+          updated.substring(0, insertPos).trimEnd() +
+          "\n" +
+          logEntry +
+          "\n" +
+          updated.substring(insertPos);
+      } else {
+        // Create Activity Log section if missing
+        updated = updated.trimEnd() + "\n\n## Activity Log\n" + logEntry + "\n";
       }
-      await this.app.vault.rename(file, newPath);
+
+      // Write updated content first (write-then-move pattern)
+      await this.app.vault.modify(file, updated);
+
+      // Move file to target folder
+      const newFolderPath = `${this.basePath}/${targetFolder}`;
+      const newPath = `${newFolderPath}/${file.name}`;
+
+      if (file.path !== newPath) {
+        // Ensure target folder exists
+        const folder = this.app.vault.getAbstractFileByPath(newFolderPath);
+        if (!folder) {
+          await this.app.vault.createFolder(newFolderPath);
+        }
+        await this.app.vault.rename(file, newPath);
+      }
+
+      return true;
+    } catch (err) {
+      console.error("[work-terminal] TaskMover.move failed:", err);
+      return false;
     }
   }
 
