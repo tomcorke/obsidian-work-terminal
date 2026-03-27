@@ -78,6 +78,8 @@ export interface WorkItemParser {
   basePath: string;
   /** Parse a single file into a WorkItem, or null if not a valid item. */
   parse(file: TFile): WorkItem | null;
+  /** Parse raw data into a WorkItem without requiring a TFile. Optional - returns null by default. */
+  parseData?(data: Record<string, unknown>): WorkItem | null;
   /** Load all items from the vault. */
   loadAll(): Promise<WorkItem[]>;
   /** Group items by column ID for kanban rendering. */
@@ -197,6 +199,18 @@ export interface AdapterBundle {
    * Return the label to use (default: return detectedLabel unchanged).
    */
   transformSessionLabel?(oldLabel: string, detectedLabel: string): string;
+  /**
+   * Framework-set callback that triggers a debounced UI refresh.
+   * API-backed adapters can call this after fetching external data
+   * to update the list without relying on vault file events.
+   */
+  requestRefresh?: () => void;
+  /**
+   * Called before deleting an item. Return false to prevent the
+   * default vault.trash() behavior (e.g. for API-backed items that
+   * need custom deletion logic). If not implemented, defaults to true.
+   */
+  onDelete?(item: WorkItem): Promise<boolean>;
 }
 
 /**
@@ -251,5 +265,9 @@ export abstract class BaseAdapter implements AdapterBundle {
 
   transformSessionLabel(_oldLabel: string, detectedLabel: string): string {
     return detectedLabel;
+  }
+
+  async onDelete(_item: WorkItem): Promise<boolean> {
+    return true;
   }
 }
