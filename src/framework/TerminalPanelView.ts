@@ -527,6 +527,10 @@ export class TerminalPanelView {
     return this.tabManager.hasSessions(itemId);
   }
 
+  hasAnySessions(): boolean {
+    return this.tabManager.getSessionItemIds().length > 0;
+  }
+
   getSessionCounts(itemId: string): { shells: number; claudes: number } {
     return this.tabManager.getSessionCounts(itemId);
   }

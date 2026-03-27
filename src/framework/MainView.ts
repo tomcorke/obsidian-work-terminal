@@ -47,6 +47,10 @@ export class MainView extends ItemView {
   // Resize observer for terminal refit on view switch
   private containerObserver: ResizeObserver | null = null;
 
+  // Close guard
+  private _beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
+  private _origLeafDetach: (() => void) | null = null;
+
   constructor(leaf: WorkspaceLeaf, adapter: AdapterBundle, plugin: Plugin & { isReloading: boolean }) {
     super(leaf);
     this.adapter = adapter;
@@ -79,6 +83,18 @@ export class MainView extends ItemView {
     // Register vault events
     this.registerVaultEvents();
 
+    // Intercept tab close to confirm when active sessions exist
+    this.installCloseGuard();
+
+    // Warn on app quit with active sessions
+    this._beforeUnloadHandler = (e: BeforeUnloadEvent) => {
+      if (this.terminalPanel?.hasAnySessions()) {
+        e.preventDefault();
+        e.returnValue = "Active terminal sessions will be lost. Close anyway?";
+      }
+    };
+    window.addEventListener("beforeunload", this._beforeUnloadHandler);
+
     // ResizeObserver for terminal refit on view show
     this.containerObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
@@ -99,6 +115,34 @@ export class MainView extends ItemView {
     // Broadcast Claude states for any recovered sessions so ListPanel
     // picks up state indicators that were set before it existed.
     this.terminalPanel?.broadcastClaudeStates();
+  }
+
+  /**
+   * Monkey-patch the leaf's detach to show a confirmation dialog when
+   * there are active terminal sessions. This prevents accidental close
+   * of the plugin tab from killing running sessions.
+   */
+  private installCloseGuard(): void {
+    const leaf = this.leaf as any;
+    this._origLeafDetach = leaf.detach.bind(leaf);
+
+    leaf.detach = () => {
+      // Allow through if reloading (hot-reload)
+      if (this.pluginRef.isReloading) {
+        this._origLeafDetach?.();
+        return;
+      }
+
+      // Check for active sessions
+      if (this.terminalPanel?.hasAnySessions()) {
+        const confirmed = confirm(
+          "This tab has active terminal sessions. Closing will end them.\n\nClose anyway?"
+        );
+        if (!confirmed) return;
+      }
+
+      this._origLeafDetach?.();
+    };
   }
 
   private buildLayout(container: HTMLElement): void {
@@ -370,6 +414,17 @@ export class MainView extends ItemView {
   // ---------------------------------------------------------------------------
 
   async onClose(): Promise<void> {
+    // Remove close guards
+    if (this._beforeUnloadHandler) {
+      window.removeEventListener("beforeunload", this._beforeUnloadHandler);
+      this._beforeUnloadHandler = null;
+    }
+    // Restore original detach if we monkey-patched it
+    if (this._origLeafDetach) {
+      (this.leaf as any).detach = this._origLeafDetach;
+      this._origLeafDetach = null;
+    }
+
     // Stash/dispose terminals FIRST before any other cleanup, because
     // subsequent cleanup (detaching detail view, unregistering events)
     // can trigger selection changes that reset activeItemId to null.
@@ -380,6 +435,8 @@ export class MainView extends ItemView {
         this.terminalPanel?.stashAll();
       }
     } else {
+      // Persist sessions to disk before disposing so they can be resumed
+      await this.terminalPanel?.persistSessions();
       this.terminalPanel?.disposeAll();
     }
 
