@@ -4,6 +4,7 @@
  */
 import { Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
+import { SessionPersistence } from "../core/session/SessionPersistence";
 
 export const VIEW_TYPE = "work-terminal-view";
 
@@ -83,6 +84,19 @@ export abstract class PluginBase extends Plugin {
   }
 
   onunload(): void {
-    // cleanup handled by individual views
+    // Best-effort persist as backup - onClose() should have already persisted,
+    // but Obsidian may not always honor async cleanup in onClose during shutdown.
+    if (!this._isReloading) {
+      const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+      if (leaf) {
+        const view = leaf.view as any;
+        const sessions = view?.terminalPanel?.tabManager?.getSessions?.();
+        if (sessions) {
+          // Fire-and-forget: onunload is sync, so we can't await this,
+          // but it gives us one more chance to persist before shutdown.
+          SessionPersistence.saveToDisk(this, sessions).catch(() => {});
+        }
+      }
+    }
   }
 }
