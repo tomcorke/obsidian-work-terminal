@@ -413,6 +413,7 @@ export class MainView extends ItemView {
     }
     this.terminalPanel?.rekeyItem(oldPath, newPath);
     this.listPanel?.rekeyCustomOrder(oldPath, newPath);
+    this.adapter.rekeyDetailPath?.(oldPath, newPath);
     // Persist updated session paths to disk so they survive a full reload
     this.terminalPanel?.persistSessions();
   }

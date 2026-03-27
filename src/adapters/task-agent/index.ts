@@ -51,6 +51,10 @@ export class TaskAgentAdapter extends BaseAdapter {
     this.detailView.show(item, ownerLeaf);
   }
 
+  rekeyDetailPath(oldPath: string, newPath: string): void {
+    this.detailView?.rekeyPath(oldPath, newPath);
+  }
+
   detachDetailView(): void {
     if (this.detailView) {
       this.detailView.detach();

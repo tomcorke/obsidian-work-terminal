@@ -165,6 +165,8 @@ export interface AdapterBundle {
   createDetailView?(item: WorkItem, app: App, ownerLeaf: WorkspaceLeaf): void;
   /** Detach the detail view leaf on close/reload. */
   detachDetailView?(): void;
+  /** Update detail view tracking when an item file is renamed. */
+  rekeyDetailPath?(oldPath: string, newPath: string): void;
   /**
    * Called after a new item is created via the PromptBox. Creates the file
    * and kicks off background enrichment. Returns the new item's UUID, column,
@@ -200,6 +202,10 @@ export abstract class BaseAdapter implements AdapterBundle {
   }
 
   detachDetailView?(): void {
+    // no-op by default
+  }
+
+  rekeyDetailPath?(_oldPath: string, _newPath: string): void {
     // no-op by default
   }
 

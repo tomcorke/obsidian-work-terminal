@@ -183,6 +183,12 @@ export class TaskDetailView {
     }
   }
 
+  rekeyPath(oldPath: string, newPath: string): void {
+    if (this.openedPaths.delete(oldPath)) {
+      this.openedPaths.add(newPath);
+    }
+  }
+
   detach(): void {
     if (this.editorLeaf) {
       // Only detach leaves we created via split - leave adopted leaves intact
