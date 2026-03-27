@@ -236,6 +236,9 @@ export class MainView extends ItemView {
     // Allow adapter to perform async initialization (credential fetch, API sync, etc.)
     await this.adapter.onLoad?.(this.app, settings);
 
+    // Provide adapters with a way to trigger UI refresh (e.g. after API fetch)
+    this.adapter.requestRefresh = () => this.scheduleRefresh();
+
     const parser = this.adapter.createParser(this.app, "", settings);
     const mover = this.adapter.createMover(this.app, "", settings);
     const cardRenderer = this.adapter.createCardRenderer();
