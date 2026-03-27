@@ -226,6 +226,12 @@ export class MainView extends ItemView {
 
     const settings = await loadAllSettings(this.pluginRef, this.adapter);
     this.settings = settings;
+
+    // Allow adapter to perform async initialization (credential fetch, API sync, etc.)
+    if (typeof this.adapter.onLoad === "function") {
+      await this.adapter.onLoad(this.app, settings);
+    }
+
     const parser = this.adapter.createParser(this.app, "", settings);
     const mover = this.adapter.createMover(this.app, "", settings);
     const cardRenderer = this.adapter.createCardRenderer();
