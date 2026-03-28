@@ -74,6 +74,9 @@ export class TerminalPanelView {
   // Interval ID for hook-status polling while warning is visible
   private hookWarningPollId: ReturnType<typeof setInterval> | null = null;
 
+  // In-flight guard to prevent overlapping async checkHookWarning() calls
+  private hookWarningCheckInFlight = false;
+
   // Serialises plugin data writes to avoid clobbering unrelated keys.
   private pluginDataWrite: Promise<void> = Promise.resolve();
 
@@ -140,64 +143,74 @@ export class TerminalPanelView {
   // ---------------------------------------------------------------------------
 
   private async checkHookWarning(): Promise<void> {
-    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
-    const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
-    const cwd = expandTilde(
-      fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
-    );
-    const status = checkHookStatus(cwd);
-    const hooksOk = status.scriptExists && status.hooksConfigured;
+    if (this.hookWarningCheckInFlight) return;
+    this.hookWarningCheckInFlight = true;
+    try {
+      const fresh = ((await this.plugin.loadData()) || {}).settings || {};
+      const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
+      const cwd = expandTilde(
+        fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
+      );
+      const status = checkHookStatus(cwd);
+      const hooksOk = status.scriptExists && status.hooksConfigured;
 
-    // Remove existing banner if present
-    if (this.hookWarningEl) {
-      this.hookWarningEl.remove();
-      this.hookWarningEl = null;
-    }
+      if (!hooksOk && !accepted) {
+        // Only create the banner on the transition from no-banner -> banner needed
+        if (!this.hookWarningEl) {
+          this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
+          // Insert at the very top of the panel
+          this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
 
-    if (!hooksOk && !accepted) {
-      this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
-      // Insert at the very top of the panel
-      this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
+          const textEl = this.hookWarningEl.createSpan();
+          textEl.textContent = "Session resume tracking requires Claude hooks.";
 
-      const textEl = this.hookWarningEl.createSpan();
-      textEl.textContent = "Session resume tracking requires Claude hooks.";
+          const openBtn = this.hookWarningEl.createEl("button", {
+            cls: "wt-hook-warning-btn",
+            text: "Open Settings",
+          });
+          openBtn.addEventListener("click", () => {
+            (this.plugin.app as any).setting.open();
+            (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
+          });
 
-      const openBtn = this.hookWarningEl.createEl("button", {
-        cls: "wt-hook-warning-btn",
-        text: "Open Settings",
-      });
-      openBtn.addEventListener("click", () => {
-        (this.plugin.app as any).setting.open();
-        (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
-      });
+          const dismissBtn = this.hookWarningEl.createEl("button", {
+            cls: "wt-hook-warning-btn",
+            text: "Dismiss",
+          });
+          dismissBtn.addEventListener("click", async () => {
+            const d = (await this.plugin.loadData()) || {};
+            if (!d.settings) d.settings = {};
+            d.settings["core.acceptNoResumeHooks"] = true;
+            await this.plugin.saveData(d);
+            this.hookWarningEl?.remove();
+            this.hookWarningEl = null;
+            this.stopHookWarningPoller();
+          });
 
-      const dismissBtn = this.hookWarningEl.createEl("button", {
-        cls: "wt-hook-warning-btn",
-        text: "Dismiss",
-      });
-      dismissBtn.addEventListener("click", async () => {
-        const d = (await this.plugin.loadData()) || {};
-        if (!d.settings) d.settings = {};
-        d.settings["core.acceptNoResumeHooks"] = true;
-        await this.plugin.saveData(d);
-        this.hookWarningEl?.remove();
-        this.hookWarningEl = null;
+          // Poll hook status while warning is visible so it auto-dismisses when
+          // the user installs hooks via settings without manually reloading.
+          this.startHookWarningPoller();
+        }
+        // else: banner already visible, nothing to change
+      } else {
+        // Hooks OK or accepted: remove banner and stop polling on transition
+        if (this.hookWarningEl) {
+          this.hookWarningEl.remove();
+          this.hookWarningEl = null;
+        }
         this.stopHookWarningPoller();
-      });
-
-      // Poll hook status while warning is visible so it auto-dismisses when
-      // the user installs hooks via settings without manually reloading.
-      this.startHookWarningPoller();
-    } else {
-      // Hooks are ok or user accepted - no need to poll
-      this.stopHookWarningPoller();
+      }
+    } finally {
+      this.hookWarningCheckInFlight = false;
     }
   }
 
   private startHookWarningPoller(): void {
     this.stopHookWarningPoller();
     this.hookWarningPollId = setInterval(() => {
-      this.checkHookWarning();
+      this.checkHookWarning().catch((err) =>
+        console.error("[work-terminal] hook warning check failed:", err),
+      );
     }, 2000);
   }
 
