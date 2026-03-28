@@ -190,16 +190,10 @@ export class ListPanel {
 
         // Actions container: session badge + resume badge + move-to-top (top-right)
         // Order: [session badge] [resume badge] [move-to-top (on hover)]
-        const actionsEl = cardEl.querySelector(".wt-card-actions");
-        if (actionsEl) {
-          this.renderSessionBadges(actionsEl as HTMLElement, item);
-          this.renderResumeBadge(actionsEl as HTMLElement, item);
-          this.renderMoveToTop(actionsEl as HTMLElement, item);
-        } else {
-          this.renderSessionBadges(cardEl, item);
-          this.renderResumeBadge(cardEl, item);
-          this.renderMoveToTop(cardEl, item);
-        }
+        const actionsEl = this.getCardActionsContainer(cardEl);
+        this.renderSessionBadges(actionsEl, item);
+        this.renderResumeBadge(actionsEl, item);
+        this.renderMoveToTop(actionsEl, item);
 
         // Ingesting badge
         if (this.ingestingIds.has(item.id)) {
@@ -664,7 +658,7 @@ export class ListPanel {
     });
   }
 
-  private renderResumeBadge(cardEl: HTMLElement, item: WorkItem): void {
+  private renderResumeBadge(containerEl: HTMLElement, item: WorkItem): void {
     const persisted = this.terminalPanel.getPersistedSessions(item.id);
     if (!persisted || persisted.length === 0) return;
 
@@ -672,7 +666,7 @@ export class ListPanel {
     const counts = this.terminalPanel.getSessionCounts(item.id);
     if (counts.claudes > 0) return;
 
-    const badge = cardEl.createDiv({ cls: "wt-resume-badge" });
+    const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
     badge.textContent = "\u21bb"; // Clockwise arrow
     badge.setAttribute("title", `${persisted.length} resumable session(s) - click to resume`);
     badge.addEventListener("click", (e) => {
@@ -684,6 +678,10 @@ export class ListPanel {
         this.terminalPanel.resumeSession(session);
       }
     });
+  }
+
+  private getCardActionsContainer(cardEl: HTMLElement): HTMLElement {
+    return (cardEl.querySelector(".wt-card-actions") as HTMLElement) || cardEl;
   }
 
   // ---------------------------------------------------------------------------
@@ -759,7 +757,7 @@ export class ListPanel {
       // Remove existing badges
       cardEl.querySelectorAll(".wt-session-badge").forEach((el) => el.remove());
       cardEl.querySelectorAll(".wt-resume-badge").forEach((el) => el.remove());
-      const actionsEl = (cardEl.querySelector(".wt-card-actions") as HTMLElement) || cardEl;
+      const actionsEl = this.getCardActionsContainer(cardEl);
       // Re-render in order: session badge | resume badge | move-to-top (on hover)
       const moveBtn = actionsEl.querySelector(".wt-move-to-top");
       this.renderSessionBadges(actionsEl, item);
