@@ -39,10 +39,10 @@ export class TerminalTab {
   onProcessExit?: (code: number | null, signal: string | null) => void;
   onStateChange?: (state: ClaudeState) => void;
 
-  private fitAddon: FitAddon;
-  private searchAddon: SearchAddon;
-  private webLinksAddon: WebLinksAddon;
-  private unicode11Addon: Unicode11Addon;
+  private fitAddon: FitAddon | undefined;
+  private searchAddon: SearchAddon | undefined;
+  private webLinksAddon: WebLinksAddon | undefined;
+  private unicode11Addon: Unicode11Addon | undefined;
   private webglAddon: WebglAddon | null = null;
   private resizeObserver: ResizeObserver;
   private _documentCleanups: (() => void)[] = [];
@@ -143,8 +143,9 @@ export class TerminalTab {
 
     // WebGL renderer - GPU-accelerated rendering, fall back to canvas
     try {
-      this.webglAddon = new WebglAddon();
-      this.terminal.loadAddon(this.webglAddon);
+      const webglAddon = new WebglAddon();
+      this.terminal.loadAddon(webglAddon);
+      this.webglAddon = webglAddon;
     } catch (e) {
       console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
       this.webglAddon = null;
@@ -274,7 +275,7 @@ export class TerminalTab {
     try {
       const width = this.containerEl.clientWidth;
       if (width < TerminalTab.MIN_FIT_WIDTH) return;
-      this.fitAddon.fit();
+      this.fitAddon?.fit();
     } catch {
       /* ignore fit errors during cleanup */
     }
@@ -384,11 +385,11 @@ export class TerminalTab {
 
     input.addEventListener("input", () => {
       if (input.value) {
-        this.searchAddon.findNext(input.value, {
+        this.searchAddon?.findNext(input.value, {
           decorations: { activeMatchColorOverviewRuler: "#ffa500" },
         });
       } else {
-        this.searchAddon.clearDecorations();
+        this.searchAddon?.clearDecorations();
       }
     });
 
@@ -396,9 +397,9 @@ export class TerminalTab {
       if (e.key === "Enter") {
         e.preventDefault();
         if (e.shiftKey) {
-          this.searchAddon.findPrevious(input.value);
+          this.searchAddon?.findPrevious(input.value);
         } else {
-          this.searchAddon.findNext(input.value);
+          this.searchAddon?.findNext(input.value);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -407,8 +408,8 @@ export class TerminalTab {
       e.stopPropagation();
     });
 
-    prevBtn.addEventListener("click", () => this.searchAddon.findPrevious(input.value));
-    nextBtn.addEventListener("click", () => this.searchAddon.findNext(input.value));
+    prevBtn.addEventListener("click", () => this.searchAddon?.findPrevious(input.value));
+    nextBtn.addEventListener("click", () => this.searchAddon?.findNext(input.value));
     closeBtn.addEventListener("click", () => this.toggleSearchBar());
 
     input.focus();
@@ -726,8 +727,8 @@ export class TerminalTab {
       claudeSessionId: this.claudeSessionId,
       sessionType: this.sessionType,
       terminal: this.terminal,
-      fitAddon: this.fitAddon,
-      searchAddon: this.searchAddon,
+      fitAddon: this.fitAddon!,
+      searchAddon: this.searchAddon!,
       containerEl: this.containerEl,
       process: this.process,
       documentListeners: this._documentCleanups.map((fn, i) => ({
@@ -856,10 +857,10 @@ export class TerminalTab {
     // xterm's internal services (renderer, buffer) are still alive.
     // Disposing in reverse load order mirrors standard teardown conventions.
     this.webglAddon?.dispose();
-    this.unicode11Addon.dispose();
-    this.webLinksAddon.dispose();
-    this.searchAddon.dispose();
-    this.fitAddon.dispose();
+    this.unicode11Addon?.dispose();
+    this.webLinksAddon?.dispose();
+    this.searchAddon?.dispose();
+    this.fitAddon?.dispose();
     this.terminal.dispose();
     this.containerEl.remove();
   }
