@@ -2,7 +2,7 @@
  * TabManager tests - covers state aggregation and Claude state notification
  * on tab lifecycle events.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Mock TerminalTab before importing TabManager to prevent xterm.js loading
 // in a Node.js environment where `self` is not defined.
