@@ -127,6 +127,19 @@ describe("TaskParser", () => {
       expect(item!.state).toBe("active");
     });
 
+    it("falls back to the folder state when taskBasePath has a trailing slash", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "invalid" }),
+      });
+      const parser = new TaskParser(app, "", {
+        "adapter.taskBasePath": "2 - Areas/Tasks/",
+      });
+      const item = parser.parse(file as unknown as TFile);
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+    });
+
     it("uses file basename when title is missing", () => {
       const file = makeFile("2 - Areas/Tasks/active/my-task.md");
       const app = mockApp([file], {
@@ -295,6 +308,25 @@ describe("TaskParser", () => {
   });
 
   describe("loadAll", () => {
+    it("only logs malformed frontmatter fallback once per file", async () => {
+      const malformed = makeFile("2 - Areas/Tasks/todo/broken-task.md");
+      const app = mockApp([malformed], {
+        [malformed.path]: null,
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+      parser.parse(malformed as unknown as TFile);
+      parser.parse(malformed as unknown as TFile);
+
+      expect(debugSpy).toHaveBeenCalledTimes(1);
+      expect(debugSpy).toHaveBeenCalledWith(
+        `[work-terminal] Falling back to path-based task parsing for malformed frontmatter: ${malformed.path}`,
+      );
+
+      debugSpy.mockRestore();
+    });
+
     it("keeps malformed task files in the list using folder-derived defaults", async () => {
       const malformed = makeFile("2 - Areas/Tasks/todo/broken-task.md");
       const valid = makeFile("2 - Areas/Tasks/active/working-task.md");

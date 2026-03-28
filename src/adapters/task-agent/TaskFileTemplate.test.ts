@@ -70,7 +70,9 @@ describe("generateTaskContent", () => {
       title: "Source task",
     });
 
+    expect(content).toMatch(/^related:$/m);
     expect(content).toContain('related:\n  - "[[TASK-20260327-1200-source-task]]"');
+    expect(content).not.toContain("\n related:");
     expect(content).not.toContain('related: []\n  - "[[TASK-20260327-1200-source-task]]"');
   });
 });

@@ -6,13 +6,16 @@ const VALID_STATES: TaskState[] = ["priority", "todo", "active", "done", "abando
 
 export class TaskParser implements WorkItemParser {
   basePath: string;
+  private static loggedFallbackPaths = new Set<string>();
 
   constructor(
     private app: App,
     _basePath: string,
     private settings: Record<string, any>,
   ) {
-    this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
+    this.basePath = this.normaliseBasePath(
+      this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks",
+    );
   }
 
   parse(file: TFile): WorkItem | null {
@@ -80,7 +83,7 @@ export class TaskParser implements WorkItemParser {
   }
 
   private getStateFromPath(path: string): TaskState | null {
-    const relativePath = path.startsWith(this.basePath + "/")
+    const relativePath = path.startsWith(`${this.basePath}/`)
       ? path.slice(this.basePath.length + 1)
       : path;
     const folder = relativePath.split("/")[0];
@@ -99,9 +102,12 @@ export class TaskParser implements WorkItemParser {
   private createFallbackTaskFile(file: TFile, state: TaskState | null): TaskFile | null {
     if (!state) return null;
 
-    console.warn(
-      `[work-terminal] Falling back to path-based task parsing for malformed frontmatter: ${file.path}`,
-    );
+    if (!TaskParser.loggedFallbackPaths.has(file.path)) {
+      TaskParser.loggedFallbackPaths.add(file.path);
+      console.debug(
+        `[work-terminal] Falling back to path-based task parsing for malformed frontmatter: ${file.path}`,
+      );
+    }
 
     return {
       id: file.path,
@@ -206,6 +212,10 @@ export class TaskParser implements WorkItemParser {
 
   isItemFile(path: string): boolean {
     return path.startsWith(this.basePath + "/") && path.endsWith(".md");
+  }
+
+  private normaliseBasePath(path: string): string {
+    return path.replace(/\/+$/, "");
   }
 
   async backfillIds(): Promise<number> {
