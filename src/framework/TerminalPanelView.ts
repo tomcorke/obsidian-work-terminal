@@ -36,6 +36,7 @@ import type { PersistedSession } from "../core/session/types";
 import { expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
+import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
 import {
@@ -84,9 +85,6 @@ export class TerminalPanelView {
   // In-flight guard to prevent overlapping async checkHookWarning() calls
   private hookWarningCheckInFlight = false;
   private hookWarningCheckQueued = false;
-
-  // Serialises plugin data writes to avoid clobbering unrelated keys.
-  private pluginDataWrite: Promise<void> = Promise.resolve();
 
   constructor(
     panelEl: HTMLElement,
@@ -192,10 +190,10 @@ export class TerminalPanelView {
             text: "Dismiss",
           });
           dismissBtn.addEventListener("click", async () => {
-            const d = (await this.plugin.loadData()) || {};
-            if (!d.settings) d.settings = {};
-            d.settings["core.acceptNoResumeHooks"] = true;
-            await this.plugin.saveData(d);
+            await mergeAndSavePluginData(this.plugin, async (data) => {
+              if (!data.settings) data.settings = {};
+              data.settings["core.acceptNoResumeHooks"] = true;
+            });
             this.hookWarningEl?.remove();
             this.hookWarningEl = null;
             this.stopHookWarningPoller();
@@ -652,7 +650,7 @@ export class TerminalPanelView {
   }
 
   async persistSessions(): Promise<void> {
-    await this.updatePluginData(async (data) => {
+    await mergeAndSavePluginData(this.plugin, async (data) => {
       SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
     });
   }
@@ -681,19 +679,6 @@ export class TerminalPanelView {
     return buildClaudeContextPrompt(item, fresh);
   }
 
-  private async updatePluginData(
-    update: (data: Record<string, any>) => void | Promise<void>,
-  ): Promise<void> {
-    const run = async () => {
-      const data = ((await this.plugin.loadData()) || {}) as Record<string, any>;
-      await update(data);
-      await this.plugin.saveData(data);
-    };
-    const queued = this.pluginDataWrite.then(run, run);
-    this.pluginDataWrite = queued.catch(() => {});
-    return queued;
-  }
-
   private getActiveItem(): WorkItem | null {
     const activeItemId = this.tabManager.getActiveItemId();
     if (!activeItemId) return null;
@@ -718,7 +703,7 @@ export class TerminalPanelView {
     itemId: string,
     config: CustomSessionConfig,
   ): Promise<void> {
-    await this.updatePluginData(async (data) => {
+    await mergeAndSavePluginData(this.plugin, async (data) => {
       if (!data.customSessionDefaults) data.customSessionDefaults = {};
       data.customSessionDefaults[itemId] = config;
     });
