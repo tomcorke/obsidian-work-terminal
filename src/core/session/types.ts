@@ -6,7 +6,12 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
 import type { ChildProcess } from "child_process";
 
-export type SessionType = "shell" | "claude" | "claude-with-context";
+export type SessionType =
+  | "shell"
+  | "claude"
+  | "claude-with-context"
+  | "copilot"
+  | "copilot-with-context";
 
 /**
  * State extracted from a TerminalTab that can survive a plugin hot-reload.

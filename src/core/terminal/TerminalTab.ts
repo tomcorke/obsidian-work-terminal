@@ -564,7 +564,7 @@ export class TerminalTab {
   }
 
   private _detectClaudeSession(): boolean {
-    return !!this.claudeSessionId;
+    return this.sessionType !== "shell" && !!this.claudeSessionId;
   }
 
   /** Called on each chunk of output data to track activity. */

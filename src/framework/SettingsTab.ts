@@ -2,7 +2,8 @@
  * WorkTerminalSettingsTab - single settings UI combining core framework
  * settings with adapter-provided settings via namespaced keys.
  *
- * Core settings: core.claudeCommand, core.claudeExtraArgs (default args), core.additionalAgentContext (ctx template),
+ * Core settings: core.claudeCommand/core.copilotCommand, their default args,
+ *                core.additionalAgentContext (ctx template),
  *                core.defaultShell, core.defaultTerminalCwd
  * Adapter settings: adapter.* (from adapter.config.settingsSchema)
  */
@@ -15,6 +16,8 @@ import { expandTilde } from "../core/utils";
 interface CoreSettings {
   "core.claudeCommand": string;
   "core.claudeExtraArgs": string;
+  "core.copilotCommand": string;
+  "core.copilotExtraArgs": string;
   "core.additionalAgentContext": string;
   "core.defaultShell": string;
   "core.defaultTerminalCwd": string;
@@ -24,6 +27,8 @@ interface CoreSettings {
 const CORE_DEFAULTS: CoreSettings = {
   "core.claudeCommand": "claude",
   "core.claudeExtraArgs": "",
+  "core.copilotCommand": "copilot",
+  "core.copilotExtraArgs": "",
   "core.additionalAgentContext": "",
   "core.defaultShell": process.env.SHELL || "/bin/zsh",
   "core.defaultTerminalCwd": "~",
@@ -59,11 +64,23 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Default Claude arguments",
       "Arguments passed to every Claude session (space-separated). Applied to both + Claude and + Claude (ctx).",
     );
+    this.addCoreSetting(
+      containerEl,
+      "core.copilotCommand",
+      "Copilot command",
+      "Path or name of the GitHub Copilot CLI binary",
+    );
+    this.addCoreTextArea(
+      containerEl,
+      "core.copilotExtraArgs",
+      "Default Copilot arguments",
+      "Arguments passed to Copilot sessions launched from the custom session spawner.",
+    );
     this.addCoreTextArea(
       containerEl,
       "core.additionalAgentContext",
-      "Claude (ctx) prompt template",
-      "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. When empty, the button shows a notice instead of launching.",
+      "Context prompt template",
+      "Template for contextual Claude and Copilot sessions. Placeholders: $title, $state, $filePath, $id. When empty, contextual launches show a notice instead of spawning.",
     );
     this.addCoreSetting(
       containerEl,

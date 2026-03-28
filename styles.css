@@ -568,6 +568,12 @@
   color: var(--text-normal);
 }
 
+.wt-spawn-custom {
+  min-width: 32px;
+  padding-inline: 10px;
+  font-weight: 600;
+}
+
 .wt-spawn-claude,
 .wt-spawn-claude-ctx {
   display: flex;
@@ -606,6 +612,37 @@ button.wt-spawn-claude-ctx:hover {
 
 button.wt-spawn-claude-ctx:hover svg {
   color: white;
+}
+
+.wt-custom-spawn-modal .setting-item-control {
+  width: 100%;
+}
+
+.wt-custom-spawn-help {
+  color: var(--text-muted);
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.wt-custom-spawn-input,
+.wt-custom-spawn-textarea {
+  width: 100%;
+}
+
+.wt-custom-spawn-textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.wt-custom-spawn-setting .setting-item-control {
+  align-items: stretch;
+}
+
+.wt-custom-spawn-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 /* =============================================================================
