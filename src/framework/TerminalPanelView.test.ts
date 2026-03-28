@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import type { PersistedSession } from "../core/session/types";
+import { expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
 
 const mockState = vi.hoisted(() => ({
   activeSessions: new Map<string, Array<{ sessionType: string }>>(),
+  activeItemId: null as string | null,
   persistedSessions: [] as PersistedSession[],
   menuTitles: [] as string[],
+  notices: [] as string[],
+  latestCreateTabArgs: null as unknown[] | null,
   hookStatus: {
     scriptExists: false,
     hooksConfigured: false,
@@ -37,7 +41,9 @@ vi.mock("obsidian", () => ({
     showAtMouseEvent() {}
   },
   Notice: class {
-    constructor(_message: string) {}
+    constructor(message: string) {
+      mockState.notices.push(message);
+    }
   },
   Modal: class {
     app: unknown;
@@ -95,7 +101,7 @@ vi.mock("../core/terminal/TabManager", () => ({
     }
 
     getActiveItemId() {
-      return null;
+      return mockState.activeItemId;
     }
 
     getTabs() {
@@ -106,7 +112,31 @@ vi.mock("../core/terminal/TabManager", () => ({
       return 0;
     }
 
+    createTab(...args: unknown[]) {
+      mockState.latestCreateTabArgs = args;
+      return null;
+    }
+
+    createTabForItem(...args: unknown[]) {
+      mockState.latestCreateTabArgs = args;
+      return null;
+    }
+
     setActiveItem(_itemId: string | null) {}
+
+    getSessionItemIds() {
+      return [];
+    }
+
+    getClaudeState() {
+      return "inactive";
+    }
+
+    closeAllSessions(_itemId: string) {}
+
+    closeTab(_index: number) {}
+
+    switchToTab(_index: number) {}
   },
 }));
 
@@ -259,8 +289,11 @@ describe("TerminalPanelView hook warning", () => {
     });
 
     mockState.activeSessions = new Map();
+    mockState.activeItemId = null;
     mockState.persistedSessions = [];
     mockState.menuTitles = [];
+    mockState.notices = [];
+    mockState.latestCreateTabArgs = null;
     mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
     mockState.latestTabManager = null;
     mockState.stopPeriodicPersist.mockClear();
@@ -382,5 +415,157 @@ describe("TerminalPanelView hook warning", () => {
     );
 
     expect(mockState.menuTitles).toContain("Restart");
+  });
+
+  it("shows a notice when a spawn button launch rejects", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const spawnShell = vi.spyOn(view as any, "spawnShell").mockRejectedValue(new Error("boom"));
+
+    (panelEl.querySelector(".wt-spawn-btn") as HTMLButtonElement).click();
+    await flushAsync();
+
+    expect(spawnShell).toHaveBeenCalledOnce();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[work-terminal] Failed to launch shell",
+      expect.any(Error),
+    );
+    expect(mockState.notices).toContain("Failed to launch shell: boom");
+
+    errorSpy.mockRestore();
+  });
+
+  it("reuses one settings snapshot for contextual Claude launch", async () => {
+    const loadData = vi.fn(async () => ({ settings: {} }));
+    const { view, plugin } = createView({}, { loadData });
+    await flushAsync();
+    (plugin.loadData as any).mockClear();
+    (plugin.loadData as any)
+      .mockResolvedValueOnce({
+        settings: {
+          "core.additionalAgentContext": "Prompt A for $title",
+          "core.claudeCommand": "/bin/echo",
+          "core.defaultTerminalCwd": "~/one",
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          "core.additionalAgentContext": "Prompt B for $title",
+          "core.claudeCommand": "/bin/false",
+          "core.defaultTerminalCwd": "~/two",
+        },
+      });
+    mockState.activeItemId = "task-1";
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(plugin.loadData).toHaveBeenCalledOnce();
+    expect(mockState.latestCreateTabArgs).not.toBeNull();
+    expect(mockState.latestCreateTabArgs?.[0]).toBe("/bin/echo");
+    expect(mockState.latestCreateTabArgs?.[1]).toBe(expandTilde("~/one"));
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(
+      expect.arrayContaining([expect.stringContaining("Prompt A for Task One")]),
+    );
+    expect(mockState.latestCreateTabArgs?.[5]).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("Prompt B for Task One")]),
+    );
+  });
+
+  it("reuses one settings snapshot for custom contextual Claude sessions", async () => {
+    const loadData = vi.fn(async () => ({ settings: {} }));
+    const { view, plugin } = createView({}, { loadData });
+    await flushAsync();
+    (plugin.loadData as any).mockClear();
+    (plugin.loadData as any)
+      .mockResolvedValueOnce({
+        settings: {
+          "core.additionalAgentContext": "Prompt A for $title",
+          "core.claudeCommand": "/bin/echo",
+          "core.defaultTerminalCwd": "~/one",
+        },
+      })
+      .mockResolvedValueOnce({
+        settings: {
+          "core.additionalAgentContext": "Prompt B for $title",
+          "core.claudeCommand": "/bin/false",
+          "core.defaultTerminalCwd": "~/two",
+        },
+      });
+
+    await (view as any).spawnCustomSession(
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      },
+      {
+        sessionType: "claude-with-context",
+        cwd: "~/custom",
+        extraArgs: "",
+        label: "Custom Claude",
+      },
+    );
+
+    expect(plugin.loadData).toHaveBeenCalledTimes(2);
+    expect(mockState.latestCreateTabArgs).not.toBeNull();
+    expect(mockState.latestCreateTabArgs?.[0]).toBe("/bin/echo");
+    expect(mockState.latestCreateTabArgs?.[1]).toBe(expandTilde("~/custom"));
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(
+      expect.arrayContaining([expect.stringContaining("Prompt A for Task One")]),
+    );
+    expect(mockState.latestCreateTabArgs?.[5]).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("Prompt B for Task One")]),
+    );
+  });
+
+  it("passes one fresh settings snapshot through custom contextual Copilot launches", async () => {
+    const { view } = createView();
+    await flushAsync();
+    const fresh = {
+      "core.additionalAgentContext": "Prompt A for $title",
+      "core.copilotCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/one",
+    };
+    const item = {
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks/task-1.md",
+    };
+    const loadFreshSettings = vi.spyOn(view as any, "loadFreshSettings").mockResolvedValue(fresh);
+    const getClaudeContextPrompt = vi
+      .spyOn(view as any, "getClaudeContextPrompt")
+      .mockResolvedValue("Prompt A for Task One");
+    const spawnCopilotSession = vi
+      .spyOn(view as any, "spawnCopilotSession")
+      .mockResolvedValue(undefined);
+
+    await (view as any).spawnCustomSession(item, {
+      sessionType: "copilot-with-context",
+      cwd: "~/custom",
+      extraArgs: "--flag",
+      label: "Custom Copilot",
+    });
+
+    expect(loadFreshSettings).toHaveBeenCalledOnce();
+    expect(getClaudeContextPrompt).toHaveBeenCalledWith(item, fresh);
+    expect(spawnCopilotSession).toHaveBeenCalledWith({
+      sessionType: "copilot-with-context",
+      cwd: "~/custom",
+      extraArgs: "--flag",
+      label: "Custom Copilot",
+      prompt: "Prompt A for Task One",
+      freshSettings: fresh,
+    });
   });
 });

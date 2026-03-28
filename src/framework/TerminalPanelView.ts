@@ -314,19 +314,25 @@ export class TerminalPanelView {
 
     // Spawn buttons (always visible)
     const shellBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn", text: "+ Shell" });
-    shellBtn.addEventListener("click", () => void this.spawnShell());
+    shellBtn.addEventListener("click", () => {
+      this.launchAction("shell", () => this.spawnShell());
+    });
 
     const claudeBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn wt-spawn-claude" });
     claudeBtn.appendChild(createClaudeLogo());
     claudeBtn.appendText("Claude");
-    claudeBtn.addEventListener("click", () => void this.spawnClaude());
+    claudeBtn.addEventListener("click", () => {
+      this.launchAction("Claude", () => this.spawnClaude());
+    });
 
     const claudeCtxBtn = buttonsContainer.createEl("button", {
       cls: "wt-spawn-btn wt-spawn-claude-ctx",
     });
     claudeCtxBtn.appendChild(createClaudeLogo());
     claudeCtxBtn.appendText("Claude (ctx)");
-    claudeCtxBtn.addEventListener("click", () => void this.spawnClaudeWithContext());
+    claudeCtxBtn.addEventListener("click", () => {
+      this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
+    });
 
     const customBtn = buttonsContainer.createEl("button", {
       cls: "wt-spawn-btn wt-spawn-custom",
@@ -334,7 +340,9 @@ export class TerminalPanelView {
     });
     customBtn.setAttribute("aria-label", "Custom session");
     customBtn.setAttribute("title", "Custom session");
-    customBtn.addEventListener("click", () => void this.openCustomSessionModal());
+    customBtn.addEventListener("click", () => {
+      this.launchAction("custom session", () => this.openCustomSessionModal());
+    });
   }
 
   /** Update Claude state classes on existing tab elements without full re-render. */
@@ -468,7 +476,7 @@ export class TerminalPanelView {
       menu.addItem((item) => {
         item.setTitle("Restart").onClick(() => {
           this.tabManager.closeTab(index);
-          this.spawnClaude();
+          this.launchAction("Claude", () => this.spawnClaude());
         });
       });
     }
@@ -551,6 +559,14 @@ export class TerminalPanelView {
   ): string {
     const value = settings[key];
     return typeof value === "string" ? value : defaultValue;
+  }
+
+  private launchAction(actionLabel: string, launch: () => Promise<void>): void {
+    void launch().catch((error: unknown) => {
+      console.error(`[work-terminal] Failed to launch ${actionLabel}`, error);
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to launch ${actionLabel}: ${message}`);
+    });
   }
 
   private async spawnShell(): Promise<void> {
@@ -676,9 +692,11 @@ export class TerminalPanelView {
     }
   }
 
-  async getClaudeContextPrompt(item: WorkItem): Promise<string | null> {
-    const fresh = await this.loadFreshSettings();
-    return buildClaudeContextPrompt(item, fresh);
+  async getClaudeContextPrompt(
+    item: WorkItem,
+    freshSettings?: Record<string, unknown>,
+  ): Promise<string | null> {
+    return buildClaudeContextPrompt(item, freshSettings ?? (await this.loadFreshSettings()));
   }
 
   private async updatePluginData(
@@ -734,7 +752,7 @@ export class TerminalPanelView {
     const fresh = await this.loadFreshSettings();
     const initial = await this.loadCustomSessionDefaults(item.id, fresh);
     new CustomSessionModal(this.plugin.app, initial, (config) => {
-      void this.spawnCustomSession(item, config);
+      this.launchAction("custom session", () => this.spawnCustomSession(item, config));
     }).open();
   }
 
@@ -743,7 +761,7 @@ export class TerminalPanelView {
     const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
     const config = sanitizeCustomSessionConfig(rawConfig, defaultCwd);
     const prompt = isContextSession(config.sessionType)
-      ? await this.getClaudeContextPrompt(item)
+      ? await this.getClaudeContextPrompt(item, fresh)
       : undefined;
 
     if (isContextSession(config.sessionType) && !prompt) {
@@ -776,6 +794,7 @@ export class TerminalPanelView {
         extraArgs: config.extraArgs,
         label: config.label || getDefaultSessionLabel(config.sessionType),
         prompt,
+        freshSettings: fresh,
       });
       return;
     }
@@ -787,6 +806,7 @@ export class TerminalPanelView {
         extraArgs: config.extraArgs,
         label: config.label || getDefaultSessionLabel(config.sessionType),
         prompt,
+        freshSettings: fresh,
       });
       return;
     }
@@ -797,6 +817,7 @@ export class TerminalPanelView {
       extraArgs: config.extraArgs,
       label: config.label || getDefaultSessionLabel(config.sessionType),
       prompt,
+      freshSettings: fresh,
     });
   }
 
@@ -806,6 +827,7 @@ export class TerminalPanelView {
     extraArgs?: string;
     label?: string;
     prompt?: string;
+    freshSettings?: Record<string, unknown>;
   }): Promise<void> {
     let prompt = options.prompt;
     if (options.sessionType === "claude-with-context" && !prompt) {
@@ -814,14 +836,16 @@ export class TerminalPanelView {
         new Notice(`Select a ${this.adapter.config.itemName} first to launch Claude with context`);
         return;
       }
-      prompt = await this.getClaudeContextPrompt(item);
+      const fresh = options.freshSettings ?? (await this.loadFreshSettings());
+      prompt = await this.getClaudeContextPrompt(item, fresh);
       if (!prompt) {
         new Notice("Set 'Context prompt template' in settings to use contextual sessions");
         return;
       }
+      options.freshSettings = fresh;
     }
 
-    const fresh = await this.loadFreshSettings();
+    const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
@@ -855,8 +879,9 @@ export class TerminalPanelView {
     extraArgs?: string;
     label?: string;
     prompt?: string;
+    freshSettings?: Record<string, unknown>;
   }): Promise<void> {
-    const fresh = await this.loadFreshSettings();
+    const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
     const resolved = resolveCommand(copilotCmd);
     const sessionId = crypto.randomUUID();
@@ -890,8 +915,9 @@ export class TerminalPanelView {
     extraArgs?: string;
     label?: string;
     prompt?: string;
+    freshSettings?: Record<string, unknown>;
   }): Promise<void> {
-    const fresh = await this.loadFreshSettings();
+    const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
     const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
     const resolved = resolveCommand(cmdToken);
