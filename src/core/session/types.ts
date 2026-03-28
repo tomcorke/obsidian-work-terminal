@@ -1,7 +1,7 @@
 /**
  * Session type and persistence interfaces.
  */
-import type { Terminal } from "@xterm/xterm";
+import type { Terminal, IDisposable } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
 import type { WebglAddon } from "@xterm/addon-webgl";
@@ -30,6 +30,7 @@ export interface StoredSession {
   containerEl: HTMLElement;
   process: ChildProcess | null;
   webglAddon: WebglAddon | null;
+  webglContextLossListener: IDisposable | null;
   documentListeners: { event: string; handler: EventListener }[];
   resizeObserver: ResizeObserver;
 }
