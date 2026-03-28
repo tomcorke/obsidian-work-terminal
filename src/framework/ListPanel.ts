@@ -48,8 +48,8 @@ export class ListPanel {
 
   // Background enrichment tracking
   private ingestingIds: Set<string> = new Set();
-  // Tracks the most recently created item so success animation can target it
-  private lastCreatedId: string | null = null;
+  private pendingCreatedIds: string[] = [];
+  private activeSuccessIds: Set<string> = new Set();
   private successTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   // Drag state
@@ -206,14 +206,18 @@ export class ListPanel {
 
         // Ingesting shine: card-level class drives the CSS animation
         if (this.ingestingIds.has(item.id)) {
-          cardEl.addClass("wt-card-ingesting");
+          cardEl.addClass("wt-card-is-ingesting");
+        }
+
+        if (this.activeSuccessIds.has(item.id)) {
+          cardEl.addClass("wt-card-new-success");
         }
 
         cardsEl.appendChild(cardEl);
       }
 
       // Re-insert any active placeholders for this column
-      for (const [path, placeholderEl] of this.placeholders) {
+      for (const [, placeholderEl] of this.placeholders) {
         // Simple heuristic: add placeholder to first visible column
         if (
           cardsEl.children.length === 0 ||
@@ -305,7 +309,7 @@ export class ListPanel {
     this.ingestingIds.add(id);
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
     if (cardEl) {
-      cardEl.addClass("wt-card-ingesting");
+      cardEl.addClass("wt-card-is-ingesting");
     }
   }
 
@@ -313,7 +317,7 @@ export class ListPanel {
     this.ingestingIds.delete(id);
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
     if (cardEl) {
-      cardEl.removeClass("wt-card-ingesting");
+      cardEl.removeClass("wt-card-is-ingesting");
     }
   }
 
@@ -324,8 +328,7 @@ export class ListPanel {
       this.customOrder[columnId] = [id, ...order];
       this.onCustomOrderChange(this.customOrder);
     }
-    // Track so the upcoming resolvePlaceholder can attach the success animation
-    this.lastCreatedId = id;
+    this.pendingCreatedIds.push(id);
   }
 
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<void> {
@@ -783,44 +786,71 @@ export class ListPanel {
 
   resolvePlaceholder(path: string, success: boolean): void {
     const placeholderEl = this.placeholders.get(path);
-    if (placeholderEl) {
-      placeholderEl.remove();
-      this.placeholders.delete(path);
+
+    if (success) {
+      if (placeholderEl) {
+        placeholderEl.remove();
+        this.placeholders.delete(path);
+      }
+
+      const cardId = this.pendingCreatedIds.shift();
+      if (cardId) {
+        this.applyNewSuccessAnimation(cardId);
+      }
+      return;
     }
 
-    if (success && this.lastCreatedId) {
-      const cardId = this.lastCreatedId;
-      this.lastCreatedId = null;
-      this.applyNewSuccessAnimation(cardId);
-    } else if (!success) {
-      // Keep placeholder visible as an error indicator if no element
-      // Already removed above - re-add with error state
-      const errorEl = document.createElement("div");
-      errorEl.addClass("wt-card-placeholder", "wt-card-placeholder-error");
-      errorEl.textContent = "Creation failed";
-      const defaultCol =
-        this.adapter.config.creationColumns.find((c) => c.default)?.id ||
-        this.adapter.config.columns[0]?.id;
-      const cardsEl = this.listEl.querySelector(`[data-column="${defaultCol}"] .wt-section-cards`);
-      if (cardsEl) cardsEl.appendChild(errorEl);
-      setTimeout(() => errorEl.remove(), 5000);
+    if (placeholderEl) {
+      if (!placeholderEl.isConnected) {
+        const cardsEl = this.getDefaultColumnCardsEl();
+        if (cardsEl) {
+          cardsEl.appendChild(placeholderEl);
+        }
+      }
+
+      placeholderEl.addClass("wt-card-placeholder-error");
+      placeholderEl.textContent = "Creation failed";
+      setTimeout(() => {
+        placeholderEl.remove();
+        this.placeholders.delete(path);
+      }, 5000);
+      return;
     }
+
+    const errorEl = document.createElement("div");
+    errorEl.addClass("wt-card-placeholder", "wt-card-placeholder-error");
+    errorEl.textContent = "Creation failed";
+    const cardsEl = this.getDefaultColumnCardsEl();
+    if (cardsEl) {
+      cardsEl.appendChild(errorEl);
+    }
+    setTimeout(() => errorEl.remove(), 5000);
   }
 
   private applyNewSuccessAnimation(id: string): void {
-    const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`) as HTMLElement | null;
-    if (!cardEl) return;
-
-    // Cancel any existing success timeout for this card
     const existing = this.successTimeouts.get(id);
     if (existing) clearTimeout(existing);
 
-    cardEl.addClass("wt-card-new-success");
+    this.activeSuccessIds.add(id);
+    const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`) as HTMLElement | null;
+    if (cardEl) {
+      cardEl.addClass("wt-card-new-success");
+    }
+
     const timeout = setTimeout(() => {
-      cardEl.removeClass("wt-card-new-success");
+      this.activeSuccessIds.delete(id);
+      this.listEl.querySelector(`[data-item-id="${id}"]`)?.removeClass("wt-card-new-success");
       this.successTimeouts.delete(id);
     }, 4500);
     this.successTimeouts.set(id, timeout);
+  }
+
+  private getDefaultColumnCardsEl(): Element | null {
+    const defaultCol =
+      this.adapter.config.creationColumns.find((c) => c.default)?.id ||
+      this.adapter.config.columns[0]?.id;
+    if (!defaultCol) return null;
+    return this.listEl.querySelector(`[data-column="${defaultCol}"] .wt-section-cards`);
   }
 
   rekeyCustomOrder(oldPath: string, newPath: string): void {

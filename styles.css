@@ -946,12 +946,12 @@ button.wt-spawn-claude-ctx:hover svg {
    Ingesting state - repeating purple shine across the whole card
    ============================================================================= */
 
-.wt-card-wrapper.wt-card-ingesting {
+.wt-card-wrapper.wt-card-is-ingesting {
   overflow: hidden;
   border-left-color: var(--color-purple, rgba(138, 79, 255, 0.8));
 }
 
-.wt-card-wrapper.wt-card-ingesting::before {
+.wt-card-wrapper.wt-card-is-ingesting::before {
   content: "";
   position: absolute;
   top: 0;
@@ -978,7 +978,7 @@ button.wt-spawn-claude-ctx:hover svg {
    ============================================================================= */
 
 .wt-card-wrapper.wt-card-new-success {
-  border-left-color: #38a169 !important;
+  border-left-color: #38a169;
   box-shadow: inset 0 0 0 1px rgba(56, 161, 105, 0.45);
   animation: wt-success-border-fade 4s ease-out forwards;
   overflow: hidden;
@@ -1013,4 +1013,3 @@ button.wt-spawn-claude-ctx:hover svg {
     box-shadow: none;
   }
 }
-
