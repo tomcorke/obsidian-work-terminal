@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildClaudeArgs, buildCopilotArgs } from "./ClaudeLauncher";
+import { buildClaudeArgs, buildCopilotArgs, buildStrandsArgs } from "./ClaudeLauncher";
 
 describe("ClaudeLauncher", () => {
   it("builds Claude args with session id and prompt", () => {
@@ -37,5 +37,19 @@ describe("ClaudeLauncher", () => {
       "--model",
       "gpt-5.4",
     ]);
+  });
+
+  it("builds Strands args with prompt as positional arg", () => {
+    expect(
+      buildStrandsArgs({ strandsExtraArgs: "--verbose --region us-east-1" }, "Review this task"),
+    ).toEqual(["--verbose", "--region", "us-east-1", "Review this task"]);
+  });
+
+  it("builds Strands args without prompt for plain interactive sessions", () => {
+    expect(buildStrandsArgs({ strandsExtraArgs: "--verbose" })).toEqual(["--verbose"]);
+  });
+
+  it("builds Strands args with no extra args or prompt", () => {
+    expect(buildStrandsArgs({})).toEqual([]);
   });
 });

@@ -2,7 +2,7 @@
  * WorkTerminalSettingsTab - single settings UI combining core framework
  * settings with adapter-provided settings via namespaced keys.
  *
- * Core settings: core.claudeCommand/core.copilotCommand, their default args,
+ * Core settings: core.claudeCommand/core.copilotCommand/core.strandsCommand, their default args,
  *                core.additionalAgentContext (ctx template),
  *                core.defaultShell, core.defaultTerminalCwd
  * Adapter settings: adapter.* (from adapter.config.settingsSchema)
@@ -18,6 +18,8 @@ interface CoreSettings {
   "core.claudeExtraArgs": string;
   "core.copilotCommand": string;
   "core.copilotExtraArgs": string;
+  "core.strandsCommand": string;
+  "core.strandsExtraArgs": string;
   "core.additionalAgentContext": string;
   "core.defaultShell": string;
   "core.defaultTerminalCwd": string;
@@ -29,6 +31,8 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.claudeExtraArgs": "",
   "core.copilotCommand": "copilot",
   "core.copilotExtraArgs": "",
+  "core.strandsCommand": "strands",
+  "core.strandsExtraArgs": "",
   "core.additionalAgentContext": "",
   "core.defaultShell": process.env.SHELL || "/bin/zsh",
   "core.defaultTerminalCwd": "~",
@@ -76,11 +80,23 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Default Copilot arguments",
       "Arguments passed to Copilot sessions launched from the custom session spawner.",
     );
+    this.addCoreSetting(
+      containerEl,
+      "core.strandsCommand",
+      "Strands command",
+      "Path or name of the AWS Strands agent entry-point. The Strands SDK has no universal binary - set this to your project's runner script or wrapper (e.g. ~/my-project/run-agent.sh or uv run python agent.py). Tilde (~) is expanded. Do not include extra arguments here; use \"Default Strands arguments\" below.",
+    );
+    this.addCoreTextArea(
+      containerEl,
+      "core.strandsExtraArgs",
+      "Default Strands arguments",
+      "Arguments passed to Strands sessions launched from the custom session spawner (space-separated).",
+    );
     this.addCoreTextArea(
       containerEl,
       "core.additionalAgentContext",
       "Context prompt template",
-      "Template for contextual Claude and Copilot sessions. Placeholders: $title, $state, $filePath, $id. When empty, contextual launches show a notice instead of spawning.",
+      "Template for contextual Claude, Copilot, and Strands sessions. Placeholders: $title, $state, $filePath, $id. When empty, contextual launches show a notice instead of spawning.",
     );
     this.addCoreSetting(
       containerEl,

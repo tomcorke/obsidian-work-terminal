@@ -25,7 +25,12 @@ function createClaudeLogo(size = 14): SVGSVGElement {
 import type { Plugin } from "obsidian";
 import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, ClaudeState } from "../core/terminal/TerminalTab";
-import { resolveCommand, buildClaudeArgs, buildCopilotArgs } from "../core/claude/ClaudeLauncher";
+import {
+  resolveCommand,
+  buildClaudeArgs,
+  buildCopilotArgs,
+  buildStrandsArgs,
+} from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import type { PersistedSession, SessionType } from "../core/session/types";
 import { expandTilde } from "../core/utils";
@@ -37,6 +42,7 @@ import {
   getDefaultSessionLabel,
   isContextSession,
   isCopilotSession,
+  isStrandsSession,
   sanitizeCustomSessionConfig,
   type CustomSessionConfig,
 } from "./CustomSessionConfig";
@@ -745,6 +751,17 @@ export class TerminalPanelView {
       return;
     }
 
+    if (isStrandsSession(config.sessionType)) {
+      await this.spawnStrandsSession({
+        sessionType: config.sessionType,
+        cwd: config.cwd,
+        extraArgs: config.extraArgs,
+        label: config.label || getDefaultSessionLabel(config.sessionType),
+        prompt,
+      });
+      return;
+    }
+
     await this.spawnClaudeSession({
       sessionType: config.sessionType as "claude" | "claude-with-context",
       cwd: config.cwd,
@@ -835,6 +852,36 @@ export class TerminalPanelView {
       [resolved, ...args],
       sessionId,
     );
+    this.renderTabBar();
+  }
+
+  private async spawnStrandsSession(options: {
+    sessionType: "strands" | "strands-with-context";
+    cwd?: string;
+    extraArgs?: string;
+    label?: string;
+    prompt?: string;
+  }): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const strandsCmd = expandTilde(
+      this.getStringSetting(fresh, "core.strandsCommand", "strands"),
+    );
+    const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
+    const resolved = resolveCommand(cmdToken);
+    const mergedExtraArgs = this.mergeExtraArgs(
+      this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
+      options.extraArgs || "",
+    );
+    const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, options.prompt);
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+    );
+    const label = options.label || getDefaultSessionLabel(options.sessionType);
+    this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
+      resolved,
+      ...cmdArgs,
+      ...args,
+    ]);
     this.renderTabBar();
   }
 
