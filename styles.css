@@ -401,9 +401,9 @@
   animation: wt-card-shine 2s ease-in-out infinite;
 }
 
-.wt-card-placeholder-success {
+.wt-card-placeholder-error {
   animation: none;
-  background: var(--background-modifier-success);
+  background: var(--background-modifier-error);
   color: var(--text-on-accent);
 }
 
@@ -943,19 +943,74 @@ button.wt-spawn-claude-ctx:hover svg {
   background: rgba(214, 158, 46, 0.2);
 }
 
-/* Ingesting indicator */
-.wt-ingesting-badge {
-  display: inline-block;
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--background-modifier-hover);
-  color: var(--text-muted);
-  animation: wt-ingesting-pulse 1.5s ease-in-out infinite;
-  margin-left: 4px;
+/* =============================================================================
+   Ingesting state - repeating purple shine across the whole card
+   ============================================================================= */
+
+.wt-card-wrapper.wt-card-is-ingesting {
+  overflow: hidden;
+  border-left-color: var(--color-purple, rgba(138, 79, 255, 0.8));
 }
 
-@keyframes wt-ingesting-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+.wt-card-wrapper.wt-card-is-ingesting::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(138, 79, 255, 0.14) 50%,
+    transparent 100%
+  );
+  animation: wt-ingest-shine 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes wt-ingest-shine {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}
+
+/* =============================================================================
+   New task success animation - green border + bar that slides up into card
+   ============================================================================= */
+
+.wt-card-wrapper.wt-card-new-success {
+  border-left-color: #38a169;
+  box-shadow: inset 0 0 0 1px rgba(56, 161, 105, 0.45);
+  animation: wt-success-border-fade 4s ease-out forwards;
+  overflow: hidden;
+}
+
+.wt-card-wrapper.wt-card-new-success::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #38a169 0%, #68d391 60%, #38a169 100%);
+  border-radius: 0 0 2px 2px;
+  animation: wt-success-bar-rise 2.5s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes wt-success-bar-rise {
+  0%   { transform: translateY(0);     opacity: 1; }
+  60%  { transform: translateY(-6px);  opacity: 0.8; }
+  100% { transform: translateY(-40px); opacity: 0; }
+}
+
+@keyframes wt-success-border-fade {
+  0%, 55% {
+    border-left-color: #38a169;
+    box-shadow: inset 0 0 0 1px rgba(56, 161, 105, 0.45);
+  }
+  100% {
+    border-left-color: transparent;
+    box-shadow: none;
+  }
 }
