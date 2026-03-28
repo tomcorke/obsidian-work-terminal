@@ -86,6 +86,10 @@ export function isCopilotSession(sessionType: SessionType): boolean {
   return sessionType === "copilot" || sessionType === "copilot-with-context";
 }
 
+export function isClaudeSession(sessionType: SessionType): boolean {
+  return sessionType === "claude" || sessionType === "claude-with-context";
+}
+
 export function isStrandsSession(sessionType: SessionType): boolean {
   return sessionType === "strands" || sessionType === "strands-with-context";
 }
