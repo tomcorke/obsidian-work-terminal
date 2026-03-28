@@ -23,6 +23,12 @@ export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
 
 let sessionCounter = 0;
 
+type TerminalWithAddonManager = Terminal & {
+  _addonManager?: {
+    dispose(): void;
+  };
+};
+
 export class TerminalTab {
   id: string;
   label: string;
@@ -729,6 +735,9 @@ export class TerminalTab {
       terminal: this.terminal,
       fitAddon: this.fitAddon!,
       searchAddon: this.searchAddon!,
+      webLinksAddon: this.webLinksAddon,
+      unicode11Addon: this.unicode11Addon,
+      webglAddon: this.webglAddon,
       containerEl: this.containerEl,
       process: this.process,
       documentListeners: this._documentCleanups.map((fn, i) => ({
@@ -755,6 +764,9 @@ export class TerminalTab {
     tab.terminal = stored.terminal;
     tab.fitAddon = stored.fitAddon;
     tab.searchAddon = stored.searchAddon;
+    tab.webLinksAddon = stored.webLinksAddon;
+    tab.unicode11Addon = stored.unicode11Addon;
+    tab.webglAddon = stored.webglAddon ?? null;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
     tab._documentCleanups = [];
@@ -853,6 +865,12 @@ export class TerminalTab {
         }
       }, 1000);
     }
+    this.disposeAddonsBeforeTerminal();
+    this.terminal.dispose();
+    this.containerEl.remove();
+  }
+
+  private disposeAddonsBeforeTerminal(): void {
     // Dispose addons before terminal.dispose() so they can clean up while
     // xterm's internal services (renderer, buffer) are still alive.
     // Disposing in reverse load order mirrors standard teardown conventions.
@@ -861,7 +879,11 @@ export class TerminalTab {
     this.webLinksAddon?.dispose();
     this.searchAddon?.dispose();
     this.fitAddon?.dispose();
-    this.terminal.dispose();
-    this.containerEl.remove();
+
+    // Hot-reload snapshots created before addon refs were stashed will not have
+    // the anonymous addons above. Drain xterm's addon manager here as a
+    // compatibility fallback so restored tabs still dispose addons before the
+    // terminal tears down its internals.
+    (this.terminal as TerminalWithAddonManager)._addonManager?.dispose();
   }
 }
