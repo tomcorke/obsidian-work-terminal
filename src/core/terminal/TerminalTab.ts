@@ -4,7 +4,7 @@
  * Each tab owns a Terminal instance, FitAddon, ResizeObserver, PTY child process,
  * and Claude state detection. Supports stash/restore for hot-reload persistence.
  */
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
@@ -51,6 +51,7 @@ export class TerminalTab {
   private webLinksAddon: WebLinksAddon | undefined;
   private unicode11Addon: Unicode11Addon | undefined;
   private webglAddon: WebglAddon | null = null;
+  private webglContextLossListener: IDisposable | null = null;
   private resizeObserver: ResizeObserver;
   private _documentCleanups: (() => void)[] = [];
   private _searchBarEl: HTMLElement | null = null;
@@ -148,15 +149,12 @@ export class TerminalTab {
 
     this.terminal.open(this.containerEl);
 
-    // WebGL renderer - GPU-accelerated rendering, fall back to canvas
-    try {
-      const webglAddon = new WebglAddon();
-      this.terminal.loadAddon(webglAddon);
-      this.webglAddon = webglAddon;
-    } catch (e) {
-      console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
-      this.webglAddon = null;
-    }
+    // WebGL renderer - GPU-accelerated rendering, fall back to canvas.
+    // Subscribe to onContextLoss: idle tabs can have their GPU context
+    // reclaimed by the OS, leaving a blank/white canvas. Disposing the
+    // WebglAddon on context loss causes xterm to fall back to its canvas
+    // renderer automatically, recovering the display.
+    this.loadWebglAddon();
 
     // File path link provider - Cmd+click on paths like src/main.ts:42
     this.registerFilePathLinks();
@@ -232,6 +230,39 @@ export class TerminalTab {
       }, 100);
     });
     this.resizeObserver.observe(this.containerEl);
+  }
+
+  private disposeWebglContextLossListener(): void {
+    this.webglContextLossListener?.dispose();
+    this.webglContextLossListener = null;
+  }
+
+  private trackWebglAddon(addon: WebglAddon): void {
+    this.disposeWebglContextLossListener();
+    this.webglAddon = addon;
+    this.webglContextLossListener = addon.onContextLoss(() => {
+      if (this.webglAddon !== addon) return;
+      this.disposeWebglContextLossListener();
+      console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
+      addon.dispose();
+      this.webglAddon = null;
+    });
+  }
+
+  private loadWebglAddon(): void {
+    let addon: WebglAddon | null = null;
+    try {
+      addon = new WebglAddon();
+      this.trackWebglAddon(addon);
+      this.terminal.loadAddon(addon);
+    } catch (e) {
+      console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
+      this.disposeWebglContextLossListener();
+      addon?.dispose();
+      if (this.webglAddon === addon) {
+        this.webglAddon = null;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -723,6 +754,7 @@ export class TerminalTab {
       webLinksAddon: this.webLinksAddon,
       unicode11Addon: this.unicode11Addon,
       webglAddon: this.webglAddon,
+      webglContextLossListener: this.webglContextLossListener,
       containerEl: this.containerEl,
       process: this.process,
       documentListeners: this._documentCleanups.map((fn, i) => ({
@@ -751,9 +783,17 @@ export class TerminalTab {
     tab.searchAddon = stored.searchAddon;
     tab.webLinksAddon = stored.webLinksAddon;
     tab.unicode11Addon = stored.unicode11Addon;
-    tab.webglAddon = stored.webglAddon ?? null;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
+    tab.webglAddon = stored.webglAddon ?? null;
+    tab.webglContextLossListener = null;
+    // Restore the live webglAddon reference so recovered tabs still dispose it
+    // correctly, then re-subscribe onContextLoss with a callback bound to the
+    // new tab instance created during reload recovery.
+    if (stored.webglAddon) {
+      tab.trackWebglAddon(stored.webglAddon);
+    }
+    stored.webglContextLossListener?.dispose();
     tab._documentCleanups = [];
     tab._claudeState = "inactive" as ClaudeState;
     tab._recentCleanLines = [];
@@ -859,11 +899,17 @@ export class TerminalTab {
     // Dispose addons before terminal.dispose() so they can clean up while
     // xterm's internal services (renderer, buffer) are still alive.
     // Disposing in reverse load order mirrors standard teardown conventions.
+    this.disposeWebglContextLossListener();
     this.webglAddon?.dispose();
+    this.webglAddon = null;
     this.unicode11Addon?.dispose();
+    this.unicode11Addon = undefined;
     this.webLinksAddon?.dispose();
+    this.webLinksAddon = undefined;
     this.searchAddon?.dispose();
+    this.searchAddon = undefined;
     this.fitAddon?.dispose();
+    this.fitAddon = undefined;
 
     // Hot-reload snapshots created before addon refs were stashed will not have
     // the anonymous addons above. Drain xterm's addon manager here as a
