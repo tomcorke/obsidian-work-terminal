@@ -666,7 +666,7 @@ export class ListPanel {
     const persisted = this.terminalPanel.getPersistedSessions(item.id);
     if (!persisted || persisted.length === 0) return;
 
-    // Only show resume badge if there are no active sessions
+    // Only show resume badge if there are no active resumable agent sessions
     if (this.terminalPanel.hasResumableAgentSessions(item.id)) return;
 
     const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
