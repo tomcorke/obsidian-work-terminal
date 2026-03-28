@@ -30,6 +30,7 @@ import type { PersistedSession, SessionType } from "../core/session/types";
 import { expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
+import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 
 export class TerminalPanelView {
   private tabManager: TabManager;
@@ -233,21 +234,19 @@ export class TerminalPanelView {
 
     // Spawn buttons (always visible)
     const shellBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn", text: "+ Shell" });
-    shellBtn.addEventListener("click", () => this.spawnShell());
+    shellBtn.addEventListener("click", () => void this.spawnShell());
 
     const claudeBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn wt-spawn-claude" });
     claudeBtn.appendChild(createClaudeLogo());
     claudeBtn.appendText("Claude");
-    claudeBtn.addEventListener("click", () => this.spawnClaude());
+    claudeBtn.addEventListener("click", () => void this.spawnClaude());
 
-    if (this.settings["core.additionalAgentContext"]) {
-      const claudeCtxBtn = buttonsContainer.createEl("button", {
-        cls: "wt-spawn-btn wt-spawn-claude-ctx",
-      });
-      claudeCtxBtn.appendChild(createClaudeLogo());
-      claudeCtxBtn.appendText("Claude (ctx)");
-      claudeCtxBtn.addEventListener("click", () => this.spawnClaudeWithContext());
-    }
+    const claudeCtxBtn = buttonsContainer.createEl("button", {
+      cls: "wt-spawn-btn wt-spawn-claude-ctx",
+    });
+    claudeCtxBtn.appendChild(createClaudeLogo());
+    claudeCtxBtn.appendText("Claude (ctx)");
+    claudeCtxBtn.addEventListener("click", () => void this.spawnClaudeWithContext());
   }
 
   /** Update Claude state classes on existing tab elements without full re-render. */
@@ -453,30 +452,44 @@ export class TerminalPanelView {
   // Spawn operations
   // ---------------------------------------------------------------------------
 
-  private spawnShell(): void {
-    const shell = this.settings["core.defaultShell"] || process.env.SHELL || "/bin/zsh";
-    const cwd = expandTilde(this.settings["core.defaultTerminalCwd"] || "~");
+  private async loadFreshSettings(): Promise<Record<string, unknown>> {
+    return ((await this.plugin.loadData()) || {}).settings || {};
+  }
+
+  private getStringSetting(
+    settings: Record<string, unknown>,
+    key: string,
+    defaultValue: string,
+  ): string {
+    const value = settings[key];
+    return typeof value === "string" ? value : defaultValue;
+  }
+
+  private async spawnShell(): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const shell = this.getStringSetting(
+      fresh,
+      "core.defaultShell",
+      process.env.SHELL || "/bin/zsh",
+    );
+    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     this.tabManager.createTab(shell, cwd, "Shell", "shell");
     this.renderTabBar();
   }
 
   private async spawnClaude(): Promise<void> {
-    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
-    const claudeCmd =
-      fresh["core.claudeCommand"] || this.settings["core.claudeCommand"] || "claude";
+    const fresh = await this.loadFreshSettings();
+    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
     const args = buildClaudeArgs(
       {
-        claudeExtraArgs:
-          fresh["core.claudeExtraArgs"] || this.settings["core.claudeExtraArgs"] || "",
+        claudeExtraArgs: this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
       },
       sessionId,
     );
 
-    const cwd = expandTilde(
-      fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
-    );
+    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
@@ -505,31 +518,20 @@ export class TerminalPanelView {
       return;
     }
 
-    // Read settings fresh from disk so edits take effect without reload
-    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
-    const template = fresh["core.additionalAgentContext"] || "";
-    if (!template) {
+    const prompt = await this.getClaudeContextPrompt(item);
+    if (!prompt) {
       new Notice("Set 'Claude (ctx) prompt template' in settings to use Claude (ctx)");
       return;
     }
+    const fresh = await this.loadFreshSettings();
 
-    // Substitute placeholders in the template
-    const prompt = template
-      .replace(/\$title/g, item.title)
-      .replace(/\$state/g, item.state)
-      .replace(/\$filePath/g, item.path)
-      .replace(/\$id/g, item.id);
-
-    const claudeCmd =
-      fresh["core.claudeCommand"] || this.settings["core.claudeCommand"] || "claude";
+    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
-    const extraArgs = fresh["core.claudeExtraArgs"] || this.settings["core.claudeExtraArgs"] || "";
+    const extraArgs = this.getStringSetting(fresh, "core.claudeExtraArgs", "");
     const args = buildClaudeArgs({ claudeExtraArgs: extraArgs }, sessionId, prompt);
 
-    const cwd = expandTilde(
-      fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
-    );
+    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
@@ -546,17 +548,14 @@ export class TerminalPanelView {
   }
 
   async spawnClaudeWithPrompt(prompt: string, label?: string): Promise<void> {
-    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
-    const claudeCmd =
-      fresh["core.claudeCommand"] || this.settings["core.claudeCommand"] || "claude";
+    const fresh = await this.loadFreshSettings();
+    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
-    const extraArgs = fresh["core.claudeExtraArgs"] || this.settings["core.claudeExtraArgs"] || "";
+    const extraArgs = this.getStringSetting(fresh, "core.claudeExtraArgs", "");
     const args = buildClaudeArgs({ claudeExtraArgs: extraArgs }, sessionId, prompt);
 
-    const cwd = expandTilde(
-      fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
-    );
+    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
@@ -649,6 +648,11 @@ export class TerminalPanelView {
       this.titleEl.textContent = "";
       this.titleEl.style.display = "none";
     }
+  }
+
+  async getClaudeContextPrompt(item: WorkItem): Promise<string | null> {
+    const fresh = await this.loadFreshSettings();
+    return buildClaudeContextPrompt(item, fresh);
   }
 
   getRecoveredItemId(): string | null {

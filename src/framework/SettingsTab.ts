@@ -63,7 +63,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       containerEl,
       "core.additionalAgentContext",
       "Claude (ctx) prompt template",
-      "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. Button hidden when empty.",
+      "Template for '+ Claude (ctx)' button. Placeholders: $title, $state, $filePath, $id. When empty, the button shows a notice instead of launching.",
     );
     this.addCoreSetting(
       containerEl,
@@ -90,6 +90,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         this.addAdapterSetting(containerEl, field);
       }
     }
+  }
+
+  private async saveSettings(update: (settings: Record<string, unknown>) => void): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    if (!data.settings) data.settings = {};
+    update(data.settings);
+    await this.plugin.saveData(data);
   }
 
   private async renderHookStatus(containerEl: HTMLElement): Promise<void> {
@@ -159,10 +166,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       )
       .addToggle((toggle) =>
         toggle.setValue(!!acceptValue).onChange(async (newValue) => {
-          const d = (await this.plugin.loadData()) || {};
-          if (!d.settings) d.settings = {};
-          d.settings["core.acceptNoResumeHooks"] = newValue;
-          await this.plugin.saveData(d);
+          await this.saveSettings((settings) => {
+            settings["core.acceptNoResumeHooks"] = newValue;
+          });
         }),
       );
   }
@@ -182,10 +188,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .setDesc(description)
       .addText((text) =>
         text.setValue(String(value)).onChange(async (newValue) => {
-          const d = (await this.plugin.loadData()) || {};
-          if (!d.settings) d.settings = {};
-          d.settings[key] = newValue;
-          await this.plugin.saveData(d);
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
         }),
       );
   }
@@ -205,10 +210,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .setDesc(description)
       .addTextArea((ta) => {
         ta.setValue(String(value)).onChange(async (newValue) => {
-          const d = (await this.plugin.loadData()) || {};
-          if (!d.settings) d.settings = {};
-          d.settings[key] = newValue;
-          await this.plugin.saveData(d);
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
         });
         ta.inputEl.style.width = "100%";
         ta.inputEl.style.minHeight = "80px";
@@ -230,19 +234,17 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (field.type === "text") {
       setting.addText((text) =>
         text.setValue(String(value)).onChange(async (newValue) => {
-          const d = (await this.plugin.loadData()) || {};
-          if (!d.settings) d.settings = {};
-          d.settings[key] = newValue;
-          await this.plugin.saveData(d);
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
         }),
       );
     } else if (field.type === "toggle") {
       setting.addToggle((toggle) =>
         toggle.setValue(!!value).onChange(async (newValue) => {
-          const d = (await this.plugin.loadData()) || {};
-          if (!d.settings) d.settings = {};
-          d.settings[key] = newValue;
-          await this.plugin.saveData(d);
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
         }),
       );
     }

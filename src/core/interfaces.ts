@@ -117,6 +117,8 @@ export interface CardActionContext {
   onDelete(): void;
   /** Close all terminal sessions for this item. */
   onCloseSessions(): void;
+  /** Build the exact prompt used by "Claude (ctx)" for this item, or null when unavailable. */
+  getContextPrompt(): Promise<string | null>;
 }
 
 /**

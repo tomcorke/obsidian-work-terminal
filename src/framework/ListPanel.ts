@@ -263,6 +263,7 @@ export class ListPanel {
       },
       onDelete: () => this.deleteItem(item),
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
+      getContextPrompt: () => this.terminalPanel.getClaudeContextPrompt(item),
     };
   }
 
@@ -702,7 +703,14 @@ export class ListPanel {
         menu.addSeparator();
       } else {
         menu.addItem((menuItem) => {
-          menuItem.setTitle(ai.title || "Action").onClick(() => ai.callback?.());
+          menuItem.setTitle(ai.title || "Action").onClick(() => {
+            void Promise.resolve()
+              .then(() => ai.callback?.())
+              .catch((err) => {
+                console.error("[work-terminal] Card action failed:", err);
+                new Notice("Card action failed; see console for details");
+              });
+          });
         });
       }
     }
