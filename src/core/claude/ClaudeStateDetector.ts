@@ -192,12 +192,16 @@ export function hasAgentActiveIndicator(screenLines: string[]): boolean {
   // Look for structural indicators in the last few lines only (near the status bar).
   //   \u2733 <text>... - Claude spinner line with ellipsis means work in progress
   //   \u23bf  <text>... - Claude tool output with ellipsis means tool still running
-  //   \u25c9/\u25ce/\u25cb/\u25cf Thinking (...) - Copilot thinking indicator
+  //   \u25c9/\u25ce/\u25cb/\u25cf <status> (Esc to cancel) - Copilot activity indicator
+  //   \u25c9/\u25ce/\u25cb/\u25cf Executing|Cancelling - Copilot fixed activity labels
   // On narrow terminals these status lines can wrap across multiple visual
   // rows, so we check both per-line and joined tail strings.
   const tail = screenLines.slice(-6);
   const tailJoined = tail.join(" ");
   const tailCompactJoined = tail.map((line) => line.trim()).join("");
+  const copilotSpinnerRowPattern = /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?!\(Esc\b)\S/;
+  const copilotKnownStatusPattern = /\b(?:Thinking|Executing|Cancelling)\b/;
+  const copilotCancelHintPattern = /\(Esc\s+to\s+cancel(?:\s+\u00b7\s+[^)]*)?\)/;
   const hasClaudeActiveIndicator =
     tail.some(
       (line) =>
@@ -209,8 +213,14 @@ export function hasAgentActiveIndicator(screenLines: string[]): boolean {
       /\u2026/.test(tailJoined) &&
       tail.some((line) => /^\s*\u2733/.test(line)));
   const hasCopilotActiveIndicator =
-    tail.some((line) => /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+Thinking\b/.test(line)) ||
-    (/[\u25c9\u25ce\u25cb\u25cf].*Thinking\b/.test(tailCompactJoined) &&
-      tail.some((line) => /^\s*[\u25c9\u25ce\u25cb\u25cf]/.test(line)));
+    tail.some(
+      (line) =>
+        /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?:Thinking|Executing|Cancelling)\b/.test(line) ||
+        (copilotSpinnerRowPattern.test(line) && copilotCancelHintPattern.test(line)),
+    ) ||
+    (tail.some((line) => copilotSpinnerRowPattern.test(line)) &&
+      (copilotKnownStatusPattern.test(tailCompactJoined) ||
+        copilotCancelHintPattern.test(tailJoined) ||
+        copilotCancelHintPattern.test(tailCompactJoined)));
   return hasClaudeActiveIndicator || hasCopilotActiveIndicator;
 }
