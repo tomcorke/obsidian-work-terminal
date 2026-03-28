@@ -96,25 +96,7 @@ export class ClaudeStateDetector {
     // Need screen content for idle/active detection
     if (screenLines.length === 0) return;
 
-    // Claude's status bar always shows ">" even when actively working.
-    // To distinguish idle from active, look for structural indicators in the
-    // last few lines only (near the status bar).
-    //   \u2733 <text>... - spinner line with ellipsis means work in progress
-    //   \u23bf  <text>... - tool output with ellipsis means tool still running
-    // On narrow terminals the spinner line wraps across multiple visual rows,
-    // so we check both per-line AND a joined tail string.
-    const tail = screenLines.slice(-6);
-    const tailJoined = tail.join(" ");
-    const hasActiveIndicator =
-      tail.some(
-        (line) =>
-          /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
-          /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
-      ) ||
-      // Wrapped lines: spinner char on one visual row, ellipsis on another
-      (/\u2733/.test(tailJoined) &&
-        /\u2026/.test(tailJoined) &&
-        tail.some((line) => /^\s*\u2733/.test(line)));
+    const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
 
     if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
@@ -199,4 +181,36 @@ export function aggregateState(states: ClaudeState[]): ClaudeState {
     if (s === "idle") return "idle";
   }
   return "inactive";
+}
+
+/**
+ * Detect whether the visible terminal tail shows an in-progress agent status.
+ * Supports Claude's ellipsis-based spinner/tool rows and Copilot's rotating
+ * Thinking indicator.
+ */
+export function hasAgentActiveIndicator(screenLines: string[]): boolean {
+  // Look for structural indicators in the last few lines only (near the status bar).
+  //   \u2733 <text>... - Claude spinner line with ellipsis means work in progress
+  //   \u23bf  <text>... - Claude tool output with ellipsis means tool still running
+  //   \u25c9/\u25ce/\u25cb/\u25cf Thinking (...) - Copilot thinking indicator
+  // On narrow terminals these status lines can wrap across multiple visual
+  // rows, so we check both per-line and joined tail strings.
+  const tail = screenLines.slice(-6);
+  const tailJoined = tail.join(" ");
+  const tailCompactJoined = tail.map((line) => line.trim()).join("");
+  const hasClaudeActiveIndicator =
+    tail.some(
+      (line) =>
+        /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
+        /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
+    ) ||
+    // Wrapped lines: spinner char on one visual row, ellipsis on another
+    (/\u2733/.test(tailJoined) &&
+      /\u2026/.test(tailJoined) &&
+      tail.some((line) => /^\s*\u2733/.test(line)));
+  const hasCopilotActiveIndicator =
+    tail.some((line) => /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+Thinking\b/.test(line)) ||
+    (/[\u25c9\u25ce\u25cb\u25cf].*Thinking\b/.test(tailCompactJoined) &&
+      tail.some((line) => /^\s*[\u25c9\u25ce\u25cb\u25cf]/.test(line)));
+  return hasClaudeActiveIndicator || hasCopilotActiveIndicator;
 }
