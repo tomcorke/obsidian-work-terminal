@@ -270,9 +270,9 @@ export class TerminalPanelView {
         const tab = tabs[i];
         const tabEl = tabsContainer.createDiv({ cls: "wt-tab" });
         if (i === activeIdx) tabEl.addClass("wt-tab-active");
-        if (tab.isClaudeSession) {
+        if (tab.isResumableAgent) {
           const state = tab.claudeState;
-          if (state !== "inactive") tabEl.addClass(`wt-tab-claude-${state}`);
+          if (state !== "inactive") tabEl.addClass(`wt-tab-agent-${state}`);
         }
         tabEl.setAttribute("draggable", "true");
         tabEl.setAttribute("data-tab-index", String(i));
@@ -343,13 +343,13 @@ export class TerminalPanelView {
     if (!activeItemId) return;
     const tabs = this.tabManager.getTabs(activeItemId);
     const tabEls = this.tabBarEl.querySelectorAll(".wt-tab");
-    const stateClasses = ["wt-tab-claude-waiting", "wt-tab-claude-active", "wt-tab-claude-idle"];
+    const stateClasses = ["wt-tab-agent-waiting", "wt-tab-agent-active", "wt-tab-agent-idle"];
     for (let i = 0; i < tabs.length && i < tabEls.length; i++) {
       const el = tabEls[i] as HTMLElement;
       for (const cls of stateClasses) el.removeClass(cls);
-      if (tabs[i].isClaudeSession) {
+      if (tabs[i].isResumableAgent) {
         const state = tabs[i].claudeState;
-        if (state !== "inactive") el.addClass(`wt-tab-claude-${state}`);
+        if (state !== "inactive") el.addClass(`wt-tab-agent-${state}`);
       }
     }
   }
@@ -464,7 +464,7 @@ export class TerminalPanelView {
       });
     });
 
-    if (tab.isClaudeSession) {
+    if (isClaudeSession(tab.sessionType)) {
       menu.addItem((item) => {
         item.setTitle("Restart").onClick(() => {
           this.tabManager.closeTab(index);
@@ -924,11 +924,15 @@ export class TerminalPanelView {
     return this.tabManager.hasSessions(itemId);
   }
 
+  hasResumableAgentSessions(itemId: string): boolean {
+    return this.tabManager.hasResumableAgentSessions(itemId);
+  }
+
   hasAnySessions(): boolean {
     return this.tabManager.getSessionItemIds().length > 0;
   }
 
-  getSessionCounts(itemId: string): { shells: number; claudes: number } {
+  getSessionCounts(itemId: string): { shells: number; agents: number } {
     return this.tabManager.getSessionCounts(itemId);
   }
 

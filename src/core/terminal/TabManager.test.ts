@@ -28,11 +28,13 @@ import type { ClaudeState } from "./TerminalTab";
 function makeStubTab(
   overrides: {
     claudeState?: ClaudeState;
-    isClaudeSession?: boolean;
+    isResumableAgent?: boolean;
+    sessionType?: string;
   } = {},
 ): {
   claudeState: ClaudeState;
-  isClaudeSession: boolean;
+  isResumableAgent: boolean;
+  sessionType: string;
   onStateChange?: (state: ClaudeState) => void;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
@@ -44,7 +46,8 @@ function makeStubTab(
 } {
   return {
     claudeState: overrides.claudeState ?? "inactive",
-    isClaudeSession: overrides.isClaudeSession ?? false,
+    isResumableAgent: overrides.isResumableAgent ?? false,
+    sessionType: overrides.sessionType ?? "shell",
     dispose: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
@@ -82,7 +85,11 @@ function makeTabManagerWithSessions(
 
 describe("TabManager - closeTab", () => {
   it("fires onClaudeStateChange with inactive when the only Claude tab (waiting) is closed", () => {
-    const tab = makeStubTab({ claudeState: "waiting", isClaudeSession: true });
+    const tab = makeStubTab({
+      claudeState: "waiting",
+      isResumableAgent: true,
+      sessionType: "claude",
+    });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
 
     const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
@@ -95,8 +102,12 @@ describe("TabManager - closeTab", () => {
   });
 
   it("fires onClaudeStateChange with waiting when a non-waiting tab is closed but a waiting tab remains", () => {
-    const waitingTab = makeStubTab({ claudeState: "waiting", isClaudeSession: true });
-    const shellTab = makeStubTab({ claudeState: "inactive", isClaudeSession: false });
+    const waitingTab = makeStubTab({
+      claudeState: "waiting",
+      isResumableAgent: true,
+      sessionType: "copilot",
+    });
+    const shellTab = makeStubTab({ claudeState: "inactive", isResumableAgent: false });
     const mgr = makeTabManagerWithSessions("item-1", [shellTab, waitingTab]);
 
     const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
@@ -109,8 +120,16 @@ describe("TabManager - closeTab", () => {
   });
 
   it("fires onClaudeStateChange with active after closing a waiting tab when an active tab remains", () => {
-    const waitingTab = makeStubTab({ claudeState: "waiting", isClaudeSession: true });
-    const activeTab = makeStubTab({ claudeState: "active", isClaudeSession: true });
+    const waitingTab = makeStubTab({
+      claudeState: "waiting",
+      isResumableAgent: true,
+      sessionType: "claude",
+    });
+    const activeTab = makeStubTab({
+      claudeState: "active",
+      isResumableAgent: true,
+      sessionType: "copilot",
+    });
     const mgr = makeTabManagerWithSessions("item-1", [waitingTab, activeTab]);
     (mgr as any).activeTabIndex = 0;
 
@@ -125,7 +144,11 @@ describe("TabManager - closeTab", () => {
   });
 
   it("fires onSessionChange alongside onClaudeStateChange", () => {
-    const tab = makeStubTab({ claudeState: "waiting", isClaudeSession: true });
+    const tab = makeStubTab({
+      claudeState: "waiting",
+      isResumableAgent: true,
+      sessionType: "claude",
+    });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
 
     const sessionChangeOrder: string[] = [];
@@ -140,7 +163,11 @@ describe("TabManager - closeTab", () => {
 
 describe("TabManager - closeAllSessions", () => {
   it("fires onClaudeStateChange with inactive after closing all sessions for an item", () => {
-    const tab = makeStubTab({ claudeState: "waiting", isClaudeSession: true });
+    const tab = makeStubTab({
+      claudeState: "waiting",
+      isResumableAgent: true,
+      sessionType: "copilot",
+    });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
 
     const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
@@ -161,5 +188,15 @@ describe("TabManager - closeAllSessions", () => {
     mgr.closeAllSessions("nonexistent-item");
 
     expect(stateChanges).toHaveLength(0);
+  });
+
+  it("counts shell tabs separately from agent tabs", () => {
+    const mgr = makeTabManagerWithSessions("item-1", [
+      makeStubTab({ sessionType: "shell" }),
+      makeStubTab({ sessionType: "copilot", isResumableAgent: true }),
+      makeStubTab({ sessionType: "strands" }),
+    ]);
+
+    expect(mgr.getSessionCounts("item-1")).toEqual({ shells: 1, agents: 2 });
   });
 });

@@ -248,7 +248,7 @@
   flex-shrink: 0;
 }
 
-.wt-badge-claude { background: #C15F3C; }
+.wt-badge-agent { background: #C15F3C; }
 .wt-badge-shell { background: #3b82f6; }
 .wt-badge-mixed { background: #8b5cf6; }
 
@@ -516,12 +516,12 @@
   border-bottom-color: var(--interactive-accent) !important;
 }
 
-/* Tab Claude state classes */
-.wt-tab-claude-waiting {
+/* Tab agent state classes */
+.wt-tab-agent-waiting {
   position: relative;
 }
 
-.wt-tab-claude-waiting::after {
+.wt-tab-agent-waiting::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -538,7 +538,7 @@
 
 /* Active tab: no indicator (green dot removed) */
 
-.wt-tab-claude-idle .wt-tab-label {
+.wt-tab-agent-idle .wt-tab-label {
   color: var(--text-muted);
 }
 

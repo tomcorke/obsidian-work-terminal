@@ -6,6 +6,7 @@ import { TerminalPanelView } from "./TerminalPanelView";
 const mockState = vi.hoisted(() => ({
   activeSessions: new Map<string, Array<{ sessionType: string }>>(),
   persistedSessions: [] as PersistedSession[],
+  menuTitles: [] as string[],
   hookStatus: {
     scriptExists: false,
     hooksConfigured: false,
@@ -22,9 +23,10 @@ vi.mock("obsidian", () => ({
   App: class {},
   Menu: class {
     addSeparator() {}
-    addItem(callback: (item: { setTitle: () => any; onClick: () => any }) => void) {
+    addItem(callback: (item: { setTitle: (title: string) => any; onClick: () => any }) => void) {
       callback({
-        setTitle() {
+        setTitle(title: string) {
+          mockState.menuTitles.push(title);
           return this;
         },
         onClick() {
@@ -258,6 +260,7 @@ describe("TerminalPanelView hook warning", () => {
 
     mockState.activeSessions = new Map();
     mockState.persistedSessions = [];
+    mockState.menuTitles = [];
     mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
     mockState.latestTabManager = null;
     mockState.stopPeriodicPersist.mockClear();
@@ -346,5 +349,38 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
 
     expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
+  });
+
+  it("keeps Copilot tabs out of the Claude-only restart menu action", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "copilot",
+        label: "Copilot",
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    expect(mockState.menuTitles).toContain("Rename");
+    expect(mockState.menuTitles).not.toContain("Restart");
+  });
+
+  it("keeps the restart menu action available for Claude tabs", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude",
+        label: "Claude",
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    expect(mockState.menuTitles).toContain("Restart");
   });
 });

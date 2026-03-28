@@ -39,28 +39,28 @@ describe("SessionPersistence", () => {
       const sessions = new Map<string, any[]>();
       sessions.set("task-1", [
         {
-          isClaudeSession: true,
+          isResumableAgent: true,
           claudeSessionId: "s1",
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
         },
         {
-          isClaudeSession: true,
+          isResumableAgent: true,
           claudeSessionId: "s2",
           label: "Copilot",
           taskPath: "task-1",
           sessionType: "copilot",
         },
         {
-          isClaudeSession: false,
+          isResumableAgent: false,
           claudeSessionId: null,
           label: "Shell",
           taskPath: "task-1",
           sessionType: "shell",
         },
         {
-          isClaudeSession: true,
+          isResumableAgent: true,
           claudeSessionId: null,
           label: "Claude2",
           taskPath: "task-1",
