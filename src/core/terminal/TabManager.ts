@@ -243,14 +243,15 @@ export class TabManager {
 
   closeTab(index: number): void {
     if (!this.activeItemId) return;
-    const tabs = this.sessions.get(this.activeItemId) || [];
+    const itemId = this.activeItemId;
+    const tabs = this.sessions.get(itemId) || [];
     if (index < 0 || index >= tabs.length) return;
 
     tabs[index].dispose();
     tabs.splice(index, 1);
 
     if (tabs.length === 0) {
-      this.sessions.delete(this.activeItemId);
+      this.sessions.delete(itemId);
       this.activeTabIndex = 0;
     } else {
       this.activeTabIndex = Math.min(this.activeTabIndex, tabs.length - 1);
@@ -258,6 +259,7 @@ export class TabManager {
     }
 
     this.onSessionChange?.();
+    this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
   }
 
   /** Close and dispose all terminal sessions for an item. */
@@ -275,6 +277,7 @@ export class TabManager {
     }
 
     this.onSessionChange?.();
+    this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
   }
 
   // ---------------------------------------------------------------------------
