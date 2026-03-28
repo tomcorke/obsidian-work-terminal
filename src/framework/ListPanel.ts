@@ -682,6 +682,9 @@ export class ListPanel {
         for (const session of persisted) {
           await this.terminalPanel.resumeSession(session, item.id);
         }
+      } catch (error) {
+        console.error("Failed to resume persisted sessions for item", item.id, error);
+        new Notice("Failed to resume previous sessions. See console for details.");
       } finally {
         resumeInProgress = false;
       }
