@@ -9,6 +9,8 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
 import type { AdapterBundle, SettingField } from "../core/interfaces";
+import { checkHookStatus, installHooks, removeHooks } from "../core/claude/ClaudeHookManager";
+import { expandTilde } from "../core/utils";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -16,6 +18,7 @@ interface CoreSettings {
   "core.additionalAgentContext": string;
   "core.defaultShell": string;
   "core.defaultTerminalCwd": string;
+  "core.acceptNoResumeHooks": boolean;
 }
 
 const CORE_DEFAULTS: CoreSettings = {
@@ -24,6 +27,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.additionalAgentContext": "",
   "core.defaultShell": process.env.SHELL || "/bin/zsh",
   "core.defaultTerminalCwd": "~",
+  "core.acceptNoResumeHooks": false,
 };
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
@@ -74,6 +78,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Working directory for new terminals (supports ~)",
     );
 
+    // Session Resume Tracking section
+    containerEl.createEl("h2", { text: "Session Resume Tracking" });
+    this.renderHookStatus(containerEl);
+
     // Adapter settings section
     const schema = this.adapter.config.settingsSchema;
     if (schema.length > 0) {
@@ -82,6 +90,81 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         this.addAdapterSetting(containerEl, field);
       }
     }
+  }
+
+  private async renderHookStatus(containerEl: HTMLElement): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const cwd = expandTilde(
+      settings["core.defaultTerminalCwd"] || CORE_DEFAULTS["core.defaultTerminalCwd"],
+    );
+    const status = checkHookStatus(cwd);
+
+    // Status indicator
+    const statusContainer = containerEl.createDiv({ cls: "wt-hook-status" });
+
+    const badgeEl = statusContainer.createSpan({ cls: "wt-hook-status-badge" });
+    if (status.scriptExists && status.hooksConfigured) {
+      badgeEl.addClass("wt-hook-status-ok");
+      badgeEl.textContent = "Configured";
+    } else if (status.scriptExists || status.hooksConfigured) {
+      badgeEl.addClass("wt-hook-status-partial");
+      badgeEl.textContent = "Partial";
+    } else {
+      badgeEl.addClass("wt-hook-status-missing");
+      badgeEl.textContent = "Not configured";
+    }
+
+    // Install button (shown when not fully configured)
+    if (!(status.scriptExists && status.hooksConfigured)) {
+      new Setting(containerEl)
+        .setName("Install hooks")
+        .setDesc(
+          "Install the session-change hook script and add entries to .claude/settings.local.json",
+        )
+        .addButton((btn) =>
+          btn
+            .setButtonText("Install")
+            .setCta()
+            .onClick(async () => {
+              await installHooks(cwd);
+              this.display(); // refresh
+            }),
+        );
+    }
+
+    // Remove button (shown when any hooks are installed)
+    if (status.scriptExists || status.hooksConfigured) {
+      new Setting(containerEl)
+        .setName("Remove hooks")
+        .setDesc("Remove hook entries from settings and delete the hook script")
+        .addButton((btn) =>
+          btn
+            .setButtonText("Remove")
+            .setWarning()
+            .onClick(async () => {
+              await removeHooks(cwd);
+              this.display(); // refresh
+            }),
+        );
+    }
+
+    // Accept reduced functionality checkbox
+    const acceptValue =
+      settings["core.acceptNoResumeHooks"] ?? CORE_DEFAULTS["core.acceptNoResumeHooks"];
+    new Setting(containerEl)
+      .setName("I accept reduced functionality")
+      .setDesc(
+        "Check this to dismiss the warning banner without installing hooks. Session tracking after /resume will not work.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(!!acceptValue).onChange(async (newValue) => {
+          const d = (await this.plugin.loadData()) || {};
+          if (!d.settings) d.settings = {};
+          d.settings["core.acceptNoResumeHooks"] = newValue;
+          await this.plugin.saveData(d);
+        }),
+      );
   }
 
   private async addCoreSetting(

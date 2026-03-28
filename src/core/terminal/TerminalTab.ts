@@ -17,6 +17,7 @@ import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
 import type { StoredSession, SessionType } from "../session/types";
+import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
 
 export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
 
@@ -60,6 +61,9 @@ export class TerminalTab {
   /** Suppress "active" detection until this timestamp (ms). Used after reload
    *  to prevent stale xterm buffer content from triggering false active state. */
   _suppressActiveUntil = 0;
+
+  // Session tracking (/resume detection)
+  private _sessionTracker: ClaudeSessionTracker | null = null;
 
   // Rename detection
   private _renameDecoder = new StringDecoder("utf8");
@@ -180,6 +184,7 @@ export class TerminalTab {
         this.process = proc;
         this.wireProcess(proc);
         this.startStateTracking();
+        this._initSessionTracker();
         this.terminal.scrollToBottom();
       } catch (err) {
         console.error("[work-terminal] Failed to spawn:", err);
@@ -223,6 +228,7 @@ export class TerminalTab {
 
   private wireProcess(proc: ChildProcess): void {
     this.terminal.onData((data) => {
+      this._sessionTracker?.feedInput(data);
       if (proc.stdin && !proc.stdin.destroyed) {
         proc.stdin.write(data);
       }
@@ -543,6 +549,20 @@ export class TerminalTab {
     this._stateTimer = setInterval(() => this._checkState(), 2000);
   }
 
+  /** Initialize session tracker for Claude sessions with a known session ID. */
+  private _initSessionTracker(): void {
+    if (
+      (this.sessionType === "claude" || this.sessionType === "claude-with-context") &&
+      this.claudeSessionId
+    ) {
+      this._sessionTracker = new ClaudeSessionTracker(this.cwd, this.claudeSessionId);
+      this._sessionTracker.onSessionChange = (newId) => {
+        this.claudeSessionId = newId;
+        console.log("[work-terminal] Session ID updated via /resume:", newId);
+      };
+    }
+  }
+
   private _detectClaudeSession(): boolean {
     return !!this.claudeSessionId;
   }
@@ -737,6 +757,7 @@ export class TerminalTab {
     tab._recentCleanLines = [];
     tab._stateTimer = null;
     tab._isClaudeSession = false;
+    tab._sessionTracker = null;
     tab._renameDecoder = new StringDecoder("utf8");
     tab._renameLineBuffer = "";
     tab._renamePattern = /^\s*[^\w]*Session renamed to:\s*(.+?)\s*$/;
@@ -799,6 +820,9 @@ export class TerminalTab {
   // ---------------------------------------------------------------------------
 
   dispose(): void {
+    // Stop session tracker
+    this._sessionTracker?.dispose();
+    this._sessionTracker = null;
     // Stop state tracking
     if (this._stateTimer) {
       clearInterval(this._stateTimer);

@@ -821,6 +821,90 @@ button.wt-spawn-claude-ctx:hover svg {
   margin-top: 16px;
 }
 
+/* =============================================================================
+   Hook status (settings)
+   ============================================================================= */
+
+.wt-hook-status {
+  padding: 8px 0;
+}
+
+.wt-hook-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wt-hook-status-badge::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.wt-hook-status-ok {
+  background: rgba(56, 161, 105, 0.15);
+  color: #38a169;
+}
+
+.wt-hook-status-ok::before {
+  background: #38a169;
+}
+
+.wt-hook-status-partial {
+  background: rgba(214, 158, 46, 0.15);
+  color: #d69e2e;
+}
+
+.wt-hook-status-partial::before {
+  background: #d69e2e;
+}
+
+.wt-hook-status-missing {
+  background: rgba(229, 62, 62, 0.15);
+  color: #e53e3e;
+}
+
+.wt-hook-status-missing::before {
+  background: #e53e3e;
+}
+
+/* =============================================================================
+   Hook warning banner (terminal panel)
+   ============================================================================= */
+
+.wt-hook-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(214, 158, 46, 0.15);
+  border-bottom: 1px solid rgba(214, 158, 46, 0.3);
+  font-size: 12px;
+  color: #d69e2e;
+  flex-shrink: 0;
+}
+
+.wt-hook-warning-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid rgba(214, 158, 46, 0.4);
+  border-radius: 3px;
+  background: transparent;
+  color: #d69e2e;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wt-hook-warning-btn:hover {
+  background: rgba(214, 158, 46, 0.2);
+}
+
 /* Ingesting indicator */
 .wt-ingesting-badge {
   display: inline-block;

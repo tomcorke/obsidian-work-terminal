@@ -28,6 +28,7 @@ import { resolveCommand, augmentPath, buildClaudeArgs } from "../core/claude/Cla
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import type { PersistedSession, SessionType } from "../core/session/types";
 import { expandTilde } from "../core/utils";
+import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 
 export class TerminalPanelView {
@@ -56,6 +57,9 @@ export class TerminalPanelView {
 
   // Periodic persist stop function
   private stopPeriodicPersist: (() => void) | null = null;
+
+  // Hook warning banner element
+  private hookWarningEl: HTMLElement | null = null;
 
   constructor(
     panelEl: HTMLElement,
@@ -110,6 +114,60 @@ export class TerminalPanelView {
 
     // Initial tab bar render
     this.renderTabBar();
+
+    // Check hook status and show warning banner if needed
+    this.checkHookWarning();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hook warning banner
+  // ---------------------------------------------------------------------------
+
+  private async checkHookWarning(): Promise<void> {
+    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
+    const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
+    const cwd = expandTilde(
+      fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
+    );
+    const status = checkHookStatus(cwd);
+    const hooksOk = status.scriptExists && status.hooksConfigured;
+
+    // Remove existing banner if present
+    if (this.hookWarningEl) {
+      this.hookWarningEl.remove();
+      this.hookWarningEl = null;
+    }
+
+    if (!hooksOk && !accepted) {
+      this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
+      // Insert at the very top of the panel
+      this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
+
+      const textEl = this.hookWarningEl.createSpan();
+      textEl.textContent = "Session resume tracking requires Claude hooks.";
+
+      const openBtn = this.hookWarningEl.createEl("button", {
+        cls: "wt-hook-warning-btn",
+        text: "Open Settings",
+      });
+      openBtn.addEventListener("click", () => {
+        (this.plugin.app as any).setting.open();
+        (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
+      });
+
+      const dismissBtn = this.hookWarningEl.createEl("button", {
+        cls: "wt-hook-warning-btn",
+        text: "Dismiss",
+      });
+      dismissBtn.addEventListener("click", async () => {
+        const d = (await this.plugin.loadData()) || {};
+        if (!d.settings) d.settings = {};
+        d.settings["core.acceptNoResumeHooks"] = true;
+        await this.plugin.saveData(d);
+        this.hookWarningEl?.remove();
+        this.hookWarningEl = null;
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
