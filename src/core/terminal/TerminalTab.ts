@@ -41,6 +41,9 @@ export class TerminalTab {
 
   private fitAddon: FitAddon;
   private searchAddon: SearchAddon;
+  private webLinksAddon: WebLinksAddon;
+  private unicode11Addon: Unicode11Addon;
+  private webglAddon: WebglAddon | null = null;
   private resizeObserver: ResizeObserver;
   private _documentCleanups: (() => void)[] = [];
   private _searchBarEl: HTMLElement | null = null;
@@ -126,24 +129,25 @@ export class TerminalTab {
 
     // Web links - Cmd+click to open URLs in browser
     const electronShell = electronRequire("electron").shell;
-    this.terminal.loadAddon(
-      new WebLinksAddon((_, uri) => {
-        electronShell.openExternal(uri);
-      }),
-    );
+    this.webLinksAddon = new WebLinksAddon((_, uri) => {
+      electronShell.openExternal(uri);
+    });
+    this.terminal.loadAddon(this.webLinksAddon);
 
     // Unicode 11 - correct emoji/CJK character widths
-    const unicode11 = new Unicode11Addon();
-    this.terminal.loadAddon(unicode11);
+    this.unicode11Addon = new Unicode11Addon();
+    this.terminal.loadAddon(this.unicode11Addon);
     this.terminal.unicode.activeVersion = "11";
 
     this.terminal.open(this.containerEl);
 
     // WebGL renderer - GPU-accelerated rendering, fall back to canvas
     try {
-      this.terminal.loadAddon(new WebglAddon());
+      this.webglAddon = new WebglAddon();
+      this.terminal.loadAddon(this.webglAddon);
     } catch (e) {
       console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
+      this.webglAddon = null;
     }
 
     // File path link provider - Cmd+click on paths like src/main.ts:42
@@ -848,6 +852,14 @@ export class TerminalTab {
         }
       }, 1000);
     }
+    // Dispose addons before terminal.dispose() so they can clean up while
+    // xterm's internal services (renderer, buffer) are still alive.
+    // Disposing in reverse load order mirrors standard teardown conventions.
+    this.webglAddon?.dispose();
+    this.unicode11Addon.dispose();
+    this.webLinksAddon.dispose();
+    this.searchAddon.dispose();
+    this.fitAddon.dispose();
     this.terminal.dispose();
     this.containerEl.remove();
   }
