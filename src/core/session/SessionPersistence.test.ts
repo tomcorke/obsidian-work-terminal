@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { SessionPersistence } from "./SessionPersistence";
+import { mergeAndSavePluginData } from "../PluginDataStore";
 
 /** Minimal mock of the DataPlugin interface */
 function createMockPlugin(initialData: Record<string, any> = {}) {
@@ -86,6 +87,37 @@ describe("SessionPersistence", () => {
       const saved = plugin.saveData.mock.calls[0][0];
       expect(saved.settings).toEqual({ foo: "bar" });
       expect(saved.persistedSessions).toEqual([]);
+    });
+
+    it("shares the queued merge path with other plugin data writes", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: true,
+          claudeSessionId: "s1",
+          label: "Claude",
+          taskPath: "task-1",
+          sessionType: "claude",
+        },
+      ]);
+
+      await Promise.all([
+        SessionPersistence.saveToDisk(plugin, sessions),
+        mergeAndSavePluginData(plugin, async (data) => {
+          data.settings = { foo: "bar" };
+        }),
+      ]);
+
+      expect(plugin._getData()).toEqual({
+        settings: { foo: "bar" },
+        persistedSessions: [
+          expect.objectContaining({
+            claudeSessionId: "s1",
+            sessionType: "claude",
+          }),
+        ],
+      });
     });
   });
 

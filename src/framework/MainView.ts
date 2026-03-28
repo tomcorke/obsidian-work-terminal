@@ -19,6 +19,7 @@ import { TerminalPanelView } from "./TerminalPanelView";
 import { PromptBox } from "./PromptBox";
 import { loadAllSettings } from "./SettingsTab";
 import { SessionStore } from "../core/session/SessionStore";
+import { mergeAndSavePluginData } from "../core/PluginDataStore";
 
 interface PendingRename {
   uuid: string | null;
@@ -331,9 +332,9 @@ export class MainView extends ItemView {
       },
       // onCustomOrderChange callback
       async (order: Record<string, string[]>) => {
-        const data = (await this.pluginRef.loadData()) || {};
-        data.customOrder = order;
-        await this.pluginRef.saveData(data);
+        await mergeAndSavePluginData(this.pluginRef, async (data) => {
+          data.customOrder = order;
+        });
       },
     );
   }

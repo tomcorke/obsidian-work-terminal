@@ -9,12 +9,7 @@
  * Sessions older than 7 days are pruned on load.
  */
 import type { PersistedSession, SessionType } from "./types";
-
-/** Plugin-like interface for data persistence (avoids importing Obsidian types). */
-interface DataPlugin {
-  loadData(): Promise<any>;
-  saveData(data: any): Promise<void>;
-}
+import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore";
 
 /** Tab-like interface for extracting persistable data. */
 interface PersistableTab {
@@ -63,14 +58,14 @@ export class SessionPersistence {
    * Merges into existing plugin data under "persistedSessions" key.
    */
   static async saveToDisk(
-    plugin: DataPlugin,
+    plugin: PluginDataStore,
     sessions: Map<string, PersistableTab[]>,
   ): Promise<void> {
-    const data = (await plugin.loadData()) || {};
-    this.setPersistedSessions(data, sessions);
-    await plugin.saveData(data);
-    const persisted = data.persistedSessions as PersistedSession[];
-    // Only log when there are sessions to save (avoid noise from periodic persist)
+    let persisted: PersistedSession[] = [];
+    await mergeAndSavePluginData(plugin, async (data) => {
+      this.setPersistedSessions(data, sessions);
+      persisted = data.persistedSessions as PersistedSession[];
+    });
     if (persisted.length > 0) {
       console.log("[work-terminal] Saved", persisted.length, "resumable sessions to disk");
     }
@@ -80,7 +75,7 @@ export class SessionPersistence {
    * Load persisted resumable session metadata from disk.
    * Filters out sessions older than 7 days.
    */
-  static async loadFromDisk(plugin: DataPlugin): Promise<PersistedSession[]> {
+  static async loadFromDisk(plugin: PluginDataStore): Promise<PersistedSession[]> {
     const data = (await plugin.loadData()) || {};
     const raw: PersistedSession[] = data.persistedSessions || [];
     const cutoff = Date.now() - SESSION_MAX_AGE_MS;
@@ -94,10 +89,10 @@ export class SessionPersistence {
   /**
    * Clear persisted sessions from disk (e.g. after all have been resumed or are stale).
    */
-  static async clearPersistedFromDisk(plugin: DataPlugin): Promise<void> {
-    const data = (await plugin.loadData()) || {};
-    delete data.persistedSessions;
-    await plugin.saveData(data);
+  static async clearPersistedFromDisk(plugin: PluginDataStore): Promise<void> {
+    await mergeAndSavePluginData(plugin, async (data) => {
+      delete data.persistedSessions;
+    });
   }
 
   /**

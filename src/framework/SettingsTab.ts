@@ -11,6 +11,7 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
 import type { AdapterBundle, SettingField } from "../core/interfaces";
 import { checkHookStatus, installHooks, removeHooks } from "../core/claude/ClaudeHookManager";
+import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { expandTilde } from "../core/utils";
 
 interface CoreSettings {
@@ -130,10 +131,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   }
 
   private async saveSettings(update: (settings: Record<string, unknown>) => void): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    if (!data.settings) data.settings = {};
-    update(data.settings);
-    await this.plugin.saveData(data);
+    await mergeAndSavePluginData(this.plugin, async (data) => {
+      if (!data.settings) data.settings = {};
+      update(data.settings);
+    });
   }
 
   private async renderHookStatus(containerEl: HTMLElement): Promise<void> {
