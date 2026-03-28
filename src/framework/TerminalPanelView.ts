@@ -32,7 +32,7 @@ import {
   buildStrandsArgs,
 } from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
-import type { PersistedSession, SessionType } from "../core/session/types";
+import type { PersistedSession } from "../core/session/types";
 import { expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
@@ -40,6 +40,7 @@ import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
 import {
   getDefaultSessionLabel,
+  isClaudeSession,
   isContextSession,
   isCopilotSession,
   isStrandsSession,
@@ -82,6 +83,7 @@ export class TerminalPanelView {
 
   // In-flight guard to prevent overlapping async checkHookWarning() calls
   private hookWarningCheckInFlight = false;
+  private hookWarningCheckQueued = false;
 
   // Serialises plugin data writes to avoid clobbering unrelated keys.
   private pluginDataWrite: Promise<void> = Promise.resolve();
@@ -118,6 +120,7 @@ export class TerminalPanelView {
     this.tabManager = new TabManager(terminalWrapperEl);
     this.tabManager.onSessionChange = () => {
       this.renderTabBar();
+      void this.checkHookWarning();
       this.onSessionChange();
     };
     this.tabManager.onClaudeStateChange = (itemId: string, state: ClaudeState) => {
@@ -149,7 +152,10 @@ export class TerminalPanelView {
   // ---------------------------------------------------------------------------
 
   private async checkHookWarning(): Promise<void> {
-    if (this.hookWarningCheckInFlight) return;
+    if (this.hookWarningCheckInFlight) {
+      this.hookWarningCheckQueued = true;
+      return;
+    }
     this.hookWarningCheckInFlight = true;
     try {
       const fresh = ((await this.plugin.loadData()) || {}).settings || {};
@@ -159,8 +165,9 @@ export class TerminalPanelView {
       );
       const status = checkHookStatus(cwd);
       const hooksOk = status.scriptExists && status.hooksConfigured;
+      const hasClaudeUsage = this.hasClaudeHookDependentUsage();
 
-      if (!hooksOk && !accepted) {
+      if (!hooksOk && !accepted && hasClaudeUsage) {
         // Only create the banner on the transition from no-banner -> banner needed
         if (!this.hookWarningEl) {
           this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
@@ -209,6 +216,10 @@ export class TerminalPanelView {
       }
     } finally {
       this.hookWarningCheckInFlight = false;
+      if (this.hookWarningCheckQueued) {
+        this.hookWarningCheckQueued = false;
+        void this.checkHookWarning();
+      }
     }
   }
 
@@ -226,6 +237,18 @@ export class TerminalPanelView {
       clearInterval(this.hookWarningPollId);
       this.hookWarningPollId = null;
     }
+  }
+
+  private hasClaudeHookDependentUsage(): boolean {
+    for (const tabs of this.tabManager.getSessions().values()) {
+      for (const tab of tabs) {
+        if (isClaudeSession(tab.sessionType)) {
+          return true;
+        }
+      }
+    }
+
+    return this.persistedSessions.some((session) => isClaudeSession(session.sessionType));
   }
 
   // ---------------------------------------------------------------------------
@@ -625,6 +648,7 @@ export class TerminalPanelView {
 
   private async loadPersistedSessions(): Promise<void> {
     this.persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
+    await this.checkHookWarning();
   }
 
   async persistSessions(): Promise<void> {

@@ -3,6 +3,7 @@ import {
   createDefaultCustomSessionConfig,
   getDefaultSessionLabel,
   getSessionTypeHelp,
+  isClaudeSession,
   isContextSession,
   isCopilotSession,
   isStrandsSession,
@@ -81,6 +82,9 @@ describe("CustomSessionConfig", () => {
     expect(isContextSession("strands-with-context")).toBe(true);
     expect(isContextSession("copilot")).toBe(false);
     expect(isContextSession("strands")).toBe(false);
+    expect(isClaudeSession("claude")).toBe(true);
+    expect(isClaudeSession("claude-with-context")).toBe(true);
+    expect(isClaudeSession("copilot")).toBe(false);
     expect(isCopilotSession("copilot")).toBe(true);
     expect(isCopilotSession("copilot-with-context")).toBe(true);
     expect(isCopilotSession("claude")).toBe(false);
