@@ -43,6 +43,8 @@ describe("PersistedSession", () => {
       "claude-with-context",
       "copilot",
       "copilot-with-context",
+      "strands",
+      "strands-with-context",
     ];
     for (const sessionType of types) {
       const session: PersistedSession = {

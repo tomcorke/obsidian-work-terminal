@@ -13,6 +13,8 @@ export const CUSTOM_SESSION_TYPE_OPTIONS: Array<{ value: SessionType; label: str
   { value: "claude-with-context", label: "Claude (ctx)" },
   { value: "copilot", label: "Copilot" },
   { value: "copilot-with-context", label: "Copilot (ctx)" },
+  { value: "strands", label: "Strands" },
+  { value: "strands-with-context", label: "Strands (ctx)" },
 ];
 
 export function createDefaultCustomSessionConfig(defaultCwd: string): CustomSessionConfig {
@@ -49,15 +51,27 @@ export function getDefaultSessionLabel(sessionType: SessionType): string {
       return "Copilot";
     case "copilot-with-context":
       return "Copilot (ctx)";
+    case "strands":
+      return "Strands";
+    case "strands-with-context":
+      return "Strands (ctx)";
   }
 }
 
 export function isContextSession(sessionType: SessionType): boolean {
-  return sessionType === "claude-with-context" || sessionType === "copilot-with-context";
+  return (
+    sessionType === "claude-with-context" ||
+    sessionType === "copilot-with-context" ||
+    sessionType === "strands-with-context"
+  );
 }
 
 export function isCopilotSession(sessionType: SessionType): boolean {
   return sessionType === "copilot" || sessionType === "copilot-with-context";
+}
+
+export function isStrandsSession(sessionType: SessionType): boolean {
+  return sessionType === "strands" || sessionType === "strands-with-context";
 }
 
 export function supportsExtraArgs(sessionType: SessionType): boolean {

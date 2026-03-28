@@ -11,7 +11,9 @@ export type SessionType =
   | "claude"
   | "claude-with-context"
   | "copilot"
-  | "copilot-with-context";
+  | "copilot-with-context"
+  | "strands"
+  | "strands-with-context";
 
 /**
  * State extracted from a TerminalTab that can survive a plugin hot-reload.
