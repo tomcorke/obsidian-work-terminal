@@ -62,6 +62,7 @@ export class TaskParser implements WorkItemParser {
       },
       agentActionable: fm["agent-actionable"] ?? false,
       goal,
+      color: fm.color || undefined,
       created: fm.created || "",
       updated: fm.updated || "",
     };
@@ -80,6 +81,7 @@ export class TaskParser implements WorkItemParser {
         priority: task.priority,
         agentActionable: task.agentActionable,
         goal: task.goal,
+        color: task.color,
         created: task.created,
         updated: task.updated,
       },
