@@ -48,6 +48,9 @@ export class ListPanel {
 
   // Background enrichment tracking
   private ingestingIds: Set<string> = new Set();
+  // Tracks the most recently created item so success animation can target it
+  private lastCreatedId: string | null = null;
+  private successTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   // Drag state
   private dragSourceId: string | null = null;
@@ -201,11 +204,9 @@ export class ListPanel {
         // Resume badge
         this.renderResumeBadge(cardEl, item);
 
-        // Ingesting badge
+        // Ingesting shine: card-level class drives the CSS animation
         if (this.ingestingIds.has(item.id)) {
           cardEl.addClass("wt-card-ingesting");
-          const badge = cardEl.createSpan({ cls: "wt-ingesting-badge" });
-          badge.textContent = "ingesting\u2026";
         }
 
         cardsEl.appendChild(cardEl);
@@ -302,14 +303,9 @@ export class ListPanel {
 
   setIngesting(id: string): void {
     this.ingestingIds.add(id);
-    // Update existing card if already rendered
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
-    if (cardEl && !cardEl.querySelector(".wt-ingesting-badge")) {
+    if (cardEl) {
       cardEl.addClass("wt-card-ingesting");
-      const badge = document.createElement("span");
-      badge.className = "wt-ingesting-badge";
-      badge.textContent = "ingesting\u2026";
-      cardEl.appendChild(badge);
     }
   }
 
@@ -318,7 +314,6 @@ export class ListPanel {
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
     if (cardEl) {
       cardEl.removeClass("wt-card-ingesting");
-      cardEl.querySelector(".wt-ingesting-badge")?.remove();
     }
   }
 
@@ -329,6 +324,8 @@ export class ListPanel {
       this.customOrder[columnId] = [id, ...order];
       this.onCustomOrderChange(this.customOrder);
     }
+    // Track so the upcoming resolvePlaceholder can attach the success animation
+    this.lastCreatedId = id;
   }
 
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<void> {
@@ -786,21 +783,44 @@ export class ListPanel {
 
   resolvePlaceholder(path: string, success: boolean): void {
     const placeholderEl = this.placeholders.get(path);
-    if (!placeholderEl) return;
-
-    if (success) {
-      placeholderEl.textContent = "\u2713";
-      placeholderEl.addClass("wt-card-placeholder-success");
-      setTimeout(() => {
-        placeholderEl.remove();
-        this.placeholders.delete(path);
-      }, 1500);
-    } else {
-      setTimeout(() => {
-        placeholderEl.remove();
-        this.placeholders.delete(path);
-      }, 5000);
+    if (placeholderEl) {
+      placeholderEl.remove();
+      this.placeholders.delete(path);
     }
+
+    if (success && this.lastCreatedId) {
+      const cardId = this.lastCreatedId;
+      this.lastCreatedId = null;
+      this.applyNewSuccessAnimation(cardId);
+    } else if (!success) {
+      // Keep placeholder visible as an error indicator if no element
+      // Already removed above - re-add with error state
+      const errorEl = document.createElement("div");
+      errorEl.addClass("wt-card-placeholder", "wt-card-placeholder-error");
+      errorEl.textContent = "Creation failed";
+      const defaultCol =
+        this.adapter.config.creationColumns.find((c) => c.default)?.id ||
+        this.adapter.config.columns[0]?.id;
+      const cardsEl = this.listEl.querySelector(`[data-column="${defaultCol}"] .wt-section-cards`);
+      if (cardsEl) cardsEl.appendChild(errorEl);
+      setTimeout(() => errorEl.remove(), 5000);
+    }
+  }
+
+  private applyNewSuccessAnimation(id: string): void {
+    const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`) as HTMLElement | null;
+    if (!cardEl) return;
+
+    // Cancel any existing success timeout for this card
+    const existing = this.successTimeouts.get(id);
+    if (existing) clearTimeout(existing);
+
+    cardEl.addClass("wt-card-new-success");
+    const timeout = setTimeout(() => {
+      cardEl.removeClass("wt-card-new-success");
+      this.successTimeouts.delete(id);
+    }, 4500);
+    this.successTimeouts.set(id, timeout);
   }
 
   rekeyCustomOrder(oldPath: string, newPath: string): void {
