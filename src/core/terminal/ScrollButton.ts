@@ -17,25 +17,38 @@ export function attachScrollButton(containerEl: HTMLElement, terminal: Terminal)
   scrollBtn.style.display = "none";
   containerEl.appendChild(scrollBtn);
 
+  let visibilityRaf: number | null = null;
+  let lastVisible = false;
+
   const updateVisibility = () => {
+    visibilityRaf = null;
     const buf = terminal.buffer.active;
-    const atBottom = buf.viewportY >= buf.baseY;
-    scrollBtn.style.display = atBottom ? "none" : "flex";
+    const shouldShow = buf.viewportY < buf.baseY;
+    if (shouldShow === lastVisible) return;
+    lastVisible = shouldShow;
+    scrollBtn.style.display = shouldShow ? "flex" : "none";
   };
 
-  terminal.onScroll(updateVisibility);
-  terminal.onWriteParsed(updateVisibility);
+  const scheduleVisibilityUpdate = () => {
+    if (visibilityRaf !== null) return;
+    visibilityRaf = requestAnimationFrame(updateVisibility);
+  };
+
+  terminal.onScroll(scheduleVisibilityUpdate);
 
   // Also listen for native scroll on the viewport element, since xterm's
   // onScroll only fires for programmatic scrolls, not user trackpad/wheel.
   const viewport = containerEl.querySelector(".xterm-viewport");
   if (viewport) {
-    viewport.addEventListener("scroll", updateVisibility, { passive: true });
+    viewport.addEventListener("scroll", scheduleVisibilityUpdate, { passive: true });
   }
 
   scrollBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     terminal.scrollToBottom();
     terminal.focus();
+    scheduleVisibilityUpdate();
   });
+
+  scheduleVisibilityUpdate();
 }
