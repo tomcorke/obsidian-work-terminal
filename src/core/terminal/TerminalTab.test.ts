@@ -255,6 +255,16 @@ describe("TerminalTab hot-reload addon handling", () => {
 });
 
 describe("TerminalTab WebGL recovery", () => {
+  beforeEach(() => {
+    mocks.MockWebglAddon.instances.length = 0;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("stashes the live webgl addon reference for hot reload recovery", () => {
     const addon = new mocks.MockWebglAddon();
     const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
