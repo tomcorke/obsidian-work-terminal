@@ -91,7 +91,7 @@ export function buildCopilotArgs(
 /**
  * Build AWS Strands agent argument array from settings and optional prompt.
  * The Strands SDK has no standard CLI binary - the command is user-configured.
- * Extra args are passed through verbatim; the prompt (if any) is appended as a
+ * Extra args are space-split and passed through; the prompt (if any) is appended as a
  * positional argument so users can pipe context into their agent entry-point.
  */
 export function buildStrandsArgs(

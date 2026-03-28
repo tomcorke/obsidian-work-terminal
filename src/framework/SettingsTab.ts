@@ -84,7 +84,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       containerEl,
       "core.strandsCommand",
       "Strands command",
-      "Path or name of the AWS Strands agent entry-point. The Strands SDK has no universal binary - set this to your project's runner script or wrapper (e.g. ~/my-project/run-agent.sh).",
+      "Path or name of the AWS Strands agent entry-point. The Strands SDK has no universal binary - set this to your project's runner script or wrapper (e.g. ~/my-project/run-agent.sh or uv run python agent.py). Tilde (~) is expanded. Do not include extra arguments here; use \"Default Strands arguments\" below.",
     );
     this.addCoreTextArea(
       containerEl,

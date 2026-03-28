@@ -825,8 +825,11 @@ export class TerminalPanelView {
     prompt?: string;
   }): Promise<void> {
     const fresh = await this.loadFreshSettings();
-    const strandsCmd = this.getStringSetting(fresh, "core.strandsCommand", "strands");
-    const resolved = resolveCommand(strandsCmd);
+    const strandsCmd = expandTilde(
+      this.getStringSetting(fresh, "core.strandsCommand", "strands"),
+    );
+    const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
+    const resolved = resolveCommand(cmdToken);
     const mergedExtraArgs = this.mergeExtraArgs(
       this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
       options.extraArgs || "",
@@ -838,6 +841,7 @@ export class TerminalPanelView {
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
       resolved,
+      ...cmdArgs,
       ...args,
     ]);
     this.renderTabBar();
