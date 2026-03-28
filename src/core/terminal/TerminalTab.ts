@@ -41,6 +41,7 @@ export class TerminalTab {
 
   private fitAddon: FitAddon;
   private searchAddon: SearchAddon;
+  private webglAddon: WebglAddon | null = null;
   private resizeObserver: ResizeObserver;
   private _documentCleanups: (() => void)[] = [];
   private _searchBarEl: HTMLElement | null = null;
@@ -139,11 +140,22 @@ export class TerminalTab {
 
     this.terminal.open(this.containerEl);
 
-    // WebGL renderer - GPU-accelerated rendering, fall back to canvas
+    // WebGL renderer - GPU-accelerated rendering, fall back to canvas.
+    // Subscribe to onContextLoss: idle tabs can have their GPU context
+    // reclaimed by the OS, leaving a blank/white canvas. Disposing the
+    // WebglAddon on context loss causes xterm to fall back to its canvas
+    // renderer automatically, recovering the display.
     try {
-      this.terminal.loadAddon(new WebglAddon());
+      this.webglAddon = new WebglAddon();
+      this.webglAddon.onContextLoss(() => {
+        console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
+        this.webglAddon?.dispose();
+        this.webglAddon = null;
+      });
+      this.terminal.loadAddon(this.webglAddon);
     } catch (e) {
       console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
+      this.webglAddon = null;
     }
 
     // File path link provider - Cmd+click on paths like src/main.ts:42
@@ -848,6 +860,10 @@ export class TerminalTab {
         }
       }, 1000);
     }
+    // Dispose webgl addon before terminal.dispose() so it can release its
+    // GL context while xterm's renderer is still alive.
+    this.webglAddon?.dispose();
+    this.webglAddon = null;
     this.terminal.dispose();
     this.containerEl.remove();
   }
