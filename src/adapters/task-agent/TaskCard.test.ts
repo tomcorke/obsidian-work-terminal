@@ -3,6 +3,14 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskCard } from "./TaskCard";
 import type { CardActionContext, WorkItem } from "../../core/interfaces";
 
+type CreateChildOptions = { cls?: string; text?: string };
+type ObsidianHTMLElementPrototype = typeof HTMLElement.prototype & {
+  addClass(cls: string): HTMLElement;
+  removeClass(cls: string): HTMLElement;
+  createDiv(options?: CreateChildOptions): HTMLDivElement;
+  createSpan(options?: CreateChildOptions): HTMLSpanElement;
+};
+
 vi.mock("obsidian", () => ({
   Notice: class Notice {
     constructor(_message: string) {}
@@ -11,22 +19,24 @@ vi.mock("obsidian", () => ({
 
 // Polyfill Obsidian HTMLElement augmentations for jsdom
 beforeAll(() => {
-  HTMLElement.prototype.addClass = function (cls: string) {
+  const prototype = HTMLElement.prototype as ObsidianHTMLElementPrototype;
+
+  prototype.addClass = function (cls: string) {
     this.classList.add(cls);
     return this;
   };
-  HTMLElement.prototype.removeClass = function (cls: string) {
+  prototype.removeClass = function (cls: string) {
     this.classList.remove(cls);
     return this;
   };
-  HTMLElement.prototype.createDiv = function (options?: { cls?: string; text?: string }) {
+  prototype.createDiv = function (options?: CreateChildOptions) {
     const el = document.createElement("div");
     if (options?.cls) el.classList.add(...options.cls.split(" "));
     if (options?.text) el.textContent = options.text;
     this.appendChild(el);
     return el;
   };
-  HTMLElement.prototype.createSpan = function (options?: { cls?: string; text?: string }) {
+  prototype.createSpan = function (options?: CreateChildOptions) {
     const el = document.createElement("span");
     if (options?.cls) el.classList.add(...options.cls.split(" "));
     if (options?.text) el.textContent = options.text;

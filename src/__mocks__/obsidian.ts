@@ -8,9 +8,12 @@ export class Notice {
 
 export class Modal {
   app: unknown;
-  contentEl: HTMLElement = document.createElement("div");
+  contentEl: HTMLElement | null = null;
   constructor(app: unknown) {
     this.app = app;
+    if (typeof document !== "undefined") {
+      this.contentEl = document.createElement("div");
+    }
   }
   open() {}
   close() {}
