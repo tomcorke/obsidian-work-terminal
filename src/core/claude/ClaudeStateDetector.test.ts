@@ -122,6 +122,16 @@ describe("ClaudeStateDetector", () => {
       detector.stop();
     });
 
+    it("detects Copilot thinking spinner as active", () => {
+      const terminal = mockTerminal(["  some output", "  \u25c9 Thinking (Esc to cancel)"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
     it("detects spinner + ellipsis split across wrapped lines (narrow terminal)", () => {
       // On a 10-col terminal, "\u2733 Reading files\u2026" wraps to:
       // "\u2733 Reading" on one visual row and "files\u2026" on the next
@@ -130,6 +140,16 @@ describe("ClaudeStateDetector", () => {
         "  \u2733 Readi", // spinner on first wrapped row
         "  ng files\u2026", // ellipsis on second wrapped row
       ]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("detects wrapped Copilot thinking indicator as active", () => {
+      const terminal = mockTerminal(["  some output", "  \u25c9 Thin", "  king (Esc to cancel)"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 

@@ -18,6 +18,7 @@ import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
 import type { StoredSession, SessionType } from "../session/types";
 import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
+import { hasAgentActiveIndicator } from "../claude/ClaudeStateDetector";
 
 export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
 
@@ -618,23 +619,7 @@ export class TerminalTab {
     // Need screen content for idle/active detection
     if (screenLines.length === 0) return;
 
-    // Look for structural indicators in the last few lines only (near the status bar).
-    //   \u2733 <text>... - spinner line with ellipsis means work in progress
-    //   \u23bf  <text>... - tool output with ellipsis means tool still running
-    // On narrow terminals the spinner line wraps across multiple visual rows,
-    // so we check both per-line AND a joined tail string.
-    const tail = screenLines.slice(-6);
-    const tailJoined = tail.join(" ");
-    const hasActiveIndicator =
-      tail.some(
-        (line) =>
-          /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
-          /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
-      ) ||
-      // Wrapped lines: spinner char on one visual row, ellipsis on another
-      (/\u2733/.test(tailJoined) &&
-        /\u2026/.test(tailJoined) &&
-        tail.some((line) => /^\s*\u2733/.test(line)));
+    const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
 
     if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
