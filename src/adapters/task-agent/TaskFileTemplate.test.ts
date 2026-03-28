@@ -63,6 +63,18 @@ describe("generateTaskContent", () => {
     expect(content).toContain("score: 0");
     expect(content).toContain("has-blocker: false");
   });
+
+  it("uses block list syntax for split task related links", () => {
+    const content = generateTaskContent("Split task", "todo", {
+      filename: "TASK-20260327-1200-source-task.md",
+      title: "Source task",
+    });
+
+    expect(content).toMatch(/^related:$/m);
+    expect(content).toContain('related:\n  - "[[TASK-20260327-1200-source-task]]"');
+    expect(content).not.toContain("\n related:");
+    expect(content).not.toContain('related: []\n  - "[[TASK-20260327-1200-source-task]]"');
+  });
 });
 
 describe("generateTaskFilename", () => {

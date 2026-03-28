@@ -1,24 +1,21 @@
 import type { App, TFile } from "obsidian";
 import type { WorkItem, WorkItemParser } from "../../core/interfaces";
-import {
-  type TaskFile,
-  type TaskState,
-  type KanbanColumn,
-  KANBAN_COLUMNS,
-  STATE_FOLDER_MAP,
-} from "./types";
+import { type TaskFile, type TaskState, type KanbanColumn, KANBAN_COLUMNS } from "./types";
 
 const VALID_STATES: TaskState[] = ["priority", "todo", "active", "done", "abandoned"];
 
 export class TaskParser implements WorkItemParser {
   basePath: string;
+  private static loggedFallbackPaths = new Set<string>();
 
   constructor(
     private app: App,
     _basePath: string,
     private settings: Record<string, any>,
   ) {
-    this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
+    this.basePath = this.normaliseBasePath(
+      this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks",
+    );
   }
 
   parse(file: TFile): WorkItem | null {
@@ -30,10 +27,13 @@ export class TaskParser implements WorkItemParser {
   parseTaskFile(file: TFile): TaskFile | null {
     const cache = this.app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter;
-    if (!fm) return null;
+    const fallbackState = this.getStateFromPath(file.path);
+    if (!fm) {
+      return this.createFallbackTaskFile(file, fallbackState);
+    }
 
-    const state = fm.state as TaskState;
-    if (!VALID_STATES.includes(state)) return null;
+    const state = this.normaliseState(fm.state, fallbackState);
+    if (!state) return null;
 
     const source = fm.source || {};
     const priority = fm.priority || {};
@@ -65,6 +65,75 @@ export class TaskParser implements WorkItemParser {
       color: fm.color || undefined,
       created: fm.created || "",
       updated: fm.updated || "",
+    };
+  }
+
+  private normaliseState(
+    frontmatterState: unknown,
+    fallbackState: TaskState | null,
+  ): TaskState | null {
+    if (
+      typeof frontmatterState === "string" &&
+      VALID_STATES.includes(frontmatterState as TaskState)
+    ) {
+      return frontmatterState as TaskState;
+    }
+
+    return fallbackState;
+  }
+
+  private getStateFromPath(path: string): TaskState | null {
+    const relativePath = path.startsWith(`${this.basePath}/`)
+      ? path.slice(this.basePath.length + 1)
+      : path;
+    const folder = relativePath.split("/")[0];
+    switch (folder) {
+      case "priority":
+      case "todo":
+      case "active":
+        return folder;
+      case "archive":
+        return "done";
+      default:
+        return null;
+    }
+  }
+
+  private createFallbackTaskFile(file: TFile, state: TaskState | null): TaskFile | null {
+    if (!state) return null;
+
+    if (!TaskParser.loggedFallbackPaths.has(file.path)) {
+      TaskParser.loggedFallbackPaths.add(file.path);
+      console.debug(
+        `[work-terminal] Falling back to path-based task parsing for malformed frontmatter: ${file.path}`,
+      );
+    }
+
+    return {
+      id: file.path,
+      path: file.path,
+      filename: file.name,
+      state,
+      title: file.basename,
+      tags: ["task", `task/${state}`],
+      source: {
+        type: "other",
+        id: "",
+        url: "",
+        captured: "",
+      },
+      priority: {
+        score: 0,
+        deadline: "",
+        impact: "medium",
+        "has-blocker": false,
+        "blocker-context": "",
+      },
+      agentActionable: false,
+      goal: [],
+      color: undefined,
+      created: "",
+      updated: "",
     };
   }
 
@@ -143,6 +212,10 @@ export class TaskParser implements WorkItemParser {
 
   isItemFile(path: string): boolean {
     return path.startsWith(this.basePath + "/") && path.endsWith(".md");
+  }
+
+  private normaliseBasePath(path: string): string {
+    return path.replace(/\/+$/, "");
   }
 
   async backfillIds(): Promise<number> {
