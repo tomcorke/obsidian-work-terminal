@@ -379,6 +379,7 @@
   color: var(--text-muted);
   background: var(--background-modifier-border);
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 /* =============================================================================
