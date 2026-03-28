@@ -54,11 +54,11 @@ export class TabManager {
       this.recoveredItemId = stored.activeTaskPath;
       this.recoveredTabIndex = stored.activeTabIndex;
 
-      // Pre-seed idleSince for recovered items with Claude sessions so
+      // Pre-seed idleSince for recovered items with resumable agent sessions so
       // idle animations start fully stale (300s ago) instead of fresh.
       const fullyStale = Date.now() - 300_000;
       for (const [itemId, tabs] of this.sessions) {
-        if (tabs.some((t) => t.isClaudeSession)) {
+        if (tabs.some((t) => t.isResumableAgent)) {
           this.idleSince.set(itemId, fullyStale);
         }
       }
@@ -340,24 +340,29 @@ export class TabManager {
     return !!tabs && tabs.length > 0;
   }
 
+  hasResumableAgentSessions(itemId: string): boolean {
+    const tabs = this.sessions.get(itemId) || [];
+    return tabs.some((tab) => tab.isResumableAgent);
+  }
+
   /** Return item IDs that have terminal sessions. */
   getSessionItemIds(): string[] {
     return Array.from(this.sessions.keys());
   }
 
   /** Return the count of shell and agent tabs for an item. */
-  getSessionCounts(itemId: string): { shells: number; claudes: number } {
+  getSessionCounts(itemId: string): { shells: number; agents: number } {
     const tabs = this.sessions.get(itemId) || [];
-    let claudes = 0;
+    let agents = 0;
     let shells = 0;
     for (const tab of tabs) {
-      if (tab.isClaudeSession) {
-        claudes++;
-      } else {
+      if (tab.sessionType === "shell") {
         shells++;
+      } else {
+        agents++;
       }
     }
-    return { shells, claudes };
+    return { shells, agents };
   }
 
   /** Re-fit the active terminal to its container dimensions. */
@@ -381,7 +386,7 @@ export class TabManager {
     const tabs = this.sessions.get(itemId) || [];
     const states: ClaudeState[] = [];
     for (const tab of tabs) {
-      if (tab.isClaudeSession) {
+      if (tab.isResumableAgent) {
         states.push(tab.claudeState);
       }
     }

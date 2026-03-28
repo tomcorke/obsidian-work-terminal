@@ -16,7 +16,7 @@ import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
-import type { StoredSession, SessionType } from "../session/types";
+import { type StoredSession, type SessionType, isResumableSessionType } from "../session/types";
 import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
 import { hasAgentActiveIndicator } from "../claude/ClaudeStateDetector";
 
@@ -68,7 +68,7 @@ export class TerminalTab {
   private _claudeState: ClaudeState = "inactive";
   private _recentCleanLines: string[] = [];
   private _stateTimer: ReturnType<typeof setInterval> | null = null;
-  private _isClaudeSession = false;
+  private _isResumableAgent = false;
   /** Suppress "active" detection until this timestamp (ms). Used after reload
    *  to prevent stale xterm buffer content from triggering false active state. */
   _suppressActiveUntil = 0;
@@ -574,14 +574,14 @@ export class TerminalTab {
     return this._claudeState;
   }
 
-  get isClaudeSession(): boolean {
-    return this._isClaudeSession;
+  get isResumableAgent(): boolean {
+    return this._isResumableAgent;
   }
 
   /** Start state tracking for Claude/Agent sessions. Call after label is known. */
   startStateTracking(): void {
-    this._isClaudeSession = this._detectClaudeSession();
-    if (!this._isClaudeSession) return;
+    this._isResumableAgent = this._detectResumableAgent();
+    if (!this._isResumableAgent) return;
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
@@ -606,13 +606,13 @@ export class TerminalTab {
     }
   }
 
-  private _detectClaudeSession(): boolean {
-    return this.sessionType !== "shell" && !!this.claudeSessionId;
+  private _detectResumableAgent(): boolean {
+    return isResumableSessionType(this.sessionType) && !!this.claudeSessionId;
   }
 
   /** Called on each chunk of output data to track activity. */
   private _trackOutput(data: Buffer | string): void {
-    if (!this._isClaudeSession) return;
+    if (!this._isResumableAgent) return;
 
     // Buffer recent clean lines for pattern matching (keep last 30 lines)
     const text = typeof data === "string" ? data : data.toString("utf8");
@@ -647,7 +647,7 @@ export class TerminalTab {
   }
 
   private _checkState(): void {
-    if (!this._isClaudeSession) return;
+    if (!this._isResumableAgent) return;
 
     const screenLines = this._readTerminalScreen();
 
@@ -798,7 +798,7 @@ export class TerminalTab {
     tab._claudeState = "inactive" as ClaudeState;
     tab._recentCleanLines = [];
     tab._stateTimer = null;
-    tab._isClaudeSession = false;
+    tab._isResumableAgent = false;
     tab._sessionTracker = null;
     tab._renameDecoder = new StringDecoder("utf8");
     tab._renameLineBuffer = "";

@@ -59,3 +59,12 @@ export interface StoredState {
   activeTaskPath: string | null;
   activeTabIndex: number;
 }
+
+export function isResumableSessionType(sessionType: SessionType): boolean {
+  return (
+    sessionType === "claude" ||
+    sessionType === "claude-with-context" ||
+    sessionType === "copilot" ||
+    sessionType === "copilot-with-context"
+  );
+}

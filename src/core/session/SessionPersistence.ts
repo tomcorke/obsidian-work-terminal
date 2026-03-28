@@ -21,7 +21,7 @@ interface PersistableTab {
   label: string;
   taskPath: string | null;
   claudeSessionId: string | null;
-  isClaudeSession: boolean;
+  isResumableAgent: boolean;
   sessionType: SessionType;
 }
 
@@ -36,7 +36,7 @@ export class SessionPersistence {
     const persisted: PersistedSession[] = [];
     for (const [taskPath, tabs] of sessions) {
       for (const tab of tabs) {
-        if (tab.isClaudeSession && tab.claudeSessionId) {
+        if (tab.isResumableAgent && tab.claudeSessionId) {
           persisted.push({
             version: 1,
             taskPath,

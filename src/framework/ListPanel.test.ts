@@ -134,7 +134,8 @@ function createListPanel(
   const terminalPanel = {
     closeAllSessions: vi.fn(),
     getClaudeContextPrompt: vi.fn(),
-    getSessionCounts: vi.fn(() => ({ shells: 0, claudes: 0 })),
+    getSessionCounts: vi.fn(() => ({ shells: 0, agents: 0 })),
+    hasResumableAgentSessions: vi.fn(() => false),
     getPersistedSessions: vi.fn(() => []),
     getIdleSince: vi.fn(() => null),
     resumeSession: vi.fn(),
@@ -162,7 +163,7 @@ function createListPanel(
     onCustomOrderChange,
   );
 
-  return { panel, parentEl, mover, onCustomOrderChange, plugin };
+  return { panel, parentEl, mover, onCustomOrderChange, plugin, terminalPanel };
 }
 
 describe("ListPanel", () => {
@@ -266,6 +267,28 @@ describe("ListPanel", () => {
     const cardEl = document.querySelector('[data-item-id="task-1"]');
     expect(cardEl?.classList.contains("wt-card-is-ingesting")).toBe(true);
     expect(cardEl?.classList.contains("wt-card-ingesting")).toBe(false);
+  });
+
+  it("keeps the resume badge visible when only non-resumable agent tabs are active", () => {
+    const { panel, terminalPanel } = createListPanel();
+    terminalPanel.getSessionCounts.mockReturnValue({ shells: 0, agents: 1 });
+    terminalPanel.getPersistedSessions.mockReturnValue([
+      {
+        version: 1,
+        taskPath: "Tasks/task-1.md",
+        claudeSessionId: "session-1",
+        label: "Claude",
+        sessionType: "claude",
+        savedAt: new Date().toISOString(),
+      },
+    ]);
+    terminalPanel.hasResumableAgentSessions.mockReturnValue(false);
+
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    expect(document.querySelector('[data-item-id="task-1"] .wt-resume-badge')?.textContent).toBe(
+      "↻",
+    );
   });
 
   it("does not reorder the destination column when a cross-column move fails", async () => {

@@ -621,14 +621,14 @@ export class ListPanel {
 
   private renderSessionBadges(containerEl: HTMLElement, item: WorkItem): void {
     const counts = this.terminalPanel.getSessionCounts(item.id);
-    const total = counts.shells + counts.claudes;
+    const total = counts.shells + counts.agents;
     if (total === 0) return;
 
     const badgeEl = containerEl.createDiv({ cls: "wt-session-badge" });
-    if (counts.claudes > 0 && counts.shells > 0) {
+    if (counts.agents > 0 && counts.shells > 0) {
       badgeEl.addClass("wt-badge-mixed");
-    } else if (counts.claudes > 0) {
-      badgeEl.addClass("wt-badge-claude");
+    } else if (counts.agents > 0) {
+      badgeEl.addClass("wt-badge-agent");
     } else {
       badgeEl.addClass("wt-badge-shell");
     }
@@ -667,8 +667,7 @@ export class ListPanel {
     if (!persisted || persisted.length === 0) return;
 
     // Only show resume badge if there are no active sessions
-    const counts = this.terminalPanel.getSessionCounts(item.id);
-    if (counts.claudes > 0) return;
+    if (this.terminalPanel.hasResumableAgentSessions(item.id)) return;
 
     const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
     let resumeInProgress = false;
