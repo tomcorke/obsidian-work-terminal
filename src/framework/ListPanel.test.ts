@@ -87,17 +87,31 @@ function makeItem(id: string, title = `Task ${id}`): WorkItem {
   };
 }
 
-function createListPanel() {
+function createListPanel(
+  options: {
+    columns?: { id: string; label: string; folderName: string }[];
+    creationColumns?: { id: string; label: string; default?: boolean }[];
+    mover?: { move: ReturnType<typeof vi.fn> };
+    onCustomOrderChange?: ReturnType<typeof vi.fn>;
+  } = {},
+) {
   const parentEl = document.createElement("div") as HTMLElement & {
     createDiv: HTMLElement["createDiv"];
   };
   document.body.appendChild(parentEl);
 
+  const columns = options.columns ?? [{ id: "todo", label: "To Do", folderName: "todo" }];
+  const creationColumns = options.creationColumns ?? [
+    { id: "todo", label: "To Do", default: true },
+  ];
+  const mover = options.mover ?? { move: vi.fn() };
+  const onCustomOrderChange = options.onCustomOrderChange ?? vi.fn();
+
   const adapter = {
     config: {
       itemName: "task",
-      columns: [{ id: "todo", label: "To Do", folderName: "todo" }],
-      creationColumns: [{ id: "todo", label: "To Do", default: true }],
+      columns,
+      creationColumns,
     },
   };
 
@@ -140,15 +154,15 @@ function createListPanel() {
     parentEl,
     adapter as any,
     cardRenderer as any,
-    { move: vi.fn() } as any,
+    mover as any,
     plugin as any,
     terminalPanel as any,
     {},
     vi.fn(),
-    vi.fn(),
+    onCustomOrderChange,
   );
 
-  return { panel, parentEl };
+  return { panel, parentEl, mover, onCustomOrderChange, plugin };
 }
 
 describe("ListPanel", () => {
@@ -252,5 +266,60 @@ describe("ListPanel", () => {
     const cardEl = document.querySelector('[data-item-id="task-1"]');
     expect(cardEl?.classList.contains("wt-card-is-ingesting")).toBe(true);
     expect(cardEl?.classList.contains("wt-card-ingesting")).toBe(false);
+  });
+
+  it("does not reorder the destination column when a cross-column move fails", async () => {
+    const file = { path: "Tasks/task-1.md" };
+    const mover = { move: vi.fn().mockResolvedValue(false) };
+    const onCustomOrderChange = vi.fn();
+    const { panel, plugin } = createListPanel({
+      columns: [
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "active", label: "Active", folderName: "active" },
+      ],
+      creationColumns: [{ id: "todo", label: "To Do", default: true }],
+      mover,
+      onCustomOrderChange,
+    });
+
+    const sourceItem = makeItem("task-1");
+    const destinationItem = { ...makeItem("task-2"), state: "active" };
+    const customOrder = { todo: ["task-1"], active: ["task-2"] };
+
+    (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(file);
+
+    panel.render(
+      {
+        todo: [sourceItem],
+        active: [destinationItem],
+      },
+      customOrder,
+    );
+
+    (panel as any).dragSourceId = "task-1";
+    (panel as any).dragSourceColumn = "todo";
+
+    const activeCardsEl = document.querySelector(
+      '[data-column="active"] .wt-section-cards',
+    ) as HTMLElement;
+
+    activeCardsEl.dispatchEvent(
+      new dom.window.MouseEvent("drop", { bubbles: true, cancelable: true, clientY: 0 }),
+    );
+    await vi.runAllTimersAsync();
+
+    expect(mover.move).toHaveBeenCalledWith(file, "active");
+    expect(onCustomOrderChange).not.toHaveBeenCalled();
+    expect((panel as any).customOrder.active).toEqual(["task-2"]);
+    expect(
+      Array.from(document.querySelectorAll('[data-column="active"] [data-item-id]')).map((el) =>
+        el.getAttribute("data-item-id"),
+      ),
+    ).toEqual(["task-2"]);
+    expect(
+      Array.from(document.querySelectorAll('[data-column="todo"] [data-item-id]')).map((el) =>
+        el.getAttribute("data-item-id"),
+      ),
+    ).toEqual(["task-1"]);
   });
 });

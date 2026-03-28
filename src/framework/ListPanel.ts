@@ -327,18 +327,19 @@ export class ListPanel {
     }
   }
 
-  private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<void> {
+  private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<boolean> {
     const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
-    if (!file) return;
+    if (!file) return false;
     const success = await this.mover.move(file, targetColumnId);
     if (!success) {
       new Notice(`Failed to move "${item.title}" to ${targetColumnId}`);
-      return;
+      return false;
     }
     // Wait for metadata cache update
     setTimeout(() => {
       this.onCustomOrderChange(this.customOrder);
     }, 200);
+    return true;
   }
 
   private get app() {
@@ -517,7 +518,8 @@ export class ListPanel {
         const item = this.items.find((i) => i.id === this.dragSourceId);
         const dragId = this.dragSourceId;
         if (item && dragId) {
-          await this.moveToColumn(item, columnId);
+          const didMove = await this.moveToColumn(item, columnId);
+          if (!didMove) return;
           // After file move + metadata cache update, set drop position.
           // Build full order from current items + the moved item at drop index.
           setTimeout(() => {
