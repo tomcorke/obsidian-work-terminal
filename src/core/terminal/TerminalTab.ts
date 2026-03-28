@@ -145,21 +145,7 @@ export class TerminalTab {
     // reclaimed by the OS, leaving a blank/white canvas. Disposing the
     // WebglAddon on context loss causes xterm to fall back to its canvas
     // renderer automatically, recovering the display.
-    try {
-      this.webglAddon = new WebglAddon();
-      this.webglAddon.onContextLoss(() => {
-        console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
-        this.webglAddon?.dispose();
-        this.webglAddon = null;
-      });
-      this.terminal.loadAddon(this.webglAddon);
-    } catch (e) {
-      console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
-      if (this.webglAddon) {
-        this.webglAddon.dispose();
-      }
-      this.webglAddon = null;
-    }
+    this.loadWebglAddon();
 
     // File path link provider - Cmd+click on paths like src/main.ts:42
     this.registerFilePathLinks();
@@ -235,6 +221,31 @@ export class TerminalTab {
       }, 100);
     });
     this.resizeObserver.observe(this.containerEl);
+  }
+
+  private trackWebglAddon(addon: WebglAddon): void {
+    this.webglAddon = addon;
+    addon.onContextLoss(() => {
+      if (this.webglAddon !== addon) return;
+      console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
+      addon.dispose();
+      this.webglAddon = null;
+    });
+  }
+
+  private loadWebglAddon(): void {
+    let addon: WebglAddon | null = null;
+    try {
+      addon = new WebglAddon();
+      this.trackWebglAddon(addon);
+      this.terminal.loadAddon(addon);
+    } catch (e) {
+      console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
+      addon?.dispose();
+      if (this.webglAddon === addon) {
+        this.webglAddon = null;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -768,16 +779,12 @@ export class TerminalTab {
     tab.searchAddon = stored.searchAddon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
-    // Restore webglAddon reference so dispose() and onContextLoss stay wired up
-    // for recovered tabs. Re-subscribe onContextLoss so the handler closes over
-    // the new tab instance rather than the discarded pre-reload one.
     tab.webglAddon = stored.webglAddon ?? null;
-    if (tab.webglAddon) {
-      tab.webglAddon.onContextLoss(() => {
-        console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
-        tab.webglAddon?.dispose();
-        tab.webglAddon = null;
-      });
+    // Restore the live webglAddon reference so recovered tabs still dispose it
+    // correctly, then re-subscribe onContextLoss with a callback bound to the
+    // new tab instance created during reload recovery.
+    if (stored.webglAddon) {
+      tab.trackWebglAddon(stored.webglAddon);
     }
     tab._documentCleanups = [];
     tab._claudeState = "inactive" as ClaudeState;
