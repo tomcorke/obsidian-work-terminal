@@ -558,26 +558,30 @@ export class TerminalPanelView {
     });
   }
 
-  resumeSession(persisted: PersistedSession): void {
+  async resumeSession(persisted: PersistedSession, itemId?: string): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const targetItemId = itemId || this.tabManager.getActiveItemId();
+    if (!targetItemId) return;
     const isCopilot =
       persisted.sessionType === "copilot" || persisted.sessionType === "copilot-with-context";
     const command = isCopilot
-      ? this.settings["core.copilotCommand"] || "copilot"
-      : this.settings["core.claudeCommand"] || "claude";
+      ? this.getStringSetting(fresh, "core.copilotCommand", "copilot")
+      : this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(command);
     const args = isCopilot
       ? [`--resume=${persisted.claudeSessionId}`]
       : ["--resume", persisted.claudeSessionId];
     const extraArgs = isCopilot
-      ? this.settings["core.copilotExtraArgs"]
-      : this.settings["core.claudeExtraArgs"];
+      ? this.getStringSetting(fresh, "core.copilotExtraArgs", "")
+      : this.getStringSetting(fresh, "core.claudeExtraArgs", "");
 
     if (extraArgs) {
       args.unshift(...String(extraArgs).split(/\s+/).filter(Boolean));
     }
 
-    const cwd = expandTilde(this.settings["core.defaultTerminalCwd"] || "~");
-    const tab = this.tabManager.createTab(
+    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    const tab = this.tabManager.createTabForItem(
+      targetItemId,
       resolved,
       cwd,
       persisted.label,
