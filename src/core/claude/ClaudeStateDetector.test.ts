@@ -132,6 +132,39 @@ describe("ClaudeStateDetector", () => {
       detector.stop();
     });
 
+    it("detects Copilot custom intent with cancel hint as active", () => {
+      const terminal = mockTerminal([
+        "  some output",
+        "  \u25ce Reading repository (Esc to cancel)",
+      ]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("detects Copilot executing status as active", () => {
+      const terminal = mockTerminal(["  some output", "  \u25cb Executing"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("detects Copilot cancelling status as active", () => {
+      const terminal = mockTerminal(["  some output", "  \u25cf Cancelling"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
     it("detects spinner + ellipsis split across wrapped lines (narrow terminal)", () => {
       // On a 10-col terminal, "\u2733 Reading files\u2026" wraps to:
       // "\u2733 Reading" on one visual row and "files\u2026" on the next
@@ -150,6 +183,34 @@ describe("ClaudeStateDetector", () => {
 
     it("detects wrapped Copilot thinking indicator as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25c9 Thin", "  king (Esc to cancel)"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("detects wrapped Copilot custom intent as active", () => {
+      const terminal = mockTerminal([
+        "  some output",
+        "  \u25ce Reading",
+        "  repository (Esc to cancel \u00b7 1.2k)",
+      ]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("detects Copilot custom intent when cancel hint wraps mid-phrase", () => {
+      const terminal = mockTerminal([
+        "  some output",
+        "  \u25ce Reading repository (Esc to",
+        "  cancel \u00b7 1.2k)",
+      ]);
       const detector = new ClaudeStateDetector(terminal, () => false);
       detector.start();
 
