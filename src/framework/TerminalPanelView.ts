@@ -71,6 +71,9 @@ export class TerminalPanelView {
   // Hook warning banner element
   private hookWarningEl: HTMLElement | null = null;
 
+  // Interval ID for hook-status polling while warning is visible
+  private hookWarningPollId: ReturnType<typeof setInterval> | null = null;
+
   // Serialises plugin data writes to avoid clobbering unrelated keys.
   private pluginDataWrite: Promise<void> = Promise.resolve();
 
@@ -179,7 +182,29 @@ export class TerminalPanelView {
         await this.plugin.saveData(d);
         this.hookWarningEl?.remove();
         this.hookWarningEl = null;
+        this.stopHookWarningPoller();
       });
+
+      // Poll hook status while warning is visible so it auto-dismisses when
+      // the user installs hooks via settings without manually reloading.
+      this.startHookWarningPoller();
+    } else {
+      // Hooks are ok or user accepted - no need to poll
+      this.stopHookWarningPoller();
+    }
+  }
+
+  private startHookWarningPoller(): void {
+    this.stopHookWarningPoller();
+    this.hookWarningPollId = setInterval(() => {
+      this.checkHookWarning();
+    }, 2000);
+  }
+
+  private stopHookWarningPoller(): void {
+    if (this.hookWarningPollId !== null) {
+      clearInterval(this.hookWarningPollId);
+      this.hookWarningPollId = null;
     }
   }
 
@@ -852,12 +877,14 @@ export class TerminalPanelView {
   stashAll(): void {
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
+    this.stopHookWarningPoller();
     this.tabManager.stashAll();
   }
 
   disposeAll(): void {
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
+    this.stopHookWarningPoller();
     this.tabManager.disposeAll();
   }
 
