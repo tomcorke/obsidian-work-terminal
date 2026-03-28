@@ -1,6 +1,7 @@
 /**
- * TerminalPanelView - wraps TabManager with Claude launch buttons,
- * state aggregation, session resume, tab context menu, and inline rename.
+ * TerminalPanelView - wraps TabManager with terminal launch buttons,
+ * custom session spawning, state aggregation, session resume, tab context
+ * menu, and inline rename.
  */
 import { Menu, Notice } from "obsidian";
 
@@ -24,13 +25,21 @@ function createClaudeLogo(size = 14): SVGSVGElement {
 import type { Plugin } from "obsidian";
 import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, ClaudeState } from "../core/terminal/TerminalTab";
-import { resolveCommand, augmentPath, buildClaudeArgs } from "../core/claude/ClaudeLauncher";
+import { resolveCommand, buildClaudeArgs, buildCopilotArgs } from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import type { PersistedSession, SessionType } from "../core/session/types";
 import { expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
+import { CustomSessionModal } from "./CustomSessionModal";
+import {
+  getDefaultSessionLabel,
+  isContextSession,
+  isCopilotSession,
+  sanitizeCustomSessionConfig,
+  type CustomSessionConfig,
+} from "./CustomSessionConfig";
 
 export class TerminalPanelView {
   private tabManager: TabManager;
@@ -61,6 +70,9 @@ export class TerminalPanelView {
 
   // Hook warning banner element
   private hookWarningEl: HTMLElement | null = null;
+
+  // Serialises plugin data writes to avoid clobbering unrelated keys.
+  private pluginDataWrite: Promise<void> = Promise.resolve();
 
   constructor(
     panelEl: HTMLElement,
@@ -247,6 +259,14 @@ export class TerminalPanelView {
     claudeCtxBtn.appendChild(createClaudeLogo());
     claudeCtxBtn.appendText("Claude (ctx)");
     claudeCtxBtn.addEventListener("click", () => void this.spawnClaudeWithContext());
+
+    const customBtn = buttonsContainer.createEl("button", {
+      cls: "wt-spawn-btn wt-spawn-custom",
+      text: "...",
+    });
+    customBtn.setAttribute("aria-label", "Custom session");
+    customBtn.setAttribute("title", "Custom session");
+    customBtn.addEventListener("click", () => void this.openCustomSessionModal());
   }
 
   /** Update Claude state classes on existing tab elements without full re-render. */
@@ -478,106 +498,37 @@ export class TerminalPanelView {
   }
 
   private async spawnClaude(): Promise<void> {
-    const fresh = await this.loadFreshSettings();
-    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
-    const resolved = resolveCommand(claudeCmd);
-    const sessionId = crypto.randomUUID();
-    const args = buildClaudeArgs(
-      {
-        claudeExtraArgs: this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
-      },
-      sessionId,
-    );
-
-    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-    const tab = this.tabManager.createTab(
-      resolved,
-      cwd,
-      "Claude",
-      "claude",
-      undefined,
-      [resolved, ...args],
-      sessionId,
-    );
-    if (tab && this.adapter.transformSessionLabel) {
-      tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
-    }
-    this.renderTabBar();
+    await this.spawnClaudeSession({ sessionType: "claude" });
   }
 
   private async spawnClaudeWithContext(): Promise<void> {
-    const activeItemId = this.tabManager.getActiveItemId();
-    if (!activeItemId) {
-      new Notice("Select a task first to launch Claude with context");
-      return;
-    }
-
-    const item = this.allItems.find((i) => i.id === activeItemId);
-    if (!item) {
-      new Notice("Could not find the selected task");
-      return;
-    }
-
-    const prompt = await this.getClaudeContextPrompt(item);
-    if (!prompt) {
-      new Notice("Set 'Claude (ctx) prompt template' in settings to use Claude (ctx)");
-      return;
-    }
-    const fresh = await this.loadFreshSettings();
-
-    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
-    const resolved = resolveCommand(claudeCmd);
-    const sessionId = crypto.randomUUID();
-    const extraArgs = this.getStringSetting(fresh, "core.claudeExtraArgs", "");
-    const args = buildClaudeArgs({ claudeExtraArgs: extraArgs }, sessionId, prompt);
-
-    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-    const tab = this.tabManager.createTab(
-      resolved,
-      cwd,
-      "Claude (ctx)",
-      "claude-with-context",
-      undefined,
-      [resolved, ...args],
-      sessionId,
-    );
-    if (tab && this.adapter.transformSessionLabel) {
-      tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
-    }
-    this.renderTabBar();
+    await this.spawnClaudeSession({ sessionType: "claude-with-context" });
   }
 
   async spawnClaudeWithPrompt(prompt: string, label?: string): Promise<void> {
-    const fresh = await this.loadFreshSettings();
-    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
-    const resolved = resolveCommand(claudeCmd);
-    const sessionId = crypto.randomUUID();
-    const extraArgs = this.getStringSetting(fresh, "core.claudeExtraArgs", "");
-    const args = buildClaudeArgs({ claudeExtraArgs: extraArgs }, sessionId, prompt);
-
-    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-    const tab = this.tabManager.createTab(
-      resolved,
-      cwd,
-      label || "Claude (ctx)",
-      "claude-with-context",
-      undefined,
-      [resolved, ...args],
-      sessionId,
-    );
-    if (tab && this.adapter.transformSessionLabel) {
-      tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
-    }
-    this.renderTabBar();
+    await this.spawnClaudeSession({
+      sessionType: "claude-with-context",
+      prompt,
+      label: label || "Claude (ctx)",
+    });
   }
 
   resumeSession(persisted: PersistedSession): void {
-    const claudeCmd = this.settings["core.claudeCommand"] || "claude";
-    const resolved = resolveCommand(claudeCmd);
-    const args = ["--resume", persisted.claudeSessionId];
+    const isCopilot =
+      persisted.sessionType === "copilot" || persisted.sessionType === "copilot-with-context";
+    const command = isCopilot
+      ? this.settings["core.copilotCommand"] || "copilot"
+      : this.settings["core.claudeCommand"] || "claude";
+    const resolved = resolveCommand(command);
+    const args = isCopilot
+      ? [`--resume=${persisted.claudeSessionId}`]
+      : ["--resume", persisted.claudeSessionId];
+    const extraArgs = isCopilot
+      ? this.settings["core.copilotExtraArgs"]
+      : this.settings["core.claudeExtraArgs"];
 
-    if (this.settings["core.claudeExtraArgs"]) {
-      args.unshift(...this.settings["core.claudeExtraArgs"].split(/\s+/).filter(Boolean));
+    if (extraArgs) {
+      args.unshift(...String(extraArgs).split(/\s+/).filter(Boolean));
     }
 
     const cwd = expandTilde(this.settings["core.defaultTerminalCwd"] || "~");
@@ -628,7 +579,9 @@ export class TerminalPanelView {
   }
 
   async persistSessions(): Promise<void> {
-    await SessionPersistence.saveToDisk(this.plugin, this.tabManager.getSessions());
+    await this.updatePluginData(async (data) => {
+      SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -653,6 +606,198 @@ export class TerminalPanelView {
   async getClaudeContextPrompt(item: WorkItem): Promise<string | null> {
     const fresh = await this.loadFreshSettings();
     return buildClaudeContextPrompt(item, fresh);
+  }
+
+  private async updatePluginData(
+    update: (data: Record<string, any>) => void | Promise<void>,
+  ): Promise<void> {
+    const run = async () => {
+      const data = ((await this.plugin.loadData()) || {}) as Record<string, any>;
+      await update(data);
+      await this.plugin.saveData(data);
+    };
+    const queued = this.pluginDataWrite.then(run, run);
+    this.pluginDataWrite = queued.catch(() => {});
+    return queued;
+  }
+
+  private getActiveItem(): WorkItem | null {
+    const activeItemId = this.tabManager.getActiveItemId();
+    if (!activeItemId) return null;
+    return this.allItems.find((item) => item.id === activeItemId) || null;
+  }
+
+  private mergeExtraArgs(baseArgs: string, extraArgs: string): string {
+    return [baseArgs.trim(), extraArgs.trim()].filter(Boolean).join(" ");
+  }
+
+  private async loadCustomSessionDefaults(
+    itemId: string,
+    freshSettings: Record<string, unknown>,
+  ): Promise<CustomSessionConfig> {
+    const data = (await this.plugin.loadData()) || {};
+    const saved = data.customSessionDefaults?.[itemId];
+    const defaultCwd = this.getStringSetting(freshSettings, "core.defaultTerminalCwd", "~");
+    return sanitizeCustomSessionConfig(saved, defaultCwd);
+  }
+
+  private async saveCustomSessionDefaults(
+    itemId: string,
+    config: CustomSessionConfig,
+  ): Promise<void> {
+    await this.updatePluginData(async (data) => {
+      if (!data.customSessionDefaults) data.customSessionDefaults = {};
+      data.customSessionDefaults[itemId] = config;
+    });
+  }
+
+  private async openCustomSessionModal(): Promise<void> {
+    const item = this.getActiveItem();
+    if (!item) {
+      new Notice(`Select a ${this.adapter.config.itemName} first to launch a custom session`);
+      return;
+    }
+
+    const fresh = await this.loadFreshSettings();
+    const initial = await this.loadCustomSessionDefaults(item.id, fresh);
+    new CustomSessionModal(this.plugin.app, initial, (config) => {
+      void this.spawnCustomSession(item, config);
+    }).open();
+  }
+
+  private async spawnCustomSession(item: WorkItem, rawConfig: CustomSessionConfig): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
+    const config = sanitizeCustomSessionConfig(rawConfig, defaultCwd);
+    const prompt = isContextSession(config.sessionType)
+      ? await this.getClaudeContextPrompt(item)
+      : undefined;
+
+    if (isContextSession(config.sessionType) && !prompt) {
+      new Notice("Set 'Context prompt template' in settings to use contextual sessions");
+      return;
+    }
+
+    await this.saveCustomSessionDefaults(item.id, config);
+
+    if (config.sessionType === "shell") {
+      const shell = this.getStringSetting(
+        fresh,
+        "core.defaultShell",
+        process.env.SHELL || "/bin/zsh",
+      );
+      this.tabManager.createTab(
+        shell,
+        expandTilde(config.cwd),
+        config.label || getDefaultSessionLabel(config.sessionType),
+        "shell",
+      );
+      this.renderTabBar();
+      return;
+    }
+
+    if (isCopilotSession(config.sessionType)) {
+      await this.spawnCopilotSession({
+        sessionType: config.sessionType,
+        cwd: config.cwd,
+        extraArgs: config.extraArgs,
+        label: config.label || getDefaultSessionLabel(config.sessionType),
+        prompt,
+      });
+      return;
+    }
+
+    await this.spawnClaudeSession({
+      sessionType: config.sessionType as "claude" | "claude-with-context",
+      cwd: config.cwd,
+      extraArgs: config.extraArgs,
+      label: config.label || getDefaultSessionLabel(config.sessionType),
+      prompt,
+    });
+  }
+
+  private async spawnClaudeSession(options: {
+    sessionType: "claude" | "claude-with-context";
+    cwd?: string;
+    extraArgs?: string;
+    label?: string;
+    prompt?: string;
+  }): Promise<void> {
+    let prompt = options.prompt;
+    if (options.sessionType === "claude-with-context" && !prompt) {
+      const item = this.getActiveItem();
+      if (!item) {
+        new Notice(`Select a ${this.adapter.config.itemName} first to launch Claude with context`);
+        return;
+      }
+      prompt = await this.getClaudeContextPrompt(item);
+      if (!prompt) {
+        new Notice("Set 'Context prompt template' in settings to use contextual sessions");
+        return;
+      }
+    }
+
+    const fresh = await this.loadFreshSettings();
+    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
+    const resolved = resolveCommand(claudeCmd);
+    const sessionId = crypto.randomUUID();
+    const mergedExtraArgs = this.mergeExtraArgs(
+      this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
+      options.extraArgs || "",
+    );
+    const args = buildClaudeArgs({ claudeExtraArgs: mergedExtraArgs }, sessionId, prompt);
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+    );
+    const label = options.label || getDefaultSessionLabel(options.sessionType);
+    const tab = this.tabManager.createTab(
+      resolved,
+      cwd,
+      label,
+      options.sessionType,
+      undefined,
+      [resolved, ...args],
+      sessionId,
+    );
+    if (tab && this.adapter.transformSessionLabel) {
+      tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
+    }
+    this.renderTabBar();
+  }
+
+  private async spawnCopilotSession(options: {
+    sessionType: "copilot" | "copilot-with-context";
+    cwd?: string;
+    extraArgs?: string;
+    label?: string;
+    prompt?: string;
+  }): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
+    const resolved = resolveCommand(copilotCmd);
+    const sessionId = crypto.randomUUID();
+    const mergedExtraArgs = this.mergeExtraArgs(
+      this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
+      options.extraArgs || "",
+    );
+    const args = [
+      `--resume=${sessionId}`,
+      ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, options.prompt),
+    ];
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+    );
+    const label = options.label || getDefaultSessionLabel(options.sessionType);
+    this.tabManager.createTab(
+      resolved,
+      cwd,
+      label,
+      options.sessionType,
+      undefined,
+      [resolved, ...args],
+      sessionId,
+    );
+    this.renderTabBar();
   }
 
   getRecoveredItemId(): string | null {

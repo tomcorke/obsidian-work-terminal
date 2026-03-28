@@ -37,7 +37,13 @@ describe("PersistedSession", () => {
   });
 
   it("supports all session types", () => {
-    const types: SessionType[] = ["shell", "claude", "claude-with-context"];
+    const types: SessionType[] = [
+      "shell",
+      "claude",
+      "claude-with-context",
+      "copilot",
+      "copilot-with-context",
+    ];
     for (const sessionType of types) {
       const session: PersistedSession = {
         version: 1,

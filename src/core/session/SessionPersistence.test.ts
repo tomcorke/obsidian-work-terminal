@@ -34,7 +34,7 @@ function makePersisted(
 
 describe("SessionPersistence", () => {
   describe("saveToDisk", () => {
-    it("saves only claude sessions with session IDs", async () => {
+    it("saves resumable agent sessions with session IDs", async () => {
       const plugin = createMockPlugin();
       const sessions = new Map<string, any[]>();
       sessions.set("task-1", [
@@ -44,6 +44,13 @@ describe("SessionPersistence", () => {
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
+        },
+        {
+          isClaudeSession: true,
+          claudeSessionId: "s2",
+          label: "Copilot",
+          taskPath: "task-1",
+          sessionType: "copilot",
         },
         {
           isClaudeSession: false,
@@ -64,8 +71,10 @@ describe("SessionPersistence", () => {
       await SessionPersistence.saveToDisk(plugin, sessions);
 
       const saved = plugin.saveData.mock.calls[0][0];
-      expect(saved.persistedSessions).toHaveLength(1);
+      expect(saved.persistedSessions).toHaveLength(2);
       expect(saved.persistedSessions[0].claudeSessionId).toBe("s1");
+      expect(saved.persistedSessions[1].claudeSessionId).toBe("s2");
+      expect(saved.persistedSessions[1].sessionType).toBe("copilot");
     });
 
     it("merges into existing plugin data without clobbering", async () => {

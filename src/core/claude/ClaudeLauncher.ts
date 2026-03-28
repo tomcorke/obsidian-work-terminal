@@ -1,5 +1,5 @@
 /**
- * Claude CLI launch helpers: PATH augmentation, command resolution, argument building.
+ * CLI launch helpers: PATH augmentation, command resolution, and agent argument builders.
  */
 import { expandTilde, electronRequire } from "../utils";
 
@@ -65,6 +65,25 @@ export function buildClaudeArgs(
     // Pass as positional arg (initial message in interactive session),
     // not -p (which is one-shot print mode that exits after response).
     args.push(fullPrompt);
+  }
+  return args;
+}
+
+/**
+ * Build GitHub Copilot CLI argument array from settings and optional prompt.
+ */
+export function buildCopilotArgs(
+  settings: {
+    copilotExtraArgs?: string;
+  },
+  prompt?: string,
+): string[] {
+  const args: string[] = [];
+  if (settings.copilotExtraArgs) {
+    args.push(...settings.copilotExtraArgs.split(/\s+/).filter(Boolean));
+  }
+  if (prompt) {
+    args.push("-i", prompt);
   }
   return args;
 }

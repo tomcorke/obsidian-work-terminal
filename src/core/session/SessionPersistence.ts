@@ -1,12 +1,12 @@
 /**
- * Disk persistence for Claude session metadata.
+ * Disk persistence for resumable agent session metadata.
  *
- * Saves/loads session metadata via Obsidian's plugin data API so Claude
- * sessions can be resumed after a full plugin close/restart (not just
+ * Saves/loads session metadata via Obsidian's plugin data API so supported
+ * agent sessions can be resumed after a full plugin close/restart (not just
  * hot-reload). Uses a merge pattern to avoid clobbering other plugin data
  * (settings, taskOrder, etc.) stored in the same data.json file.
  *
- * Sessions older than 7 days are pruned on load (Claude's default retention).
+ * Sessions older than 7 days are pruned on load.
  */
 import type { PersistedSession, SessionType } from "./types";
 
@@ -32,14 +32,7 @@ const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const PERSIST_INTERVAL_MS = 30_000;
 
 export class SessionPersistence {
-  /**
-   * Save Claude session metadata to disk via Obsidian's plugin data API.
-   * Merges into existing plugin data under "persistedSessions" key.
-   */
-  static async saveToDisk(
-    plugin: DataPlugin,
-    sessions: Map<string, PersistableTab[]>,
-  ): Promise<void> {
+  static buildPersistedSessions(sessions: Map<string, PersistableTab[]>): PersistedSession[] {
     const persisted: PersistedSession[] = [];
     for (const [taskPath, tabs] of sessions) {
       for (const tab of tabs) {
@@ -55,19 +48,37 @@ export class SessionPersistence {
         }
       }
     }
+    return persisted;
+  }
 
+  static setPersistedSessions(
+    data: Record<string, any>,
+    sessions: Map<string, PersistableTab[]>,
+  ): void {
+    data.persistedSessions = this.buildPersistedSessions(sessions);
+  }
+
+  /**
+   * Save resumable session metadata to disk via Obsidian's plugin data API.
+   * Merges into existing plugin data under "persistedSessions" key.
+   */
+  static async saveToDisk(
+    plugin: DataPlugin,
+    sessions: Map<string, PersistableTab[]>,
+  ): Promise<void> {
     const data = (await plugin.loadData()) || {};
-    data.persistedSessions = persisted;
+    this.setPersistedSessions(data, sessions);
     await plugin.saveData(data);
+    const persisted = data.persistedSessions as PersistedSession[];
     // Only log when there are sessions to save (avoid noise from periodic persist)
     if (persisted.length > 0) {
-      console.log("[work-terminal] Saved", persisted.length, "Claude sessions to disk");
+      console.log("[work-terminal] Saved", persisted.length, "resumable sessions to disk");
     }
   }
 
   /**
-   * Load persisted Claude session metadata from disk.
-   * Filters out sessions older than 7 days (Claude's default retention).
+   * Load persisted resumable session metadata from disk.
+   * Filters out sessions older than 7 days.
    */
   static async loadFromDisk(plugin: DataPlugin): Promise<PersistedSession[]> {
     const data = (await plugin.loadData()) || {};

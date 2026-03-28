@@ -305,7 +305,7 @@ export class TabManager {
     return Array.from(this.sessions.keys());
   }
 
-  /** Return the count of shell and Claude tabs for an item. */
+  /** Return the count of shell and agent tabs for an item. */
   getSessionCounts(itemId: string): { shells: number; claudes: number } {
     const tabs = this.sessions.get(itemId) || [];
     let claudes = 0;
