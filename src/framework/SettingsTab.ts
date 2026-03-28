@@ -84,7 +84,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       containerEl,
       "core.strandsCommand",
       "Strands command",
-      "Path or name of the AWS Strands agent entry-point. The Strands SDK has no universal binary - set this to your project's runner script or wrapper (e.g. ~/my-project/run-agent.sh or uv run python agent.py). Tilde (~) is expanded. Do not include extra arguments here; use \"Default Strands arguments\" below.",
+      'Path or name of the AWS Strands agent entry-point. The Strands SDK has no universal binary - set this to your project\'s runner script or wrapper (e.g. ~/my-project/run-agent.sh or uv run python agent.py). Tilde (~) is expanded. Do not include extra arguments here; use "Default Strands arguments" below.',
     );
     this.addCoreTextArea(
       containerEl,
@@ -112,7 +112,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     );
 
     // Session Resume Tracking section
-    containerEl.createEl("h2", { text: "Session Resume Tracking" });
+    containerEl.createEl("h2", { text: "Claude /resume hooks" });
+    containerEl.createEl("p", {
+      text: "These hooks are only for Claude CLI. Copilot restart resume uses Copilot's native --resume[=sessionId] support and does not require hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.",
+      cls: "wt-custom-spawn-help",
+    });
     this.renderHookStatus(containerEl);
 
     // Adapter settings section
@@ -160,7 +164,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       new Setting(containerEl)
         .setName("Install hooks")
         .setDesc(
-          "Install the session-change hook script and add entries to .claude/settings.local.json",
+          "Install the Claude session-change hook script and add entries to .claude/settings.local.json",
         )
         .addButton((btn) =>
           btn
@@ -177,7 +181,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (status.scriptExists || status.hooksConfigured) {
       new Setting(containerEl)
         .setName("Remove hooks")
-        .setDesc("Remove hook entries from settings and delete the hook script")
+        .setDesc("Remove Claude hook entries from settings and delete the hook script")
         .addButton((btn) =>
           btn
             .setButtonText("Remove")
@@ -195,7 +199,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("I accept reduced functionality")
       .setDesc(
-        "Check this to dismiss the warning banner without installing hooks. Session tracking after /resume will not work.",
+        "Check this to dismiss the warning banner without installing Claude hooks. Claude session tracking after /resume will not work.",
       )
       .addToggle((toggle) =>
         toggle.setValue(!!acceptValue).onChange(async (newValue) => {

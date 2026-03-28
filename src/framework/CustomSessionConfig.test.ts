@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultCustomSessionConfig,
   getDefaultSessionLabel,
+  getSessionTypeHelp,
   isContextSession,
   isCopilotSession,
   isStrandsSession,
@@ -63,6 +64,15 @@ describe("CustomSessionConfig", () => {
     expect(getDefaultSessionLabel("copilot-with-context")).toBe("Copilot (ctx)");
     expect(getDefaultSessionLabel("strands")).toBe("Strands");
     expect(getDefaultSessionLabel("strands-with-context")).toBe("Strands (ctx)");
+  });
+
+  it("describes session resume behavior per session type", () => {
+    expect(getSessionTypeHelp("shell")).toContain("not saved for restart resume");
+    expect(getSessionTypeHelp("claude")).toContain("--session-id");
+    expect(getSessionTypeHelp("claude")).toContain("Claude hooks");
+    expect(getSessionTypeHelp("copilot")).toContain("--resume[=sessionId]");
+    expect(getSessionTypeHelp("copilot")).toContain("without Claude hooks");
+    expect(getSessionTypeHelp("strands")).toContain("start fresh each time");
   });
 
   it("identifies context and copilot sessions", () => {

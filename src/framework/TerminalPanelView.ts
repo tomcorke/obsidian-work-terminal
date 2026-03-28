@@ -168,7 +168,8 @@ export class TerminalPanelView {
           this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
 
           const textEl = this.hookWarningEl.createSpan();
-          textEl.textContent = "Session resume tracking requires Claude hooks.";
+          textEl.textContent =
+            "Claude /resume tracking requires Claude hooks. Copilot restart resume works without them.";
 
           const openBtn = this.hookWarningEl.createEl("button", {
             cls: "wt-hook-warning-btn",
@@ -863,9 +864,7 @@ export class TerminalPanelView {
     prompt?: string;
   }): Promise<void> {
     const fresh = await this.loadFreshSettings();
-    const strandsCmd = expandTilde(
-      this.getStringSetting(fresh, "core.strandsCommand", "strands"),
-    );
+    const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
     const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
     const resolved = resolveCommand(cmdToken);
     const mergedExtraArgs = this.mergeExtraArgs(
