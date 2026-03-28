@@ -48,6 +48,9 @@ export class ListPanel {
 
   // Background enrichment tracking
   private ingestingIds: Set<string> = new Set();
+  private pendingCreatedIdsByPlaceholder: Map<string, string> = new Map();
+  private activeSuccessIds: Set<string> = new Set();
+  private successTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   // Drag state
   private dragSourceId: string | null = null;
@@ -188,31 +191,27 @@ export class ListPanel {
         // Claude state indicators (applied as class on card wrapper)
         this.renderClaudeStateIndicator(cardEl, item);
 
-        // Actions container: session badge + move-to-top (top-right)
-        const actionsEl = cardEl.querySelector(".wt-card-actions");
-        if (actionsEl) {
-          this.renderSessionBadges(actionsEl as HTMLElement, item);
-          this.renderMoveToTop(actionsEl as HTMLElement, item);
-        } else {
-          this.renderSessionBadges(cardEl, item);
-          this.renderMoveToTop(cardEl, item);
+        // Actions container: session badge + resume badge + move-to-top (top-right)
+        // Order: [session badge] [resume badge] [move-to-top (on hover)]
+        const actionsEl = this.getCardActionsContainer(cardEl);
+        this.renderSessionBadges(actionsEl, item);
+        this.renderResumeBadge(actionsEl, item);
+        this.renderMoveToTop(actionsEl, item);
+
+        // Ingesting shine: card-level class drives the CSS animation
+        if (this.ingestingIds.has(item.id)) {
+          cardEl.addClass("wt-card-is-ingesting");
         }
 
-        // Resume badge
-        this.renderResumeBadge(cardEl, item);
-
-        // Ingesting badge
-        if (this.ingestingIds.has(item.id)) {
-          cardEl.addClass("wt-card-ingesting");
-          const badge = cardEl.createSpan({ cls: "wt-ingesting-badge" });
-          badge.textContent = "ingesting\u2026";
+        if (this.activeSuccessIds.has(item.id)) {
+          cardEl.addClass("wt-card-new-success");
         }
 
         cardsEl.appendChild(cardEl);
       }
 
       // Re-insert any active placeholders for this column
-      for (const [path, placeholderEl] of this.placeholders) {
+      for (const [, placeholderEl] of this.placeholders) {
         // Simple heuristic: add placeholder to first visible column
         if (
           cardsEl.children.length === 0 ||
@@ -302,14 +301,9 @@ export class ListPanel {
 
   setIngesting(id: string): void {
     this.ingestingIds.add(id);
-    // Update existing card if already rendered
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
-    if (cardEl && !cardEl.querySelector(".wt-ingesting-badge")) {
-      cardEl.addClass("wt-card-ingesting");
-      const badge = document.createElement("span");
-      badge.className = "wt-ingesting-badge";
-      badge.textContent = "ingesting\u2026";
-      cardEl.appendChild(badge);
+    if (cardEl) {
+      cardEl.addClass("wt-card-is-ingesting");
     }
   }
 
@@ -317,17 +311,19 @@ export class ListPanel {
     this.ingestingIds.delete(id);
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
     if (cardEl) {
-      cardEl.removeClass("wt-card-ingesting");
-      cardEl.querySelector(".wt-ingesting-badge")?.remove();
+      cardEl.removeClass("wt-card-is-ingesting");
     }
   }
 
-  prependToColumn(id: string, columnId: string): void {
+  prependToColumn(id: string, columnId: string, placeholderPath?: string): void {
     const order = this.customOrder[columnId] || [];
     // Avoid duplicates
     if (!order.includes(id)) {
       this.customOrder[columnId] = [id, ...order];
       this.onCustomOrderChange(this.customOrder);
+    }
+    if (placeholderPath) {
+      this.pendingCreatedIdsByPlaceholder.set(placeholderPath, id);
     }
   }
 
@@ -664,7 +660,7 @@ export class ListPanel {
     });
   }
 
-  private renderResumeBadge(cardEl: HTMLElement, item: WorkItem): void {
+  private renderResumeBadge(containerEl: HTMLElement, item: WorkItem): void {
     const persisted = this.terminalPanel.getPersistedSessions(item.id);
     if (!persisted || persisted.length === 0) return;
 
@@ -672,18 +668,33 @@ export class ListPanel {
     const counts = this.terminalPanel.getSessionCounts(item.id);
     if (counts.claudes > 0) return;
 
-    const badge = cardEl.createDiv({ cls: "wt-resume-badge" });
+    const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
+    let resumeInProgress = false;
     badge.textContent = "\u21bb"; // Clockwise arrow
     badge.setAttribute("title", `${persisted.length} resumable session(s) - click to resume`);
-    badge.addEventListener("click", (e) => {
+    badge.addEventListener("click", async (e) => {
       e.stopPropagation();
-      // Select the item first so resumed tabs appear in the terminal panel
-      this.selectItem(item);
-      // Resume all persisted sessions for this item
-      for (const session of persisted) {
-        this.terminalPanel.resumeSession(session);
+      if (resumeInProgress) return;
+      resumeInProgress = true;
+
+      try {
+        // Select the item first so resumed tabs appear in the terminal panel
+        this.selectItem(item);
+        // Resume all persisted sessions for this item
+        for (const session of persisted) {
+          await this.terminalPanel.resumeSession(session, item.id);
+        }
+      } catch (error) {
+        console.error("Failed to resume persisted sessions for item", item.id, error);
+        new Notice("Failed to resume previous sessions. See console for details.");
+      } finally {
+        resumeInProgress = false;
       }
     });
+  }
+
+  private getCardActionsContainer(cardEl: HTMLElement): HTMLElement {
+    return (cardEl.querySelector(".wt-card-actions") as HTMLElement) || cardEl;
   }
 
   // ---------------------------------------------------------------------------
@@ -759,12 +770,12 @@ export class ListPanel {
       // Remove existing badges
       cardEl.querySelectorAll(".wt-session-badge").forEach((el) => el.remove());
       cardEl.querySelectorAll(".wt-resume-badge").forEach((el) => el.remove());
-      const actionsEl = (cardEl.querySelector(".wt-card-actions") as HTMLElement) || cardEl;
-      // Insert badges before move-to-top button so order is: badges | move-to-top
+      const actionsEl = this.getCardActionsContainer(cardEl);
+      // Re-render in order: session badge | resume badge | move-to-top (on hover)
       const moveBtn = actionsEl.querySelector(".wt-move-to-top");
       this.renderSessionBadges(actionsEl, item);
+      this.renderResumeBadge(actionsEl, item);
       if (moveBtn) actionsEl.appendChild(moveBtn); // re-append to keep it last
-      this.renderResumeBadge(cardEl, item);
     }
   }
 
@@ -786,21 +797,74 @@ export class ListPanel {
 
   resolvePlaceholder(path: string, success: boolean): void {
     const placeholderEl = this.placeholders.get(path);
-    if (!placeholderEl) return;
 
     if (success) {
-      placeholderEl.textContent = "\u2713";
-      placeholderEl.addClass("wt-card-placeholder-success");
-      setTimeout(() => {
+      if (placeholderEl) {
         placeholderEl.remove();
         this.placeholders.delete(path);
-      }, 1500);
-    } else {
+      }
+
+      const cardId = this.pendingCreatedIdsByPlaceholder.get(path);
+      this.pendingCreatedIdsByPlaceholder.delete(path);
+      if (cardId) {
+        this.applyNewSuccessAnimation(cardId);
+      }
+      return;
+    }
+
+    this.pendingCreatedIdsByPlaceholder.delete(path);
+
+    if (placeholderEl) {
+      if (!placeholderEl.isConnected) {
+        const cardsEl = this.getDefaultColumnCardsEl();
+        if (cardsEl) {
+          cardsEl.appendChild(placeholderEl);
+        }
+      }
+
+      placeholderEl.addClass("wt-card-placeholder-error");
+      placeholderEl.textContent = "Creation failed";
       setTimeout(() => {
         placeholderEl.remove();
         this.placeholders.delete(path);
       }, 5000);
+      return;
     }
+
+    const errorEl = document.createElement("div");
+    errorEl.addClass("wt-card-placeholder", "wt-card-placeholder-error");
+    errorEl.textContent = "Creation failed";
+    const cardsEl = this.getDefaultColumnCardsEl();
+    if (cardsEl) {
+      cardsEl.appendChild(errorEl);
+    }
+    setTimeout(() => errorEl.remove(), 5000);
+  }
+
+  private applyNewSuccessAnimation(id: string): void {
+    const existing = this.successTimeouts.get(id);
+    if (existing) clearTimeout(existing);
+
+    this.activeSuccessIds.add(id);
+    const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`) as HTMLElement | null;
+    if (cardEl) {
+      cardEl.addClass("wt-card-new-success");
+    }
+
+    const timeout = setTimeout(() => {
+      this.activeSuccessIds.delete(id);
+      this.listEl.querySelector(`[data-item-id="${id}"]`)?.removeClass("wt-card-new-success");
+      this.successTimeouts.delete(id);
+    }, 4500);
+    this.successTimeouts.set(id, timeout);
+  }
+
+  private getDefaultColumnCardsEl(): Element | null {
+    const defaultCol =
+      this.adapter.config.creationColumns.find((c) => c.default)?.id ||
+      this.adapter.config.columns[0]?.id;
+    if (!defaultCol) return null;
+    return this.listEl.querySelector(`[data-column="${defaultCol}"] .wt-section-cards`);
   }
 
   rekeyCustomOrder(oldPath: string, newPath: string): void {

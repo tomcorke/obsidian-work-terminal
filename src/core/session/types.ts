@@ -4,6 +4,8 @@
 import type { Terminal, IDisposable } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
+import type { WebLinksAddon } from "@xterm/addon-web-links";
+import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 
@@ -12,7 +14,9 @@ export type SessionType =
   | "claude"
   | "claude-with-context"
   | "copilot"
-  | "copilot-with-context";
+  | "copilot-with-context"
+  | "strands"
+  | "strands-with-context";
 
 /**
  * State extracted from a TerminalTab that can survive a plugin hot-reload.
@@ -27,10 +31,12 @@ export interface StoredSession {
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
+  webLinksAddon?: WebLinksAddon;
+  unicode11Addon?: Unicode11Addon;
+  webglAddon?: WebglAddon | null;
+  webglContextLossListener?: IDisposable | null;
   containerEl: HTMLElement;
   process: ChildProcess | null;
-  webglAddon: WebglAddon | null;
-  webglContextLossListener: IDisposable | null;
   documentListeners: { event: string; handler: EventListener }[];
   resizeObserver: ResizeObserver;
 }

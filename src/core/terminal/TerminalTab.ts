@@ -18,10 +18,17 @@ import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
 import type { StoredSession, SessionType } from "../session/types";
 import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
+import { hasAgentActiveIndicator } from "../claude/ClaudeStateDetector";
 
 export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
 
 let sessionCounter = 0;
+
+type TerminalWithAddonManager = Terminal & {
+  _addonManager?: {
+    dispose(): void;
+  };
+};
 
 export class TerminalTab {
   id: string;
@@ -39,8 +46,10 @@ export class TerminalTab {
   onProcessExit?: (code: number | null, signal: string | null) => void;
   onStateChange?: (state: ClaudeState) => void;
 
-  private fitAddon: FitAddon;
-  private searchAddon: SearchAddon;
+  private fitAddon: FitAddon | undefined;
+  private searchAddon: SearchAddon | undefined;
+  private webLinksAddon: WebLinksAddon | undefined;
+  private unicode11Addon: Unicode11Addon | undefined;
   private webglAddon: WebglAddon | null = null;
   private webglContextLossListener: IDisposable | null = null;
   private resizeObserver: ResizeObserver;
@@ -128,15 +137,14 @@ export class TerminalTab {
 
     // Web links - Cmd+click to open URLs in browser
     const electronShell = electronRequire("electron").shell;
-    this.terminal.loadAddon(
-      new WebLinksAddon((_, uri) => {
-        electronShell.openExternal(uri);
-      }),
-    );
+    this.webLinksAddon = new WebLinksAddon((_, uri) => {
+      electronShell.openExternal(uri);
+    });
+    this.terminal.loadAddon(this.webLinksAddon);
 
     // Unicode 11 - correct emoji/CJK character widths
-    const unicode11 = new Unicode11Addon();
-    this.terminal.loadAddon(unicode11);
+    this.unicode11Addon = new Unicode11Addon();
+    this.terminal.loadAddon(this.unicode11Addon);
     this.terminal.unicode.activeVersion = "11";
 
     this.terminal.open(this.containerEl);
@@ -305,7 +313,7 @@ export class TerminalTab {
     try {
       const width = this.containerEl.clientWidth;
       if (width < TerminalTab.MIN_FIT_WIDTH) return;
-      this.fitAddon.fit();
+      this.fitAddon?.fit();
     } catch {
       /* ignore fit errors during cleanup */
     }
@@ -415,11 +423,11 @@ export class TerminalTab {
 
     input.addEventListener("input", () => {
       if (input.value) {
-        this.searchAddon.findNext(input.value, {
+        this.searchAddon?.findNext(input.value, {
           decorations: { activeMatchColorOverviewRuler: "#ffa500" },
         });
       } else {
-        this.searchAddon.clearDecorations();
+        this.searchAddon?.clearDecorations();
       }
     });
 
@@ -427,9 +435,9 @@ export class TerminalTab {
       if (e.key === "Enter") {
         e.preventDefault();
         if (e.shiftKey) {
-          this.searchAddon.findPrevious(input.value);
+          this.searchAddon?.findPrevious(input.value);
         } else {
-          this.searchAddon.findNext(input.value);
+          this.searchAddon?.findNext(input.value);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -438,8 +446,8 @@ export class TerminalTab {
       e.stopPropagation();
     });
 
-    prevBtn.addEventListener("click", () => this.searchAddon.findPrevious(input.value));
-    nextBtn.addEventListener("click", () => this.searchAddon.findNext(input.value));
+    prevBtn.addEventListener("click", () => this.searchAddon?.findPrevious(input.value));
+    nextBtn.addEventListener("click", () => this.searchAddon?.findNext(input.value));
     closeBtn.addEventListener("click", () => this.toggleSearchBar());
 
     input.focus();
@@ -653,23 +661,7 @@ export class TerminalTab {
     // Need screen content for idle/active detection
     if (screenLines.length === 0) return;
 
-    // Look for structural indicators in the last few lines only (near the status bar).
-    //   \u2733 <text>... - spinner line with ellipsis means work in progress
-    //   \u23bf  <text>... - tool output with ellipsis means tool still running
-    // On narrow terminals the spinner line wraps across multiple visual rows,
-    // so we check both per-line AND a joined tail string.
-    const tail = screenLines.slice(-6);
-    const tailJoined = tail.join(" ");
-    const hasActiveIndicator =
-      tail.some(
-        (line) =>
-          /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
-          /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
-      ) ||
-      // Wrapped lines: spinner char on one visual row, ellipsis on another
-      (/\u2733/.test(tailJoined) &&
-        /\u2026/.test(tailJoined) &&
-        tail.some((line) => /^\s*\u2733/.test(line)));
+    const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
 
     if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
@@ -757,12 +749,14 @@ export class TerminalTab {
       claudeSessionId: this.claudeSessionId,
       sessionType: this.sessionType,
       terminal: this.terminal,
-      fitAddon: this.fitAddon,
-      searchAddon: this.searchAddon,
-      containerEl: this.containerEl,
-      process: this.process,
+      fitAddon: this.fitAddon!,
+      searchAddon: this.searchAddon!,
+      webLinksAddon: this.webLinksAddon,
+      unicode11Addon: this.unicode11Addon,
       webglAddon: this.webglAddon,
       webglContextLossListener: this.webglContextLossListener,
+      containerEl: this.containerEl,
+      process: this.process,
       documentListeners: this._documentCleanups.map((fn, i) => ({
         event: `cleanup-${i}`,
         handler: fn as unknown as EventListener,
@@ -787,6 +781,8 @@ export class TerminalTab {
     tab.terminal = stored.terminal;
     tab.fitAddon = stored.fitAddon;
     tab.searchAddon = stored.searchAddon;
+    tab.webLinksAddon = stored.webLinksAddon;
+    tab.unicode11Addon = stored.unicode11Addon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
     tab.webglAddon = stored.webglAddon ?? null;
@@ -894,12 +890,31 @@ export class TerminalTab {
         }
       }, 1000);
     }
-    // Dispose webgl addon before terminal.dispose() so it can release its
-    // GL context while xterm's renderer is still alive.
+    this.disposeAddonsBeforeTerminal();
+    this.terminal.dispose();
+    this.containerEl.remove();
+  }
+
+  private disposeAddonsBeforeTerminal(): void {
+    // Dispose addons before terminal.dispose() so they can clean up while
+    // xterm's internal services (renderer, buffer) are still alive.
+    // Disposing in reverse load order mirrors standard teardown conventions.
     this.disposeWebglContextLossListener();
     this.webglAddon?.dispose();
     this.webglAddon = null;
-    this.terminal.dispose();
-    this.containerEl.remove();
+    this.unicode11Addon?.dispose();
+    this.unicode11Addon = undefined;
+    this.webLinksAddon?.dispose();
+    this.webLinksAddon = undefined;
+    this.searchAddon?.dispose();
+    this.searchAddon = undefined;
+    this.fitAddon?.dispose();
+    this.fitAddon = undefined;
+
+    // Hot-reload snapshots created before addon refs were stashed will not have
+    // the anonymous addons above. Drain xterm's addon manager here as a
+    // compatibility fallback so restored tabs still dispose addons before the
+    // terminal tears down its internals.
+    (this.terminal as TerminalWithAddonManager)._addonManager?.dispose();
   }
 }

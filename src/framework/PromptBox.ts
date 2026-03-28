@@ -15,7 +15,12 @@ export class PromptBox {
   private settings: Record<string, any>;
   private onPlaceholderAdd: (path: string) => void;
   private onPlaceholderResolve: (path: string, success: boolean) => void;
-  private onNewItemCreated: (id: string, columnId: string, enrichmentDone?: Promise<void>) => void;
+  private onNewItemCreated: (
+    id: string,
+    columnId: string,
+    placeholderPath: string,
+    enrichmentDone?: Promise<void>,
+  ) => void;
   private expanded = false;
 
   constructor(
@@ -25,7 +30,12 @@ export class PromptBox {
     settings: Record<string, any>,
     onPlaceholderAdd: (path: string) => void,
     onPlaceholderResolve: (path: string, success: boolean) => void,
-    onNewItemCreated: (id: string, columnId: string, enrichmentDone?: Promise<void>) => void,
+    onNewItemCreated: (
+      id: string,
+      columnId: string,
+      placeholderPath: string,
+      enrichmentDone?: Promise<void>,
+    ) => void,
   ) {
     this.adapter = adapter;
     this.plugin = plugin;
@@ -113,7 +123,7 @@ export class PromptBox {
           _placeholderPath: placeholderPath,
         });
         if (result && result.id) {
-          this.onNewItemCreated(result.id, result.columnId, result.enrichmentDone);
+          this.onNewItemCreated(result.id, result.columnId, placeholderPath, result.enrichmentDone);
         }
       }
       this.onPlaceholderResolve(placeholderPath, true);

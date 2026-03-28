@@ -143,7 +143,30 @@ export class TabManager {
   ): TerminalTab | null {
     if (!this.activeItemId) return null;
 
-    const itemId = this.activeItemId;
+    return this.createTabForItem(
+      this.activeItemId,
+      shell,
+      cwd,
+      label,
+      sessionType,
+      preCommand,
+      commandArgs,
+      claudeSessionId,
+    );
+  }
+
+  createTabForItem(
+    itemId: string,
+    shell: string,
+    cwd: string,
+    label: string,
+    sessionType: SessionType,
+    preCommand?: string,
+    commandArgs?: string[],
+    claudeSessionId?: string | null,
+  ): TerminalTab {
+    const isActiveItem = this.activeItemId === itemId;
+
     const tabs = this.sessions.get(itemId) || [];
     const spawnTime = Date.now();
 
@@ -169,7 +192,7 @@ export class TabManager {
       // keep the tab open so the user can see the error message.
       const lived = Date.now() - spawnTime;
       if (lived < 3000) return;
-      this.closeTab(idx);
+      this.closeTabForItem(itemId, idx);
     };
     tab.onStateChange = () => {
       this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
@@ -178,10 +201,14 @@ export class TabManager {
     tabs.push(tab);
     this.sessions.set(itemId, tabs);
 
-    // Hide others, show new
-    this.hideAllTerminals();
-    tab.show();
-    this.activeTabIndex = tabs.length - 1;
+    if (isActiveItem) {
+      // Hide others, show new
+      this.hideAllTerminals();
+      tab.show();
+      this.activeTabIndex = tabs.length - 1;
+    } else {
+      tab.hide();
+    }
 
     this.onSessionChange?.();
     return tab;
@@ -243,21 +270,33 @@ export class TabManager {
 
   closeTab(index: number): void {
     if (!this.activeItemId) return;
-    const tabs = this.sessions.get(this.activeItemId) || [];
+    this.closeTabForItem(this.activeItemId, index);
+  }
+
+  private closeTabForItem(itemId: string, index: number): void {
+    const tabs = this.sessions.get(itemId) || [];
     if (index < 0 || index >= tabs.length) return;
 
     tabs[index].dispose();
     tabs.splice(index, 1);
 
+    const isActiveItem = this.activeItemId === itemId;
+
     if (tabs.length === 0) {
-      this.sessions.delete(this.activeItemId);
-      this.activeTabIndex = 0;
-    } else {
+      this.sessions.delete(itemId);
+      this.lastActiveTab.delete(itemId);
+      if (isActiveItem) this.activeTabIndex = 0;
+    } else if (isActiveItem) {
       this.activeTabIndex = Math.min(this.activeTabIndex, tabs.length - 1);
       tabs[this.activeTabIndex].show();
+    } else {
+      const remembered = this.lastActiveTab.get(itemId) ?? 0;
+      const adjusted = index < remembered ? remembered - 1 : remembered;
+      this.lastActiveTab.set(itemId, Math.min(adjusted, tabs.length - 1));
     }
 
     this.onSessionChange?.();
+    this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
   }
 
   /** Close and dispose all terminal sessions for an item. */
@@ -275,6 +314,7 @@ export class TabManager {
     }
 
     this.onSessionChange?.();
+    this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
   }
 
   // ---------------------------------------------------------------------------

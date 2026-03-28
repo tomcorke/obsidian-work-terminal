@@ -1,17 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  injectXtermCss,
-  attachScrollButton,
-  attachBubbleCapture,
-  attachCapturePhase,
-  MockWebglAddon,
-} = vi.hoisted(() => {
-  const injectXtermCss = vi.fn();
-  const attachScrollButton = vi.fn();
-  const attachBubbleCapture = vi.fn();
-  const attachCapturePhase = vi.fn(() => vi.fn());
-
+const mocks = vi.hoisted(() => {
   class MockWebglAddon {
     static instances: MockWebglAddon[] = [];
 
@@ -24,6 +13,7 @@ const {
         }),
       };
     });
+
     private handlers: Array<() => void> = [];
 
     constructor() {
@@ -42,13 +32,44 @@ const {
   }
 
   return {
-    injectXtermCss,
-    attachScrollButton,
-    attachBubbleCapture,
-    attachCapturePhase,
+    injectXtermCss: vi.fn(),
+    attachScrollButton: vi.fn(),
+    attachBubbleCapture: vi.fn(),
+    attachCapturePhase: vi.fn(() => vi.fn()),
+    electronShell: { openExternal: vi.fn() },
     MockWebglAddon,
   };
 });
+
+vi.mock("./XtermCss", () => ({
+  injectXtermCss: mocks.injectXtermCss,
+}));
+
+vi.mock("./ScrollButton", () => ({
+  attachScrollButton: mocks.attachScrollButton,
+}));
+
+vi.mock("./KeyboardCapture", () => ({
+  attachBubbleCapture: mocks.attachBubbleCapture,
+  attachCapturePhase: mocks.attachCapturePhase,
+}));
+
+vi.mock("../utils", () => ({
+  expandTilde: (value: string) => value,
+  stripAnsi: (value: string) => value,
+  electronRequire: (moduleName: string) => {
+    if (moduleName === "electron") {
+      return { shell: mocks.electronShell };
+    }
+    return {};
+  },
+}));
+
+vi.mock("../claude/ClaudeSessionTracker", () => ({
+  ClaudeSessionTracker: class {
+    dispose(): void {}
+  },
+}));
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {},
@@ -67,34 +88,11 @@ vi.mock("@xterm/addon-web-links", () => ({
 }));
 
 vi.mock("@xterm/addon-webgl", () => ({
-  WebglAddon: MockWebglAddon,
+  WebglAddon: mocks.MockWebglAddon,
 }));
 
 vi.mock("@xterm/addon-unicode11", () => ({
   Unicode11Addon: class {},
-}));
-
-vi.mock("./XtermCss", () => ({
-  injectXtermCss,
-}));
-
-vi.mock("./ScrollButton", () => ({
-  attachScrollButton,
-}));
-
-vi.mock("./KeyboardCapture", () => ({
-  attachBubbleCapture,
-  attachCapturePhase,
-}));
-
-vi.mock("../utils", () => ({
-  expandTilde: (value: string) => value,
-  stripAnsi: (value: string) => value,
-  electronRequire: () => ({ shell: { openExternal: vi.fn() } }),
-}));
-
-vi.mock("../claude/ClaudeSessionTracker", () => ({
-  ClaudeSessionTracker: class {},
 }));
 
 import { TerminalTab } from "./TerminalTab";
@@ -114,10 +112,15 @@ class MockResizeObserver {
   constructor(_callback: ResizeObserverCallback) {}
 }
 
-describe("TerminalTab WebGL recovery", () => {
+describe("TerminalTab hot-reload addon handling", () => {
   beforeEach(() => {
-    MockWebglAddon.instances.length = 0;
-    vi.clearAllMocks();
+    mocks.MockWebglAddon.instances.length = 0;
+    vi.restoreAllMocks();
+    mocks.injectXtermCss.mockClear();
+    mocks.attachScrollButton.mockClear();
+    mocks.attachBubbleCapture.mockClear();
+    mocks.attachCapturePhase.mockClear();
+    mocks.electronShell.openExternal.mockClear();
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
     vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
       callback(0);
@@ -131,8 +134,129 @@ describe("TerminalTab WebGL recovery", () => {
     vi.restoreAllMocks();
   });
 
+  it("stashes addon references needed to preserve disposal order after reload", () => {
+    const fitAddon = { dispose: vi.fn(), fit: vi.fn() };
+    const searchAddon = { dispose: vi.fn() };
+    const webLinksAddon = { dispose: vi.fn() };
+    const unicode11Addon = { dispose: vi.fn() };
+    const webglAddon = { dispose: vi.fn() };
+    const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
+
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      id: "term-1",
+      taskPath: "task.md",
+      label: "Claude",
+      claudeSessionId: "session-1",
+      sessionType: "claude",
+      terminal: {},
+      fitAddon,
+      searchAddon,
+      webLinksAddon,
+      unicode11Addon,
+      webglAddon,
+      containerEl: {},
+      process: null,
+      _documentCleanups: [],
+      resizeObserver,
+      _stateTimer: null,
+      webglContextLossListener: null,
+    }) as TerminalTab;
+
+    const stored = tab.stash();
+
+    expect(stored.fitAddon).toBe(fitAddon);
+    expect(stored.searchAddon).toBe(searchAddon);
+    expect(stored.webLinksAddon).toBe(webLinksAddon);
+    expect(stored.unicode11Addon).toBe(unicode11Addon);
+    expect(stored.webglAddon).toBe(webglAddon);
+  });
+
+  it("restores addon references from hot-reload storage", () => {
+    const focus = vi.fn();
+    const scrollToBottom = vi.fn();
+    const terminal = { focus, scrollToBottom, cols: 80 };
+    const fitAddon = { dispose: vi.fn(), fit: vi.fn() };
+    const searchAddon = { dispose: vi.fn() };
+    const webLinksAddon = { dispose: vi.fn() };
+    const unicode11Addon = { dispose: vi.fn() };
+    const webglAddon = { dispose: vi.fn(), onContextLoss: vi.fn(() => ({ dispose: vi.fn() })) };
+    const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
+    const addEventListener = vi.fn();
+    const containerEl = {
+      addEventListener,
+      hasClass: vi.fn(() => false),
+    };
+    const parentEl = { appendChild: vi.fn() };
+
+    const restored = TerminalTab.fromStored(
+      {
+        id: "term-1",
+        taskPath: "task.md",
+        label: "Claude",
+        claudeSessionId: "session-1",
+        sessionType: "claude",
+        terminal: terminal as any,
+        fitAddon: fitAddon as any,
+        searchAddon: searchAddon as any,
+        webLinksAddon: webLinksAddon as any,
+        unicode11Addon: unicode11Addon as any,
+        webglAddon: webglAddon as any,
+        webglContextLossListener: null,
+        containerEl: containerEl as any,
+        process: null,
+        documentListeners: [],
+        resizeObserver: resizeObserver as any,
+      },
+      parentEl as any,
+    );
+
+    expect((restored as any).fitAddon).toBe(fitAddon);
+    expect((restored as any).searchAddon).toBe(searchAddon);
+    expect((restored as any).webLinksAddon).toBe(webLinksAddon);
+    expect((restored as any).unicode11Addon).toBe(unicode11Addon);
+    expect((restored as any).webglAddon).toBe(webglAddon);
+    expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
+    expect(scrollToBottom).toHaveBeenCalled();
+  });
+
+  it("drains xterm's addon manager before terminal disposal for older restored tabs", () => {
+    const order: string[] = [];
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
+      _stateTimer: null,
+      _resizeDebounce: null,
+      _documentCleanups: [vi.fn(() => order.push("cleanup"))],
+      resizeObserver: { disconnect: vi.fn(() => order.push("resize-observer")) },
+      process: null,
+      fitAddon: undefined,
+      searchAddon: undefined,
+      webLinksAddon: undefined,
+      unicode11Addon: undefined,
+      webglAddon: null,
+      webglContextLossListener: null,
+      terminal: {
+        _addonManager: { dispose: vi.fn(() => order.push("addon-manager")) },
+        dispose: vi.fn(() => order.push("terminal")),
+      },
+      containerEl: { remove: vi.fn(() => order.push("container")) },
+    }) as TerminalTab;
+
+    tab.dispose();
+
+    expect(order).toEqual([
+      "tracker",
+      "cleanup",
+      "resize-observer",
+      "addon-manager",
+      "terminal",
+      "container",
+    ]);
+  });
+});
+
+describe("TerminalTab WebGL recovery", () => {
   it("stashes the live webgl addon reference for hot reload recovery", () => {
-    const addon = new MockWebglAddon();
+    const addon = new mocks.MockWebglAddon();
     const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
 
     Object.assign(tab, {
@@ -147,12 +271,17 @@ describe("TerminalTab WebGL recovery", () => {
       containerEl: new FakeElement(),
       process: null,
       webglAddon: addon,
+      webglContextLossListener: null,
       _documentCleanups: [],
       resizeObserver: new MockResizeObserver(() => {}),
       _stateTimer: null,
     });
 
-    (tab as unknown as { trackWebglAddon: (addon: MockWebglAddon) => void }).trackWebglAddon(addon);
+    (
+      tab as unknown as {
+        trackWebglAddon: (addon: InstanceType<typeof mocks.MockWebglAddon>) => void;
+      }
+    ).trackWebglAddon(addon);
 
     const stored = tab.stash();
 
@@ -162,7 +291,7 @@ describe("TerminalTab WebGL recovery", () => {
   });
 
   it("moves the context-loss handler to the restored tab during hot reload recovery", () => {
-    const addon = new MockWebglAddon();
+    const addon = new mocks.MockWebglAddon();
     const originalTab = Object.create(TerminalTab.prototype) as TerminalTab &
       Record<string, unknown>;
     const containerEl = new FakeElement() as unknown as HTMLElement;
@@ -184,13 +313,16 @@ describe("TerminalTab WebGL recovery", () => {
       containerEl,
       process: null,
       webglAddon: null,
+      webglContextLossListener: null,
       _documentCleanups: [],
       resizeObserver: new MockResizeObserver(() => {}),
       _stateTimer: null,
     });
 
     (
-      originalTab as unknown as { trackWebglAddon: (addon: MockWebglAddon) => void }
+      originalTab as unknown as {
+        trackWebglAddon: (addon: InstanceType<typeof mocks.MockWebglAddon>) => void;
+      }
     ).trackWebglAddon(addon);
 
     expect(addon.getHandlerCount()).toBe(1);
@@ -202,14 +334,20 @@ describe("TerminalTab WebGL recovery", () => {
 
     const tab = TerminalTab.fromStored(stored, parentEl);
 
-    expect((tab as unknown as { webglAddon: MockWebglAddon | null }).webglAddon).toBe(addon);
+    expect(
+      (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
+        .webglAddon,
+    ).toBe(addon);
     expect(addon.onContextLoss).toHaveBeenCalledTimes(2);
     expect(addon.getHandlerCount()).toBe(1);
 
     addon.emitContextLoss();
 
     expect(addon.dispose).toHaveBeenCalledTimes(1);
-    expect((tab as unknown as { webglAddon: MockWebglAddon | null }).webglAddon).toBeNull();
+    expect(
+      (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
+        .webglAddon,
+    ).toBeNull();
     expect(addon.getHandlerCount()).toBe(0);
   });
 
@@ -239,7 +377,10 @@ describe("TerminalTab WebGL recovery", () => {
 
     const tab = TerminalTab.fromStored(stored, parentEl);
 
-    expect((tab as unknown as { webglAddon: MockWebglAddon | null }).webglAddon).toBeNull();
+    expect(
+      (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
+        .webglAddon,
+    ).toBeNull();
     expect(tab.stash().webglAddon).toBeNull();
   });
 
@@ -251,12 +392,16 @@ describe("TerminalTab WebGL recovery", () => {
       }),
     } as never;
     tab.webglAddon = null;
+    tab.webglContextLossListener = null;
 
     (tab as unknown as { loadWebglAddon: () => void }).loadWebglAddon();
 
-    expect(MockWebglAddon.instances).toHaveLength(1);
-    expect(MockWebglAddon.instances[0].dispose).toHaveBeenCalledTimes(1);
-    expect(MockWebglAddon.instances[0].getHandlerCount()).toBe(0);
-    expect((tab as unknown as { webglAddon: MockWebglAddon | null }).webglAddon).toBeNull();
+    expect(mocks.MockWebglAddon.instances).toHaveLength(1);
+    expect(mocks.MockWebglAddon.instances[0].dispose).toHaveBeenCalledTimes(1);
+    expect(mocks.MockWebglAddon.instances[0].getHandlerCount()).toBe(0);
+    expect(
+      (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
+        .webglAddon,
+    ).toBeNull();
   });
 });

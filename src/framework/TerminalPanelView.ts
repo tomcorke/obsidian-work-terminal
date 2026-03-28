@@ -25,7 +25,12 @@ function createClaudeLogo(size = 14): SVGSVGElement {
 import type { Plugin } from "obsidian";
 import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, ClaudeState } from "../core/terminal/TerminalTab";
-import { resolveCommand, buildClaudeArgs, buildCopilotArgs } from "../core/claude/ClaudeLauncher";
+import {
+  resolveCommand,
+  buildClaudeArgs,
+  buildCopilotArgs,
+  buildStrandsArgs,
+} from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import type { PersistedSession, SessionType } from "../core/session/types";
 import { expandTilde } from "../core/utils";
@@ -37,6 +42,7 @@ import {
   getDefaultSessionLabel,
   isContextSession,
   isCopilotSession,
+  isStrandsSession,
   sanitizeCustomSessionConfig,
   type CustomSessionConfig,
 } from "./CustomSessionConfig";
@@ -70,6 +76,12 @@ export class TerminalPanelView {
 
   // Hook warning banner element
   private hookWarningEl: HTMLElement | null = null;
+
+  // Interval ID for hook-status polling while warning is visible
+  private hookWarningPollId: ReturnType<typeof setInterval> | null = null;
+
+  // In-flight guard to prevent overlapping async checkHookWarning() calls
+  private hookWarningCheckInFlight = false;
 
   // Serialises plugin data writes to avoid clobbering unrelated keys.
   private pluginDataWrite: Promise<void> = Promise.resolve();
@@ -137,49 +149,82 @@ export class TerminalPanelView {
   // ---------------------------------------------------------------------------
 
   private async checkHookWarning(): Promise<void> {
-    const fresh = ((await this.plugin.loadData()) || {}).settings || {};
-    const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
-    const cwd = expandTilde(
-      fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
-    );
-    const status = checkHookStatus(cwd);
-    const hooksOk = status.scriptExists && status.hooksConfigured;
+    if (this.hookWarningCheckInFlight) return;
+    this.hookWarningCheckInFlight = true;
+    try {
+      const fresh = ((await this.plugin.loadData()) || {}).settings || {};
+      const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
+      const cwd = expandTilde(
+        fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
+      );
+      const status = checkHookStatus(cwd);
+      const hooksOk = status.scriptExists && status.hooksConfigured;
 
-    // Remove existing banner if present
-    if (this.hookWarningEl) {
-      this.hookWarningEl.remove();
-      this.hookWarningEl = null;
+      if (!hooksOk && !accepted) {
+        // Only create the banner on the transition from no-banner -> banner needed
+        if (!this.hookWarningEl) {
+          this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
+          // Insert at the very top of the panel
+          this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
+
+          const textEl = this.hookWarningEl.createSpan();
+          textEl.textContent =
+            "Claude /resume tracking requires Claude hooks. Copilot restart resume works without them.";
+
+          const openBtn = this.hookWarningEl.createEl("button", {
+            cls: "wt-hook-warning-btn",
+            text: "Open Settings",
+          });
+          openBtn.addEventListener("click", () => {
+            (this.plugin.app as any).setting.open();
+            (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
+          });
+
+          const dismissBtn = this.hookWarningEl.createEl("button", {
+            cls: "wt-hook-warning-btn",
+            text: "Dismiss",
+          });
+          dismissBtn.addEventListener("click", async () => {
+            const d = (await this.plugin.loadData()) || {};
+            if (!d.settings) d.settings = {};
+            d.settings["core.acceptNoResumeHooks"] = true;
+            await this.plugin.saveData(d);
+            this.hookWarningEl?.remove();
+            this.hookWarningEl = null;
+            this.stopHookWarningPoller();
+          });
+
+          // Poll hook status while warning is visible so it auto-dismisses when
+          // the user installs hooks via settings without manually reloading.
+          this.startHookWarningPoller();
+        }
+        // else: banner already visible, nothing to change
+      } else {
+        // Hooks OK or accepted: remove banner and stop polling on transition
+        if (this.hookWarningEl) {
+          this.hookWarningEl.remove();
+          this.hookWarningEl = null;
+        }
+        this.stopHookWarningPoller();
+      }
+    } finally {
+      this.hookWarningCheckInFlight = false;
     }
+  }
 
-    if (!hooksOk && !accepted) {
-      this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
-      // Insert at the very top of the panel
-      this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
+  private startHookWarningPoller(): void {
+    this.stopHookWarningPoller();
+    this.hookWarningPollId = setInterval(() => {
+      this.checkHookWarning().catch((err) =>
+        console.error("[work-terminal] hook warning check failed:", err),
+      );
+    }, 2000);
+  }
 
-      const textEl = this.hookWarningEl.createSpan();
-      textEl.textContent = "Session resume tracking requires Claude hooks.";
-
-      const openBtn = this.hookWarningEl.createEl("button", {
-        cls: "wt-hook-warning-btn",
-        text: "Open Settings",
-      });
-      openBtn.addEventListener("click", () => {
-        (this.plugin.app as any).setting.open();
-        (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
-      });
-
-      const dismissBtn = this.hookWarningEl.createEl("button", {
-        cls: "wt-hook-warning-btn",
-        text: "Dismiss",
-      });
-      dismissBtn.addEventListener("click", async () => {
-        const d = (await this.plugin.loadData()) || {};
-        if (!d.settings) d.settings = {};
-        d.settings["core.acceptNoResumeHooks"] = true;
-        await this.plugin.saveData(d);
-        this.hookWarningEl?.remove();
-        this.hookWarningEl = null;
-      });
+  private stopHookWarningPoller(): void {
+    if (this.hookWarningPollId !== null) {
+      clearInterval(this.hookWarningPollId);
+      this.hookWarningPollId = null;
     }
   }
 
@@ -513,26 +558,30 @@ export class TerminalPanelView {
     });
   }
 
-  resumeSession(persisted: PersistedSession): void {
+  async resumeSession(persisted: PersistedSession, itemId?: string): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const targetItemId = itemId || this.tabManager.getActiveItemId();
+    if (!targetItemId) return;
     const isCopilot =
       persisted.sessionType === "copilot" || persisted.sessionType === "copilot-with-context";
     const command = isCopilot
-      ? this.settings["core.copilotCommand"] || "copilot"
-      : this.settings["core.claudeCommand"] || "claude";
+      ? this.getStringSetting(fresh, "core.copilotCommand", "copilot")
+      : this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(command);
     const args = isCopilot
       ? [`--resume=${persisted.claudeSessionId}`]
       : ["--resume", persisted.claudeSessionId];
     const extraArgs = isCopilot
-      ? this.settings["core.copilotExtraArgs"]
-      : this.settings["core.claudeExtraArgs"];
+      ? this.getStringSetting(fresh, "core.copilotExtraArgs", "")
+      : this.getStringSetting(fresh, "core.claudeExtraArgs", "");
 
     if (extraArgs) {
       args.unshift(...String(extraArgs).split(/\s+/).filter(Boolean));
     }
 
-    const cwd = expandTilde(this.settings["core.defaultTerminalCwd"] || "~");
-    const tab = this.tabManager.createTab(
+    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    const tab = this.tabManager.createTabForItem(
+      targetItemId,
       resolved,
       cwd,
       persisted.label,
@@ -707,6 +756,17 @@ export class TerminalPanelView {
       return;
     }
 
+    if (isStrandsSession(config.sessionType)) {
+      await this.spawnStrandsSession({
+        sessionType: config.sessionType,
+        cwd: config.cwd,
+        extraArgs: config.extraArgs,
+        label: config.label || getDefaultSessionLabel(config.sessionType),
+        prompt,
+      });
+      return;
+    }
+
     await this.spawnClaudeSession({
       sessionType: config.sessionType as "claude" | "claude-with-context",
       cwd: config.cwd,
@@ -800,6 +860,34 @@ export class TerminalPanelView {
     this.renderTabBar();
   }
 
+  private async spawnStrandsSession(options: {
+    sessionType: "strands" | "strands-with-context";
+    cwd?: string;
+    extraArgs?: string;
+    label?: string;
+    prompt?: string;
+  }): Promise<void> {
+    const fresh = await this.loadFreshSettings();
+    const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
+    const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
+    const resolved = resolveCommand(cmdToken);
+    const mergedExtraArgs = this.mergeExtraArgs(
+      this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
+      options.extraArgs || "",
+    );
+    const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, options.prompt);
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+    );
+    const label = options.label || getDefaultSessionLabel(options.sessionType);
+    this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
+      resolved,
+      ...cmdArgs,
+      ...args,
+    ]);
+    this.renderTabBar();
+  }
+
   getRecoveredItemId(): string | null {
     return this.tabManager.getRecoveredItemId();
   }
@@ -852,12 +940,14 @@ export class TerminalPanelView {
   stashAll(): void {
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
+    this.stopHookWarningPoller();
     this.tabManager.stashAll();
   }
 
   disposeAll(): void {
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
+    this.stopHookWarningPoller();
     this.tabManager.disposeAll();
   }
 

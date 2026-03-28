@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultCustomSessionConfig,
   getDefaultSessionLabel,
+  getSessionTypeHelp,
   isContextSession,
   isCopilotSession,
+  isStrandsSession,
   sanitizeCustomSessionConfig,
   supportsExtraArgs,
 } from "./CustomSessionConfig";
@@ -60,12 +62,25 @@ describe("CustomSessionConfig", () => {
     expect(getDefaultSessionLabel("claude-with-context")).toBe("Claude (ctx)");
     expect(getDefaultSessionLabel("copilot")).toBe("Copilot");
     expect(getDefaultSessionLabel("copilot-with-context")).toBe("Copilot (ctx)");
+    expect(getDefaultSessionLabel("strands")).toBe("Strands");
+    expect(getDefaultSessionLabel("strands-with-context")).toBe("Strands (ctx)");
+  });
+
+  it("describes session resume behavior per session type", () => {
+    expect(getSessionTypeHelp("shell")).toContain("not saved for restart resume");
+    expect(getSessionTypeHelp("claude")).toContain("--session-id");
+    expect(getSessionTypeHelp("claude")).toContain("Claude hooks");
+    expect(getSessionTypeHelp("copilot")).toContain("--resume[=sessionId]");
+    expect(getSessionTypeHelp("copilot")).toContain("without Claude hooks");
+    expect(getSessionTypeHelp("strands")).toContain("start fresh each time");
   });
 
   it("identifies context and copilot sessions", () => {
     expect(isContextSession("claude-with-context")).toBe(true);
     expect(isContextSession("copilot-with-context")).toBe(true);
+    expect(isContextSession("strands-with-context")).toBe(true);
     expect(isContextSession("copilot")).toBe(false);
+    expect(isContextSession("strands")).toBe(false);
     expect(isCopilotSession("copilot")).toBe(true);
     expect(isCopilotSession("copilot-with-context")).toBe(true);
     expect(isCopilotSession("claude")).toBe(false);
@@ -75,5 +90,13 @@ describe("CustomSessionConfig", () => {
     expect(supportsExtraArgs("shell")).toBe(false);
     expect(supportsExtraArgs("claude")).toBe(true);
     expect(supportsExtraArgs("copilot")).toBe(true);
+    expect(supportsExtraArgs("strands")).toBe(true);
+  });
+
+  it("identifies strands sessions", () => {
+    expect(isStrandsSession("strands")).toBe(true);
+    expect(isStrandsSession("strands-with-context")).toBe(true);
+    expect(isStrandsSession("copilot")).toBe(false);
+    expect(isStrandsSession("claude")).toBe(false);
   });
 });

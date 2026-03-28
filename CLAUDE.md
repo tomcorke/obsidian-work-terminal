@@ -100,4 +100,4 @@ Run `npx vitest run` after changes to verify nothing is broken. Build with `npm 
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Shift+Enter, Option+Backspace, macOptionIsMeta.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
-- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume).
+- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs.
