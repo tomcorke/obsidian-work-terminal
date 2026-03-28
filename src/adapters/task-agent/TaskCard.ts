@@ -1,4 +1,4 @@
-import type { MenuItem } from "obsidian";
+import { Notice, type MenuItem } from "obsidian";
 import type { WorkItem, CardRenderer, CardActionContext } from "../../core/interfaces";
 import { KANBAN_COLUMNS, COLUMN_LABELS, SOURCE_LABELS, type KanbanColumn } from "./types";
 
@@ -150,9 +150,13 @@ export class TaskCard implements CardRenderer {
     });
     (items as any[]).push({
       title: "Copy Context Prompt",
-      callback: () => {
-        const prompt = this.buildQuickPrompt(item);
-        navigator.clipboard.writeText(prompt);
+      callback: async () => {
+        const prompt = await ctx.getContextPrompt();
+        if (!prompt) {
+          new Notice("Set 'Claude (ctx) prompt template' in settings to copy the context prompt");
+          return;
+        }
+        await navigator.clipboard.writeText(prompt);
       },
     });
 
@@ -166,18 +170,5 @@ export class TaskCard implements CardRenderer {
     });
 
     return items;
-  }
-
-  private buildQuickPrompt(item: WorkItem): string {
-    const meta = (item.metadata || {}) as Record<string, any>;
-    const priority = meta.priority || {};
-    let prompt = `Task: ${item.title}\nState: ${item.state}\nPath: ${item.path}`;
-    if (priority.deadline) {
-      prompt += `\nDeadline: ${priority.deadline}`;
-    }
-    if (priority["has-blocker"] && priority["blocker-context"]) {
-      prompt += `\nBlocker: ${priority["blocker-context"]}`;
-    }
-    return prompt;
   }
 }
