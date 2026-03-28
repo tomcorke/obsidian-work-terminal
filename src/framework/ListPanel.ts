@@ -669,15 +669,26 @@ export class ListPanel {
     if (counts.claudes > 0) return;
 
     const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
+    let resumeInProgress = false;
     badge.textContent = "\u21bb"; // Clockwise arrow
     badge.setAttribute("title", `${persisted.length} resumable session(s) - click to resume`);
-    badge.addEventListener("click", (e) => {
+    badge.addEventListener("click", async (e) => {
       e.stopPropagation();
-      // Select the item first so resumed tabs appear in the terminal panel
-      this.selectItem(item);
-      // Resume all persisted sessions for this item
-      for (const session of persisted) {
-        this.terminalPanel.resumeSession(session);
+      if (resumeInProgress) return;
+      resumeInProgress = true;
+
+      try {
+        // Select the item first so resumed tabs appear in the terminal panel
+        this.selectItem(item);
+        // Resume all persisted sessions for this item
+        for (const session of persisted) {
+          await this.terminalPanel.resumeSession(session, item.id);
+        }
+      } catch (error) {
+        console.error("Failed to resume persisted sessions for item", item.id, error);
+        new Notice("Failed to resume previous sessions. See console for details.");
+      } finally {
+        resumeInProgress = false;
       }
     });
   }
