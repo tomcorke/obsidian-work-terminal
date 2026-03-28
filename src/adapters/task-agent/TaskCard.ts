@@ -9,12 +9,17 @@ export class TaskCard implements CardRenderer {
     const priority = meta.priority || { score: 0 };
     const goal: string[] = meta.goal || [];
     const ingesting = !!meta.ingesting;
+    const taskColor: string | undefined = meta.color;
 
     const card = document.createElement("div");
     card.addClass("wt-card");
     if (ingesting) card.addClass("ingesting");
     card.dataset.path = item.path;
     card.draggable = true;
+
+    if (taskColor) {
+      card.style.setProperty("--wt-task-color", taskColor);
+    }
 
     // Title row
     const titleRow = card.createDiv({ cls: "wt-card-title-row" });
@@ -32,6 +37,7 @@ export class TaskCard implements CardRenderer {
       const sourceBadge = metaRow.createSpan({ cls: "wt-card-source" });
       if (source.type === "jira" && source.id) {
         sourceBadge.textContent = source.id.toUpperCase();
+        sourceBadge.addClass("wt-card-source--jira");
       } else {
         sourceBadge.textContent = SOURCE_LABELS[source.type] || "---";
       }

@@ -135,7 +135,7 @@
   cursor: pointer;
   transition: background 0.1s;
   background: var(--background-secondary);
-  border-left: 3px solid transparent;
+  border-left: 3px solid var(--wt-task-color, transparent);
 }
 
 .wt-card-wrapper:hover {
@@ -196,6 +196,12 @@
   font-weight: 600;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+/* Jira source badge - uses task color if set, otherwise Jira blue */
+.wt-card-source--jira {
+  background: var(--wt-task-color, #0062e3);
+  color: white;
 }
 
 /* Goal tag */
