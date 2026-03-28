@@ -3,6 +3,7 @@ import type { CustomSessionConfig } from "./CustomSessionConfig";
 import {
   CUSTOM_SESSION_TYPE_OPTIONS,
   getDefaultSessionLabel,
+  getSessionTypeHelp,
   supportsExtraArgs,
 } from "./CustomSessionConfig";
 
@@ -29,6 +30,11 @@ export class CustomSessionModal extends Modal {
       cls: "wt-custom-spawn-help",
     });
 
+    const sessionTypeHelpEl = contentEl.createEl("p", {
+      text: getSessionTypeHelp(this.draft.sessionType),
+      cls: "wt-custom-spawn-help",
+    });
+
     let extraArgsSetting: Setting | null = null;
 
     const refreshVisibility = () => {
@@ -36,6 +42,7 @@ export class CustomSessionModal extends Modal {
       extraArgsSetting.settingEl.style.display = supportsExtraArgs(this.draft.sessionType)
         ? ""
         : "none";
+      sessionTypeHelpEl.textContent = getSessionTypeHelp(this.draft.sessionType);
     };
 
     new Setting(contentEl)

@@ -58,6 +58,22 @@ export function getDefaultSessionLabel(sessionType: SessionType): string {
   }
 }
 
+export function getSessionTypeHelp(sessionType: SessionType): string {
+  switch (sessionType) {
+    case "shell":
+      return "Shell tabs are local terminals only and are not saved for restart resume.";
+    case "claude":
+    case "claude-with-context":
+      return "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.";
+    case "copilot":
+    case "copilot-with-context":
+      return "Copilot uses --resume[=sessionId] for both new and resumed sessions. Restart resume works without Claude hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.";
+    case "strands":
+    case "strands-with-context":
+      return "Strands sessions start fresh each time. Work Terminal does not persist restart-resume metadata for them.";
+  }
+}
+
 export function isContextSession(sessionType: SessionType): boolean {
   return (
     sessionType === "claude-with-context" ||
