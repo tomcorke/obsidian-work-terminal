@@ -19,7 +19,9 @@ export function generateTaskContent(
   // Quote the title to handle special characters in YAML
   const safeTitle = `"${title.replace(/"/g, '\\"')}"`;
 
-  const relatedLines = splitFrom ? `\n  - "[[${splitFrom.filename.replace(/\.md$/, "")}]]"` : "";
+  const relatedField = splitFrom
+    ? `related:\n  - "[[${splitFrom.filename.replace(/\.md$/, "")}]]"`
+    : "related: []";
   const activitySuffix = splitFrom
     ? ` (split from [[${splitFrom.filename.replace(/\.md$/, "")}]])`
     : "";
@@ -51,7 +53,7 @@ agent-actionable: false
 
 goal: []
 
-related: []${relatedLines}
+${relatedField}
 
 created: ${now}
 updated: ${now}

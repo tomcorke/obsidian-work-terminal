@@ -97,25 +97,34 @@ describe("TaskParser", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], { [file.path]: null });
       const parser = new TaskParser(app, "", defaultSettings);
-      expect(parser.parse(file as unknown as TFile)).toBeNull();
+      const item = parser.parse(file as unknown as TFile);
+      expect(item).not.toBeNull();
+      expect(item!.id).toBe(file.path);
+      expect(item!.title).toBe("task");
+      expect(item!.state).toBe("active");
     });
 
-    it("returns null for empty frontmatter", () => {
+    it("falls back to path-derived defaults for empty frontmatter", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {
         [file.path]: { frontmatter: undefined } as unknown as CachedMetadata,
       });
       const parser = new TaskParser(app, "", defaultSettings);
-      expect(parser.parse(file as unknown as TFile)).toBeNull();
+      const item = parser.parse(file as unknown as TFile);
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+      expect((item!.metadata as any).priority.score).toBe(0);
     });
 
-    it("returns null for invalid state", () => {
+    it("falls back to the folder state when frontmatter state is invalid", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({ state: "invalid" }),
       });
       const parser = new TaskParser(app, "", defaultSettings);
-      expect(parser.parse(file as unknown as TFile)).toBeNull();
+      const item = parser.parse(file as unknown as TFile);
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
     });
 
     it("uses file basename when title is missing", () => {
@@ -282,6 +291,27 @@ describe("TaskParser", () => {
       ];
       const groups = parser.groupByColumn(items);
       expect(groups["todo"][0].title).toBe("New");
+    });
+  });
+
+  describe("loadAll", () => {
+    it("keeps malformed task files in the list using folder-derived defaults", async () => {
+      const malformed = makeFile("2 - Areas/Tasks/todo/broken-task.md");
+      const valid = makeFile("2 - Areas/Tasks/active/working-task.md");
+      const app = mockApp([malformed, valid], {
+        [malformed.path]: null,
+        [valid.path]: makeFrontmatter({ state: "active", title: "Working task" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+
+      const items = await parser.loadAll();
+
+      expect(items).toHaveLength(2);
+      expect(items.find((item) => item.path === malformed.path)).toMatchObject({
+        id: malformed.path,
+        title: "broken-task",
+        state: "todo",
+      });
     });
   });
 
