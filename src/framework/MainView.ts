@@ -275,9 +275,9 @@ export class MainView extends ItemView {
         // Placeholder resolution callback
         this.listPanel?.resolvePlaceholder(path, success);
       },
-      (id: string, columnId: string, enrichmentDone?: Promise<void>) => {
+      (id: string, columnId: string, placeholderPath: string, enrichmentDone?: Promise<void>) => {
         // New item created - prepend to top of column and track enrichment
-        this.listPanel?.prependToColumn(id, columnId);
+        this.listPanel?.prependToColumn(id, columnId, placeholderPath);
         if (enrichmentDone) {
           this.listPanel?.setIngesting(id);
           enrichmentDone.then(

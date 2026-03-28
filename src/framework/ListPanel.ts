@@ -48,7 +48,7 @@ export class ListPanel {
 
   // Background enrichment tracking
   private ingestingIds: Set<string> = new Set();
-  private pendingCreatedIds: string[] = [];
+  private pendingCreatedIdsByPlaceholder: Map<string, string> = new Map();
   private activeSuccessIds: Set<string> = new Set();
   private successTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
@@ -321,14 +321,16 @@ export class ListPanel {
     }
   }
 
-  prependToColumn(id: string, columnId: string): void {
+  prependToColumn(id: string, columnId: string, placeholderPath?: string): void {
     const order = this.customOrder[columnId] || [];
     // Avoid duplicates
     if (!order.includes(id)) {
       this.customOrder[columnId] = [id, ...order];
       this.onCustomOrderChange(this.customOrder);
     }
-    this.pendingCreatedIds.push(id);
+    if (placeholderPath) {
+      this.pendingCreatedIdsByPlaceholder.set(placeholderPath, id);
+    }
   }
 
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<void> {
@@ -793,12 +795,15 @@ export class ListPanel {
         this.placeholders.delete(path);
       }
 
-      const cardId = this.pendingCreatedIds.shift();
+      const cardId = this.pendingCreatedIdsByPlaceholder.get(path);
+      this.pendingCreatedIdsByPlaceholder.delete(path);
       if (cardId) {
         this.applyNewSuccessAnimation(cardId);
       }
       return;
     }
+
+    this.pendingCreatedIdsByPlaceholder.delete(path);
 
     if (placeholderEl) {
       if (!placeholderEl.isConnected) {
