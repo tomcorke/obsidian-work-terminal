@@ -155,6 +155,9 @@ export class TerminalTab {
       this.terminal.loadAddon(this.webglAddon);
     } catch (e) {
       console.warn("[work-terminal] WebGL addon failed, using canvas renderer:", e);
+      if (this.webglAddon) {
+        this.webglAddon.dispose();
+      }
       this.webglAddon = null;
     }
 
@@ -738,6 +741,7 @@ export class TerminalTab {
       searchAddon: this.searchAddon,
       containerEl: this.containerEl,
       process: this.process,
+      webglAddon: this.webglAddon,
       documentListeners: this._documentCleanups.map((fn, i) => ({
         event: `cleanup-${i}`,
         handler: fn as unknown as EventListener,
@@ -764,6 +768,17 @@ export class TerminalTab {
     tab.searchAddon = stored.searchAddon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
+    // Restore webglAddon reference so dispose() and onContextLoss stay wired up
+    // for recovered tabs. Re-subscribe onContextLoss so the handler closes over
+    // the new tab instance rather than the discarded pre-reload one.
+    tab.webglAddon = stored.webglAddon ?? null;
+    if (tab.webglAddon) {
+      tab.webglAddon.onContextLoss(() => {
+        console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
+        tab.webglAddon?.dispose();
+        tab.webglAddon = null;
+      });
+    }
     tab._documentCleanups = [];
     tab._claudeState = "inactive" as ClaudeState;
     tab._recentCleanLines = [];

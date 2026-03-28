@@ -4,6 +4,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
+import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 
 export type SessionType =
@@ -28,6 +29,7 @@ export interface StoredSession {
   searchAddon: SearchAddon;
   containerEl: HTMLElement;
   process: ChildProcess | null;
+  webglAddon: WebglAddon | null;
   documentListeners: { event: string; handler: EventListener }[];
   resizeObserver: ResizeObserver;
 }
