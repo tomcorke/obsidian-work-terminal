@@ -145,6 +145,16 @@ describe("ClaudeStateDetector", () => {
       detector.stop();
     });
 
+    it("does not detect Copilot cancel hint without intent text as active", () => {
+      const terminal = mockTerminal(["  some output", "  \u25ce (Esc to cancel)"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
     it("detects Copilot executing status as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25cb Executing"]);
       const detector = new ClaudeStateDetector(terminal, () => false);
@@ -216,6 +226,16 @@ describe("ClaudeStateDetector", () => {
 
       vi.advanceTimersByTime(2100);
       expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("does not detect wrapped Copilot cancel hint without intent text as active", () => {
+      const terminal = mockTerminal(["  some output", "  \u25ce", "  (Esc to cancel)"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
       detector.stop();
     });
 

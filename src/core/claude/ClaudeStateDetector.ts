@@ -199,7 +199,7 @@ export function hasAgentActiveIndicator(screenLines: string[]): boolean {
   const tail = screenLines.slice(-6);
   const tailJoined = tail.join(" ");
   const tailCompactJoined = tail.map((line) => line.trim()).join("");
-  const copilotSpinnerRowPattern = /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+\S/;
+  const copilotSpinnerRowPattern = /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?!\(Esc\b)\S/;
   const copilotKnownStatusPattern = /\b(?:Thinking|Executing|Cancelling)\b/;
   const copilotCancelHintPattern = /\(Esc\s+to\s+cancel(?:\s+\u00b7\s+[^)]*)?\)/;
   const hasClaudeActiveIndicator =
@@ -216,7 +216,7 @@ export function hasAgentActiveIndicator(screenLines: string[]): boolean {
     tail.some(
       (line) =>
         /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?:Thinking|Executing|Cancelling)\b/.test(line) ||
-        (/^\s*[\u25c9\u25ce\u25cb\u25cf]\s+\S/.test(line) && copilotCancelHintPattern.test(line)),
+        (copilotSpinnerRowPattern.test(line) && copilotCancelHintPattern.test(line)),
     ) ||
     (tail.some((line) => copilotSpinnerRowPattern.test(line)) &&
       (copilotKnownStatusPattern.test(tailCompactJoined) ||
