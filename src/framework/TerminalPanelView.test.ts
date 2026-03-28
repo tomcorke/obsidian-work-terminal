@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import type { PersistedSession } from "../core/session/types";
+import { expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
 
 const mockState = vi.hoisted(() => ({
@@ -426,7 +427,10 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
 
     expect(spawnShell).toHaveBeenCalledOnce();
-    expect(errorSpy).toHaveBeenCalledWith("[work-terminal] Failed to launch shell", expect.any(Error));
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[work-terminal] Failed to launch shell",
+      expect.any(Error),
+    );
     expect(mockState.notices).toContain("Failed to launch shell: boom");
 
     errorSpy.mockRestore();
@@ -467,7 +471,7 @@ describe("TerminalPanelView hook warning", () => {
     expect(plugin.loadData).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs).not.toBeNull();
     expect(mockState.latestCreateTabArgs?.[0]).toBe("/bin/echo");
-    expect(mockState.latestCreateTabArgs?.[1]).toBe(`${process.env.HOME}/one`);
+    expect(mockState.latestCreateTabArgs?.[1]).toBe(expandTilde("~/one"));
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(
       expect.arrayContaining([expect.stringContaining("Prompt A for Task One")]),
     );
@@ -515,12 +519,53 @@ describe("TerminalPanelView hook warning", () => {
     expect(plugin.loadData).toHaveBeenCalledTimes(2);
     expect(mockState.latestCreateTabArgs).not.toBeNull();
     expect(mockState.latestCreateTabArgs?.[0]).toBe("/bin/echo");
-    expect(mockState.latestCreateTabArgs?.[1]).toBe(`${process.env.HOME}/custom`);
+    expect(mockState.latestCreateTabArgs?.[1]).toBe(expandTilde("~/custom"));
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(
       expect.arrayContaining([expect.stringContaining("Prompt A for Task One")]),
     );
     expect(mockState.latestCreateTabArgs?.[5]).not.toEqual(
       expect.arrayContaining([expect.stringContaining("Prompt B for Task One")]),
     );
+  });
+
+  it("passes one fresh settings snapshot through custom contextual Copilot launches", async () => {
+    const { view } = createView();
+    await flushAsync();
+    const fresh = {
+      "core.additionalAgentContext": "Prompt A for $title",
+      "core.copilotCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/one",
+    };
+    const item = {
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks/task-1.md",
+    };
+    const loadFreshSettings = vi.spyOn(view as any, "loadFreshSettings").mockResolvedValue(fresh);
+    const getClaudeContextPrompt = vi
+      .spyOn(view as any, "getClaudeContextPrompt")
+      .mockResolvedValue("Prompt A for Task One");
+    const spawnCopilotSession = vi
+      .spyOn(view as any, "spawnCopilotSession")
+      .mockResolvedValue(undefined);
+
+    await (view as any).spawnCustomSession(item, {
+      sessionType: "copilot-with-context",
+      cwd: "~/custom",
+      extraArgs: "--flag",
+      label: "Custom Copilot",
+    });
+
+    expect(loadFreshSettings).toHaveBeenCalledOnce();
+    expect(getClaudeContextPrompt).toHaveBeenCalledWith(item, fresh);
+    expect(spawnCopilotSession).toHaveBeenCalledWith({
+      sessionType: "copilot-with-context",
+      cwd: "~/custom",
+      extraArgs: "--flag",
+      label: "Custom Copilot",
+      prompt: "Prompt A for Task One",
+      freshSettings: fresh,
+    });
   });
 });
