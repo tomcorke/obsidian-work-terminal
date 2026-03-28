@@ -28,6 +28,7 @@ export interface TaskFile {
   priority: TaskPriority;
   agentActionable: boolean;
   goal: string[];
+  color?: string;
   created: string;
   updated: string;
 }

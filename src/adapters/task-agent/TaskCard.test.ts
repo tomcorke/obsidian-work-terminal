@@ -1,12 +1,49 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskCard } from "./TaskCard";
 import type { CardActionContext, WorkItem } from "../../core/interfaces";
+
+type CreateChildOptions = { cls?: string; text?: string };
+type ObsidianHTMLElementPrototype = typeof HTMLElement.prototype & {
+  addClass(cls: string): HTMLElement;
+  removeClass(cls: string): HTMLElement;
+  createDiv(options?: CreateChildOptions): HTMLDivElement;
+  createSpan(options?: CreateChildOptions): HTMLSpanElement;
+};
 
 vi.mock("obsidian", () => ({
   Notice: class Notice {
     constructor(_message: string) {}
   },
 }));
+
+// Polyfill Obsidian HTMLElement augmentations for jsdom
+beforeAll(() => {
+  const prototype = HTMLElement.prototype as ObsidianHTMLElementPrototype;
+
+  prototype.addClass = function (cls: string) {
+    this.classList.add(cls);
+    return this;
+  };
+  prototype.removeClass = function (cls: string) {
+    this.classList.remove(cls);
+    return this;
+  };
+  prototype.createDiv = function (options?: CreateChildOptions) {
+    const el = document.createElement("div");
+    if (options?.cls) el.classList.add(...options.cls.split(" "));
+    if (options?.text) el.textContent = options.text;
+    this.appendChild(el);
+    return el;
+  };
+  prototype.createSpan = function (options?: CreateChildOptions) {
+    const el = document.createElement("span");
+    if (options?.cls) el.classList.add(...options.cls.split(" "));
+    if (options?.text) el.textContent = options.text;
+    this.appendChild(el);
+    return el;
+  };
+});
 
 function makeItem(overrides: Partial<WorkItem> = {}): WorkItem {
   return {
@@ -79,5 +116,62 @@ describe("TaskCard", () => {
 
     expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
     expect(ctx.getContextPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  describe("Jira badge rendering", () => {
+    it("applies wt-card-source--jira class to Jira source badges", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "PROJ-123", url: "", captured: "" },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-source") as HTMLElement;
+
+      expect(badge).not.toBeNull();
+      expect(badge.textContent).toBe("PROJ-123");
+      expect(badge.classList.contains("wt-card-source--jira")).toBe(true);
+    });
+
+    it("does not apply wt-card-source--jira class to non-Jira source badges", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "slack", id: "", url: "", captured: "" },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-source") as HTMLElement;
+
+      expect(badge).not.toBeNull();
+      expect(badge.classList.contains("wt-card-source--jira")).toBe(false);
+    });
+  });
+
+  describe("task color property", () => {
+    it("sets --wt-task-color CSS variable when color is provided", () => {
+      const item = makeItem({ metadata: { color: "#ff0000" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+
+      expect(el.style.getPropertyValue("--wt-task-color")).toBe("#ff0000");
+    });
+
+    it("does not set --wt-task-color when no color is provided", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+
+      expect(el.style.getPropertyValue("--wt-task-color")).toBe("");
+    });
   });
 });

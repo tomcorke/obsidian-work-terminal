@@ -191,6 +191,28 @@ describe("TaskParser", () => {
     });
   });
 
+  describe("color property", () => {
+    it("passes through color from frontmatter", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ color: "#0062e3" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      expect((item!.metadata as any).color).toBe("#0062e3");
+    });
+
+    it("omits color from metadata when not set in frontmatter", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({}),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      expect((item!.metadata as any).color).toBeUndefined();
+    });
+  });
+
   describe("groupByColumn", () => {
     it("excludes abandoned tasks", () => {
       const parser = new TaskParser({} as App, "", defaultSettings);
