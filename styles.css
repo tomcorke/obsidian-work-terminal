@@ -172,7 +172,7 @@
 /* Card title */
 .wt-card-title {
   font-weight: 500;
-  padding-right: 18px;
+  padding-right: 84px;
   margin-bottom: 4px;
 }
 
@@ -379,6 +379,7 @@
   color: var(--text-muted);
   background: var(--background-modifier-border);
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 /* =============================================================================
