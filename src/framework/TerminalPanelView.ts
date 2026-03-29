@@ -814,8 +814,15 @@ export class TerminalPanelView {
       jiraLink.addEventListener("click", (evt) => {
         evt.preventDefault();
         evt.stopPropagation();
-        const shell = electronRequire("electron").shell;
-        shell.openExternal(jiraUrl);
+        const logOpenExternalError = (error: unknown) => {
+          console.error(`[work-terminal] Failed to open Jira link externally: ${jiraUrl}`, error);
+        };
+        try {
+          const shell = electronRequire("electron").shell;
+          void Promise.resolve(shell.openExternal(jiraUrl)).catch(logOpenExternalError);
+        } catch (error) {
+          logOpenExternalError(error);
+        }
       });
     }
 

@@ -852,6 +852,77 @@ describe("TerminalPanelView hook warning", () => {
     );
   });
 
+  it("logs a clear error when opening a Jira link externally throws", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockState.openExternal.mockImplementation(() => {
+      throw new Error("shell unavailable");
+    });
+
+    view.setTitle({
+      id: "task-1",
+      path: "Tasks/task-1.md",
+      title: "Fix restart issue",
+      state: "active",
+      metadata: {
+        source: {
+          type: "jira",
+          id: "castle-1234",
+          url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+        },
+      },
+    });
+
+    const jiraLink = panelEl.querySelector(".wt-task-jira-link") as HTMLAnchorElement | null;
+    expect(jiraLink).not.toBeNull();
+
+    expect(() =>
+      jiraLink?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })),
+    ).not.toThrow();
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[work-terminal] Failed to open Jira link externally: https://skyscanner.atlassian.net/browse/CASTLE-1234",
+      expect.any(Error),
+    );
+
+    errorSpy.mockRestore();
+  });
+
+  it("logs a clear error when opening a Jira link externally rejects", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockState.openExternal.mockRejectedValue(new Error("openExternal rejected"));
+
+    view.setTitle({
+      id: "task-1",
+      path: "Tasks/task-1.md",
+      title: "Fix restart issue",
+      state: "active",
+      metadata: {
+        source: {
+          type: "jira",
+          id: "castle-1234",
+          url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+        },
+      },
+    });
+
+    const jiraLink = panelEl.querySelector(".wt-task-jira-link") as HTMLAnchorElement | null;
+    expect(jiraLink).not.toBeNull();
+
+    jiraLink?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    await flushAsync();
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[work-terminal] Failed to open Jira link externally: https://skyscanner.atlassian.net/browse/CASTLE-1234",
+      expect.any(Error),
+    );
+
+    errorSpy.mockRestore();
+  });
+
   it("shows only the title text when the selected item has no Jira source", async () => {
     const { panelEl, view } = createView();
     await flushAsync();
