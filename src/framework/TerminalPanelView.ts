@@ -918,12 +918,6 @@ export class TerminalPanelView {
   private async restoreClosedSession(
     entry: import("../core/session/RecentlyClosedStore").ClosedSessionEntry,
   ): Promise<void> {
-    const activeItemId = this.tabManager.getActiveItemId();
-    if (!activeItemId) {
-      new Notice(`Select a ${this.adapter.config.itemName} first`);
-      return;
-    }
-
     const fresh = await this.loadFreshSettings();
 
     // For resumable agent sessions (Claude/Copilot) with a session ID, resume them
@@ -944,7 +938,7 @@ export class TerminalPanelView {
       return;
     }
 
-    // For shell sessions, spawn a fresh one with the same label
+    // For shell sessions, spawn a fresh one with the same label into the original item
     if (entry.sessionType === "shell") {
       const shell = this.getStringSetting(
         fresh,
@@ -952,17 +946,28 @@ export class TerminalPanelView {
         process.env.SHELL || "/bin/zsh",
       );
       const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-      this.tabManager.createTab(shell, cwd, entry.label, "shell");
+      this.tabManager.createTabForItem(entry.itemId, shell, cwd, entry.label, "shell");
       this.renderTabBar();
       return;
     }
 
-    // For strands, spawn fresh
-    await this.spawnStrandsSession({
-      sessionType: entry.sessionType as "strands" | "strands-with-context",
-      label: entry.label,
-      freshSettings: fresh,
-    });
+    // For strands, spawn fresh into the original item
+    const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
+    const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
+    const strandsResolved = resolveCommand(cmdToken);
+    const strandsMergedExtra = this.getStringSetting(fresh, "core.strandsExtraArgs", "");
+    const strandsArgs = buildStrandsArgs({ strandsExtraArgs: strandsMergedExtra });
+    const strandsCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    this.tabManager.createTabForItem(
+      entry.itemId,
+      strandsResolved,
+      strandsCwd,
+      entry.label,
+      entry.sessionType as "strands" | "strands-with-context",
+      undefined,
+      [strandsResolved, ...cmdArgs, ...strandsArgs],
+    );
+    this.renderTabBar();
   }
 
   private async spawnCustomSession(item: WorkItem, rawConfig: CustomSessionConfig): Promise<void> {

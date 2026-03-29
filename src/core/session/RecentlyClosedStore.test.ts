@@ -66,7 +66,7 @@ describe("RecentlyClosedStore", () => {
     expect(store.getEntries(new Set())).toEqual([]);
   });
 
-  it("includes shell sessions without claudeSessionId in active filter", () => {
+  it("does not filter out shell sessions without claudeSessionId when applying active filter", () => {
     store.add(makeEntry({ sessionType: "shell", claudeSessionId: null, label: "Shell" }));
     // Even when filtering with active IDs, shell sessions (null ID) are not filtered
     const entries = store.getEntries(new Set(["some-id"]));

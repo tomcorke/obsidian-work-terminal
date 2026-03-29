@@ -178,7 +178,7 @@ export class CustomSessionModal extends Modal {
     const listEl = contentEl.createDiv({ cls: "wt-recently-closed-list" });
 
     for (const entry of this.closedSessions) {
-      const row = listEl.createDiv({ cls: "wt-recently-closed-row" });
+      const row = listEl.createEl("button", { cls: "wt-recently-closed-row" });
 
       const labelEl = row.createDiv({ cls: "wt-recently-closed-label" });
       labelEl.createSpan({ text: entry.label, cls: "wt-recently-closed-name" });
