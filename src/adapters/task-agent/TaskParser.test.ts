@@ -160,6 +160,137 @@ describe("TaskParser", () => {
       expect((item!.metadata as any).source.type).toBe("other");
     });
 
+    it("detects Jira source from a discrete jira frontmatter field", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: undefined,
+          jira: "CASTLE-1234",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "jira",
+        id: "CASTLE-1234",
+        url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+        captured: "CASTLE-1234",
+      });
+    });
+
+    it("detects Jira source from a full Jira URL in a discrete jira frontmatter field", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const jiraUrl = "https://skyscanner.atlassian.net/browse/CASTLE-1234";
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: undefined,
+          jira: jiraUrl,
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "jira",
+        id: "CASTLE-1234",
+        url: jiraUrl,
+        captured: jiraUrl,
+      });
+    });
+
+    it("detects Jira source from Jira-prefixed tags when explicit source is missing", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: undefined,
+          tags: ["task", "jira/CASTLE-1234"],
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "jira",
+        id: "CASTLE-1234",
+        url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+        captured: "jira/CASTLE-1234",
+      });
+    });
+
+    it("fills in Jira source details when source metadata only contains a Jira URL", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const jiraUrl = "https://skyscanner.atlassian.net/browse/CASTLE-9876";
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: { type: "other", id: "", url: jiraUrl, captured: "" },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "jira",
+        id: "CASTLE-9876",
+        url: jiraUrl,
+      });
+    });
+
+    it("preserves explicit non-Jira source metadata", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const confluenceUrl = "https://example.atlassian.net/wiki/spaces/ABC/pages/1234";
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: { type: "confluence", id: "CONF-1", url: confluenceUrl, captured: "" },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "confluence",
+        id: "CONF-1",
+        url: confluenceUrl,
+      });
+    });
+
+    it("leaves non-Jira URLs as other when no Jira key is present", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const genericUrl = "https://example.com/docs/task";
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: { type: "other", id: "", url: genericUrl, captured: "" },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "other",
+        id: "",
+        url: genericUrl,
+      });
+    });
+
+    it("uses the configured Jira base URL when expanding ticket refs", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: undefined,
+          jira: "CASTLE-1234",
+        }),
+      });
+      const parser = new TaskParser(app, "", {
+        ...defaultSettings,
+        "adapter.jiraBaseUrl": "https://example.atlassian.net/browse/",
+      });
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source.url).toBe(
+        "https://example.atlassian.net/browse/CASTLE-1234",
+      );
+    });
+
     it("defaults priority.score to 0 when missing", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {

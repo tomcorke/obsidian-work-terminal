@@ -33,7 +33,7 @@ import {
 } from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import type { PersistedSession } from "../core/session/types";
-import { expandTilde } from "../core/utils";
+import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
@@ -651,10 +651,9 @@ export class TerminalPanelView {
     const args = isCopilot ? [`--resume=${options.sessionId}`] : ["--resume", options.sessionId];
     const extraArgs =
       options.extraArgs ||
-      (
-        isCopilot
-          ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
-          : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "")
+      (isCopilot
+        ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
+        : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "")
       )
         .split(/\s+/)
         .filter(Boolean);
@@ -776,14 +775,54 @@ export class TerminalPanelView {
     this.renderTabBar();
   }
 
-  setTitle(title: string | null): void {
-    if (title) {
-      this.titleEl.textContent = title;
-      this.titleEl.style.display = "block";
-    } else {
-      this.titleEl.textContent = "";
+  setTitle(item: WorkItem | null): void {
+    this.titleEl.empty();
+    this.titleEl.style.removeProperty("--wt-task-color");
+
+    if (!item) {
       this.titleEl.style.display = "none";
+      return;
     }
+
+    const meta = (item.metadata || {}) as Record<string, any>;
+    const source = meta.source || {};
+    const taskColor = typeof meta.color === "string" ? meta.color : "";
+    if (taskColor) {
+      this.titleEl.style.setProperty("--wt-task-color", taskColor);
+    }
+
+    const titleRow = this.titleEl.createDiv({ cls: "wt-task-title-row" });
+    const jiraUrl = typeof source.url === "string" ? source.url.trim() : "";
+    const jiraId = typeof source.id === "string" ? source.id.trim().toUpperCase() : "";
+    if (source.type === "jira" && jiraUrl) {
+      const jiraLink = titleRow.createEl("a", {
+        cls: "wt-task-jira-link",
+        attr: {
+          href: jiraUrl,
+          "aria-label": `Open Jira ${jiraId || "ticket"} externally`,
+          title: jiraUrl,
+        },
+      });
+      jiraLink.createSpan({
+        cls: "wt-task-jira-link-label",
+        text: jiraId || "JIRA",
+      });
+      jiraLink.createSpan({
+        cls: "wt-task-jira-link-icon",
+        text: "↗",
+      });
+      jiraLink.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        const shell = electronRequire("electron").shell;
+        shell.openExternal(jiraUrl);
+      });
+    }
+
+    const titleText = titleRow.createSpan({ cls: "wt-task-title-text" });
+    titleText.textContent = item.title;
+    titleText.title = item.title;
+    this.titleEl.style.display = "block";
   }
 
   async getClaudeContextPrompt(

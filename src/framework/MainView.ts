@@ -325,7 +325,7 @@ export class MainView extends ItemView {
       // onSelect callback
       (item: WorkItem | null) => {
         this.terminalPanel?.setActiveItem(item?.id ?? null);
-        this.terminalPanel?.setTitle(item?.title ?? null);
+        this.terminalPanel?.setTitle(item);
         if (item && typeof this.adapter.createDetailView === "function") {
           this.adapter.createDetailView(item, this.app, this.leaf);
         }

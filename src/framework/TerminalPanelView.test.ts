@@ -17,6 +17,7 @@ const mockState = vi.hoisted(() => ({
     scriptExists: false,
     hooksConfigured: false,
   },
+  openExternal: vi.fn(),
   latestTabManager: null as {
     onSessionChange?: () => void;
     onClaudeStateChange?: (itemId: string, state: string) => void;
@@ -24,6 +25,23 @@ const mockState = vi.hoisted(() => ({
   } | null,
   stopPeriodicPersist: vi.fn(),
 }));
+
+vi.mock("../core/utils", async () => {
+  const actual = await vi.importActual<typeof import("../core/utils")>("../core/utils");
+  return {
+    ...actual,
+    electronRequire: vi.fn((moduleName: string) => {
+      if (moduleName === "electron") {
+        return {
+          shell: {
+            openExternal: mockState.openExternal,
+          },
+        };
+      }
+      return actual.electronRequire(moduleName);
+    }),
+  };
+});
 
 vi.mock("obsidian", () => ({
   App: class {},
@@ -45,10 +63,7 @@ vi.mock("obsidian", () => ({
         },
         onClick(handler: (evt: MouseEvent | KeyboardEvent) => any) {
           if (currentTitle) {
-            mockState.menuActions.set(
-              currentTitle,
-              () => handler({ type: "click" } as MouseEvent),
-            );
+            mockState.menuActions.set(currentTitle, () => handler({ type: "click" } as MouseEvent));
           }
           return this;
         },
@@ -324,6 +339,7 @@ describe("TerminalPanelView hook warning", () => {
     mockState.latestCreateTabArgs = null;
     mockState.tabManagerCalls = [];
     mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
+    mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
     mockState.stopPeriodicPersist.mockClear();
   });
@@ -462,7 +478,12 @@ describe("TerminalPanelView hook warning", () => {
         claudeSessionId: "session-123",
         launchShell: "/bin/echo",
         launchCwd: expandTilde("~/resume"),
-        launchCommandArgs: ["/bin/echo", "--dangerously-skip-permissions", "--session-id", "old-id"],
+        launchCommandArgs: [
+          "/bin/echo",
+          "--dangerously-skip-permissions",
+          "--session-id",
+          "old-id",
+        ],
       },
       0,
       new dom.window.MouseEvent("contextmenu"),
@@ -795,5 +816,61 @@ describe("TerminalPanelView hook warning", () => {
       prompt: "Prompt A for Task One",
       freshSettings: fresh,
     });
+  });
+
+  it("renders a Jira link badge ahead of the selected title and opens it externally", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-1",
+      path: "Tasks/task-1.md",
+      title: "Fix restart issue",
+      state: "active",
+      metadata: {
+        color: "#005cc5",
+        source: {
+          type: "jira",
+          id: "castle-1234",
+          url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+        },
+      },
+    });
+
+    const jiraLink = panelEl.querySelector(".wt-task-jira-link") as HTMLAnchorElement | null;
+    expect(jiraLink).not.toBeNull();
+    expect(jiraLink?.textContent).toContain("CASTLE-1234");
+    expect(jiraLink?.textContent).toContain("↗");
+    expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Fix restart issue");
+    expect(panelEl.querySelector(".wt-task-title")?.getAttribute("style")).toContain(
+      "--wt-task-color: #005cc5",
+    );
+
+    jiraLink?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(mockState.openExternal).toHaveBeenCalledWith(
+      "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+    );
+  });
+
+  it("shows only the title text when the selected item has no Jira source", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-2",
+      path: "Tasks/task-2.md",
+      title: "Plain task",
+      state: "todo",
+      metadata: {
+        source: {
+          type: "prompt",
+          id: "",
+          url: "",
+        },
+      },
+    });
+
+    expect(panelEl.querySelector(".wt-task-jira-link")).toBeNull();
+    expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Plain task");
   });
 });
