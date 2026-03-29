@@ -135,6 +135,7 @@ describe("TerminalTab hot-reload addon handling", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("stashes addon references needed to preserve disposal order after reload", () => {
@@ -569,6 +570,7 @@ describe("TerminalTab WebGL recovery", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("stashes the live webgl addon reference for hot reload recovery", () => {
