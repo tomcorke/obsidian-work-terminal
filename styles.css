@@ -526,6 +526,10 @@
   --wt-tab-fill: var(--background-modifier-hover);
 }
 
+.wt-tab.wt-tab-agent-active:hover {
+  --wt-tab-fill: var(--background-secondary);
+}
+
 .wt-tab-active {
   border-bottom-color: var(--interactive-accent);
 }
