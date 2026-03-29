@@ -286,8 +286,9 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(terminalDispose).toHaveBeenCalledTimes(1);
   });
 
-  it("drains xterm's addon manager before terminal disposal for older restored tabs", () => {
+  it("does not touch xterm's private addon manager for older restored tabs", () => {
     const order: string[] = [];
+    const addonManagerDispose = vi.fn(() => order.push("addon-manager"));
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
       _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
       _stateTimer: null,
@@ -302,7 +303,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       webglAddon: null,
       webglContextLossListener: null,
       terminal: {
-        _addonManager: { dispose: vi.fn(() => order.push("addon-manager")) },
+        _addonManager: { dispose: addonManagerDispose },
         dispose: vi.fn(() => order.push("terminal")),
       },
       containerEl: { remove: vi.fn(() => order.push("container")) },
@@ -314,10 +315,128 @@ describe("TerminalTab hot-reload addon handling", () => {
       "tracker",
       "cleanup",
       "resize-observer",
-      "addon-manager",
       "terminal",
       "container",
     ]);
+    expect(addonManagerDispose).not.toHaveBeenCalled();
+  });
+
+  it("rehydrates legacy addon refs so restored tabs can close cleanly", () => {
+    const fitAddon = {
+      dispose: vi.fn(),
+      activate: vi.fn(),
+      fit: vi.fn(),
+      proposeDimensions: vi.fn(),
+      constructor: { name: "" },
+    };
+    const searchAddon = {
+      dispose: vi.fn(),
+      activate: vi.fn(),
+      findNext: vi.fn(),
+      findPrevious: vi.fn(),
+      clearDecorations: vi.fn(),
+      constructor: { name: "c" },
+    };
+    const webLinksAddon = {
+      _handler: vi.fn(),
+      _options: {},
+      dispose: vi.fn(),
+      activate: vi.fn(),
+      constructor: { name: "" },
+    };
+    const unicode11Addon = {
+      dispose: vi.fn(),
+      activate: Object.assign(vi.fn(), {
+        toString: () => "activate(e){e.unicode.register(new t.UnicodeV11)}",
+      }),
+      constructor: { name: "" },
+    };
+    const legacyWebglListenerDispose = vi.fn();
+    const webglAddon = {
+      dispose: vi.fn(),
+      clearTextureAtlas: vi.fn(),
+      onContextLoss: vi.fn(() => ({ dispose: legacyWebglListenerDispose })),
+      constructor: { name: "l" },
+    };
+    const addonEntries = [
+      { instance: fitAddon, isDisposed: false },
+      { instance: searchAddon, isDisposed: false },
+      { instance: webLinksAddon, isDisposed: false },
+      { instance: unicode11Addon, isDisposed: false },
+      { instance: webglAddon, isDisposed: false },
+    ];
+    const wrapAddonDispose = <T extends { dispose: () => void }>(entry: {
+      instance: T;
+      isDisposed: boolean;
+    }) => {
+      const originalDispose = entry.instance.dispose.bind(entry.instance);
+      entry.instance.dispose = vi.fn(() => {
+        if (entry.isDisposed) return;
+        entry.isDisposed = true;
+        originalDispose();
+        const index = addonEntries.indexOf(entry);
+        if (index !== -1) addonEntries.splice(index, 1);
+      });
+    };
+    addonEntries.forEach((entry) => wrapAddonDispose(entry as never));
+
+    const addonManagerDispose = vi.fn(() => {
+      if (addonEntries.length > 0) {
+        throw new TypeError("Cannot read properties of undefined (reading '_isDisposed')");
+      }
+    });
+    const terminalDispose = vi.fn(() => addonManagerDispose());
+    const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
+    const containerEl = {
+      addEventListener: vi.fn(),
+      hasClass: vi.fn(() => false),
+      remove: vi.fn(),
+    };
+    const parentEl = { appendChild: vi.fn() };
+
+    vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
+
+    const restored = TerminalTab.fromStored(
+      {
+        id: "term-1",
+        taskPath: "task.md",
+        label: "Claude",
+        claudeSessionId: "session-1",
+        sessionType: "claude",
+        terminal: {
+          focus: vi.fn(),
+          scrollToBottom: vi.fn(),
+          cols: 80,
+          _addonManager: { _addons: addonEntries },
+          dispose: terminalDispose,
+        } as any,
+        fitAddon: undefined as any,
+        searchAddon: undefined as any,
+        webLinksAddon: undefined,
+        linkProviderDisposable: null,
+        unicode11Addon: undefined,
+        webglAddon: null,
+        webglContextLossListener: null,
+        containerEl: containerEl as any,
+        process: null,
+        documentListeners: [],
+        resizeObserver: resizeObserver as any,
+      },
+      parentEl as any,
+    );
+
+    expect(() => restored.dispose()).not.toThrow();
+    expect((restored as any).fitAddon).toBeUndefined();
+    expect(addonEntries).toEqual([]);
+    expect(fitAddon.dispose).toHaveBeenCalledTimes(1);
+    expect(searchAddon.dispose).toHaveBeenCalledTimes(1);
+    expect(webLinksAddon.dispose).toHaveBeenCalledTimes(1);
+    expect(unicode11Addon.dispose).toHaveBeenCalledTimes(1);
+    expect(webglAddon.dispose).toHaveBeenCalledTimes(1);
+    expect(webglAddon.onContextLoss).not.toHaveBeenCalled();
+    expect(legacyWebglListenerDispose).not.toHaveBeenCalled();
+    expect(addonManagerDispose).toHaveBeenCalledTimes(1);
+    expect(containerEl.remove).toHaveBeenCalledTimes(1);
   });
 
   it("skips the addon manager fallback when tracked addon refs are available", () => {

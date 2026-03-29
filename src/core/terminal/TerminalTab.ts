@@ -26,7 +26,9 @@ let sessionCounter = 0;
 
 type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
-    dispose(): void;
+    _addons?: Array<{
+      instance?: unknown;
+    }>;
   };
   _linkProviderService?: {
     linkProviders: unknown[];
@@ -844,6 +846,7 @@ export class TerminalTab {
     tab.process = stored.process;
     tab.webglAddon = stored.webglAddon ?? null;
     tab.webglContextLossListener = null;
+    tab.recoverLegacyAddonRefs();
     // Restore the live webglAddon reference so recovered tabs still dispose it
     // correctly, then re-subscribe onContextLoss with a callback bound to the
     // new tab instance created during reload recovery.
@@ -918,6 +921,85 @@ export class TerminalTab {
     return tab;
   }
 
+  private recoverLegacyAddonRefs(): void {
+    const addonEntries = (this.terminal as TerminalWithAddonManager)._addonManager?._addons;
+    if (!addonEntries?.length) return;
+    for (const addonEntry of addonEntries) {
+      const addon = addonEntry.instance;
+      if (!addon) continue;
+      if (this.isLegacyFitAddon(addon)) {
+        this.fitAddon ??= addon;
+        continue;
+      }
+      if (this.isLegacySearchAddon(addon)) {
+        this.searchAddon ??= addon;
+        continue;
+      }
+      if (this.isLegacyWebLinksAddon(addon)) {
+        this.webLinksAddon ??= addon;
+        continue;
+      }
+      if (this.isLegacyWebglAddon(addon)) {
+        if (!this.webglAddon) {
+          this.webglAddon = addon;
+        }
+        continue;
+      }
+      if (this.isLegacyUnicode11Addon(addon)) {
+        this.unicode11Addon ??= addon;
+      }
+    }
+  }
+
+  private isLegacyFitAddon(addon: unknown): addon is FitAddon {
+    if (!addon || typeof addon !== "object") return false;
+    return (
+      typeof (addon as { fit?: unknown }).fit === "function" &&
+      typeof (addon as { proposeDimensions?: unknown }).proposeDimensions === "function"
+    );
+  }
+
+  private isLegacySearchAddon(addon: unknown): addon is SearchAddon {
+    if (!addon || typeof addon !== "object") return false;
+    return (
+      typeof (addon as { findNext?: unknown }).findNext === "function" &&
+      typeof (addon as { findPrevious?: unknown }).findPrevious === "function" &&
+      typeof (addon as { clearDecorations?: unknown }).clearDecorations === "function"
+    );
+  }
+
+  private isLegacyWebLinksAddon(addon: unknown): addon is WebLinksAddon {
+    if (!addon || typeof addon !== "object") return false;
+    return (
+      typeof (addon as { activate?: unknown }).activate === "function" &&
+      typeof (addon as { dispose?: unknown }).dispose === "function" &&
+      "_handler" in addon &&
+      "_options" in addon
+    );
+  }
+
+  private isLegacyUnicode11Addon(addon: unknown): addon is Unicode11Addon {
+    if (!addon || typeof addon !== "object") return false;
+    if (
+      this.isLegacyFitAddon(addon) ||
+      this.isLegacySearchAddon(addon) ||
+      this.isLegacyWebLinksAddon(addon) ||
+      this.isLegacyWebglAddon(addon)
+    ) {
+      return false;
+    }
+    const activate = (addon as { activate?: unknown }).activate;
+    return typeof activate === "function" && activate.toString().includes("unicode.register");
+  }
+
+  private isLegacyWebglAddon(addon: unknown): addon is WebglAddon {
+    if (!addon || typeof addon !== "object") return false;
+    return (
+      typeof (addon as { clearTextureAtlas?: unknown }).clearTextureAtlas === "function" &&
+      "onContextLoss" in addon
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Cleanup
   // ---------------------------------------------------------------------------
@@ -966,14 +1048,6 @@ export class TerminalTab {
     // Dispose addons before terminal.dispose() so they can clean up while
     // xterm's internal services (renderer, buffer) are still alive.
     // Disposing in reverse load order mirrors standard teardown conventions.
-    const hasTrackedAddons = Boolean(
-      this.fitAddon ||
-      this.searchAddon ||
-      this.webLinksAddon ||
-      this.linkProviderDisposable ||
-      this.unicode11Addon ||
-      this.webglAddon,
-    );
     if (this.linkProviderDisposable) {
       this.linkProviderDisposable.dispose();
       this.linkProviderDisposable = null;
@@ -995,13 +1069,5 @@ export class TerminalTab {
     this.searchAddon = undefined;
     this.fitAddon?.dispose();
     this.fitAddon = undefined;
-
-    // Hot-reload snapshots created before addon refs were stashed will not have
-    // the anonymous addons above. Drain xterm's addon manager here as a
-    // compatibility fallback so restored tabs still dispose addons before the
-    // terminal tears down its internals.
-    if (!hasTrackedAddons) {
-      (this.terminal as TerminalWithAddonManager)._addonManager?.dispose();
-    }
   }
 }
