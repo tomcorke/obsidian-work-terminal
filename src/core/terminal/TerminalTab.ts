@@ -28,6 +28,9 @@ type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
     dispose(): void;
   };
+  _linkProviderService?: {
+    linkProviders: unknown[];
+  };
 };
 
 export class TerminalTab {
@@ -49,6 +52,7 @@ export class TerminalTab {
   private fitAddon: FitAddon | undefined;
   private searchAddon: SearchAddon | undefined;
   private webLinksAddon: WebLinksAddon | undefined;
+  private linkProviderDisposable: IDisposable | null = null;
   private unicode11Addon: Unicode11Addon | undefined;
   private webglAddon: WebglAddon | null = null;
   private webglContextLossListener: IDisposable | null = null;
@@ -56,6 +60,8 @@ export class TerminalTab {
   private _documentCleanups: (() => void)[] = [];
   private _searchBarEl: HTMLElement | null = null;
   private _resizeDebounce: ReturnType<typeof setTimeout> | null = null;
+  private _spawnTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _isDisposed = false;
 
   // Minimum container width for fitAddon.fit(). When the plugin view is
   // momentarily narrow (e.g. switching between plugins), skip the fit so the
@@ -173,6 +179,7 @@ export class TerminalTab {
 
     // Ensure clicking the terminal area gives xterm focus
     this.containerEl.addEventListener("click", () => {
+      if (this._isDisposed) return;
       this.terminal.focus();
     });
 
@@ -203,10 +210,15 @@ export class TerminalTab {
     };
 
     // Delay spawn to let CSS layout happen first
-    setTimeout(spawnWithFit, 150);
+    this._spawnTimeout = setTimeout(() => {
+      this._spawnTimeout = null;
+      if (this._isDisposed) return;
+      spawnWithFit();
+    }, 150);
 
     // Send resize control sequence to PTY wrapper on terminal resize
     this.terminal.onResize(({ cols, rows }) => {
+      if (this._isDisposed) return;
       if (this.process?.stdin && !this.process.stdin.destroyed) {
         // Custom OSC sequence that pty-wrapper.py intercepts
         const resizeCmd = `\x1b]777;resize;${cols};${rows}\x07`;
@@ -217,9 +229,11 @@ export class TerminalTab {
     // Resize observer - debounced to avoid fitting during tab transition
     // animations where the container has intermediate (narrow) widths.
     this.resizeObserver = new ResizeObserver(() => {
+      if (this._isDisposed) return;
       if (this.containerEl.hasClass("hidden")) return;
       if (this._resizeDebounce) clearTimeout(this._resizeDebounce);
       this._resizeDebounce = setTimeout(() => {
+        if (this._isDisposed) return;
         if (this.containerEl.hasClass("hidden")) return;
         const prevCols = this.terminal.cols;
         this.safeFit();
@@ -271,6 +285,7 @@ export class TerminalTab {
 
   private wireProcess(proc: ChildProcess): void {
     this.terminal.onData((data) => {
+      if (this._isDisposed) return;
       this._sessionTracker?.feedInput(data);
       if (proc.stdin && !proc.stdin.destroyed) {
         proc.stdin.write(data);
@@ -278,6 +293,7 @@ export class TerminalTab {
     });
 
     proc.stdout?.on("data", (data: Buffer) => {
+      if (this._isDisposed) return;
       this._checkRename(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
@@ -285,6 +301,7 @@ export class TerminalTab {
     });
 
     proc.stderr?.on("data", (data: Buffer) => {
+      if (this._isDisposed) return;
       this._checkRename(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
@@ -292,11 +309,13 @@ export class TerminalTab {
     });
 
     proc.on("error", (err) => {
+      if (this._isDisposed) return;
       console.error("[work-terminal] Process error:", err);
       this.terminal.write(`\r\n[Process error: ${err.message}]\r\n`);
     });
 
     proc.on("exit", (code, signal) => {
+      if (this._isDisposed) return;
       this.terminal.write(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
     });
@@ -311,6 +330,7 @@ export class TerminalTab {
    *  good dimensions and content doesn't reflow. */
   private safeFit(): void {
     try {
+      if (this._isDisposed) return;
       const width = this.containerEl.clientWidth;
       if (width < TerminalTab.MIN_FIT_WIDTH) return;
       this.fitAddon?.fit();
@@ -332,8 +352,12 @@ export class TerminalTab {
     // Match paths with optional line:col - e.g. src/main.ts, ./foo/bar.js:42, /abs/path.ts:10:5
     const pathRegex = /(?:\.\/|\.\.\/|\/|[a-zA-Z][\w.-]*\/)[^\s:,;'")\]}>]+?(?::\d+(?::\d+)?)?/g;
 
-    this.terminal.registerLinkProvider({
+    this.linkProviderDisposable = this.terminal.registerLinkProvider({
       provideLinks: (lineNumber: number, callback: (links: any[] | undefined) => void) => {
+        if (this._isDisposed) {
+          callback(undefined);
+          return;
+        }
         const line = this.terminal.buffer.active.getLine(lineNumber - 1)?.translateToString() || "";
         const links: any[] = [];
         let match: RegExpExecArray | null;
@@ -767,6 +791,7 @@ export class TerminalTab {
       fitAddon: this.fitAddon!,
       searchAddon: this.searchAddon!,
       webLinksAddon: this.webLinksAddon,
+      linkProviderDisposable: this.linkProviderDisposable,
       unicode11Addon: this.unicode11Addon,
       webglAddon: this.webglAddon,
       webglContextLossListener: this.webglContextLossListener,
@@ -800,6 +825,7 @@ export class TerminalTab {
     tab.fitAddon = stored.fitAddon;
     tab.searchAddon = stored.searchAddon;
     tab.webLinksAddon = stored.webLinksAddon;
+    tab.linkProviderDisposable = stored.linkProviderDisposable ?? null;
     tab.unicode11Addon = stored.unicode11Addon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
@@ -817,6 +843,7 @@ export class TerminalTab {
     tab._recentCleanLines = [];
     tab._stateTimer = null;
     tab._isResumableAgent = false;
+    tab._isDisposed = false;
     tab._sessionTracker = null;
     tab._renameDecoder = new StringDecoder("utf8");
     tab._renameLineBuffer = "";
@@ -847,9 +874,11 @@ export class TerminalTab {
     stored.resizeObserver.disconnect();
     tab._resizeDebounce = null;
     tab.resizeObserver = new ResizeObserver(() => {
+      if (tab._isDisposed) return;
       if (stored.containerEl.hasClass("hidden")) return;
       if (tab._resizeDebounce) clearTimeout(tab._resizeDebounce);
       tab._resizeDebounce = setTimeout(() => {
+        if (tab._isDisposed) return;
         if (stored.containerEl.hasClass("hidden")) return;
         const prevCols = tab.terminal.cols;
         tab.safeFit();
@@ -869,6 +898,7 @@ export class TerminalTab {
     // Scroll to bottom after recovery - terminal buffer is preserved but
     // viewport resets to top during the DOM re-attach.
     requestAnimationFrame(() => {
+      if (tab._isDisposed) return;
       stored.terminal.scrollToBottom();
     });
 
@@ -880,6 +910,8 @@ export class TerminalTab {
   // ---------------------------------------------------------------------------
 
   dispose(): void {
+    if (this._isDisposed) return;
+    this._isDisposed = true;
     // Stop session tracker
     this._sessionTracker?.dispose();
     this._sessionTracker = null;
@@ -891,6 +923,10 @@ export class TerminalTab {
     if (this._resizeDebounce) {
       clearTimeout(this._resizeDebounce);
       this._resizeDebounce = null;
+    }
+    if (this._spawnTimeout) {
+      clearTimeout(this._spawnTimeout);
+      this._spawnTimeout = null;
     }
     // Remove document-level keyboard listeners
     for (const cleanup of this._documentCleanups) {
@@ -921,9 +957,20 @@ export class TerminalTab {
       this.fitAddon ||
       this.searchAddon ||
       this.webLinksAddon ||
+      this.linkProviderDisposable ||
       this.unicode11Addon ||
       this.webglAddon,
     );
+    if (this.linkProviderDisposable) {
+      this.linkProviderDisposable.dispose();
+      this.linkProviderDisposable = null;
+    } else {
+      // Hot-reload sessions stashed before the link-provider disposable was
+      // tracked still carry the custom provider inside xterm's private
+      // service registry. Clear that registry before terminal.dispose() so the
+      // provider cannot outlive the buffer teardown sequence.
+      (this.terminal as TerminalWithAddonManager)._linkProviderService?.linkProviders.splice(0);
+    }
     this.disposeWebglContextLossListener();
     this.webglAddon?.dispose();
     this.webglAddon = null;

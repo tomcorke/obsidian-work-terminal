@@ -138,6 +138,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     const fitAddon = { dispose: vi.fn(), fit: vi.fn() };
     const searchAddon = { dispose: vi.fn() };
     const webLinksAddon = { dispose: vi.fn() };
+    const linkProviderDisposable = { dispose: vi.fn() };
     const unicode11Addon = { dispose: vi.fn() };
     const webglAddon = { dispose: vi.fn() };
     const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
@@ -152,6 +153,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       fitAddon,
       searchAddon,
       webLinksAddon,
+      linkProviderDisposable,
       unicode11Addon,
       webglAddon,
       containerEl: {},
@@ -167,6 +169,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(stored.fitAddon).toBe(fitAddon);
     expect(stored.searchAddon).toBe(searchAddon);
     expect(stored.webLinksAddon).toBe(webLinksAddon);
+    expect(stored.linkProviderDisposable).toBe(linkProviderDisposable);
     expect(stored.unicode11Addon).toBe(unicode11Addon);
     expect(stored.webglAddon).toBe(webglAddon);
   });
@@ -178,6 +181,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     const fitAddon = { dispose: vi.fn(), fit: vi.fn() };
     const searchAddon = { dispose: vi.fn() };
     const webLinksAddon = { dispose: vi.fn() };
+    const linkProviderDisposable = { dispose: vi.fn() };
     const unicode11Addon = { dispose: vi.fn() };
     const webglAddon = { dispose: vi.fn(), onContextLoss: vi.fn(() => ({ dispose: vi.fn() })) };
     const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
@@ -199,6 +203,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         fitAddon: fitAddon as any,
         searchAddon: searchAddon as any,
         webLinksAddon: webLinksAddon as any,
+        linkProviderDisposable: linkProviderDisposable as any,
         unicode11Addon: unicode11Addon as any,
         webglAddon: webglAddon as any,
         webglContextLossListener: null,
@@ -213,10 +218,72 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect((restored as any).fitAddon).toBe(fitAddon);
     expect((restored as any).searchAddon).toBe(searchAddon);
     expect((restored as any).webLinksAddon).toBe(webLinksAddon);
+    expect((restored as any).linkProviderDisposable).toBe(linkProviderDisposable);
     expect((restored as any).unicode11Addon).toBe(unicode11Addon);
     expect((restored as any).webglAddon).toBe(webglAddon);
     expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
     expect(scrollToBottom).toHaveBeenCalled();
+  });
+
+  it("disposes the custom link provider before terminal teardown", () => {
+    const order: string[] = [];
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
+      _stateTimer: null,
+      _resizeDebounce: null,
+      _spawnTimeout: null,
+      _documentCleanups: [],
+      resizeObserver: { disconnect: vi.fn(() => order.push("resize-observer")) },
+      process: null,
+      fitAddon: undefined,
+      searchAddon: undefined,
+      webLinksAddon: undefined,
+      linkProviderDisposable: { dispose: vi.fn(() => order.push("link-provider")) },
+      unicode11Addon: undefined,
+      webglAddon: null,
+      webglContextLossListener: null,
+      terminal: {
+        _addonManager: { dispose: vi.fn(() => order.push("addon-manager")) },
+        dispose: vi.fn(() => order.push("terminal")),
+      },
+      containerEl: { remove: vi.fn(() => order.push("container")) },
+    }) as TerminalTab;
+
+    tab.dispose();
+
+    expect(order).toEqual(["tracker", "resize-observer", "link-provider", "terminal", "container"]);
+  });
+
+  it("clears legacy link providers for restored sessions created before tracking them", () => {
+    const linkProviders = [{ id: "custom-provider" }];
+    const terminalDispose = vi.fn();
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _sessionTracker: { dispose: vi.fn() },
+      _stateTimer: null,
+      _resizeDebounce: null,
+      _spawnTimeout: null,
+      _documentCleanups: [],
+      resizeObserver: { disconnect: vi.fn() },
+      process: null,
+      fitAddon: { dispose: vi.fn() },
+      searchAddon: undefined,
+      webLinksAddon: undefined,
+      linkProviderDisposable: null,
+      unicode11Addon: undefined,
+      webglAddon: null,
+      webglContextLossListener: null,
+      terminal: {
+        _linkProviderService: { linkProviders },
+        _addonManager: { dispose: vi.fn() },
+        dispose: terminalDispose,
+      },
+      containerEl: { remove: vi.fn() },
+    }) as TerminalTab;
+
+    tab.dispose();
+
+    expect(linkProviders).toEqual([]);
+    expect(terminalDispose).toHaveBeenCalledTimes(1);
   });
 
   it("drains xterm's addon manager before terminal disposal for older restored tabs", () => {
