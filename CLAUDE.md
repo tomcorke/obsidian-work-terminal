@@ -87,7 +87,7 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 - **After code changes**: reload the plugin via `node cdp.js` (preserves terminal sessions) rather than asking the user to reload manually.
 - **While debugging**: use CDP to inspect DOM, evaluate expressions, read console logs, wait for selectors, click, type, and capture screenshots before asking the user to perform manual actions. Only ask the user when the debugger cannot see or do what's needed.
 - **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. No arguments = trigger plugin reload. Screenshots can be captured with `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`.
-- **Automation safety**: the isolated-instance launcher now fails fast if the configured debugger port is already occupied, preventing accidental attachment to the wrong Obsidian instance.
+- **Automation safety**: the isolated-instance launcher now fails fast if the configured debugger port is already occupied, and it also aborts early with a singleton warning if another Obsidian app process is already running instead of timing out on an unusable second-instance launch.
 - **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing

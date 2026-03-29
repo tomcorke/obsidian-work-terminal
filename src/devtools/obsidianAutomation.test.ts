@@ -60,6 +60,69 @@ describe("obsidian automation helpers", () => {
     });
   });
 
+  it("parses running Obsidian processes and extracts debugger ports", () => {
+    const processes = automation.parseObsidianProcessList(`
+      101 /Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222
+      202 /Applications/Obsidian.app/Contents/MacOS/Obsidian
+    `);
+
+    expect(processes).toEqual([
+      {
+        pid: 101,
+        command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222",
+        port: 9222,
+      },
+      {
+        pid: 202,
+        command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian",
+        port: null,
+      },
+    ]);
+  });
+
+  it("fails fast when another Obsidian singleton is already running", () => {
+    expect(() =>
+      automation.assertIsolatedLaunchSupported({
+        port: 9333,
+        runningProcesses: [
+          {
+            pid: 101,
+            command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222",
+            port: 9222,
+          },
+        ],
+      }),
+    ).toThrow("cannot reliably start a second debuggable instance");
+  });
+
+  it("detects Obsidian processes outside /Applications", () => {
+    const processes = automation.parseObsidianProcessList(`
+      404 /Users/tom/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9333
+    `);
+
+    expect(() =>
+      automation.assertIsolatedLaunchSupported({
+        port: 9222,
+        runningProcesses: processes,
+      }),
+    ).toThrow("Another Obsidian app process is already running");
+  });
+
+  it("allows launch when no conflicting Obsidian process is present", () => {
+    expect(() =>
+      automation.assertIsolatedLaunchSupported({
+        port: 9333,
+        runningProcesses: [
+          {
+            pid: 101,
+            command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9333",
+            port: 9333,
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects missing values for path flags", () => {
     expect(() => automation.parseIsolatedInstanceArgs(["open", "--vault"], repoRoot)).toThrow(
       "--vault requires a value",
@@ -303,6 +366,109 @@ describe("obsidian automation helpers", () => {
     }
   });
 
+  it("waits for an Obsidian page target instead of a browser-only target", async () => {
+    let requestCount = 0;
+    const server = http.createServer((_req, res) => {
+      requestCount += 1;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (requestCount < 3) {
+        res.end(JSON.stringify([
+          {
+            id: "browser-only",
+            type: "browser",
+            title: "Obsidian",
+            webSocketDebuggerUrl: "ws://127.0.0.1/devtools/browser/browser-only",
+          },
+        ]));
+        return;
+      }
+
+      res.end(JSON.stringify([
+        {
+          id: "page-ready",
+          type: "page",
+          title: "Obsidian",
+          webSocketDebuggerUrl: "ws://127.0.0.1/devtools/page/page-ready",
+        },
+      ]));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.once("error", reject);
+    });
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected a TCP address");
+      }
+
+      const targets = await automation.waitForDebugger({
+        host: "127.0.0.1",
+        port: address.port,
+        timeoutMs: 2_500,
+      });
+
+      expect(automation.findObsidianPageTarget(targets)).toMatchObject({
+        id: "page-ready",
+        type: "page",
+      });
+      expect(requestCount).toBeGreaterThanOrEqual(3);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
+  it("retries vault verification until the Obsidian app is ready", async () => {
+    const close = vi.fn();
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(path.join(repoRoot, ".claude", "testing", "obsidian-vault"));
+    vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
+      evaluate,
+      close,
+    });
+
+    await expect(
+      automation.verifyObsidianVault({
+        host: "127.0.0.1",
+        port: 9333,
+        timeoutMs: 1_500,
+        expectedVaultDir: path.join(repoRoot, ".claude", "testing", "obsidian-vault"),
+      }),
+    ).resolves.toBe(path.join(repoRoot, ".claude", "testing", "obsidian-vault"));
+
+    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries vault verification when the page target is not ready yet", async () => {
+    const close = vi.fn();
+    const evaluate = vi.fn().mockResolvedValue(path.join(repoRoot, ".claude", "testing", "obsidian-vault"));
+    vi.spyOn(automation.CDPClient, "connect")
+      .mockRejectedValueOnce(new Error("No Obsidian page target found on 127.0.0.1:9333"))
+      .mockResolvedValueOnce({
+        evaluate,
+        close,
+      });
+
+    await expect(
+      automation.verifyObsidianVault({
+        host: "127.0.0.1",
+        port: 9333,
+        timeoutMs: 1_500,
+        expectedVaultDir: path.join(repoRoot, ".claude", "testing", "obsidian-vault"),
+      }),
+    ).resolves.toBe(path.join(repoRoot, ".claude", "testing", "obsidian-vault"));
+
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it("open-view succeeds only after the work terminal leaf is present", async () => {
     const evaluate = vi
       .fn()
@@ -324,11 +490,9 @@ describe("obsidian automation helpers", () => {
     ).resolves.toBe("Work Terminal view opened");
 
     expect(evaluate).toHaveBeenCalledTimes(2);
-    expect(evaluate).toHaveBeenNthCalledWith(
-      1,
-      "app.commands.executeCommandById(\"work-terminal:open-work-terminal\")",
-    );
-    expect(evaluate.mock.calls[1][0]).toContain("app?.workspace?.getLeavesOfType?.(viewType) ?? []");
+    expect(evaluate.mock.calls[0][0]).toContain('const commandId = "work-terminal:open-work-terminal"');
+    expect(evaluate.mock.calls[0][0]).toContain("throw new Error(\"Obsidian command API is unavailable\")");
+    expect(evaluate.mock.calls[1][0]).toContain("globalThis.app?.workspace?.getLeavesOfType?.(viewType) ?? []");
     expect(evaluate.mock.calls[1][0]).toContain('const viewType = "work-terminal-view"');
     expect(close).toHaveBeenCalledTimes(1);
   });
