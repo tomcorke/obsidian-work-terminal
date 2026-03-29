@@ -1059,9 +1059,7 @@ export class TerminalTab {
       // provider cannot outlive the buffer teardown sequence.
       (this.terminal as TerminalWithAddonManager)._linkProviderService?.linkProviders.splice(0);
     }
-    this.disposeWebglContextLossListener();
-    this.webglAddon?.dispose();
-    this.webglAddon = null;
+    this.detachTrackedWebglAddon();
     this.unicode11Addon?.dispose();
     this.unicode11Addon = undefined;
     this.webLinksAddon?.dispose();
@@ -1070,5 +1068,20 @@ export class TerminalTab {
     this.searchAddon = undefined;
     this.fitAddon?.dispose();
     this.fitAddon = undefined;
+  }
+
+  private detachTrackedWebglAddon(): void {
+    const webglAddon = this.webglAddon;
+    this.disposeWebglContextLossListener();
+    this.webglAddon = null;
+    if (!webglAddon) return;
+
+    const addonEntries = (this.terminal as TerminalWithAddonManager)._addonManager?._addons;
+    if (!addonEntries?.length) return;
+
+    const addonIndex = addonEntries.findIndex((entry) => entry.instance === webglAddon);
+    if (addonIndex !== -1) {
+      addonEntries.splice(addonIndex, 1);
+    }
   }
 }
