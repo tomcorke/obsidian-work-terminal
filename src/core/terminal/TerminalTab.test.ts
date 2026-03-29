@@ -104,6 +104,8 @@ class FakeElement {
   remove = vi.fn();
   hasClass = vi.fn(() => false);
   addClass = vi.fn();
+  removeClass = vi.fn();
+  querySelectorAll = vi.fn(() => []);
 }
 
 class MockResizeObserver {
@@ -662,6 +664,82 @@ describe("TerminalTab WebGL recovery", () => {
     expect(addon.getHandlerCount()).toBe(0);
   });
 
+  it("recovers a restored tab when its carried webgl addon is already disposed", () => {
+    const staleAddon = new mocks.MockWebglAddon();
+    const storedListener = { dispose: vi.fn() };
+    const loadedAddons: unknown[] = [];
+    const fit = vi.fn();
+    const refresh = vi.fn();
+    const scrollToBottom = vi.fn();
+    const focus = vi.fn();
+    const containerEl = new FakeElement() as unknown as HTMLElement;
+    const parentEl = new FakeElement() as unknown as HTMLElement;
+    const stored = {
+      id: "term-1",
+      taskPath: "task.md",
+      label: "Claude",
+      claudeSessionId: "session-1",
+      sessionType: "claude" as const,
+      terminal: {
+        focus,
+        scrollToBottom,
+        refresh,
+        cols: 80,
+        rows: 24,
+        element: {
+          querySelectorAll: vi.fn((selector: string) => {
+            if (selector === ".xterm-screen canvas") return [];
+            return [];
+          }),
+        },
+        loadAddon: vi.fn((addon: unknown) => loadedAddons.push(addon)),
+        buffer: {
+          active: {
+            baseY: 0,
+            cursorY: 0,
+            getLine: (index: number) =>
+              index === 0 ? { translateToString: () => "prompt>" } : null,
+          },
+        },
+        _addonManager: {
+          _addons: [{ instance: staleAddon, isDisposed: true }],
+        },
+      },
+      fitAddon: { fit },
+      searchAddon: {},
+      containerEl,
+      process: { killed: false, exitCode: null, signalCode: null },
+      webglAddon: staleAddon,
+      webglContextLossListener: storedListener,
+      documentListeners: [],
+      resizeObserver: new MockResizeObserver(() => {}) as unknown as ResizeObserver,
+    };
+
+    const tab = TerminalTab.fromStored(stored, parentEl);
+
+    tab.show();
+
+    expect(storedListener.dispose).toHaveBeenCalledTimes(1);
+    expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
+    expect(containerEl.removeClass).toHaveBeenCalledWith("hidden");
+    expect(loadedAddons).toHaveLength(1);
+    expect(loadedAddons[0]).toBeInstanceOf(mocks.MockWebglAddon);
+    expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBe(loadedAddons[0]);
+    expect(staleAddon.getHandlerCount()).toBe(0);
+    expect(fit).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenNthCalledWith(1, 0, 23);
+    expect(refresh).toHaveBeenNthCalledWith(2, 0, 23);
+    expect(scrollToBottom).toHaveBeenCalledTimes(3);
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        tab.terminal as unknown as {
+          _addonManager: { _addons: Array<{ instance: unknown; isDisposed?: boolean }> };
+        }
+      )._addonManager._addons.some((entry) => entry.instance === staleAddon),
+    ).toBe(false);
+  });
+
   it("restores a null webgl addon reference for repeated reload cycles", () => {
     const containerEl = new FakeElement() as unknown as HTMLElement;
     const parentEl = new FakeElement() as unknown as HTMLElement;
@@ -767,5 +845,163 @@ describe("TerminalTab WebGL recovery", () => {
       (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
         .webglAddon,
     ).toBeNull();
+  });
+
+  it("recovers a visible blank renderer when the tracked webgl addon is already disposed", () => {
+    const staleAddon = new mocks.MockWebglAddon();
+    const loadedAddons: unknown[] = [];
+    const fit = vi.fn();
+    const refresh = vi.fn();
+    const scrollToBottom = vi.fn();
+    const focus = vi.fn();
+    const screenLines = [{ translateToString: () => "prompt>" }];
+    const terminalElement = {
+      querySelectorAll: vi.fn((selector: string) => {
+        if (selector === ".xterm-screen canvas") return [];
+        return [];
+      }),
+    };
+    const containerEl = new FakeElement() as unknown as HTMLElement;
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+
+    Object.assign(tab, {
+      _isDisposed: false,
+      webglAddon: staleAddon,
+      webglContextLossListener: { dispose: vi.fn() },
+      fitAddon: { fit },
+      process: { killed: false },
+      containerEl,
+      terminal: {
+        rows: 24,
+        cols: 80,
+        element: terminalElement,
+        loadAddon: vi.fn((addon: unknown) => loadedAddons.push(addon)),
+        refresh,
+        scrollToBottom,
+        focus,
+        buffer: {
+          active: {
+            baseY: 0,
+            cursorY: 0,
+            getLine: (index: number) => screenLines[index] ?? null,
+          },
+        },
+        _addonManager: {
+          _addons: [{ instance: staleAddon, isDisposed: true }],
+        },
+      },
+    });
+
+    tab.show();
+
+    expect(containerEl.removeClass).toHaveBeenCalledWith("hidden");
+    expect(loadedAddons).toHaveLength(1);
+    expect(loadedAddons[0]).toBeInstanceOf(mocks.MockWebglAddon);
+    expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBe(loadedAddons[0]);
+    expect(staleAddon.getHandlerCount()).toBe(0);
+    expect(fit).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenNthCalledWith(1, 0, 23);
+    expect(refresh).toHaveBeenNthCalledWith(2, 0, 23);
+    expect(scrollToBottom).toHaveBeenCalledTimes(2);
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        tab.terminal as unknown as {
+          _addonManager: { _addons: Array<{ instance: unknown; isDisposed?: boolean }> };
+        }
+      )._addonManager._addons.some((entry) => entry.instance === staleAddon),
+    ).toBe(false);
+  });
+
+  it("does not reload webgl when the visible renderer is healthy", () => {
+    const addon = new mocks.MockWebglAddon();
+    const loadAddon = vi.fn();
+    const refresh = vi.fn();
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+
+    Object.assign(tab, {
+      _isDisposed: false,
+      webglAddon: addon,
+      webglContextLossListener: { dispose: vi.fn() },
+      fitAddon: { fit: vi.fn() },
+      process: { killed: false },
+      containerEl: new FakeElement(),
+      terminal: {
+        rows: 24,
+        cols: 80,
+        element: {
+          querySelectorAll: vi.fn((selector: string) => {
+            if (selector === ".xterm-screen canvas") return [{}, {}, {}];
+            return [];
+          }),
+        },
+        loadAddon,
+        refresh,
+        scrollToBottom: vi.fn(),
+        focus: vi.fn(),
+        buffer: {
+          active: {
+            baseY: 0,
+            cursorY: 0,
+            getLine: () => ({ translateToString: () => "prompt>" }),
+          },
+        },
+        _addonManager: {
+          _addons: [{ instance: addon, isDisposed: true }],
+        },
+      },
+    });
+
+    tab.show();
+
+    expect(loadAddon).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBe(addon);
+  });
+
+  it("does not recover when the process has already exited and the buffer is empty", () => {
+    const staleAddon = new mocks.MockWebglAddon();
+    const loadAddon = vi.fn();
+    const refresh = vi.fn();
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+
+    Object.assign(tab, {
+      _isDisposed: false,
+      webglAddon: staleAddon,
+      webglContextLossListener: { dispose: vi.fn() },
+      fitAddon: { fit: vi.fn() },
+      process: { killed: false, exitCode: 0, signalCode: null },
+      containerEl: new FakeElement(),
+      terminal: {
+        rows: 24,
+        cols: 80,
+        element: {
+          querySelectorAll: vi.fn((selector: string) => {
+            if (selector === ".xterm-screen canvas") return [];
+            return [];
+          }),
+        },
+        loadAddon,
+        refresh,
+        scrollToBottom: vi.fn(),
+        focus: vi.fn(),
+        buffer: {
+          active: {
+            baseY: 0,
+            cursorY: 0,
+            getLine: () => null,
+          },
+        },
+        _addonManager: {
+          _addons: [{ instance: staleAddon, isDisposed: true }],
+        },
+      },
+    });
+
+    tab.show();
+
+    expect(loadAddon).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBe(staleAddon);
   });
 });
