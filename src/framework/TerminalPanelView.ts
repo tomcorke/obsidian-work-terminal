@@ -858,7 +858,36 @@ export class TerminalPanelView {
     item: WorkItem,
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
-    return buildClaudeContextPrompt(item, freshSettings ?? (await this.loadFreshSettings()));
+    const settings = freshSettings ?? (await this.loadFreshSettings());
+    const basePrompt = this.promptBuilder.buildPrompt(item, this.resolveWorkItemPath(item.path));
+    const templatePrompt = buildClaudeContextPrompt(item, settings);
+
+    if (!basePrompt && !templatePrompt) {
+      return null;
+    }
+    if (!basePrompt) {
+      return templatePrompt;
+    }
+    if (!templatePrompt) {
+      return basePrompt;
+    }
+    return `${basePrompt}\n\n${templatePrompt}`;
+  }
+
+  private resolveWorkItemPath(itemPath: string): string {
+    const adapter = (this.plugin.app as any)?.vault?.adapter as any;
+    let vaultPath: string = adapter?.basePath || adapter?.getBasePath?.() || "";
+    const home = process.env.HOME || "";
+    if (vaultPath.startsWith("~/") || vaultPath === "~") {
+      vaultPath = home + vaultPath.slice(1);
+    } else if (vaultPath && !vaultPath.startsWith("/") && home) {
+      vaultPath = home + "/" + vaultPath;
+    }
+    if (!vaultPath) {
+      return itemPath;
+    }
+    const path = electronRequire("path") as typeof import("path");
+    return path.join(vaultPath, itemPath);
   }
 
   private getActiveItem(): WorkItem | null {
@@ -979,7 +1008,7 @@ export class TerminalPanelView {
       : undefined;
 
     if (isContextSession(config.sessionType) && !prompt) {
-      new Notice("Set 'Context prompt template' in settings to use contextual sessions");
+      new Notice("Could not build a contextual prompt for this item");
       return;
     }
 
@@ -1053,7 +1082,7 @@ export class TerminalPanelView {
       const fresh = options.freshSettings ?? (await this.loadFreshSettings());
       prompt = await this.getClaudeContextPrompt(item, fresh);
       if (!prompt) {
-        new Notice("Set 'Context prompt template' in settings to use contextual sessions");
+        new Notice("Could not build a contextual prompt for this item");
         return null;
       }
       options.freshSettings = fresh;

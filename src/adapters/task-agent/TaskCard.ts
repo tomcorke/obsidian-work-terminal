@@ -159,7 +159,7 @@ export class TaskCard implements CardRenderer {
       callback: async () => {
         const prompt = await ctx.getContextPrompt();
         if (!prompt) {
-          new Notice("Set 'Context prompt template' in settings to copy the context prompt");
+          new Notice("Could not build a context prompt for this task");
           return;
         }
         await navigator.clipboard.writeText(prompt);

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import type { PersistedSession } from "../core/session/types";
+import type { WorkItemPromptBuilder } from "../core/interfaces";
 import { expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
 
@@ -257,6 +258,11 @@ function createPlugin(settings: Record<string, unknown> = {}) {
         open: vi.fn(),
         openTabById: vi.fn(),
       },
+      vault: {
+        adapter: {
+          basePath: "/vault",
+        },
+      },
     },
     manifest: {
       id: "work-terminal",
@@ -267,6 +273,7 @@ function createPlugin(settings: Record<string, unknown> = {}) {
 function createView(
   settings: Record<string, unknown> = {},
   pluginOverrides: Partial<ReturnType<typeof createPlugin>> = {},
+  promptBuilder: WorkItemPromptBuilder = { buildPrompt: () => "" },
 ) {
   const panelEl = document.createElement("div") as HTMLElement & {
     createDiv: HTMLElement["createDiv"];
@@ -287,7 +294,7 @@ function createView(
     plugin as any,
     { config: { itemName: "task", columns: [] } } as any,
     { "core.defaultTerminalCwd": "~" },
-    {} as any,
+    promptBuilder,
     vi.fn(),
     vi.fn(),
   );
@@ -727,6 +734,78 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.latestCreateTabArgs?.[5]).not.toEqual(
       expect.arrayContaining([expect.stringContaining("Prompt B for Task One")]),
     );
+  });
+
+  it("uses the adapter prompt builder for Claude-with-context launches without a template", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
+    };
+    const { view } = createView(
+      {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+      "/vault/Tasks/task-1.md",
+    );
+    expect(mockState.latestCreateTabArgs).not.toBeNull();
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt for /vault/Tasks/task-1.md",
+    ]);
+  });
+
+  it("appends the extra context template after the adapter prompt builder output", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "Template for $title in $state",
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt\n\nTemplate for Task One in doing",
+    ]);
   });
 
   it("reuses one settings snapshot for custom contextual Claude sessions", async () => {
