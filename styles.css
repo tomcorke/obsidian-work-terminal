@@ -575,7 +575,39 @@
   50% { opacity: 1; }
 }
 
-/* Active tab: no indicator (green dot removed) */
+@keyframes wt-tab-active-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Active tab: green line scrolling around the tab border.
+   Uses a rotating conic-gradient masked to the border, same concept as the
+   card badge arc spinner but adapted for rectangular tab geometry. */
+.wt-tab-agent-active {
+  position: relative;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.wt-tab-agent-active::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 4px 4px 0 0;
+  background: conic-gradient(#38a169 0deg, #38a169 90deg, transparent 90deg, transparent 360deg);
+  mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  mask-composite: exclude;
+  -webkit-mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  -webkit-mask-composite: xor;
+  padding: 1.5px;
+  animation: wt-tab-active-spin 1.2s linear infinite;
+  z-index: -1;
+  pointer-events: none;
+}
 
 .wt-tab-agent-idle .wt-tab-label {
   color: var(--text-muted);
