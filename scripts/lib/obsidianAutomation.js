@@ -4,7 +4,7 @@ const fsp = require("node:fs/promises");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 
 const DEFAULT_DEBUG_PORT = 9222;
 const DEFAULT_HOST = "127.0.0.1";
@@ -469,6 +469,19 @@ function fetchTargets({ host, port, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   });
 }
 
+function findObsidianPageTarget(targets) {
+  if (!Array.isArray(targets)) {
+    return null;
+  }
+
+  return targets.find(
+    (candidate) =>
+      candidate?.type === "page" &&
+      candidate.webSocketDebuggerUrl &&
+      (!candidate.title || candidate.title.includes("Obsidian")),
+  );
+}
+
 function waitForDebugger({ host = DEFAULT_HOST, port = getDefaultPort(), timeoutMs = 20_000 }) {
   const startedAt = Date.now();
 
@@ -476,7 +489,7 @@ function waitForDebugger({ host = DEFAULT_HOST, port = getDefaultPort(), timeout
     const attempt = async () => {
       try {
         const targets = await fetchTargets({ host, port, timeoutMs: Math.min(timeoutMs, DEFAULT_TIMEOUT_MS) });
-        if (Array.isArray(targets) && targets.length > 0) {
+        if (findObsidianPageTarget(targets)) {
           resolve(targets);
           return;
         }
@@ -519,6 +532,53 @@ async function assertDebuggerPortAvailable({ host = DEFAULT_HOST, port = getDefa
   }
 
   throw new Error(`Debugger port ${host}:${port} is already in use. Choose a different --port.`);
+}
+
+function parseObsidianProcessList(psOutput) {
+  return String(psOutput || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(\d+)\s+(.+)$/);
+      if (!match) {
+        return null;
+      }
+
+      const [, pidText, command] = match;
+      const portMatch = command.match(/--remote-debugging-port(?:=|\s+)(\d+)/);
+      return {
+        pid: Number.parseInt(pidText, 10),
+        command,
+        port: portMatch ? Number.parseInt(portMatch[1], 10) : null,
+      };
+    })
+    .filter((entry) => entry && Number.isFinite(entry.pid));
+}
+
+function listRunningObsidianProcesses() {
+  const psOutput = execFileSync("ps", ["-axo", "pid=,command="], {
+    encoding: "utf8",
+  });
+  return parseObsidianProcessList(
+    psOutput
+      .split(/\r?\n/)
+      .filter((line) => /(?:^|\s)(?:.+\/)?Obsidian\.app\/Contents\/MacOS\/Obsidian\b/.test(line))
+      .join("\n"),
+  );
+}
+
+function assertIsolatedLaunchSupported({ port = getDefaultPort(), runningProcesses = listRunningObsidianProcesses() } = {}) {
+  if (!runningProcesses || runningProcesses.length === 0) {
+    return;
+  }
+
+  const summary = runningProcesses
+    .map((processInfo) => `${processInfo.pid}${processInfo.port ? ` (port ${processInfo.port})` : ""}`)
+    .join(", ");
+  throw new Error(
+    `Another Obsidian app process is already running (${summary}). The isolated launcher cannot reliably start a second debuggable instance while Obsidian is open because macOS/Obsidian reuse the existing singleton. Quit the other Obsidian instance and retry.`,
+  );
 }
 
 function encodeClientFrame(payloadBuffer, opcode = 0x1) {
@@ -618,12 +678,7 @@ class CDPClient {
 
   static async connect({ host = DEFAULT_HOST, port = getDefaultPort(), timeoutMs = DEFAULT_TIMEOUT_MS }) {
     const targets = await fetchTargets({ host, port, timeoutMs });
-    const target = targets.find(
-      (candidate) =>
-        candidate.type === "page" &&
-        candidate.webSocketDebuggerUrl &&
-        (!candidate.title || candidate.title.includes("Obsidian")),
-    );
+    const target = findObsidianPageTarget(targets);
 
     if (!target || !target.webSocketDebuggerUrl) {
       throw new Error(`No Obsidian page target found on ${host}:${port}`);
@@ -744,7 +799,16 @@ class CDPClient {
 }
 
 function commandExpression(commandId) {
-  return `app.commands.executeCommandById(${JSON.stringify(commandId)})`;
+  return `
+    (() => {
+      const commandId = ${JSON.stringify(commandId)};
+      const executeCommandById = globalThis.app?.commands?.executeCommandById;
+      if (typeof executeCommandById !== "function") {
+        throw new Error("Obsidian command API is unavailable");
+      }
+      return executeCommandById.call(globalThis.app.commands, commandId);
+    })()
+  `;
 }
 
 function elementRectExpression(selector) {
@@ -811,7 +875,7 @@ function waitForWorkspaceLeafExpression(viewType, timeoutMs) {
       const timeoutMs = ${timeoutMs};
       const deadline = Date.now() + timeoutMs;
       while (Date.now() <= deadline) {
-        const leaves = app?.workspace?.getLeavesOfType?.(viewType) ?? [];
+        const leaves = globalThis.app?.workspace?.getLeavesOfType?.(viewType) ?? [];
         if (leaves.length > 0) {
           return leaves.length;
         }
@@ -941,20 +1005,47 @@ async function runCdpCommand(config) {
 }
 
 async function verifyObsidianVault({ host = DEFAULT_HOST, port = getDefaultPort(), timeoutMs = DEFAULT_TIMEOUT_MS, expectedVaultDir }) {
-  const client = await CDPClient.connect({ host, port, timeoutMs });
-  try {
-    const actualVaultDir = await client.evaluate("app?.vault?.adapter?.basePath ?? null");
-    const resolvedActual = actualVaultDir ? path.resolve(actualVaultDir) : null;
-    const resolvedExpected = path.resolve(expectedVaultDir);
-    if (resolvedActual !== resolvedExpected) {
-      throw new Error(
-        `Connected debugger is attached to ${resolvedActual || "an unknown vault"}, expected ${resolvedExpected}`,
-      );
+  const resolvedExpected = path.resolve(expectedVaultDir);
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+
+  while (Date.now() <= deadline) {
+    const remainingTimeoutMs = Math.max(250, Math.min(DEFAULT_TIMEOUT_MS, deadline - Date.now()));
+    let client = null;
+    try {
+      client = await CDPClient.connect({ host, port, timeoutMs: remainingTimeoutMs });
+      const actualVaultDir = await client.evaluate("globalThis.app?.vault?.adapter?.basePath ?? null");
+      const resolvedActual = actualVaultDir ? path.resolve(actualVaultDir) : null;
+      if (!resolvedActual) {
+        lastError = new Error(`Obsidian renderer on ${host}:${port} has not attached a vault yet`);
+      } else if (resolvedActual !== resolvedExpected) {
+        throw new Error(
+          `Connected debugger is attached to ${resolvedActual}, expected ${resolvedExpected}`,
+        );
+      } else {
+        return resolvedActual;
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /No Obsidian page target found/i.test(error.message)
+      ) {
+        lastError = error;
+      } else {
+        throw error;
+      }
+    } finally {
+      client?.close();
     }
-    return resolvedActual;
-  } finally {
-    client.close();
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
+
+  throw new Error(
+    `Timed out waiting for Obsidian to load vault ${resolvedExpected} on ${host}:${port}${
+      lastError ? ` (${lastError.message})` : ""
+    }`,
+  );
 }
 
 function launchObsidian({ vaultDir, port = getDefaultPort() }) {
@@ -985,13 +1076,17 @@ module.exports = {
   captureScreenshot,
   commandExpression,
   assertDebuggerPortAvailable,
+  assertIsolatedLaunchSupported,
   ensureIsolatedVault,
   ensureSymlink,
+  findObsidianPageTarget,
   getDefaultPort,
   inspectIsolatedVault,
   launchObsidian,
+  listRunningObsidianProcesses,
   parseCdpArgs,
   parseIsolatedInstanceArgs,
+  parseObsidianProcessList,
   prepareVaultDirectory,
   readManagedVaultMarker,
   runCdpCommand,

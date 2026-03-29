@@ -42,7 +42,7 @@ The repo now includes a repo-local automation path for isolated manual or agent-
   - `node cdp.js type 'textarea' 'hello from automation'`
   - `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`
 
-Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port. The launcher now fails fast if that debugger port is already occupied, so automation does not attach to the wrong Obsidian instance.
+Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port. The launcher now fails fast if that debugger port is already occupied, and it also stops early with a clear singleton warning when another Obsidian app process is already running instead of timing out against an unusable second-instance launch.
 
 ## Creating Your Own Adapter
 

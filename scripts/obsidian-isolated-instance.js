@@ -1,6 +1,7 @@
 const path = require("node:path");
 const {
   assertDebuggerPortAvailable,
+  assertIsolatedLaunchSupported,
   ensureIsolatedVault,
   inspectIsolatedVault,
   launchObsidian,
@@ -15,6 +16,10 @@ async function main() {
   const managedVaultDir = path.join(repoRoot, ".claude", "testing", "obsidian-vault");
   const config = parseIsolatedInstanceArgs(process.argv.slice(2), repoRoot);
   const pluginDir = config.pluginDir || repoRoot;
+  if (config.command === "open") {
+    await assertDebuggerPortAvailable({ host: config.host, port: config.port, timeoutMs: config.timeoutMs });
+    assertIsolatedLaunchSupported({ port: config.port });
+  }
   if (config.command === "status") {
     const status = await inspectIsolatedVault({ vaultDir: config.vaultDir });
     console.log(JSON.stringify({
@@ -47,7 +52,6 @@ async function main() {
     return;
   }
 
-  await assertDebuggerPortAvailable({ host: config.host, port: config.port, timeoutMs: config.timeoutMs });
   await launchObsidian({ vaultDir: vaultInfo.vaultDir, port: config.port });
   await waitForDebugger({ host: config.host, port: config.port, timeoutMs: config.timeoutMs });
   await verifyObsidianVault({
