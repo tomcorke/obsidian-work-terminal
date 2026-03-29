@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
+import * as path from "node:path";
 import type { PersistedSession } from "../core/session/types";
 import type { WorkItemPromptBuilder } from "../core/interfaces";
-import { expandTilde } from "../core/utils";
+import { electronRequire, expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
 
 const mockState = vi.hoisted(() => ({
@@ -895,6 +896,82 @@ describe("TerminalPanelView hook warning", () => {
       prompt: "Prompt A for Task One",
       freshSettings: fresh,
     });
+  });
+
+  it("keeps Windows absolute vault paths intact for context prompts", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Path: ${fullPath}`),
+    };
+    const { view } = createView(
+      {},
+      {
+        app: {
+          setting: {
+            open: vi.fn(),
+            openTabById: vi.fn(),
+          },
+          vault: {
+            adapter: {
+              basePath: "C:\\Users\\me\\Vault",
+            },
+          },
+        },
+      },
+      promptBuilder,
+    );
+    await flushAsync();
+    vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
+
+    const prompt = await (view as any).getClaudeContextPrompt({
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks\\task-1.md",
+    });
+
+    expect(prompt).toBe("Path: C:\\Users\\me\\Vault\\Tasks\\task-1.md");
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+      "C:\\Users\\me\\Vault\\Tasks\\task-1.md",
+    );
+  });
+
+  it("keeps UNC vault paths intact for context prompts", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Path: ${fullPath}`),
+    };
+    const { view } = createView(
+      {},
+      {
+        app: {
+          setting: {
+            open: vi.fn(),
+            openTabById: vi.fn(),
+          },
+          vault: {
+            adapter: {
+              basePath: "\\\\server\\share\\Vault",
+            },
+          },
+        },
+      },
+      promptBuilder,
+    );
+    await flushAsync();
+    vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
+
+    const prompt = await (view as any).getClaudeContextPrompt({
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks\\task-1.md",
+    });
+
+    expect(prompt).toBe("Path: \\\\server\\share\\Vault\\Tasks\\task-1.md");
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+      "\\\\server\\share\\Vault\\Tasks\\task-1.md",
+    );
   });
 
   it("renders a Jira link badge ahead of the selected title and opens it externally", async () => {

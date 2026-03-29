@@ -875,19 +875,21 @@ export class TerminalPanelView {
   }
 
   private resolveWorkItemPath(itemPath: string): string {
+    const path = electronRequire("path") as typeof import("path");
     const adapter = (this.plugin.app as any)?.vault?.adapter as any;
-    let vaultPath: string = adapter?.basePath || adapter?.getBasePath?.() || "";
-    const home = process.env.HOME || "";
-    if (vaultPath.startsWith("~/") || vaultPath === "~") {
-      vaultPath = home + vaultPath.slice(1);
-    } else if (vaultPath && !vaultPath.startsWith("/") && home) {
-      vaultPath = home + "/" + vaultPath;
+    let vaultPath = expandTilde(adapter?.basePath || adapter?.getBasePath?.() || "");
+    const home = process.env.HOME || process.env.USERPROFILE || "";
+
+    if (vaultPath && !path.isAbsolute(vaultPath)) {
+      if (!home) {
+        return itemPath;
+      }
+      vaultPath = path.resolve(home, vaultPath);
     }
     if (!vaultPath) {
       return itemPath;
     }
-    const path = electronRequire("path") as typeof import("path");
-    return path.join(vaultPath, itemPath);
+    return path.resolve(vaultPath, itemPath);
   }
 
   private getActiveItem(): WorkItem | null {
