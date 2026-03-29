@@ -295,12 +295,6 @@ export class TerminalTab {
     );
   }
 
-  private detachAddonEntry(addon: WebglAddon): void {
-    const addonManager = (this.terminal as TerminalWithAddonManager)._addonManager;
-    if (!addonManager?._addons) return;
-    addonManager._addons = addonManager._addons.filter((entry) => entry.instance !== addon);
-  }
-
   private hasRenderableSessionContent(): boolean {
     if (this.process && this.process.exitCode === null && this.process.signalCode === null) {
       return true;
@@ -330,11 +324,7 @@ export class TerminalTab {
     if (!addonEntry?.isDisposed) return;
 
     console.warn("[work-terminal] Recovering blank renderer from stale disposed WebGL addon");
-    this.detachAddonEntry(staleAddon);
-    this.disposeWebglContextLossListener();
-    if (this.webglAddon === staleAddon) {
-      this.webglAddon = null;
-    }
+    this.detachTrackedWebglAddon(staleAddon);
     this.loadWebglAddon();
     this.safeFit();
     this.terminal.refresh(0, this.terminal.rows - 1);
@@ -1127,10 +1117,12 @@ export class TerminalTab {
     this.fitAddon = undefined;
   }
 
-  private detachTrackedWebglAddon(): void {
-    const webglAddon = this.webglAddon;
+  private detachTrackedWebglAddon(targetAddon: WebglAddon | null = this.webglAddon): void {
+    const webglAddon = targetAddon;
     this.disposeWebglContextLossListener();
-    this.webglAddon = null;
+    if (this.webglAddon === webglAddon) {
+      this.webglAddon = null;
+    }
     if (!webglAddon) return;
 
     const addonEntries = (this.terminal as TerminalWithAddonManager)._addonManager?._addons;

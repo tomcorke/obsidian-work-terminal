@@ -558,6 +558,11 @@ describe("TerminalTab hot-reload addon handling", () => {
 describe("TerminalTab WebGL recovery", () => {
   beforeEach(() => {
     mocks.MockWebglAddon.instances.length = 0;
+    vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
+    vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame);
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
   });
@@ -674,6 +679,7 @@ describe("TerminalTab WebGL recovery", () => {
     const focus = vi.fn();
     const containerEl = new FakeElement() as unknown as HTMLElement;
     const parentEl = new FakeElement() as unknown as HTMLElement;
+    const addonEntries = [{ instance: staleAddon, isDisposed: true }];
     const stored = {
       id: "term-1",
       taskPath: "task.md",
@@ -702,7 +708,7 @@ describe("TerminalTab WebGL recovery", () => {
           },
         },
         _addonManager: {
-          _addons: [{ instance: staleAddon, isDisposed: true }],
+          _addons: addonEntries,
         },
       },
       fitAddon: { fit },
@@ -738,6 +744,13 @@ describe("TerminalTab WebGL recovery", () => {
         }
       )._addonManager._addons.some((entry) => entry.instance === staleAddon),
     ).toBe(false);
+    expect(
+      (
+        tab.terminal as unknown as {
+          _addonManager: { _addons: Array<{ instance: unknown; isDisposed?: boolean }> };
+        }
+      )._addonManager._addons,
+    ).toBe(addonEntries);
   });
 
   it("restores a null webgl addon reference for repeated reload cycles", () => {
