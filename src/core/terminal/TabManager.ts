@@ -30,6 +30,8 @@ export class TabManager {
   onClaudeStateChange?: (itemId: string, state: ClaudeState) => void;
   /** Called when sessions should be persisted to disk. */
   onPersistRequest?: () => void;
+  /** Called when a tab is closed, before disposal, with metadata for recently-closed tracking. */
+  onTabClosed?: (itemId: string, tab: TerminalTab) => void;
 
   constructor(private terminalWrapperEl: HTMLElement) {
     // Recover sessions from a previous reload
@@ -255,6 +257,28 @@ export class TabManager {
     this.onPersistRequest?.();
   }
 
+  /**
+   * Move a tab from its current position to a target index within the same item.
+   * Used by restart to place the replacement tab where the old one was.
+   */
+  moveTabToIndex(itemId: string, tab: TerminalTab, targetIndex: number): void {
+    const tabs = this.sessions.get(itemId);
+    if (!tabs) return;
+    const currentIndex = tabs.indexOf(tab);
+    if (currentIndex === -1) return;
+    if (currentIndex === targetIndex) return;
+
+    tabs.splice(currentIndex, 1);
+    tabs.splice(targetIndex, 0, tab);
+
+    const isActiveItem = this.activeItemId === itemId;
+    if (isActiveItem) {
+      this.activeTabIndex = tabs.indexOf(tab);
+    }
+
+    this.onSessionChange?.();
+  }
+
   /** Get/set the drag source index for tab reordering UI. */
   getDragSourceIndex(): number | null {
     return this.dragSourceIndex;
@@ -284,6 +308,9 @@ export class TabManager {
     const tabs = this.sessions.get(itemId) || [];
     if (index < 0 || index >= tabs.length) return;
 
+    // Notify before disposal so metadata can be captured
+    this.onTabClosed?.(itemId, tabs[index]);
+
     tabs[index].dispose();
     tabs.splice(index, 1);
 
@@ -312,6 +339,7 @@ export class TabManager {
     if (!tabs || tabs.length === 0) return;
 
     for (const tab of tabs) {
+      this.onTabClosed?.(itemId, tab);
       tab.dispose();
     }
     this.sessions.delete(itemId);
@@ -370,6 +398,17 @@ export class TabManager {
       }
     }
     return { shells, agents };
+  }
+
+  /** Return a set of all active claudeSessionIds across all items. */
+  getActiveSessionIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const tabs of this.sessions.values()) {
+      for (const tab of tabs) {
+        if (tab.claudeSessionId) ids.add(tab.claudeSessionId);
+      }
+    }
+    return ids;
   }
 
   /** Re-fit the active terminal to its container dimensions. */

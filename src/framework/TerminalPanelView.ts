@@ -687,6 +687,10 @@ export class TerminalPanelView {
     const targetItemId = tab.taskPath ?? this.tabManager.getActiveItemId();
     if (!targetItemId) return;
 
+    // Record the old tab's position so the replacement can take its place
+    const oldTabs = this.tabManager.getTabs(targetItemId);
+    const oldIndex = oldTabs.indexOf(tab);
+
     const fresh = await this.loadFreshSettings();
     const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     let replacement: TerminalTab | null;
@@ -724,7 +728,12 @@ export class TerminalPanelView {
     }
 
     if (!replacement) return;
+
+    // Close the old tab first, then move replacement to the old position
     this.tabManager.closeTabInstance(targetItemId, tab);
+    if (oldIndex >= 0) {
+      this.tabManager.moveTabToIndex(targetItemId, replacement, oldIndex);
+    }
   }
 
   private extractResumeExtraArgs(tab: TerminalTab): string[] {
