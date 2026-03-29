@@ -29,7 +29,13 @@ vi.mock("obsidian", () => ({
   App: class {},
   Menu: class {
     addSeparator() {}
-    addItem(callback: (item: { setTitle: (title: string) => any; onClick: () => any }) => void) {
+    addItem(
+      callback: (item: {
+        setTitle: (title: string) => any;
+        onClick: (handler: (evt: MouseEvent | KeyboardEvent) => any) => any;
+        setDisabled: (disabled: boolean) => any;
+      }) => void,
+    ) {
       let currentTitle = "";
       callback({
         setTitle(title: string) {
@@ -37,10 +43,16 @@ vi.mock("obsidian", () => ({
           mockState.menuTitles.push(title);
           return this;
         },
-        onClick(handler: () => void) {
+        onClick(handler: (evt: MouseEvent | KeyboardEvent) => any) {
           if (currentTitle) {
-            mockState.menuActions.set(currentTitle, handler);
+            mockState.menuActions.set(
+              currentTitle,
+              () => handler({ type: "click" } as MouseEvent),
+            );
           }
+          return this;
+        },
+        setDisabled() {
           return this;
         },
       });
@@ -472,6 +484,67 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("preserves non-session args around restart resume metadata", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude",
+        label: "Claude",
+        taskPath: "task-1",
+        claudeSessionId: "session-123",
+        launchShell: "/bin/echo",
+        launchCwd: expandTilde("~/resume"),
+        launchCommandArgs: [
+          "/bin/echo",
+          "--flag-before",
+          "alpha",
+          "--session-id",
+          "old-id",
+          "--flag-after",
+          "beta",
+          "--resume",
+          "old-resume",
+          "--another=option",
+          "--resume=legacy",
+          "--session-id=legacy-2",
+          "--tail",
+        ],
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    mockState.menuActions.get("Restart")?.();
+    await flushAsync();
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "task-1",
+      "/bin/echo",
+      expandTilde("~/resume"),
+      "Claude",
+      "claude",
+      undefined,
+      [
+        "/bin/echo",
+        "--flag-before",
+        "alpha",
+        "--flag-after",
+        "beta",
+        "--another=option",
+        "--tail",
+        "--resume",
+        "session-123",
+      ],
+      "session-123",
+    ]);
+  });
+
   it("preserves Claude-with-context when restart falls back to a fresh launch", async () => {
     mockState.activeItemId = "task-1";
     const { view } = createView({
@@ -545,6 +618,31 @@ describe("TerminalPanelView hook warning", () => {
       ["/bin/echo", "--resume", "session-456"],
       "session-456",
     ]);
+  });
+
+  it("restarts tabs against the tab item before falling back to the active item", async () => {
+    mockState.activeItemId = "other-task";
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/fallback",
+    });
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude",
+        label: "Recovered Claude",
+        taskPath: "task-1",
+        claudeSessionId: "session-456",
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    mockState.menuActions.get("Restart")?.();
+    await flushAsync();
+
+    expect(mockState.latestCreateTabArgs?.[0]).toBe("task-1");
   });
 
   it("shows a notice when a spawn button launch rejects", async () => {

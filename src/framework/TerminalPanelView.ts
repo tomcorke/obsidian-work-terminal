@@ -685,7 +685,7 @@ export class TerminalPanelView {
   }
 
   private async restartClaudeTab(tab: TerminalTab, _index: number): Promise<void> {
-    const targetItemId = this.tabManager.getActiveItemId();
+    const targetItemId = tab.taskPath ?? this.tabManager.getActiveItemId();
     if (!targetItemId) return;
 
     const fresh = await this.loadFreshSettings();
@@ -732,14 +732,24 @@ export class TerminalPanelView {
     if (!tab.launchCommandArgs?.length) {
       return [];
     }
-    const args = tab.launchCommandArgs?.slice(1) || [];
-    const sessionArgIndex = args.findIndex(
-      (arg) => arg === "--session-id" || arg === "--resume" || arg.startsWith("--resume="),
-    );
-    if (sessionArgIndex === -1) {
-      return args;
+    const args = tab.launchCommandArgs.slice(1);
+    const extraArgs: string[] = [];
+
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === "--session-id" || arg === "--resume") {
+        if (i + 1 < args.length) {
+          i++;
+        }
+        continue;
+      }
+      if (arg.startsWith("--session-id=") || arg.startsWith("--resume=")) {
+        continue;
+      }
+      extraArgs.push(arg);
     }
-    return args.slice(0, sessionArgIndex);
+
+    return extraArgs;
   }
 
   // ---------------------------------------------------------------------------
