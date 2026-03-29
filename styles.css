@@ -623,6 +623,13 @@
   z-index: 1;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .wt-tab-agent-active::before {
+    animation: none;
+    transform: rotate(18deg);
+  }
+}
+
 .wt-tab-agent-idle .wt-tab-label {
   color: var(--text-muted);
 }
