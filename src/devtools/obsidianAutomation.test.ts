@@ -60,10 +60,11 @@ describe("obsidian automation helpers", () => {
     });
   });
 
-  it("parses running Obsidian processes and extracts debugger ports", () => {
+  it("parses running Obsidian processes and extracts debugger ports from both flag styles", () => {
     const processes = automation.parseObsidianProcessList(`
       101 /Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222
-      202 /Applications/Obsidian.app/Contents/MacOS/Obsidian
+      202 /Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port 9333
+      303 /Applications/Obsidian.app/Contents/MacOS/Obsidian
     `);
 
     expect(processes).toEqual([
@@ -74,6 +75,11 @@ describe("obsidian automation helpers", () => {
       },
       {
         pid: 202,
+        command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port 9333",
+        port: 9333,
+      },
+      {
+        pid: 303,
         command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian",
         port: null,
       },
@@ -108,17 +114,11 @@ describe("obsidian automation helpers", () => {
     ).toThrow("Another Obsidian app process is already running");
   });
 
-  it("allows launch when no conflicting Obsidian process is present", () => {
+  it("allows launch when no Obsidian process is present", () => {
     expect(() =>
       automation.assertIsolatedLaunchSupported({
         port: 9333,
-        runningProcesses: [
-          {
-            pid: 101,
-            command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9333",
-            port: 9333,
-          },
-        ],
+        runningProcesses: [],
       }),
     ).not.toThrow();
   });

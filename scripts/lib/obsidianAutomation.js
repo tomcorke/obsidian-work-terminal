@@ -546,7 +546,7 @@ function parseObsidianProcessList(psOutput) {
       }
 
       const [, pidText, command] = match;
-      const portMatch = command.match(/--remote-debugging-port=(\d+)/);
+      const portMatch = command.match(/--remote-debugging-port(?:=|\s+)(\d+)/);
       return {
         pid: Number.parseInt(pidText, 10),
         command,
@@ -569,12 +569,11 @@ function listRunningObsidianProcesses() {
 }
 
 function assertIsolatedLaunchSupported({ port = getDefaultPort(), runningProcesses = listRunningObsidianProcesses() } = {}) {
-  const conflictingProcesses = runningProcesses.filter((processInfo) => processInfo.port !== port);
-  if (conflictingProcesses.length === 0) {
+  if (!runningProcesses || runningProcesses.length === 0) {
     return;
   }
 
-  const summary = conflictingProcesses
+  const summary = runningProcesses
     .map((processInfo) => `${processInfo.pid}${processInfo.port ? ` (port ${processInfo.port})` : ""}`)
     .join(", ");
   throw new Error(
