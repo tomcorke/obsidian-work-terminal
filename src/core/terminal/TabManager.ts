@@ -11,7 +11,7 @@
 import { TerminalTab, type ClaudeState } from "./TerminalTab";
 import { aggregateState } from "../claude/ClaudeStateDetector";
 import { SessionStore } from "../session/SessionStore";
-import type { StoredSession, SessionType } from "../session/types";
+import type { ActiveTabInfo, StoredSession, SessionType } from "../session/types";
 
 export class TabManager {
   private sessions: Map<string, TerminalTab[]> = new Map();
@@ -415,13 +415,38 @@ export class TabManager {
     return { shells, agents };
   }
 
+  /** Return metadata for every active tab across every item. */
+  getAllActiveTabs(): ActiveTabInfo[] {
+    const activeTabs: ActiveTabInfo[] = [];
+    for (const [itemId, tabs] of this.sessions) {
+      for (const tab of tabs) {
+        activeTabs.push({
+          tabId: tab.id,
+          itemId: tab.taskPath ?? itemId,
+          label: tab.label,
+          sessionId: tab.claudeSessionId,
+          sessionType: tab.sessionType,
+          isResumableAgent: tab.isResumableAgent,
+        });
+      }
+    }
+    return activeTabs;
+  }
+
+  /** Find active tabs whose labels exactly match the supplied label. */
+  findTabsByLabel(label: string): ActiveTabInfo[] {
+    const normalizedLabel = label.trim().toLowerCase();
+    if (!normalizedLabel) return [];
+    return this.getAllActiveTabs().filter(
+      (tab) => tab.label.trim().toLowerCase() === normalizedLabel,
+    );
+  }
+
   /** Return a set of all active claudeSessionIds across all items. */
   getActiveSessionIds(): Set<string> {
     const ids = new Set<string>();
-    for (const tabs of this.sessions.values()) {
-      for (const tab of tabs) {
-        if (tab.claudeSessionId) ids.add(tab.claudeSessionId);
-      }
+    for (const tab of this.getAllActiveTabs()) {
+      if (tab.sessionId) ids.add(tab.sessionId);
     }
     return ids;
   }

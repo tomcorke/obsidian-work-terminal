@@ -3,6 +3,7 @@
  * on tab lifecycle events.
  */
 import { describe, expect, it, vi } from "vitest";
+import type { SessionType } from "../session/types";
 
 // Mock TerminalTab before importing TabManager to prevent xterm.js loading
 // in a Node.js environment where `self` is not defined.
@@ -29,12 +30,19 @@ function makeStubTab(
   overrides: {
     claudeState?: ClaudeState;
     isResumableAgent?: boolean;
-    sessionType?: string;
+    sessionType?: SessionType;
+    label?: string;
+    id?: string;
+    claudeSessionId?: string | null;
+    taskPath?: string;
   } = {},
 ): {
+  id: string;
+  label: string;
   claudeState: ClaudeState;
   isResumableAgent: boolean;
-  sessionType: string;
+  sessionType: SessionType;
+  claudeSessionId: string | null;
   onStateChange?: (state: ClaudeState) => void;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
@@ -45,14 +53,17 @@ function makeStubTab(
   taskPath: string;
 } {
   return {
+    id: overrides.id ?? "tab-1",
+    label: overrides.label ?? "Shell",
     claudeState: overrides.claudeState ?? "inactive",
     isResumableAgent: overrides.isResumableAgent ?? false,
     sessionType: overrides.sessionType ?? "shell",
+    claudeSessionId: overrides.claudeSessionId ?? null,
     dispose: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
     clearWaiting: vi.fn(),
-    taskPath: "item-1",
+    taskPath: overrides.taskPath ?? "item-1",
   };
 }
 
@@ -319,5 +330,111 @@ describe("TabManager - moveTabToIndex", () => {
 
     // activeTabIndex should still reflect item-2's state
     expect(mgr.getActiveTabIndex()).toBe(0);
+  });
+});
+
+describe("TabManager - active tab discovery", () => {
+  it("returns metadata for all active tabs across items", () => {
+    const mgr = new TabManager(null as any);
+    (mgr as any).sessions.set("item-1", [
+      makeStubTab({
+        id: "tab-claude",
+        label: "Automatic Issues",
+        sessionType: "claude",
+        isResumableAgent: true,
+        claudeSessionId: "session-1",
+        taskPath: "item-1",
+      }),
+      makeStubTab({
+        id: "tab-shell",
+        label: "Shell",
+        sessionType: "shell",
+        isResumableAgent: false,
+        claudeSessionId: null,
+        taskPath: "item-1",
+      }),
+    ]);
+    (mgr as any).sessions.set("item-2", [
+      makeStubTab({
+        id: "tab-copilot",
+        label: "Automatic Issues",
+        sessionType: "copilot",
+        isResumableAgent: true,
+        claudeSessionId: "session-2",
+        taskPath: "item-2",
+      }),
+    ]);
+
+    expect(mgr.getAllActiveTabs()).toEqual([
+      {
+        tabId: "tab-claude",
+        itemId: "item-1",
+        label: "Automatic Issues",
+        sessionId: "session-1",
+        sessionType: "claude",
+        isResumableAgent: true,
+      },
+      {
+        tabId: "tab-shell",
+        itemId: "item-1",
+        label: "Shell",
+        sessionId: null,
+        sessionType: "shell",
+        isResumableAgent: false,
+      },
+      {
+        tabId: "tab-copilot",
+        itemId: "item-2",
+        label: "Automatic Issues",
+        sessionId: "session-2",
+        sessionType: "copilot",
+        isResumableAgent: true,
+      },
+    ]);
+  });
+
+  it("finds tabs by normalized label and returns active session IDs from the same source", () => {
+    const mgr = new TabManager(null as any);
+    (mgr as any).sessions.set("item-1", [
+      makeStubTab({
+        id: "tab-claude",
+        label: "Automatic Issues",
+        sessionType: "claude",
+        isResumableAgent: true,
+        claudeSessionId: "session-1",
+      }),
+      makeStubTab({
+        id: "tab-copilot",
+        label: " automatic issues ",
+        sessionType: "copilot",
+        isResumableAgent: true,
+        claudeSessionId: "session-2",
+      }),
+      makeStubTab({
+        id: "tab-shell",
+        label: "Shell",
+        sessionType: "shell",
+      }),
+    ]);
+
+    expect(mgr.findTabsByLabel("automatic issues")).toEqual([
+      {
+        tabId: "tab-claude",
+        itemId: "item-1",
+        label: "Automatic Issues",
+        sessionId: "session-1",
+        sessionType: "claude",
+        isResumableAgent: true,
+      },
+      {
+        tabId: "tab-copilot",
+        itemId: "item-1",
+        label: " automatic issues ",
+        sessionId: "session-2",
+        sessionType: "copilot",
+        isResumableAgent: true,
+      },
+    ]);
+    expect(mgr.getActiveSessionIds()).toEqual(new Set(["session-1", "session-2"]));
   });
 });
