@@ -1072,7 +1072,7 @@ export class TerminalTab {
 
   private detachTrackedWebglAddon(): void {
     const webglAddon = this.webglAddon;
-    this.webglContextLossListener = null;
+    this.disposeWebglContextLossListener();
     this.webglAddon = null;
     if (!webglAddon) return;
 

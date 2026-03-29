@@ -290,13 +290,11 @@ describe("TerminalTab hot-reload addon handling", () => {
   it("detaches the tracked webgl addon before terminal teardown", () => {
     const order: string[] = [];
     const addonEntries = [{ instance: null as unknown }, { instance: { dispose: vi.fn() } }];
-    const webglAddon = {
-      dispose: vi.fn(() => {
-        throw new Error("webgl dispose should not be called directly during tab close");
-      }),
-    };
+    const webglAddon = new mocks.MockWebglAddon();
+    webglAddon.dispose.mockImplementation(() => {
+      throw new Error("webgl dispose should not be called directly during tab close");
+    });
     addonEntries[0].instance = webglAddon;
-    const webglListenerDispose = vi.fn(() => order.push("webgl-listener"));
     const unicodeDispose = vi.fn(() => {
       order.push("unicode");
       addonEntries.splice(
@@ -330,23 +328,40 @@ describe("TerminalTab hot-reload addon handling", () => {
       linkProviderDisposable: null,
       unicode11Addon: unicodeAddon,
       webglAddon,
-      webglContextLossListener: { dispose: webglListenerDispose },
+      webglContextLossListener: null,
       terminal: {
         _addonManager: { _addons: addonEntries },
         dispose: terminalDispose,
       },
       containerEl: { remove: vi.fn(() => order.push("container")) },
-    }) as TerminalTab;
+    }) as TerminalTab & {
+      trackWebglAddon: (addon: InstanceType<typeof mocks.MockWebglAddon>) => void;
+      webglContextLossListener: { dispose: ReturnType<typeof vi.fn> } | null;
+    };
+
+    tab.trackWebglAddon(webglAddon);
+    const webglListener = tab.webglContextLossListener;
+    const originalDispose = webglListener?.dispose;
+    if (webglListener && originalDispose) {
+      webglListener.dispose = vi.fn(() => {
+        order.push("webgl-listener");
+        originalDispose();
+      });
+    }
+
+    expect(webglAddon.getHandlerCount()).toBe(1);
 
     expect(() => tab.dispose()).not.toThrow();
 
     expect(webglAddon.dispose).not.toHaveBeenCalled();
-    expect(webglListenerDispose).not.toHaveBeenCalled();
+    expect(webglListener?.dispose).toHaveBeenCalledTimes(1);
+    expect(webglAddon.getHandlerCount()).toBe(0);
     expect(addonEntries).toEqual([]);
     expect(addonManagerDispose).toHaveBeenCalledTimes(1);
     expect(order).toEqual([
       "tracker",
       "resize-observer",
+      "webgl-listener",
       "unicode",
       "addon-manager",
       "terminal",
@@ -419,13 +434,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       }),
       constructor: { name: "" },
     };
-    const legacyWebglListenerDispose = vi.fn();
-    const webglAddon = {
-      dispose: vi.fn(),
-      clearTextureAtlas: vi.fn(),
-      onContextLoss: vi.fn(() => ({ dispose: legacyWebglListenerDispose })),
-      constructor: { name: "l" },
-    };
+    const webglAddon = new mocks.MockWebglAddon();
     const addonEntries = [
       { instance: fitAddon, isDisposed: false },
       { instance: searchAddon, isDisposed: false },
@@ -493,6 +502,10 @@ describe("TerminalTab hot-reload addon handling", () => {
       parentEl as any,
     );
 
+    const legacyWebglListener = (restored as any).webglContextLossListener as
+      | { dispose: ReturnType<typeof vi.fn> }
+      | null;
+
     expect(() => restored.dispose()).not.toThrow();
     expect((restored as any).fitAddon).toBeUndefined();
     expect(addonEntries).toEqual([]);
@@ -502,7 +515,8 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(unicode11Addon.dispose).toHaveBeenCalledTimes(1);
     expect(webglAddon.dispose).not.toHaveBeenCalled();
     expect(webglAddon.onContextLoss).toHaveBeenCalledTimes(1);
-    expect(legacyWebglListenerDispose).not.toHaveBeenCalled();
+    expect(legacyWebglListener?.dispose).toHaveBeenCalledTimes(1);
+    expect(webglAddon.getHandlerCount()).toBe(0);
     expect(addonManagerDispose).toHaveBeenCalledTimes(1);
     expect(containerEl.remove).toHaveBeenCalledTimes(1);
   });
