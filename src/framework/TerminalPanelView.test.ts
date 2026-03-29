@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
-import type { PersistedSession } from "../core/session/types";
+import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
 import { expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
 
 const mockState = vi.hoisted(() => ({
   activeSessions: new Map<string, Array<{ sessionType: string }>>(),
+  activeTabs: [] as ActiveTabInfo[],
   activeItemId: null as string | null,
   persistedSessions: [] as PersistedSession[],
   menuTitles: [] as string[],
@@ -162,6 +163,24 @@ vi.mock("../core/terminal/TabManager", () => ({
 
     getSessionItemIds() {
       return [];
+    }
+
+    getAllActiveTabs() {
+      return mockState.activeTabs;
+    }
+
+    findTabsByLabel(label: string) {
+      const normalizedLabel = label.trim().toLowerCase();
+      if (!normalizedLabel) return [];
+      return mockState.activeTabs.filter(
+        (tab) => tab.label.trim().toLowerCase() === normalizedLabel,
+      );
+    }
+
+    getActiveSessionIds() {
+      return new Set(
+        mockState.activeTabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])),
+      );
     }
 
     getClaudeState() {
@@ -331,6 +350,7 @@ describe("TerminalPanelView hook warning", () => {
     });
 
     mockState.activeSessions = new Map();
+    mockState.activeTabs = [];
     mockState.activeItemId = null;
     mockState.persistedSessions = [];
     mockState.menuTitles = [];
@@ -427,6 +447,80 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
 
     expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
+  });
+
+  it("publishes a persistent debug global with active tab discovery helpers", async () => {
+    mockState.activeItemId = "task-2";
+    mockState.activeTabs = [
+      {
+        tabId: "tab-1",
+        itemId: "task-1",
+        label: "Shell",
+        sessionId: null,
+        sessionType: "shell",
+        isResumableAgent: false,
+      },
+      {
+        tabId: "tab-2",
+        itemId: "task-2",
+        label: "Automatic Issues",
+        sessionId: "copilot-123",
+        sessionType: "copilot",
+        isResumableAgent: true,
+      },
+    ];
+    mockState.persistedSessions = [makePersistedSession("copilot")];
+
+    createView();
+    await flushAsync();
+
+    expect(window.__workTerminalDebug?.activeItemId).toBe("task-2");
+    expect(window.__workTerminalDebug?.activeTabs).toEqual(mockState.activeTabs);
+    expect(window.__workTerminalDebug?.activeSessionIds).toEqual(["copilot-123"]);
+    expect(window.__workTerminalDebug?.findTabsByLabel("automatic issues")).toEqual([
+      mockState.activeTabs[1],
+    ]);
+    expect(window.__workTerminalDebug?.getSnapshot()).toMatchObject({
+      version: 1,
+      hasHotReloadStore: false,
+      activeItemId: "task-2",
+    });
+  });
+
+  it("refreshes the debug global when tab state changes", async () => {
+    createView();
+    await flushAsync();
+    expect(window.__workTerminalDebug?.activeTabs).toEqual([]);
+
+    mockState.activeTabs = [
+      {
+        tabId: "tab-2",
+        itemId: "task-9",
+        label: "Automatic Issues",
+        sessionId: "session-9",
+        sessionType: "claude",
+        isResumableAgent: true,
+      },
+    ];
+    mockState.activeItemId = "task-9";
+    mockState.latestTabManager?.onSessionChange?.();
+    await flushAsync();
+
+    expect(window.__workTerminalDebug?.activeItemId).toBe("task-9");
+    expect(window.__workTerminalDebug?.activeTabs).toEqual(mockState.activeTabs);
+    expect(window.__workTerminalDebug?.getAllActiveTabs()).toEqual(mockState.activeTabs);
+  });
+
+  it("keeps loaded persisted sessions available after saving active sessions", async () => {
+    mockState.persistedSessions = [makePersistedSession("copilot")];
+
+    const { view } = createView();
+    await flushAsync();
+
+    await view.persistSessions();
+
+    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual(mockState.persistedSessions);
+    expect(window.__workTerminalDebug?.persistedSessions).toEqual(mockState.persistedSessions);
   });
 
   it("keeps Copilot tabs out of the Claude-only restart menu action", async () => {

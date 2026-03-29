@@ -32,7 +32,8 @@ import {
   buildStrandsArgs,
 } from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
-import type { PersistedSession } from "../core/session/types";
+import { SessionStore } from "../core/session/SessionStore";
+import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
@@ -49,6 +50,30 @@ import {
   sanitizeCustomSessionConfig,
   type CustomSessionConfig,
 } from "./CustomSessionConfig";
+
+interface WorkTerminalDebugSnapshot {
+  version: 1;
+  activeItemId: string | null;
+  activeTabIndex: number;
+  activeTabs: ActiveTabInfo[];
+  activeSessionIds: string[];
+  persistedSessions: PersistedSession[];
+  hasHotReloadStore: boolean;
+}
+
+interface WorkTerminalDebugApi extends WorkTerminalDebugSnapshot {
+  getSnapshot(): WorkTerminalDebugSnapshot;
+  getAllActiveTabs(): ActiveTabInfo[];
+  findTabsByLabel(label: string): ActiveTabInfo[];
+  getActiveSessionIds(): string[];
+  getPersistedSessions(itemId?: string): PersistedSession[];
+}
+
+declare global {
+  interface Window {
+    __workTerminalDebug?: WorkTerminalDebugApi;
+  }
+}
 
 export class TerminalPanelView {
   private tabManager: TabManager;
@@ -121,6 +146,7 @@ export class TerminalPanelView {
     // Initialize TabManager
     this.tabManager = new TabManager(terminalWrapperEl);
     this.tabManager.onSessionChange = () => {
+      this.refreshDebugGlobal();
       this.renderTabBar();
       void this.checkHookWarning();
       this.onSessionChange();
@@ -153,6 +179,7 @@ export class TerminalPanelView {
 
     // Initial tab bar render
     this.renderTabBar();
+    this.refreshDebugGlobal();
 
     // Check hook status and show warning banner if needed
     this.checkHookWarning();
@@ -779,6 +806,7 @@ export class TerminalPanelView {
 
   private async loadPersistedSessions(): Promise<void> {
     this.persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
+    this.refreshDebugGlobal();
     await this.checkHookWarning();
   }
 
@@ -786,6 +814,7 @@ export class TerminalPanelView {
     await mergeAndSavePluginData(this.plugin, async (data) => {
       SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
     });
+    this.refreshDebugGlobal();
   }
 
   // ---------------------------------------------------------------------------
@@ -794,6 +823,7 @@ export class TerminalPanelView {
 
   setActiveItem(itemId: string | null): void {
     this.tabManager.setActiveItem(itemId);
+    this.refreshDebugGlobal();
     this.renderTabBar();
   }
 
@@ -859,6 +889,18 @@ export class TerminalPanelView {
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
     return buildClaudeContextPrompt(item, freshSettings ?? (await this.loadFreshSettings()));
+  }
+
+  getAllActiveTabs(): ActiveTabInfo[] {
+    return this.tabManager.getAllActiveTabs();
+  }
+
+  findTabsByLabel(label: string): ActiveTabInfo[] {
+    return this.tabManager.findTabsByLabel(label);
+  }
+
+  getActiveSessionIds(): string[] {
+    return Array.from(this.tabManager.getActiveSessionIds());
   }
 
   private getActiveItem(): WorkItem | null {
@@ -1204,6 +1246,7 @@ export class TerminalPanelView {
 
   rekeyItem(oldId: string, newId: string): void {
     this.tabManager.rekeyItem(oldId, newId);
+    this.refreshDebugGlobal();
   }
 
   stashAll(): void {
@@ -1211,6 +1254,7 @@ export class TerminalPanelView {
     this.stopPeriodicPersist = null;
     this.stopHookWarningPoller();
     this.tabManager.stashAll();
+    this.refreshDebugGlobal();
   }
 
   disposeAll(): void {
@@ -1218,13 +1262,40 @@ export class TerminalPanelView {
     this.stopPeriodicPersist = null;
     this.stopHookWarningPoller();
     this.tabManager.disposeAll();
+    this.refreshDebugGlobal();
   }
 
   setItems(items: WorkItem[]): void {
     this.allItems = items;
+    this.refreshDebugGlobal();
   }
 
   getClaudeState(itemId: string): ClaudeState {
     return this.tabManager.getClaudeState(itemId);
+  }
+
+  private refreshDebugGlobal(): void {
+    const snapshot = this.buildDebugSnapshot();
+    window.__workTerminalDebug = {
+      ...snapshot,
+      getSnapshot: () => this.buildDebugSnapshot(),
+      getAllActiveTabs: () => this.getAllActiveTabs(),
+      findTabsByLabel: (label: string) => this.findTabsByLabel(label),
+      getActiveSessionIds: () => this.getActiveSessionIds(),
+      getPersistedSessions: (itemId?: string) =>
+        itemId ? this.getPersistedSessions(itemId) : [...this.persistedSessions],
+    };
+  }
+
+  private buildDebugSnapshot(): WorkTerminalDebugSnapshot {
+    return {
+      version: 1,
+      activeItemId: this.tabManager.getActiveItemId(),
+      activeTabIndex: this.tabManager.getActiveTabIndex(),
+      activeTabs: this.getAllActiveTabs(),
+      activeSessionIds: this.getActiveSessionIds(),
+      persistedSessions: [...this.persistedSessions],
+      hasHotReloadStore: SessionStore.isReload(),
+    };
   }
 }
