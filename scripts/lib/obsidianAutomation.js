@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
@@ -11,6 +12,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_SELECTOR_PADDING = 12;
 const DEFAULT_VAULT_DIR = path.join(".claude", "testing", "obsidian-vault");
 const DEFAULT_SCREENSHOT_PATH = path.join("output", "obsidian-screenshot.png");
+const ISOLATED_VAULT_MARKER = ".work-terminal-test-vault.json";
 const WORK_TERMINAL_PLUGIN_ID = "work-terminal";
 const WORK_TERMINAL_COMMAND_IDS = {
   reload: "work-terminal:reload-plugin",
@@ -35,6 +37,19 @@ function resolvePath(cwd, targetPath) {
   return path.isAbsolute(targetPath) ? targetPath : path.resolve(cwd, targetPath);
 }
 
+function isSubpath(parentPath, candidatePath) {
+  const relative = path.relative(parentPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function requireFlagValue(argv, index, flagName) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${flagName} requires a value`);
+  }
+  return value;
+}
+
 function parseSharedFlags(argv, cwd) {
   const options = {
     host: DEFAULT_HOST,
@@ -46,6 +61,7 @@ function parseSharedFlags(argv, cwd) {
     vaultDir: resolvePath(cwd, DEFAULT_VAULT_DIR),
     pluginDir: undefined,
     clean: false,
+    force: false,
     openView: true,
     sampleData: true,
   };
@@ -55,8 +71,7 @@ function parseSharedFlags(argv, cwd) {
     const arg = argv[i];
     switch (arg) {
       case "--host":
-        if (!argv[i + 1]) throw new Error("--host requires a value");
-        options.host = argv[i + 1];
+        options.host = requireFlagValue(argv, i, "--host");
         i += 1;
         break;
       case "--port":
@@ -79,15 +94,18 @@ function parseSharedFlags(argv, cwd) {
         options.fullPage = true;
         break;
       case "--vault":
-        options.vaultDir = resolvePath(cwd, argv[i + 1] || "");
+        options.vaultDir = resolvePath(cwd, requireFlagValue(argv, i, "--vault"));
         i += 1;
         break;
       case "--plugin-dir":
-        options.pluginDir = resolvePath(cwd, argv[i + 1] || "");
+        options.pluginDir = resolvePath(cwd, requireFlagValue(argv, i, "--plugin-dir"));
         i += 1;
         break;
       case "--clean":
         options.clean = true;
+        break;
+      case "--force":
+        options.force = true;
         break;
       case "--no-open-view":
         options.openView = false;
@@ -169,27 +187,142 @@ function writeJsonFile(filePath, value) {
   return fsp.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-async function ensureSymlink(targetPath, linkPath) {
-  let shouldReplace = false;
+async function ensureSymlink(targetPath, linkPath, { force = false } = {}) {
+  let existingStat = null;
   try {
-    const stat = await fsp.lstat(linkPath);
-    if (stat.isSymbolicLink()) {
+    existingStat = await fsp.lstat(linkPath);
+    if (existingStat.isSymbolicLink()) {
       const existingTarget = await fsp.readlink(linkPath);
       const resolvedExisting = path.resolve(path.dirname(linkPath), existingTarget);
       if (resolvedExisting === targetPath) {
         return;
       }
+      if (!force) {
+        throw new Error(
+          `Refusing to repoint existing symlink at ${linkPath}. Pass --force to replace it.`,
+        );
+      }
+      await fsp.rm(linkPath, { recursive: true, force: true });
+      await fsp.symlink(targetPath, linkPath, "dir");
+      return;
     }
-    shouldReplace = true;
   } catch (error) {
     if (error && error.code !== "ENOENT") throw error;
   }
 
-  if (shouldReplace) {
+  if (existingStat) {
+    if (!force) {
+      throw new Error(
+        `Refusing to replace existing non-symlink path at ${linkPath}. Pass --force to replace it.`,
+      );
+    }
     await fsp.rm(linkPath, { recursive: true, force: true });
   }
 
   await fsp.symlink(targetPath, linkPath, "dir");
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fsp.access(targetPath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readManagedVaultMarker(vaultDir) {
+  const markerPath = path.join(vaultDir, ISOLATED_VAULT_MARKER);
+  try {
+    return JSON.parse(await fsp.readFile(markerPath, "utf8"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function assertSafeVaultTarget(vaultDir) {
+  const resolvedVaultDir = path.resolve(vaultDir);
+  const cwd = process.cwd();
+  const homeDir = os.homedir();
+  const rootDir = path.parse(resolvedVaultDir).root;
+
+  if (
+    resolvedVaultDir === rootDir ||
+    isSubpath(resolvedVaultDir, cwd) ||
+    isSubpath(resolvedVaultDir, homeDir)
+  ) {
+    throw new Error(`Refusing to manage unsafe vault directory: ${resolvedVaultDir}`);
+  }
+}
+
+async function prepareVaultDirectory({
+  vaultDir,
+  clean = false,
+  force = false,
+  managedVaultDir,
+}) {
+  assertSafeVaultTarget(vaultDir);
+
+  const resolvedVaultDir = path.resolve(vaultDir);
+  const resolvedManagedVaultDir = managedVaultDir ? path.resolve(managedVaultDir) : null;
+  const vaultExists = await pathExists(resolvedVaultDir);
+  const marker = vaultExists ? await readManagedVaultMarker(resolvedVaultDir) : null;
+  const isDefaultManagedVault = resolvedManagedVaultDir === resolvedVaultDir;
+
+  if (vaultExists && !marker && !isDefaultManagedVault && !force) {
+    throw new Error(
+      `Refusing to modify existing unmarked vault at ${resolvedVaultDir}. Pass --force to adopt it intentionally.`,
+    );
+  }
+
+  if (!clean || !vaultExists) {
+    return;
+  }
+
+  if (!marker && !isDefaultManagedVault && !force) {
+    throw new Error(
+      `Refusing to delete existing vault at ${resolvedVaultDir}. Clean only removes marked isolated vaults by default unless --force is provided.`,
+    );
+  }
+
+  await fsp.rm(resolvedVaultDir, { recursive: true, force: true });
+}
+
+async function inspectIsolatedVault({ vaultDir }) {
+  const resolvedVaultDir = path.resolve(vaultDir);
+  const obsidianDir = path.join(resolvedVaultDir, ".obsidian");
+  const pluginLinkPath = path.join(obsidianDir, "plugins", WORK_TERMINAL_PLUGIN_ID);
+  const marker = await readManagedVaultMarker(resolvedVaultDir);
+
+  let pluginLinkType = "missing";
+  let pluginTarget = null;
+  try {
+    const stat = await fsp.lstat(pluginLinkPath);
+    if (stat.isSymbolicLink()) {
+      pluginLinkType = "symlink";
+      pluginTarget = path.resolve(path.dirname(pluginLinkPath), await fsp.readlink(pluginLinkPath));
+    } else if (stat.isDirectory()) {
+      pluginLinkType = "directory";
+    } else {
+      pluginLinkType = "file";
+    }
+  } catch (error) {
+    if (error && error.code !== "ENOENT") throw error;
+  }
+
+  return {
+    vaultDir: resolvedVaultDir,
+    exists: await pathExists(resolvedVaultDir),
+    markerPath: path.join(resolvedVaultDir, ISOLATED_VAULT_MARKER),
+    managed: Boolean(marker),
+    pluginLinkPath,
+    pluginLinkType,
+    pluginTarget,
+    obsidianDirExists: await pathExists(obsidianDir),
+  };
 }
 
 function buildSampleTaskContent(title, state) {
@@ -262,7 +395,14 @@ async function seedTaskFiles(vaultDir) {
   }
 }
 
-async function ensureIsolatedVault({ vaultDir, pluginDir, clean = false, sampleData = true }) {
+async function ensureIsolatedVault({
+  vaultDir,
+  pluginDir,
+  clean = false,
+  sampleData = true,
+  force = false,
+  managedVaultDir,
+}) {
   const resolvedVaultDir = path.resolve(vaultDir);
   const resolvedPluginDir = path.resolve(pluginDir);
   const obsidianDir = path.join(resolvedVaultDir, ".obsidian");
@@ -270,9 +410,12 @@ async function ensureIsolatedVault({ vaultDir, pluginDir, clean = false, sampleD
   const pluginLinkPath = path.join(pluginParentDir, WORK_TERMINAL_PLUGIN_ID);
   const taskBaseDir = path.join(resolvedVaultDir, "2 - Areas", "Tasks");
 
-  if (clean) {
-    await fsp.rm(resolvedVaultDir, { recursive: true, force: true });
-  }
+  await prepareVaultDirectory({
+    vaultDir: resolvedVaultDir,
+    clean,
+    force,
+    managedVaultDir,
+  });
 
   await fsp.mkdir(pluginParentDir, { recursive: true });
   await fsp.mkdir(path.join(taskBaseDir, "priority"), { recursive: true });
@@ -280,12 +423,16 @@ async function ensureIsolatedVault({ vaultDir, pluginDir, clean = false, sampleD
   await fsp.mkdir(path.join(taskBaseDir, "todo"), { recursive: true });
   await fsp.mkdir(path.join(taskBaseDir, "archive"), { recursive: true });
 
-  await ensureSymlink(resolvedPluginDir, pluginLinkPath);
+  await ensureSymlink(resolvedPluginDir, pluginLinkPath, { force });
   await writeJsonFile(path.join(obsidianDir, "community-plugins.json"), [WORK_TERMINAL_PLUGIN_ID]);
   await writeJsonFile(path.join(obsidianDir, "core-plugins.json"), []);
   await writeJsonFile(path.join(obsidianDir, "app.json"), {
     communityPlugins: true,
     legacyEditor: false,
+  });
+  await writeJsonFile(path.join(resolvedVaultDir, ISOLATED_VAULT_MARKER), {
+    pluginId: WORK_TERMINAL_PLUGIN_ID,
+    pluginDir: resolvedPluginDir,
   });
 
   if (sampleData) {
@@ -347,6 +494,31 @@ function waitForDebugger({ host = DEFAULT_HOST, port = getDefaultPort(), timeout
 
     void attempt();
   });
+}
+
+async function assertDebuggerPortAvailable({ host = DEFAULT_HOST, port = getDefaultPort(), timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  try {
+    await fetchTargets({ host, port, timeoutMs });
+  } catch (error) {
+    if (error && ["ECONNREFUSED", "EHOSTUNREACH"].includes(error.code)) {
+      return;
+    }
+    if (error && error.code === "ECONNRESET") {
+      throw new Error(`Debugger port ${host}:${port} is already in use by a non-CDP service`);
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error(`Debugger port ${host}:${port} is already in use by a non-CDP service`);
+    }
+    if (error && /socket hang up/i.test(error.message || "")) {
+      throw new Error(`Debugger port ${host}:${port} is already in use by a non-CDP service`);
+    }
+    if (error && /ECONNREFUSED/i.test(error.message || "")) {
+      return;
+    }
+    throw new Error(`Debugger port ${host}:${port} is already in use`);
+  }
+
+  throw new Error(`Debugger port ${host}:${port} is already in use. Choose a different --port.`);
 }
 
 function encodeClientFrame(payloadBuffer, opcode = 0x1) {
@@ -749,6 +921,23 @@ async function runCdpCommand(config) {
   }
 }
 
+async function verifyObsidianVault({ host = DEFAULT_HOST, port = getDefaultPort(), timeoutMs = DEFAULT_TIMEOUT_MS, expectedVaultDir }) {
+  const client = await CDPClient.connect({ host, port, timeoutMs });
+  try {
+    const actualVaultDir = await client.evaluate("app?.vault?.adapter?.basePath ?? null");
+    const resolvedActual = actualVaultDir ? path.resolve(actualVaultDir) : null;
+    const resolvedExpected = path.resolve(expectedVaultDir);
+    if (resolvedActual !== resolvedExpected) {
+      throw new Error(
+        `Connected debugger is attached to ${resolvedActual || "an unknown vault"}, expected ${resolvedExpected}`,
+      );
+    }
+    return resolvedActual;
+  } finally {
+    client.close();
+  }
+}
+
 function launchObsidian({ vaultDir, port = getDefaultPort() }) {
   return new Promise((resolve, reject) => {
     const child = spawn("open", ["-na", "Obsidian", "--args", `--remote-debugging-port=${port}`, vaultDir], {
@@ -776,11 +965,17 @@ module.exports = {
   WORK_TERMINAL_COMMAND_IDS,
   captureScreenshot,
   commandExpression,
+  assertDebuggerPortAvailable,
   ensureIsolatedVault,
+  ensureSymlink,
   getDefaultPort,
+  inspectIsolatedVault,
   launchObsidian,
   parseCdpArgs,
   parseIsolatedInstanceArgs,
+  prepareVaultDirectory,
+  readManagedVaultMarker,
   runCdpCommand,
+  verifyObsidianVault,
   waitForDebugger,
 };

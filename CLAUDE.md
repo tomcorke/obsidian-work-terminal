@@ -61,7 +61,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
 - **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. Default: triggers hot-reload. It also supports `open-view`, `wait-for`, `click`, `type`, and `screenshot`.
-- **Isolated test vault**: `npm run obsidian:test:init` seeds `.claude/testing/obsidian-vault/` with a plugin symlink and sample tasks. `npm run obsidian:test:open` launches a fresh Obsidian instance against that vault and opens the Work Terminal view.
+- **Isolated test vault**: `npm run obsidian:test:init` seeds `.claude/testing/obsidian-vault/` with a plugin symlink and sample tasks. `npm run obsidian:test:open` launches a fresh Obsidian instance against that vault and opens the Work Terminal view. `node scripts/obsidian-isolated-instance.js status` is inspect-only and does not scaffold the vault.
 
 **IMPORTANT**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
 - `npm run dev` watch mode (preferred - auto-reloads on save)
@@ -87,6 +87,7 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 - **After code changes**: reload the plugin via `node cdp.js` (preserves terminal sessions) rather than asking the user to reload manually.
 - **While debugging**: use CDP to inspect DOM, evaluate expressions, read console logs, wait for selectors, click, type, and capture screenshots before asking the user to perform manual actions. Only ask the user when the debugger cannot see or do what's needed.
 - **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. No arguments = trigger plugin reload. Screenshots can be captured with `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`.
+- **Automation safety**: the isolated-instance launcher now fails fast if the configured debugger port is already occupied, preventing accidental attachment to the wrong Obsidian instance.
 - **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing

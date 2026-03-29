@@ -34,6 +34,7 @@ The repo now includes a repo-local automation path for isolated manual or agent-
   - community plugin enablement files
   - seed task data under `2 - Areas/Tasks/`
 - `npm run obsidian:test:open` launches a fresh Obsidian app instance against that vault on CDP port `9222` and opens the Work Terminal view.
+- `node scripts/obsidian-isolated-instance.js status` inspects the configured vault without creating or modifying it.
 - `node cdp.js` still reloads the plugin, but now also supports:
   - `node cdp.js open-view`
   - `node cdp.js wait-for '.wt-main-layout'`
@@ -41,7 +42,7 @@ The repo now includes a repo-local automation path for isolated manual or agent-
   - `node cdp.js type 'textarea' 'hello from automation'`
   - `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`
 
-Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port.
+Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port. The launcher now fails fast if that debugger port is already occupied, so automation does not attach to the wrong Obsidian instance.
 
 ## Creating Your Own Adapter
 
