@@ -591,6 +591,7 @@ export class TerminalTab {
     // second frame has correct dimensions for fitAddon to measure.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        if (this._isDisposed) return;
         this.safeFit();
         // Force a full re-render of all rows. If the renderer changed while
         // the tab was hidden (e.g. WebGL context loss fell back to canvas),
