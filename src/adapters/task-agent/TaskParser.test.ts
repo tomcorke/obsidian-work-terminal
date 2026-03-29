@@ -236,6 +236,30 @@ describe("TaskParser", () => {
       });
     });
 
+    it("normalizes explicit Jira source ids to the detected Jira key", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const jiraUrl = "https://skyscanner.atlassian.net/browse/CASTLE-1234";
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: {
+            type: "jira",
+            id: "castle-1234",
+            url: jiraUrl,
+            captured: "castle-1234",
+          },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "jira",
+        id: "CASTLE-1234",
+        url: jiraUrl,
+        captured: "castle-1234",
+      });
+    });
+
     it("preserves explicit non-Jira source metadata", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const confluenceUrl = "https://example.atlassian.net/wiki/spaces/ABC/pages/1234";

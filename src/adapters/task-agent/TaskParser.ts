@@ -7,9 +7,9 @@ import {
   type KanbanColumn,
   KANBAN_COLUMNS,
 } from "./types";
+import { TASK_AGENT_CONFIG } from "./TaskAgentConfig";
 
 const VALID_STATES: TaskState[] = ["priority", "todo", "active", "done", "abandoned"];
-const DEFAULT_JIRA_BASE_URL = "https://skyscanner.atlassian.net/browse";
 const JIRA_KEY_RE = /\b([A-Z][A-Z0-9]+-\d+)\b/i;
 
 export class TaskParser implements WorkItemParser {
@@ -101,8 +101,8 @@ export class TaskParser implements WorkItemParser {
       const explicitJira = this.detectJiraSource([explicit.id, explicit.url, explicit.captured]);
       return {
         type: "jira",
-        id: explicit.id || explicitJira?.id || "",
-        url: explicit.url || explicitJira?.url || "",
+        id: explicitJira?.id || explicit.id || "",
+        url: explicitJira?.url || explicit.url || "",
         captured: explicit.captured || explicitJira?.captured || "",
       };
     }
@@ -196,11 +196,15 @@ export class TaskParser implements WorkItemParser {
   }
 
   private buildJiraUrl(id: string): string {
+    const defaultJiraBaseUrl =
+      typeof TASK_AGENT_CONFIG.defaultSettings.jiraBaseUrl === "string"
+        ? TASK_AGENT_CONFIG.defaultSettings.jiraBaseUrl
+        : "";
     const baseUrl =
       typeof this.settings["adapter.jiraBaseUrl"] === "string" &&
       this.settings["adapter.jiraBaseUrl"].trim()
         ? this.settings["adapter.jiraBaseUrl"].trim()
-        : DEFAULT_JIRA_BASE_URL;
+        : defaultJiraBaseUrl;
     return `${baseUrl.replace(/\/+$/, "")}/${id}`;
   }
 
