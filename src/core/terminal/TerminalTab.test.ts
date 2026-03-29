@@ -287,6 +287,73 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(terminalDispose).toHaveBeenCalledTimes(1);
   });
 
+  it("detaches the tracked webgl addon before terminal teardown", () => {
+    const order: string[] = [];
+    const addonEntries = [{ instance: null as unknown }, { instance: { dispose: vi.fn() } }];
+    const webglAddon = {
+      dispose: vi.fn(() => {
+        throw new Error("webgl dispose should not be called directly during tab close");
+      }),
+    };
+    addonEntries[0].instance = webglAddon;
+    const webglListenerDispose = vi.fn(() => order.push("webgl-listener"));
+    const unicodeDispose = vi.fn(() => {
+      order.push("unicode");
+      addonEntries.splice(
+        addonEntries.findIndex((entry) => entry.instance === unicodeAddon),
+        1,
+      );
+    });
+    const unicodeAddon = { dispose: unicodeDispose };
+    addonEntries[1].instance = unicodeAddon;
+    const addonManagerDispose = vi.fn(() => {
+      if (addonEntries.length > 0) {
+        throw new TypeError("Cannot read properties of undefined (reading '_isDisposed')");
+      }
+      order.push("addon-manager");
+    });
+    const terminalDispose = vi.fn(() => {
+      addonManagerDispose();
+      order.push("terminal");
+    });
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
+      _stateTimer: null,
+      _resizeDebounce: null,
+      _spawnTimeout: null,
+      _documentCleanups: [],
+      resizeObserver: { disconnect: vi.fn(() => order.push("resize-observer")) },
+      process: null,
+      fitAddon: undefined,
+      searchAddon: undefined,
+      webLinksAddon: undefined,
+      linkProviderDisposable: null,
+      unicode11Addon: unicodeAddon,
+      webglAddon,
+      webglContextLossListener: { dispose: webglListenerDispose },
+      terminal: {
+        _addonManager: { _addons: addonEntries },
+        dispose: terminalDispose,
+      },
+      containerEl: { remove: vi.fn(() => order.push("container")) },
+    }) as TerminalTab;
+
+    expect(() => tab.dispose()).not.toThrow();
+
+    expect(webglAddon.dispose).not.toHaveBeenCalled();
+    expect(webglListenerDispose).not.toHaveBeenCalled();
+    expect(addonEntries).toEqual([]);
+    expect(addonManagerDispose).toHaveBeenCalledTimes(1);
+    expect(order).toEqual([
+      "tracker",
+      "resize-observer",
+      "unicode",
+      "addon-manager",
+      "terminal",
+      "container",
+    ]);
+  });
+
   it("does not touch xterm's private addon manager for older restored tabs", () => {
     const order: string[] = [];
     const addonManagerDispose = vi.fn(() => order.push("addon-manager"));
@@ -433,9 +500,9 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(searchAddon.dispose).toHaveBeenCalledTimes(1);
     expect(webLinksAddon.dispose).toHaveBeenCalledTimes(1);
     expect(unicode11Addon.dispose).toHaveBeenCalledTimes(1);
-    expect(webglAddon.dispose).toHaveBeenCalledTimes(1);
+    expect(webglAddon.dispose).not.toHaveBeenCalled();
     expect(webglAddon.onContextLoss).toHaveBeenCalledTimes(1);
-    expect(legacyWebglListenerDispose).toHaveBeenCalledTimes(1);
+    expect(legacyWebglListenerDispose).not.toHaveBeenCalled();
     expect(addonManagerDispose).toHaveBeenCalledTimes(1);
     expect(containerEl.remove).toHaveBeenCalledTimes(1);
   });
