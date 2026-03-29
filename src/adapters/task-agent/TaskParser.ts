@@ -1,8 +1,16 @@
 import type { App, TFile } from "obsidian";
 import type { WorkItem, WorkItemParser } from "../../core/interfaces";
-import { type TaskFile, type TaskState, type KanbanColumn, KANBAN_COLUMNS } from "./types";
+import {
+  type TaskFile,
+  type TaskSource,
+  type TaskState,
+  type KanbanColumn,
+  KANBAN_COLUMNS,
+} from "./types";
+import { TASK_AGENT_CONFIG } from "./TaskAgentConfig";
 
 const VALID_STATES: TaskState[] = ["priority", "todo", "active", "done", "abandoned"];
+const JIRA_KEY_RE = /\b([A-Z][A-Z0-9]+-\d+)\b/i;
 
 export class TaskParser implements WorkItemParser {
   basePath: string;
@@ -35,9 +43,8 @@ export class TaskParser implements WorkItemParser {
     const state = this.normaliseState(fm.state, fallbackState);
     if (!state) return null;
 
-    const source = fm.source || {};
     const priority = fm.priority || {};
-    const tags: string[] = fm.tags || [];
+    const tags = this.normaliseTags(fm.tags);
     const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
 
     return {
@@ -47,12 +54,7 @@ export class TaskParser implements WorkItemParser {
       state,
       title: fm.title || file.basename,
       tags,
-      source: {
-        type: source.type || "other",
-        id: source.id || "",
-        url: source.url || "",
-        captured: source.captured || "",
-      },
+      source: this.resolveSource(fm, tags),
       priority: {
         score: priority.score ?? 0,
         deadline: priority.deadline || "",
@@ -80,6 +82,130 @@ export class TaskParser implements WorkItemParser {
     }
 
     return fallbackState;
+  }
+
+  private normaliseTags(rawTags: unknown): string[] {
+    if (Array.isArray(rawTags)) {
+      return rawTags.filter((tag): tag is string => typeof tag === "string");
+    }
+    if (typeof rawTags === "string" && rawTags.trim()) {
+      return [rawTags.trim()];
+    }
+    return [];
+  }
+
+  private resolveSource(frontmatter: Record<string, any>, tags: string[]): TaskSource {
+    const source = frontmatter.source || {};
+    const explicit = this.normaliseSource(source);
+    if (explicit.type === "jira") {
+      const explicitJira = this.detectJiraSource([explicit.id, explicit.url, explicit.captured]);
+      return {
+        type: "jira",
+        id: explicitJira?.id || explicit.id || "",
+        url: explicitJira?.url || explicit.url || "",
+        captured: explicit.captured || explicitJira?.captured || "",
+      };
+    }
+
+    if (explicit.type !== "other") {
+      return explicit;
+    }
+
+    if (explicit.id || explicit.url || explicit.captured) {
+      const explicitJira = this.detectJiraSource([explicit.id, explicit.url, explicit.captured]);
+      if (explicitJira) {
+        return {
+          type: "jira",
+          ...explicitJira,
+        };
+      }
+      return explicit;
+    }
+
+    const discreteJiraValue = this.getDiscreteJiraValue(frontmatter);
+    const detected = this.detectJiraSource([discreteJiraValue, ...tags]);
+    if (detected) {
+      return {
+        type: "jira",
+        ...detected,
+      };
+    }
+
+    return explicit;
+  }
+
+  private normaliseSource(source: Record<string, any>): TaskSource {
+    return {
+      type: source.type || "other",
+      id: typeof source.id === "string" ? source.id : "",
+      url: typeof source.url === "string" ? source.url : "",
+      captured: typeof source.captured === "string" ? source.captured : "",
+    };
+  }
+
+  private getDiscreteJiraValue(frontmatter: Record<string, any>): unknown {
+    for (const [key, value] of Object.entries(frontmatter)) {
+      if (key.toLowerCase() === "jira") {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private detectJiraSource(values: unknown[]): Omit<TaskSource, "type"> | null {
+    for (const value of values) {
+      const raw = this.extractStringValue(value);
+      if (!raw) continue;
+
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+
+      const tagMatch = trimmed.match(/^jira(?:[/:_-])(.*)$/i);
+      const candidate = (tagMatch?.[1] || trimmed).trim();
+      if (!candidate) continue;
+
+      if (/^https?:\/\//i.test(candidate)) {
+        const id = this.extractJiraKey(candidate);
+        if (!id) continue;
+        return { id, url: candidate, captured: trimmed };
+      }
+
+      const id = this.extractJiraKey(candidate);
+      if (!id) continue;
+      return {
+        id,
+        url: this.buildJiraUrl(id),
+        captured: trimmed,
+      };
+    }
+    return null;
+  }
+
+  private extractStringValue(value: unknown): string | null {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      const firstString = value.find((entry): entry is string => typeof entry === "string");
+      return firstString ?? null;
+    }
+    return null;
+  }
+
+  private extractJiraKey(value: string): string {
+    const match = value.match(JIRA_KEY_RE);
+    return match?.[1]?.toUpperCase() || "";
+  }
+
+  private buildJiraUrl(id: string): string {
+    const defaultJiraBaseUrl =
+      typeof TASK_AGENT_CONFIG.defaultSettings.jiraBaseUrl === "string"
+        ? TASK_AGENT_CONFIG.defaultSettings.jiraBaseUrl
+        : "";
+    const baseUrl =
+      typeof this.settings["adapter.jiraBaseUrl"] === "string" &&
+      this.settings["adapter.jiraBaseUrl"].trim()
+        ? this.settings["adapter.jiraBaseUrl"].trim()
+        : defaultJiraBaseUrl;
+    return `${baseUrl.replace(/\/+$/, "")}/${id}`;
   }
 
   private getStateFromPath(path: string): TaskState | null {
