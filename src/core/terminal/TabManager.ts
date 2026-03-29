@@ -273,7 +273,14 @@ export class TabManager {
     this.closeTabForItem(this.activeItemId, index);
   }
 
-  private closeTabForItem(itemId: string, index: number): void {
+  closeTabInstance(itemId: string, tab: TerminalTab): void {
+    const tabs = this.sessions.get(itemId) || [];
+    const index = tabs.indexOf(tab);
+    if (index === -1) return;
+    this.closeTabForItem(itemId, index);
+  }
+
+  closeTabForItem(itemId: string, index: number): void {
     const tabs = this.sessions.get(itemId) || [];
     if (index < 0 || index >= tabs.length) return;
 
