@@ -252,6 +252,37 @@ describe("TerminalTab hot-reload addon handling", () => {
       "container",
     ]);
   });
+
+  it("skips the addon manager fallback when tracked addon refs are available", () => {
+    const fitDispose = vi.fn();
+    const addonManagerDispose = vi.fn();
+    const terminalDispose = vi.fn();
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _sessionTracker: { dispose: vi.fn() },
+      _stateTimer: null,
+      _resizeDebounce: null,
+      _documentCleanups: [],
+      resizeObserver: { disconnect: vi.fn() },
+      process: null,
+      fitAddon: { dispose: fitDispose },
+      searchAddon: undefined,
+      webLinksAddon: undefined,
+      unicode11Addon: undefined,
+      webglAddon: null,
+      webglContextLossListener: null,
+      terminal: {
+        _addonManager: { dispose: addonManagerDispose },
+        dispose: terminalDispose,
+      },
+      containerEl: { remove: vi.fn() },
+    }) as TerminalTab;
+
+    tab.dispose();
+
+    expect(fitDispose).toHaveBeenCalledTimes(1);
+    expect(addonManagerDispose).not.toHaveBeenCalled();
+    expect(terminalDispose).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("TerminalTab WebGL recovery", () => {

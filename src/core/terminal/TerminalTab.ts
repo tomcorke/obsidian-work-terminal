@@ -917,6 +917,13 @@ export class TerminalTab {
     // Dispose addons before terminal.dispose() so they can clean up while
     // xterm's internal services (renderer, buffer) are still alive.
     // Disposing in reverse load order mirrors standard teardown conventions.
+    const hasTrackedAddons = Boolean(
+      this.fitAddon ||
+      this.searchAddon ||
+      this.webLinksAddon ||
+      this.unicode11Addon ||
+      this.webglAddon,
+    );
     this.disposeWebglContextLossListener();
     this.webglAddon?.dispose();
     this.webglAddon = null;
@@ -933,6 +940,8 @@ export class TerminalTab {
     // the anonymous addons above. Drain xterm's addon manager here as a
     // compatibility fallback so restored tabs still dispose addons before the
     // terminal tears down its internals.
-    (this.terminal as TerminalWithAddonManager)._addonManager?.dispose();
+    if (!hasTrackedAddons) {
+      (this.terminal as TerminalWithAddonManager)._addonManager?.dispose();
+    }
   }
 }
