@@ -60,7 +60,8 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
-- **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. Default: triggers hot-reload.
+- **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. Default: triggers hot-reload. It also supports `open-view`, `wait-for`, `click`, `type`, and `screenshot`.
+- **Isolated test vault**: `npm run obsidian:test:init` seeds `.claude/testing/obsidian-vault/` with a plugin symlink and sample tasks. `npm run obsidian:test:open` launches a fresh Obsidian instance against that vault and opens the Work Terminal view.
 
 **IMPORTANT**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
 - `npm run dev` watch mode (preferred - auto-reloads on save)
@@ -82,10 +83,10 @@ Use GitHub Issues as the project TODO list (`gh issue list`, `gh issue create`, 
 - **Verify** issues are updated after push: run `gh issue list --state all` to confirm closed issues, and check that investigation-only issues have comments with findings.
 
 ### Debugger-driven development
-When Obsidian is running with remote debugging enabled (check by hitting `http://localhost:8315/json`):
+When Obsidian is running with remote debugging enabled (check by hitting `http://localhost:9222/json`, or your configured port):
 - **After code changes**: reload the plugin via `node cdp.js` (preserves terminal sessions) rather than asking the user to reload manually.
-- **While debugging**: use CDP to inspect DOM, evaluate expressions, read console logs, and check plugin state before asking the user to perform manual actions. Only ask the user when the debugger cannot see or do what's needed (e.g. visual confirmation, manual interaction with specific UI elements).
-- **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. No arguments = trigger plugin reload.
+- **While debugging**: use CDP to inspect DOM, evaluate expressions, read console logs, wait for selectors, click, type, and capture screenshots before asking the user to perform manual actions. Only ask the user when the debugger cannot see or do what's needed.
+- **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. No arguments = trigger plugin reload. Screenshots can be captured with `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`.
 - **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing

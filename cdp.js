@@ -1,87 +1,30 @@
-// CDP helper - evaluates JS in Obsidian's renderer process
-// Usage: node cdp.js '<expression>'
-// Default: triggers work-terminal:reload-plugin
-const http = require('http');
-const crypto = require('crypto');
+const path = require("node:path");
+const { parseCdpArgs, runCdpCommand } = require("./scripts/lib/obsidianAutomation");
 
-const expr = process.argv[2] || "app.commands.executeCommandById('work-terminal:reload-plugin')";
+async function main() {
+  const config = parseCdpArgs(process.argv.slice(2), process.cwd());
+  const result = await runCdpCommand(config);
 
-function cdpEval(expression) {
-  return new Promise((resolve, reject) => {
-    http.get('http://localhost:8315/json', (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const targets = JSON.parse(data);
-          const target = targets.find((t) => t.type === 'page' && t.title && t.title.includes('Obsidian'));
-          if (!target) return reject(new Error('No page target found'));
-          const wsUrl = target.webSocketDebuggerUrl;
-          if (!wsUrl) return reject(new Error('No WebSocket URL'));
-          const url = new URL(wsUrl);
-          const key = crypto.randomBytes(16).toString('base64');
-          const req = http.request({
-            hostname: url.hostname, port: url.port,
-            path: url.pathname,
-            method: 'GET',
-            headers: {
-              'Upgrade': 'websocket', 'Connection': 'Upgrade',
-              'Sec-WebSocket-Key': key, 'Sec-WebSocket-Version': '13',
-            }
-          });
-          req.on('upgrade', (_res, socket) => {
-            const msg = JSON.stringify({id: 1, method: 'Runtime.evaluate', params: {expression, returnByValue: true, awaitPromise: true}});
-            const payload = Buffer.from(msg);
-            const mask = crypto.randomBytes(4);
-            let header;
-            if (payload.length < 126) {
-              header = Buffer.alloc(6);
-              header[0] = 0x81;
-              header[1] = 0x80 | payload.length;
-              mask.copy(header, 2);
-            } else if (payload.length < 65536) {
-              header = Buffer.alloc(8);
-              header[0] = 0x81;
-              header[1] = 0x80 | 126;
-              header.writeUInt16BE(payload.length, 2);
-              mask.copy(header, 4);
-            } else {
-              header = Buffer.alloc(14);
-              header[0] = 0x81;
-              header[1] = 0x80 | 127;
-              header.writeBigUInt64BE(BigInt(payload.length), 2);
-              mask.copy(header, 10);
-            }
-            const masked = Buffer.alloc(payload.length);
-            for (let i = 0; i < payload.length; i++) masked[i] = payload[i] ^ mask[i % 4];
-            socket.write(Buffer.concat([header, masked]));
-            let buf = Buffer.alloc(0);
-            socket.on('data', (chunk) => {
-              buf = Buffer.concat([buf, chunk]);
-              if (buf.length < 2) return;
-              const len0 = buf[1] & 0x7f;
-              let payloadStart = 2, payloadLen = len0;
-              if (len0 === 126) { if (buf.length < 4) return; payloadLen = buf.readUInt16BE(2); payloadStart = 4; }
-              else if (len0 === 127) { if (buf.length < 10) return; payloadLen = Number(buf.readBigUInt64BE(2)); payloadStart = 10; }
-              if (buf.length < payloadStart + payloadLen) return;
-              const respData = buf.slice(payloadStart, payloadStart + payloadLen).toString();
-              socket.destroy();
-              try { resolve(JSON.parse(respData)); } catch(e) { resolve(respData); }
-            });
-          });
-          req.on('error', reject);
-          req.end();
-          setTimeout(() => reject(new Error('timeout')), 10000);
-        } catch(e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
+  if (typeof result === "string") {
+    console.log(result);
+    return;
+  }
+
+  if (result === undefined) {
+    console.log("ok");
+    return;
+  }
+
+  if (result && typeof result === "object" && result.outputPath) {
+    const relativePath = path.relative(process.cwd(), result.outputPath) || result.outputPath;
+    console.log(relativePath);
+    return;
+  }
+
+  console.log(JSON.stringify(result, null, 2));
 }
 
-cdpEval(expr).then(r => {
-  const val = r?.result?.result;
-  if (val?.type === 'string') console.log(val.value);
-  else if (val?.value !== undefined) console.log(JSON.stringify(val.value, null, 2));
-  else console.log(JSON.stringify(r?.result || r, null, 2));
-  process.exit(0);
-}).catch(e => { console.error(e.message); process.exit(1); });
+main().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});
