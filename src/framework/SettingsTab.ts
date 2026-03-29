@@ -24,8 +24,11 @@ interface CoreSettings {
   "core.additionalAgentContext": string;
   "core.defaultShell": string;
   "core.defaultTerminalCwd": string;
+  "core.exposeDebugApi": boolean;
   "core.acceptNoResumeHooks": boolean;
 }
+
+export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
 
 const CORE_DEFAULTS: CoreSettings = {
   "core.claudeCommand": "claude",
@@ -37,6 +40,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.additionalAgentContext": "",
   "core.defaultShell": process.env.SHELL || "/bin/zsh",
   "core.defaultTerminalCwd": "~",
+  "core.exposeDebugApi": false,
   "core.acceptNoResumeHooks": false,
 };
 
@@ -111,6 +115,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Default terminal CWD",
       "Working directory for new terminals (supports ~)",
     );
+    this.addCoreToggle(
+      containerEl,
+      "core.exposeDebugApi",
+      "Expose debug API",
+      "Publishes window.__workTerminalDebug for CDP inspection. Disabled by default because it exposes active session metadata to other renderer plugins.",
+    );
 
     // Session Resume Tracking section
     containerEl.createEl("h2", { text: "Claude /resume hooks" });
@@ -135,6 +145,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       if (!data.settings) data.settings = {};
       update(data.settings);
     });
+    window.dispatchEvent(
+      new CustomEvent(SETTINGS_CHANGED_EVENT, {
+        detail: await loadAllSettings(this.plugin, this.adapter),
+      }),
+    );
   }
 
   private async renderHookStatus(containerEl: HTMLElement): Promise<void> {
@@ -258,6 +273,28 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Let the textarea span the full width below the label
     setting.settingEl.style.flexWrap = "wrap";
     setting.controlEl.style.width = "100%";
+  }
+
+  private async addCoreToggle(
+    containerEl: HTMLElement,
+    key: keyof CoreSettings,
+    name: string,
+    description: string,
+  ): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const value = settings[key] ?? CORE_DEFAULTS[key];
+
+    new Setting(containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addToggle((toggle) =>
+        toggle.setValue(!!value).onChange(async (newValue) => {
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
+        }),
+      );
   }
 
   private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {

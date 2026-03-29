@@ -46,8 +46,8 @@ export interface StoredSession {
 }
 
 /**
- * Lightweight metadata persisted to disk so Claude sessions can be resumed
- * after a full plugin close/restart (not just hot-reload).
+ * Lightweight metadata persisted to disk so resumable agent sessions can be
+ * resumed after a full plugin close/restart (not just hot-reload).
  */
 export interface PersistedSession {
   version: 1;
@@ -56,6 +56,15 @@ export interface PersistedSession {
   label: string;
   sessionType: SessionType;
   savedAt: string; // ISO timestamp
+}
+
+export interface ActiveTabInfo {
+  tabId: string;
+  itemId: string;
+  label: string;
+  sessionId: string | null;
+  sessionType: SessionType;
+  isResumableAgent: boolean;
 }
 
 export interface StoredState {

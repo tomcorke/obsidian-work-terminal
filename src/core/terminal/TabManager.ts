@@ -11,7 +11,7 @@
 import { TerminalTab, type ClaudeState } from "./TerminalTab";
 import { aggregateState } from "../claude/ClaudeStateDetector";
 import { SessionStore } from "../session/SessionStore";
-import type { StoredSession, SessionType } from "../session/types";
+import type { ActiveTabInfo, StoredSession, SessionType } from "../session/types";
 
 export class TabManager {
   private sessions: Map<string, TerminalTab[]> = new Map();
@@ -260,6 +260,11 @@ export class TabManager {
   /**
    * Move a tab from its current position to a target index within the same item.
    * Used by restart to place the replacement tab where the old one was.
+   *
+   * Note: targetIndex refers to the position in the original array before the
+   * tab is removed. For forward moves (where currentIndex < targetIndex), the
+   * tab's final position will be targetIndex - 1, because removing the tab
+   * first shifts subsequent indices down by one.
    */
   moveTabToIndex(itemId: string, tab: TerminalTab, targetIndex: number): void {
     const tabs = this.sessions.get(itemId);
@@ -268,15 +273,25 @@ export class TabManager {
     if (currentIndex === -1) return;
     if (currentIndex === targetIndex) return;
 
-    tabs.splice(currentIndex, 1);
-    tabs.splice(targetIndex, 0, tab);
-
+    // Remember which tab object is currently active so we can preserve it
     const isActiveItem = this.activeItemId === itemId;
-    if (isActiveItem) {
-      this.activeTabIndex = tabs.indexOf(tab);
+    const activeTabObj = isActiveItem ? tabs[this.activeTabIndex] : null;
+
+    tabs.splice(currentIndex, 1);
+
+    // After removing at currentIndex, indices shift down for forward moves
+    let insertAt = targetIndex;
+    if (currentIndex < targetIndex) insertAt--;
+
+    tabs.splice(insertAt, 0, tab);
+
+    // Restore activeTabIndex to follow the previously active tab
+    if (isActiveItem && activeTabObj) {
+      this.activeTabIndex = tabs.indexOf(activeTabObj);
     }
 
     this.onSessionChange?.();
+    this.onPersistRequest?.();
   }
 
   /** Get/set the drag source index for tab reordering UI. */
@@ -400,13 +415,38 @@ export class TabManager {
     return { shells, agents };
   }
 
+  /** Return metadata for every active tab across every item. */
+  getAllActiveTabs(): ActiveTabInfo[] {
+    const activeTabs: ActiveTabInfo[] = [];
+    for (const [itemId, tabs] of this.sessions) {
+      for (const tab of tabs) {
+        activeTabs.push({
+          tabId: tab.id,
+          itemId: tab.taskPath ?? itemId,
+          label: tab.label,
+          sessionId: tab.claudeSessionId,
+          sessionType: tab.sessionType,
+          isResumableAgent: tab.isResumableAgent,
+        });
+      }
+    }
+    return activeTabs;
+  }
+
+  /** Find active tabs whose labels exactly match the supplied label. */
+  findTabsByLabel(label: string): ActiveTabInfo[] {
+    const normalizedLabel = label.trim().toLowerCase();
+    if (!normalizedLabel) return [];
+    return this.getAllActiveTabs().filter(
+      (tab) => tab.label.trim().toLowerCase() === normalizedLabel,
+    );
+  }
+
   /** Return a set of all active claudeSessionIds across all items. */
   getActiveSessionIds(): Set<string> {
     const ids = new Set<string>();
-    for (const tabs of this.sessions.values()) {
-      for (const tab of tabs) {
-        if (tab.claudeSessionId) ids.add(tab.claudeSessionId);
-      }
+    for (const tab of this.getAllActiveTabs()) {
+      if (tab.sessionId) ids.add(tab.sessionId);
     }
     return ids;
   }

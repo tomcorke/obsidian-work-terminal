@@ -505,6 +505,7 @@
 }
 
 .wt-tab {
+  --wt-tab-fill: var(--background-secondary);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -513,7 +514,7 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  background: var(--background-secondary);
+  background: var(--wt-tab-fill);
   border: 1px solid var(--background-modifier-border);
   border-bottom: 2px solid transparent;
   border-radius: 4px 4px 0 0;
@@ -522,7 +523,7 @@
 }
 
 .wt-tab:hover {
-  background: var(--background-modifier-hover);
+  --wt-tab-fill: var(--background-modifier-hover);
 }
 
 .wt-tab-active {
@@ -575,34 +576,58 @@
   50% { opacity: 1; }
 }
 
-/* Active tab: green line scrolling around the tab border.
-   Uses a rotating conic-gradient masked to the border, same concept as the
-   card badge arc spinner but adapted for rectangular tab geometry. */
+/* Active agent tab: richer animated border treatment inspired by the issue demo.
+   A large rotating conic gradient sits behind the tab, while an inset fill layer
+   preserves the existing tab surface and leaves the border area exposed. */
 .wt-tab-agent-active {
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   isolation: isolate;
+  background: transparent;
 }
 
 .wt-tab-agent-active::before {
   content: "";
   position: absolute;
-  inset: -1px;
+  inset: -75%;
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent 0deg 36deg,
+      rgba(56, 161, 105, 0.2) 36deg 52deg,
+      rgba(56, 161, 105, 0.95) 52deg 92deg,
+      rgba(56, 161, 105, 0.2) 92deg 110deg,
+      transparent 110deg 360deg
+    );
+  animation: wt-arc-spin 3.2s linear infinite;
+  will-change: transform;
+  z-index: -2;
+  pointer-events: none;
+}
+
+.wt-tab-agent-active::after {
+  content: "";
+  position: absolute;
+  inset: 1px 1px 2px;
   border-radius: inherit;
-  box-sizing: border-box;
-  background: conic-gradient(#38a169 0deg, #38a169 90deg, transparent 90deg, transparent 360deg);
-  mask:
-    linear-gradient(#000, #000) content-box,
-    linear-gradient(#000, #000);
-  mask-composite: exclude;
-  -webkit-mask:
-    linear-gradient(#000, #000) content-box,
-    linear-gradient(#000, #000);
-  -webkit-mask-composite: xor;
-  padding: 1.5px;
-  animation: wt-arc-spin 1.2s linear infinite;
+  background: var(--wt-tab-fill, var(--background-secondary));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(17, 24, 39, 0.18);
   z-index: -1;
   pointer-events: none;
+}
+
+.wt-tab-agent-active > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-tab-agent-active::before {
+    animation: none;
+    transform: rotate(18deg);
+  }
 }
 
 .wt-tab-agent-idle .wt-tab-label {

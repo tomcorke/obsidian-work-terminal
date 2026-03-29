@@ -32,7 +32,8 @@ import {
   buildStrandsArgs,
 } from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
-import type { PersistedSession } from "../core/session/types";
+import { SessionStore } from "../core/session/SessionStore";
+import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
@@ -40,6 +41,7 @@ import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
 import { RecentlyClosedStore } from "../core/session/RecentlyClosedStore";
+import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import {
   getDefaultSessionLabel,
   isClaudeSession,
@@ -49,6 +51,37 @@ import {
   sanitizeCustomSessionConfig,
   type CustomSessionConfig,
 } from "./CustomSessionConfig";
+
+interface WorkTerminalDebugSnapshot {
+  version: 1;
+  activeItemId: string | null;
+  activeTabIndex: number;
+  activeTabs: ActiveTabInfo[];
+  activeSessionIds: string[];
+  persistedSessions: PersistedSession[];
+  hasHotReloadStore: boolean;
+}
+
+interface WorkTerminalDebugApi extends WorkTerminalDebugSnapshot {
+  getSnapshot(): WorkTerminalDebugSnapshot;
+  getAllActiveTabs(): ActiveTabInfo[];
+  findTabsByLabel(label: string): ActiveTabInfo[];
+  getActiveSessionIds(): string[];
+  getPersistedSessions(itemId?: string): PersistedSession[];
+}
+
+const DEBUG_API_OWNER = Symbol("work-terminal-debug-owner");
+const debugApiOwners = new Set<TerminalPanelView>();
+
+type OwnedWorkTerminalDebugApi = WorkTerminalDebugApi & {
+  [DEBUG_API_OWNER]: TerminalPanelView;
+};
+
+declare global {
+  interface Window {
+    __workTerminalDebug?: WorkTerminalDebugApi;
+  }
+}
 
 export class TerminalPanelView {
   private tabManager: TabManager;
@@ -89,6 +122,11 @@ export class TerminalPanelView {
   // In-flight guard to prevent overlapping async checkHookWarning() calls
   private hookWarningCheckInFlight = false;
   private hookWarningCheckQueued = false;
+  private isDisposed = false;
+  private readonly handleSettingsChanged = (event: Event) => {
+    this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    this.refreshDebugGlobal();
+  };
 
   constructor(
     panelEl: HTMLElement,
@@ -108,6 +146,7 @@ export class TerminalPanelView {
     this.promptBuilder = promptBuilder;
     this.onClaudeStateChange = onClaudeStateChange;
     this.onSessionChange = onSessionChange;
+    window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
 
     // Task title heading above tab bar
     this.titleEl = panelEl.createDiv({ cls: "wt-task-title" });
@@ -121,6 +160,7 @@ export class TerminalPanelView {
     // Initialize TabManager
     this.tabManager = new TabManager(terminalWrapperEl);
     this.tabManager.onSessionChange = () => {
+      this.refreshDebugGlobal();
       this.renderTabBar();
       void this.checkHookWarning();
       this.onSessionChange();
@@ -153,6 +193,7 @@ export class TerminalPanelView {
 
     // Initial tab bar render
     this.renderTabBar();
+    this.refreshDebugGlobal();
 
     // Check hook status and show warning banner if needed
     this.checkHookWarning();
@@ -163,6 +204,7 @@ export class TerminalPanelView {
   // ---------------------------------------------------------------------------
 
   private async checkHookWarning(): Promise<void> {
+    if (this.isDisposed) return;
     if (this.hookWarningCheckInFlight) {
       this.hookWarningCheckQueued = true;
       return;
@@ -170,6 +212,7 @@ export class TerminalPanelView {
     this.hookWarningCheckInFlight = true;
     try {
       const fresh = ((await this.plugin.loadData()) || {}).settings || {};
+      if (this.isDisposed) return;
       const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
       const cwd = expandTilde(
         fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
@@ -778,14 +821,20 @@ export class TerminalPanelView {
   // ---------------------------------------------------------------------------
 
   private async loadPersistedSessions(): Promise<void> {
-    this.persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
+    const persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
+    if (this.isDisposed) return;
+    this.persistedSessions = persistedSessions;
+    this.refreshDebugGlobal();
     await this.checkHookWarning();
   }
 
   async persistSessions(): Promise<void> {
+    if (this.isDisposed) return;
     await mergeAndSavePluginData(this.plugin, async (data) => {
       SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
     });
+    if (this.isDisposed) return;
+    this.refreshDebugGlobal();
   }
 
   // ---------------------------------------------------------------------------
@@ -794,6 +843,7 @@ export class TerminalPanelView {
 
   setActiveItem(itemId: string | null): void {
     this.tabManager.setActiveItem(itemId);
+    this.refreshDebugGlobal();
     this.renderTabBar();
   }
 
@@ -891,6 +941,18 @@ export class TerminalPanelView {
       return itemPath;
     }
     return path.resolve(vaultPath, itemPath);
+  }
+
+  getAllActiveTabs(): ActiveTabInfo[] {
+    return this.tabManager.getAllActiveTabs();
+  }
+
+  findTabsByLabel(label: string): ActiveTabInfo[] {
+    return this.tabManager.findTabsByLabel(label);
+  }
+
+  getActiveSessionIds(): string[] {
+    return Array.from(this.tabManager.getActiveSessionIds());
   }
 
   private getActiveItem(): WorkItem | null {
@@ -1236,27 +1298,142 @@ export class TerminalPanelView {
 
   rekeyItem(oldId: string, newId: string): void {
     this.tabManager.rekeyItem(oldId, newId);
+    this.refreshDebugGlobal();
   }
 
   stashAll(): void {
+    this.isDisposed = true;
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
     this.stopHookWarningPoller();
+    this.detachSettingsListener();
     this.tabManager.stashAll();
+    this.clearDebugGlobal();
   }
 
   disposeAll(): void {
+    this.isDisposed = true;
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
     this.stopHookWarningPoller();
+    this.detachSettingsListener();
     this.tabManager.disposeAll();
+    this.clearDebugGlobal();
   }
 
   setItems(items: WorkItem[]): void {
     this.allItems = items;
+    this.refreshDebugGlobal();
   }
 
   getClaudeState(itemId: string): ClaudeState {
     return this.tabManager.getClaudeState(itemId);
+  }
+
+  private detachSettingsListener(): void {
+    window.removeEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
+  }
+
+  private isDebugApiEnabled(): boolean {
+    return this.settings["core.exposeDebugApi"] === true;
+  }
+
+  private canExposeDebugApi(): boolean {
+    return !this.isDisposed && this.isDebugApiEnabled();
+  }
+
+  private clearDebugGlobal(): void {
+    debugApiOwners.delete(this);
+    const currentOwner = (window.__workTerminalDebug as OwnedWorkTerminalDebugApi | undefined)?.[
+      DEBUG_API_OWNER
+    ];
+    if (currentOwner !== this) {
+      return;
+    }
+
+    const replacementOwner = Array.from(debugApiOwners).find((owner) => owner.canExposeDebugApi());
+    if (replacementOwner) {
+      window.__workTerminalDebug = replacementOwner.buildDebugApi();
+      return;
+    }
+
+    delete window.__workTerminalDebug;
+  }
+
+  private refreshDebugGlobal(): void {
+    if (!this.canExposeDebugApi()) {
+      this.clearDebugGlobal();
+      return;
+    }
+
+    debugApiOwners.add(this);
+    window.__workTerminalDebug = this.buildDebugApi();
+  }
+
+  private buildDebugSnapshot(): WorkTerminalDebugSnapshot {
+    return {
+      version: 1,
+      activeItemId: this.tabManager.getActiveItemId(),
+      activeTabIndex: this.tabManager.getActiveTabIndex(),
+      activeTabs: this.getAllActiveTabs(),
+      activeSessionIds: this.getActiveSessionIds(),
+      persistedSessions: [...this.persistedSessions],
+      hasHotReloadStore: SessionStore.isReload(),
+    };
+  }
+
+  private buildRevokedDebugSnapshot(): WorkTerminalDebugSnapshot {
+    return {
+      version: 1,
+      activeItemId: null,
+      activeTabIndex: 0,
+      activeTabs: [],
+      activeSessionIds: [],
+      persistedSessions: [],
+      hasHotReloadStore: false,
+    };
+  }
+
+  private buildDebugApi(): OwnedWorkTerminalDebugApi {
+    const thisView = this;
+    const getSnapshot = () =>
+      thisView.canExposeDebugApi()
+        ? thisView.buildDebugSnapshot()
+        : thisView.buildRevokedDebugSnapshot();
+    return {
+      [DEBUG_API_OWNER]: thisView,
+      get version() {
+        return 1 as const;
+      },
+      get activeItemId() {
+        return getSnapshot().activeItemId;
+      },
+      get activeTabIndex() {
+        return getSnapshot().activeTabIndex;
+      },
+      get activeTabs() {
+        return getSnapshot().activeTabs;
+      },
+      get activeSessionIds() {
+        return getSnapshot().activeSessionIds;
+      },
+      get persistedSessions() {
+        return getSnapshot().persistedSessions;
+      },
+      get hasHotReloadStore() {
+        return getSnapshot().hasHotReloadStore;
+      },
+      getSnapshot,
+      getAllActiveTabs: () => getSnapshot().activeTabs,
+      findTabsByLabel: (label: string) =>
+        thisView.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
+      getActiveSessionIds: () => getSnapshot().activeSessionIds,
+      getPersistedSessions: (itemId?: string) =>
+        thisView.canExposeDebugApi()
+          ? itemId
+            ? this.getPersistedSessions(itemId)
+            : [...this.persistedSessions]
+          : [],
+    };
   }
 }
