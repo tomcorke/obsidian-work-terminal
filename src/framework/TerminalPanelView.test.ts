@@ -13,6 +13,7 @@ const mockState = vi.hoisted(() => ({
   activeSessions: new Map<string, Array<{ sessionType: string }>>(),
   activeTabs: [] as ActiveTabInfo[],
   activeItemId: null as string | null,
+  tabsByItem: new Map<string, any[]>(),
   activeTabIndex: 0,
   persistedSessions: [] as PersistedSession[],
   menuTitles: [] as string[],
@@ -156,8 +157,8 @@ vi.mock("../core/terminal/TabManager", () => ({
       return mockState.activeItemId;
     }
 
-    getTabs() {
-      return [];
+    getTabs(itemId?: string) {
+      return mockState.tabsByItem.get(itemId || mockState.activeItemId || "") || [];
     }
 
     getActiveTabIndex() {
@@ -176,7 +177,9 @@ vi.mock("../core/terminal/TabManager", () => ({
       return {} as any;
     }
 
-    setActiveItem(_itemId: string | null) {}
+    setActiveItem(itemId: string | null) {
+      mockState.activeItemId = itemId;
+    }
 
     getSessionItemIds() {
       return [];
@@ -216,7 +219,10 @@ vi.mock("../core/terminal/TabManager", () => ({
       mockState.tabManagerCalls.push("closeTabInstance");
     }
 
-    switchToTab(_index: number) {}
+    switchToTab(index: number) {
+      mockState.activeTabIndex = index;
+      mockState.tabManagerCalls.push(`switchToTab:${index}`);
+    }
   },
 }));
 
@@ -378,6 +384,7 @@ describe("TerminalPanelView hook warning", () => {
     mockState.activeSessions = new Map();
     mockState.activeTabs = [];
     mockState.activeItemId = null;
+    mockState.tabsByItem = new Map();
     mockState.activeTabIndex = 0;
     mockState.persistedSessions = [];
     mockState.menuTitles = [];
@@ -926,6 +933,49 @@ describe("TerminalPanelView hook warning", () => {
       ["/bin/echo", "--resume", "session-456"],
       "session-456",
     ]);
+  });
+
+  it("keeps tab clicks working after rename mode is torn down by a task switch", async () => {
+    mockState.tabsByItem = new Map([
+      [
+        "task-1",
+        [
+          {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            claudeState: "inactive",
+          },
+        ],
+      ],
+      [
+        "task-2",
+        [
+          {
+            label: "Claude",
+            sessionType: "claude",
+            isResumableAgent: true,
+            claudeState: "inactive",
+          },
+        ],
+      ],
+    ]);
+
+    const { panelEl, view } = createView();
+    await flushAsync();
+
+    view.setActiveItem("task-1");
+    const firstLabel = panelEl.querySelector(".wt-tab-label") as HTMLElement;
+    firstLabel.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+    expect(panelEl.querySelector(".wt-tab-rename-input")).not.toBeNull();
+
+    view.setActiveItem("task-2");
+    expect(panelEl.querySelector(".wt-tab-rename-input")).toBeNull();
+
+    const secondTab = panelEl.querySelector(".wt-tab") as HTMLElement;
+    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(mockState.tabManagerCalls).toContain("switchToTab:0");
   });
 
   it("restarts tabs against the tab item before falling back to the active item", async () => {
