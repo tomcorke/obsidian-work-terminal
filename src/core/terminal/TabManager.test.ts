@@ -207,7 +207,7 @@ describe("TabManager - moveTabToIndex", () => {
     const mgr = makeTabManagerWithSessions("item-1", tabs);
     (mgr as any).activeTabIndex = 0;
 
-    // Move tab[0] to index 3 - should end up at position 3
+    // Move tab[0] to pre-removal index 3 - ends up at position 2 (forward move adjusts by -1)
     const tabToMove = tabs[0];
     mgr.moveTabToIndex("item-1", tabToMove as any, 3);
 

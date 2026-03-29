@@ -260,6 +260,11 @@ export class TabManager {
   /**
    * Move a tab from its current position to a target index within the same item.
    * Used by restart to place the replacement tab where the old one was.
+   *
+   * Note: targetIndex refers to the position in the original array before the
+   * tab is removed. For forward moves (where currentIndex < targetIndex), the
+   * tab's final position will be targetIndex - 1, because removing the tab
+   * first shifts subsequent indices down by one.
    */
   moveTabToIndex(itemId: string, tab: TerminalTab, targetIndex: number): void {
     const tabs = this.sessions.get(itemId);
