@@ -58,7 +58,7 @@
 | TM-02 | Tab drag-and-drop reorder | Drag a tab to a new position | Accent border drop indicator shows during drag. Tab moves to new position. Active tab follows the moved tab. | | |
 | TM-03 | Tab order persistence | Reorder tabs, reload plugin (hot-reload) | Tab order preserved after reload. | | |
 | TM-04 | Tab context menu: Rename | Right-click tab > Rename | Enters inline edit mode on the tab label. | | |
-| TM-05 | Tab context menu: Restart Task Agent | Right-click a Claude tab > Restart Task Agent | Available for all Claude sessions (identified by `isClaudeSession` flag, not label). Restarts the session. | | |
+| TM-05 | Tab context menu: Restart Task Agent | Right-click a Claude tab > Restart Task Agent | Available for all Claude sessions (identified by `isClaudeSession` flag, not label). Restarts by resuming the existing Claude session ID when available, while keeping a live replacement tab visible during the swap. | | |
 | TM-06 | Tab context menu: Move to Task | Right-click tab > Move to Task | Shows submenu grouped by state headers (Priority, Active, To Do). Excludes archived tasks. Moving a tab re-keys it to the target task. | | |
 | TM-07 | Remember active tab per task | Open 3 tabs on Task A (select tab 2). Switch to Task B. Switch back to Task A. | Tab 2 is active (remembered per task path). | | |
 | TM-08 | Active tab memory on reload | Select tab 2, hot-reload plugin | Tab 2 restored as active (plugin reload recovery takes precedence). | | |

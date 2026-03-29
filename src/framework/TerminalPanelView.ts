@@ -473,8 +473,7 @@ export class TerminalPanelView {
     if (isClaudeSession(tab.sessionType)) {
       menu.addItem((item) => {
         item.setTitle("Restart").onClick(() => {
-          this.tabManager.closeTab(index);
-          this.launchAction("Claude", () => this.spawnClaude());
+          this.launchAction("Claude restart", () => this.restartClaudeTab(tab, index));
         });
       });
     }
@@ -596,64 +595,151 @@ export class TerminalPanelView {
   }
 
   async resumeSession(persisted: PersistedSession, itemId?: string): Promise<void> {
-    const fresh = await this.loadFreshSettings();
     const targetItemId = itemId || this.tabManager.getActiveItemId();
     if (!targetItemId) return;
+    const fresh = await this.loadFreshSettings();
+    const tab = this.createResumedTab({
+      targetItemId,
+      sessionType: persisted.sessionType,
+      label: persisted.label,
+      sessionId: persisted.claudeSessionId,
+      freshSettings: fresh,
+    });
+
+    if (!tab) return;
+
+    // 5s grace period: if process exits quickly, keep persisted entry for retry
+    const spawnTime = Date.now();
+    const origExit = tab.onProcessExit;
+    tab.onProcessExit = (code, signal) => {
+      const lived = Date.now() - spawnTime;
+      if (lived < 5000) {
+        // Failed resume - don't remove persisted entry
+        console.log("[work-terminal] Resume failed (exited in", lived, "ms), keeping for retry");
+      } else {
+        // Successful resume - remove from persisted list and sync to disk
+        this.persistedSessions = this.persistedSessions.filter(
+          (s) => s.claudeSessionId !== persisted.claudeSessionId,
+        );
+        this.persistSessions().catch(() => {});
+      }
+      origExit?.(code, signal);
+    };
+
+    this.renderTabBar();
+  }
+
+  private createResumedTab(options: {
+    targetItemId: string;
+    sessionType: PersistedSession["sessionType"];
+    label: string;
+    sessionId: string;
+    freshSettings: Record<string, unknown>;
+    cwd?: string;
+    resolvedCommand?: string;
+    extraArgs?: string[];
+  }): TerminalTab | null {
     const isCopilot =
-      persisted.sessionType === "copilot" || persisted.sessionType === "copilot-with-context";
-    const command = isCopilot
-      ? this.getStringSetting(fresh, "core.copilotCommand", "copilot")
-      : this.getStringSetting(fresh, "core.claudeCommand", "claude");
-    const resolved = resolveCommand(command);
-    const args = isCopilot
-      ? [`--resume=${persisted.claudeSessionId}`]
-      : ["--resume", persisted.claudeSessionId];
-    const extraArgs = isCopilot
-      ? this.getStringSetting(fresh, "core.copilotExtraArgs", "")
-      : this.getStringSetting(fresh, "core.claudeExtraArgs", "");
+      options.sessionType === "copilot" || options.sessionType === "copilot-with-context";
+    const command =
+      options.resolvedCommand ||
+      resolveCommand(
+        isCopilot
+          ? this.getStringSetting(options.freshSettings, "core.copilotCommand", "copilot")
+          : this.getStringSetting(options.freshSettings, "core.claudeCommand", "claude"),
+      );
+    const args = isCopilot ? [`--resume=${options.sessionId}`] : ["--resume", options.sessionId];
+    const extraArgs =
+      options.extraArgs ||
+      (
+        isCopilot
+          ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
+          : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "")
+      )
+        .split(/\s+/)
+        .filter(Boolean);
 
     if (extraArgs) {
-      args.unshift(...String(extraArgs).split(/\s+/).filter(Boolean));
+      args.unshift(...extraArgs);
     }
 
-    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    const cwd =
+      options.cwd ||
+      expandTilde(this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"));
     const tab = this.tabManager.createTabForItem(
-      targetItemId,
-      resolved,
+      options.targetItemId,
+      command,
       cwd,
-      persisted.label,
-      persisted.sessionType,
+      options.label,
+      options.sessionType,
       undefined,
-      [resolved, ...args],
-      persisted.claudeSessionId,
+      [command, ...args],
+      options.sessionId,
     );
 
-    // Wire adapter's session label transform hook
     if (tab && this.adapter.transformSessionLabel) {
       tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
     }
 
-    // 5s grace period: if process exits quickly, keep persisted entry for retry
-    if (tab) {
-      const spawnTime = Date.now();
-      const origExit = tab.onProcessExit;
-      tab.onProcessExit = (code, signal) => {
-        const lived = Date.now() - spawnTime;
-        if (lived < 5000) {
-          // Failed resume - don't remove persisted entry
-          console.log("[work-terminal] Resume failed (exited in", lived, "ms), keeping for retry");
-        } else {
-          // Successful resume - remove from persisted list and sync to disk
-          this.persistedSessions = this.persistedSessions.filter(
-            (s) => s.claudeSessionId !== persisted.claudeSessionId,
-          );
-          this.persistSessions().catch(() => {});
-        }
-        origExit?.(code, signal);
-      };
+    return tab;
+  }
+
+  private async restartClaudeTab(tab: TerminalTab, _index: number): Promise<void> {
+    const targetItemId = this.tabManager.getActiveItemId();
+    if (!targetItemId) return;
+
+    const fresh = await this.loadFreshSettings();
+    const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    let replacement: TerminalTab | null;
+    if (tab.claudeSessionId) {
+      replacement = this.createResumedTab({
+        targetItemId,
+        sessionType: tab.sessionType,
+        label: tab.label,
+        sessionId: tab.claudeSessionId,
+        freshSettings: fresh,
+        cwd: tab.launchCommandArgs?.length ? tab.launchCwd : fallbackCwd,
+        resolvedCommand:
+          tab.launchCommandArgs?.[0] ||
+          resolveCommand(this.getStringSetting(fresh, "core.claudeCommand", "claude")),
+        extraArgs: this.extractResumeExtraArgs(tab),
+      });
+    } else if (tab.launchCommandArgs?.length) {
+      replacement = this.tabManager.createTabForItem(
+        targetItemId,
+        tab.launchCommandArgs[0],
+        tab.launchCwd,
+        tab.label,
+        tab.sessionType,
+        undefined,
+        tab.launchCommandArgs,
+        null,
+      );
+    } else {
+      replacement = await this.spawnClaudeSession({
+        sessionType: tab.sessionType === "claude-with-context" ? "claude-with-context" : "claude",
+        cwd: fallbackCwd,
+        label: tab.label,
+        freshSettings: fresh,
+      });
     }
 
-    this.renderTabBar();
+    if (!replacement) return;
+    this.tabManager.closeTabInstance(targetItemId, tab);
+  }
+
+  private extractResumeExtraArgs(tab: TerminalTab): string[] {
+    if (!tab.launchCommandArgs?.length) {
+      return [];
+    }
+    const args = tab.launchCommandArgs?.slice(1) || [];
+    const sessionArgIndex = args.findIndex(
+      (arg) => arg === "--session-id" || arg === "--resume" || arg.startsWith("--resume="),
+    );
+    if (sessionArgIndex === -1) {
+      return args;
+    }
+    return args.slice(0, sessionArgIndex);
   }
 
   // ---------------------------------------------------------------------------
@@ -813,19 +899,19 @@ export class TerminalPanelView {
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
-  }): Promise<void> {
+  }): Promise<TerminalTab | null> {
     let prompt = options.prompt;
     if (options.sessionType === "claude-with-context" && !prompt) {
       const item = this.getActiveItem();
       if (!item) {
         new Notice(`Select a ${this.adapter.config.itemName} first to launch Claude with context`);
-        return;
+        return null;
       }
       const fresh = options.freshSettings ?? (await this.loadFreshSettings());
       prompt = await this.getClaudeContextPrompt(item, fresh);
       if (!prompt) {
         new Notice("Set 'Context prompt template' in settings to use contextual sessions");
-        return;
+        return null;
       }
       options.freshSettings = fresh;
     }
@@ -856,6 +942,7 @@ export class TerminalPanelView {
       tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
     }
     this.renderTabBar();
+    return tab;
   }
 
   private async spawnCopilotSession(options: {

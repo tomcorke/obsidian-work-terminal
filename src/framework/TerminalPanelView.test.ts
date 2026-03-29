@@ -9,8 +9,10 @@ const mockState = vi.hoisted(() => ({
   activeItemId: null as string | null,
   persistedSessions: [] as PersistedSession[],
   menuTitles: [] as string[],
+  menuActions: new Map<string, () => void>(),
   notices: [] as string[],
   latestCreateTabArgs: null as unknown[] | null,
+  tabManagerCalls: [] as string[],
   hookStatus: {
     scriptExists: false,
     hooksConfigured: false,
@@ -28,12 +30,17 @@ vi.mock("obsidian", () => ({
   Menu: class {
     addSeparator() {}
     addItem(callback: (item: { setTitle: (title: string) => any; onClick: () => any }) => void) {
+      let currentTitle = "";
       callback({
         setTitle(title: string) {
+          currentTitle = title;
           mockState.menuTitles.push(title);
           return this;
         },
-        onClick() {
+        onClick(handler: () => void) {
+          if (currentTitle) {
+            mockState.menuActions.set(currentTitle, handler);
+          }
           return this;
         },
       });
@@ -114,12 +121,14 @@ vi.mock("../core/terminal/TabManager", () => ({
 
     createTab(...args: unknown[]) {
       mockState.latestCreateTabArgs = args;
-      return null;
+      mockState.tabManagerCalls.push("createTab");
+      return {} as any;
     }
 
     createTabForItem(...args: unknown[]) {
       mockState.latestCreateTabArgs = args;
-      return null;
+      mockState.tabManagerCalls.push("createTabForItem");
+      return {} as any;
     }
 
     setActiveItem(_itemId: string | null) {}
@@ -134,7 +143,13 @@ vi.mock("../core/terminal/TabManager", () => ({
 
     closeAllSessions(_itemId: string) {}
 
-    closeTab(_index: number) {}
+    closeTab(_index: number) {
+      mockState.tabManagerCalls.push("closeTab");
+    }
+
+    closeTabInstance(_itemId: string, _tab: unknown) {
+      mockState.tabManagerCalls.push("closeTabInstance");
+    }
 
     switchToTab(_index: number) {}
   },
@@ -243,7 +258,7 @@ function createView(
     panelEl,
     terminalWrapperEl,
     plugin as any,
-    { config: { itemName: "task" } } as any,
+    { config: { itemName: "task", columns: [] } } as any,
     { "core.defaultTerminalCwd": "~" },
     {} as any,
     vi.fn(),
@@ -292,8 +307,10 @@ describe("TerminalPanelView hook warning", () => {
     mockState.activeItemId = null;
     mockState.persistedSessions = [];
     mockState.menuTitles = [];
+    mockState.menuActions = new Map();
     mockState.notices = [];
     mockState.latestCreateTabArgs = null;
+    mockState.tabManagerCalls = [];
     mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
     mockState.latestTabManager = null;
     mockState.stopPeriodicPersist.mockClear();
@@ -415,6 +432,119 @@ describe("TerminalPanelView hook warning", () => {
     );
 
     expect(mockState.menuTitles).toContain("Restart");
+  });
+
+  it("restarts Claude tabs by creating a resumed replacement before closing the old tab", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.claudeExtraArgs": "--dangerously-skip-permissions",
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude",
+        label: "Claude",
+        claudeSessionId: "session-123",
+        launchShell: "/bin/echo",
+        launchCwd: expandTilde("~/resume"),
+        launchCommandArgs: ["/bin/echo", "--dangerously-skip-permissions", "--session-id", "old-id"],
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    mockState.menuActions.get("Restart")?.();
+    await flushAsync();
+
+    expect(mockState.tabManagerCalls).toEqual(["createTabForItem", "closeTabInstance"]);
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "task-1",
+      "/bin/echo",
+      expandTilde("~/resume"),
+      "Claude",
+      "claude",
+      undefined,
+      ["/bin/echo", "--dangerously-skip-permissions", "--resume", "session-123"],
+      "session-123",
+    ]);
+  });
+
+  it("preserves Claude-with-context when restart falls back to a fresh launch", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/fresh",
+      "core.additionalAgentContext": "Prompt for $title",
+    });
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude-with-context",
+        label: "Claude (ctx)",
+        claudeSessionId: null,
+        launchShell: "/bin/echo",
+        launchCwd: expandTilde("~/fresh"),
+        launchCommandArgs: ["/bin/echo", "--session-id", "old-id", "Prompt for Task One"],
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    mockState.menuActions.get("Restart")?.();
+    await flushAsync();
+
+    expect(mockState.tabManagerCalls).toEqual(["createTabForItem", "closeTabInstance"]);
+    expect(mockState.latestCreateTabArgs?.[0]).toBe("task-1");
+    expect(mockState.latestCreateTabArgs?.[1]).toBe("/bin/echo");
+    expect(mockState.latestCreateTabArgs?.[2]).toBe(expandTilde("~/fresh"));
+    expect(mockState.latestCreateTabArgs?.[3]).toBe("Claude (ctx)");
+    expect(mockState.latestCreateTabArgs?.[4]).toBe("claude-with-context");
+  });
+
+  it("falls back to fresh settings for restart when recovered tabs lack launch metadata", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/fallback",
+    });
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude",
+        label: "Recovered Claude",
+        claudeSessionId: "session-456",
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    mockState.menuActions.get("Restart")?.();
+    await flushAsync();
+
+    expect(mockState.tabManagerCalls).toEqual(["createTabForItem", "closeTabInstance"]);
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "task-1",
+      "/bin/echo",
+      expandTilde("~/fallback"),
+      "Recovered Claude",
+      "claude",
+      undefined,
+      ["/bin/echo", "--resume", "session-456"],
+      "session-456",
+    ]);
   });
 
   it("shows a notice when a spawn button launch rejects", async () => {

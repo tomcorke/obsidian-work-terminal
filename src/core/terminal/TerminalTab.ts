@@ -542,6 +542,18 @@ export class TerminalTab {
     return !this.containerEl.hasClass("hidden");
   }
 
+  get launchShell(): string {
+    return this.shell;
+  }
+
+  get launchCwd(): string {
+    return this.cwd;
+  }
+
+  get launchCommandArgs(): string[] | undefined {
+    return this.commandArgs ? [...this.commandArgs] : undefined;
+  }
+
   show(): void {
     this.containerEl.removeClass("hidden");
     // Double-rAF: first frame makes the element visible and triggers layout,
@@ -748,6 +760,9 @@ export class TerminalTab {
       label: this.label,
       claudeSessionId: this.claudeSessionId,
       sessionType: this.sessionType,
+      shell: this.shell,
+      cwd: this.cwd,
+      commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
       terminal: this.terminal,
       fitAddon: this.fitAddon!,
       searchAddon: this.searchAddon!,
@@ -778,6 +793,9 @@ export class TerminalTab {
     tab.taskPath = stored.taskPath;
     tab.claudeSessionId = stored.claudeSessionId || null;
     tab.sessionType = stored.sessionType;
+    tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
+    tab.cwd = stored.cwd || process.env.HOME || "~";
+    tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
     tab.terminal = stored.terminal;
     tab.fitAddon = stored.fitAddon;
     tab.searchAddon = stored.searchAddon;

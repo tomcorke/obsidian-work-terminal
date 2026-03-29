@@ -28,6 +28,9 @@ export interface StoredSession {
   label: string;
   claudeSessionId: string | null;
   sessionType: SessionType;
+  shell?: string;
+  cwd?: string;
+  commandArgs?: string[];
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
