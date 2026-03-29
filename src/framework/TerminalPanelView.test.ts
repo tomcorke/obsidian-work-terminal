@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
+import * as path from "node:path";
 import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
 import { SessionPersistence } from "../core/session/SessionPersistence";
-import { expandTilde } from "../core/utils";
+import type { WorkItemPromptBuilder } from "../core/interfaces";
+import { electronRequire, expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
 
 const createdViews: TerminalPanelView[] = [];
@@ -293,6 +295,11 @@ function createPlugin(settings: Record<string, unknown> = {}) {
         open: vi.fn(),
         openTabById: vi.fn(),
       },
+      vault: {
+        adapter: {
+          basePath: "/vault",
+        },
+      },
     },
     manifest: {
       id: "work-terminal",
@@ -303,6 +310,7 @@ function createPlugin(settings: Record<string, unknown> = {}) {
 function createView(
   settings: Record<string, unknown> = {},
   pluginOverrides: Partial<ReturnType<typeof createPlugin>> = {},
+  promptBuilder: WorkItemPromptBuilder = { buildPrompt: () => "" },
 ) {
   const panelEl = document.createElement("div") as HTMLElement & {
     createDiv: HTMLElement["createDiv"];
@@ -323,7 +331,7 @@ function createView(
     plugin as any,
     { config: { itemName: "task", columns: [] } } as any,
     { "core.defaultTerminalCwd": "~", ...settings },
-    {} as any,
+    promptBuilder,
     vi.fn(),
     vi.fn(),
   );
@@ -1008,6 +1016,112 @@ describe("TerminalPanelView hook warning", () => {
     );
   });
 
+  it("uses the adapter prompt builder for Claude-with-context launches without a template", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
+    };
+    const { view } = createView(
+      {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+      "/vault/Tasks/task-1.md",
+    );
+    expect(mockState.latestCreateTabArgs).not.toBeNull();
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt for /vault/Tasks/task-1.md",
+    ]);
+  });
+
+  it("appends the extra context template after the adapter prompt builder output", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "Template for $title in $state",
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt\n\nTemplate for Task One in doing",
+    ]);
+  });
+
+  it("expands template $filePath with the resolved absolute work item path", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "Template path: $filePath",
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt\n\nTemplate path: /vault/Tasks/task-1.md",
+    ]);
+  });
+
   it("reuses one settings snapshot for custom contextual Claude sessions", async () => {
     const loadData = vi.fn(async () => ({ settings: {} }));
     const { view, plugin } = createView({}, { loadData });
@@ -1095,6 +1209,82 @@ describe("TerminalPanelView hook warning", () => {
       prompt: "Prompt A for Task One",
       freshSettings: fresh,
     });
+  });
+
+  it("keeps Windows absolute vault paths intact for context prompts", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Path: ${fullPath}`),
+    };
+    const { view } = createView(
+      {},
+      {
+        app: {
+          setting: {
+            open: vi.fn(),
+            openTabById: vi.fn(),
+          },
+          vault: {
+            adapter: {
+              basePath: "C:\\Users\\me\\Vault",
+            },
+          },
+        },
+      },
+      promptBuilder,
+    );
+    await flushAsync();
+    vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
+
+    const prompt = await (view as any).getClaudeContextPrompt({
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks\\task-1.md",
+    });
+
+    expect(prompt).toBe("Path: C:\\Users\\me\\Vault\\Tasks\\task-1.md");
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+      "C:\\Users\\me\\Vault\\Tasks\\task-1.md",
+    );
+  });
+
+  it("keeps UNC vault paths intact for context prompts", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Path: ${fullPath}`),
+    };
+    const { view } = createView(
+      {},
+      {
+        app: {
+          setting: {
+            open: vi.fn(),
+            openTabById: vi.fn(),
+          },
+          vault: {
+            adapter: {
+              basePath: "\\\\server\\share\\Vault",
+            },
+          },
+        },
+      },
+      promptBuilder,
+    );
+    await flushAsync();
+    vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
+
+    const prompt = await (view as any).getClaudeContextPrompt({
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks\\task-1.md",
+    });
+
+    expect(prompt).toBe("Path: \\\\server\\share\\Vault\\Tasks\\task-1.md");
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-1" }),
+      "\\\\server\\share\\Vault\\Tasks\\task-1.md",
+    );
   });
 
   it("renders a Jira link badge ahead of the selected title and opens it externally", async () => {

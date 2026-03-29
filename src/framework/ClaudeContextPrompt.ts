@@ -3,6 +3,7 @@ import type { WorkItem } from "../core/interfaces";
 export function buildClaudeContextPrompt(
   item: WorkItem,
   settings: Record<string, unknown>,
+  fullPath?: string,
 ): string | null {
   const template = settings["core.additionalAgentContext"];
   if (typeof template !== "string" || template === "") {
@@ -12,6 +13,6 @@ export function buildClaudeContextPrompt(
   return template
     .replace(/\$title/g, item.title)
     .replace(/\$state/g, item.state)
-    .replace(/\$filePath/g, item.path)
+    .replace(/\$filePath/g, fullPath ?? item.path)
     .replace(/\$id/g, item.id);
 }

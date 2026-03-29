@@ -3,7 +3,7 @@
  * settings with adapter-provided settings via namespaced keys.
  *
  * Core settings: core.claudeCommand/core.copilotCommand/core.strandsCommand, their default args,
- *                core.additionalAgentContext (ctx template),
+ *                core.additionalAgentContext (extra ctx template),
  *                core.defaultShell, core.defaultTerminalCwd
  * Adapter settings: adapter.* (from adapter.config.settingsSchema)
  */
@@ -100,8 +100,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     this.addCoreTextArea(
       containerEl,
       "core.additionalAgentContext",
-      "Context prompt template",
-      "Template for contextual Claude, Copilot, and Strands sessions. Placeholders: $title, $state, $filePath, $id. When empty, contextual launches show a notice instead of spawning.",
+      "Additional context template",
+      "Optional extra context appended after the adapter-built prompt for contextual Claude, Copilot, and Strands sessions. Placeholders: $title, $state, $filePath, $id.",
     );
     this.addCoreSetting(
       containerEl,
