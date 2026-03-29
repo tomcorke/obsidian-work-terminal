@@ -268,15 +268,25 @@ export class TabManager {
     if (currentIndex === -1) return;
     if (currentIndex === targetIndex) return;
 
-    tabs.splice(currentIndex, 1);
-    tabs.splice(targetIndex, 0, tab);
-
+    // Remember which tab object is currently active so we can preserve it
     const isActiveItem = this.activeItemId === itemId;
-    if (isActiveItem) {
-      this.activeTabIndex = tabs.indexOf(tab);
+    const activeTabObj = isActiveItem ? tabs[this.activeTabIndex] : null;
+
+    tabs.splice(currentIndex, 1);
+
+    // After removing at currentIndex, indices shift down for forward moves
+    let insertAt = targetIndex;
+    if (currentIndex < targetIndex) insertAt--;
+
+    tabs.splice(insertAt, 0, tab);
+
+    // Restore activeTabIndex to follow the previously active tab
+    if (isActiveItem && activeTabObj) {
+      this.activeTabIndex = tabs.indexOf(activeTabObj);
     }
 
     this.onSessionChange?.();
+    this.onPersistRequest?.();
   }
 
   /** Get/set the drag source index for tab reordering UI. */
