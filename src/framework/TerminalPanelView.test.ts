@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
+import { SessionPersistence } from "../core/session/SessionPersistence";
 import { expandTilde } from "../core/utils";
 import { TerminalPanelView } from "./TerminalPanelView";
+
+const createdViews: TerminalPanelView[] = [];
 
 const mockState = vi.hoisted(() => ({
   activeSessions: new Map<string, Array<{ sessionType: string }>>(),
   activeTabs: [] as ActiveTabInfo[],
   activeItemId: null as string | null,
+  activeTabIndex: 0,
   persistedSessions: [] as PersistedSession[],
   menuTitles: [] as string[],
   menuActions: new Map<string, () => void>(),
@@ -46,6 +50,17 @@ vi.mock("../core/utils", async () => {
 
 vi.mock("obsidian", () => ({
   App: class {},
+  PluginSettingTab: class {
+    app: unknown;
+    plugin: unknown;
+    containerEl: HTMLElement;
+
+    constructor(app: unknown, plugin: unknown) {
+      this.app = app;
+      this.plugin = plugin;
+      this.containerEl = document.createElement("div");
+    }
+  },
   Menu: class {
     addSeparator() {}
     addItem(
@@ -144,7 +159,7 @@ vi.mock("../core/terminal/TabManager", () => ({
     }
 
     getActiveTabIndex() {
-      return 0;
+      return mockState.activeTabIndex;
     }
 
     createTab(...args: unknown[]) {
@@ -188,6 +203,8 @@ vi.mock("../core/terminal/TabManager", () => ({
     }
 
     closeAllSessions(_itemId: string) {}
+
+    disposeAll() {}
 
     closeTab(_index: number) {
       mockState.tabManagerCalls.push("closeTab");
@@ -305,11 +322,12 @@ function createView(
     terminalWrapperEl,
     plugin as any,
     { config: { itemName: "task", columns: [] } } as any,
-    { "core.defaultTerminalCwd": "~" },
+    { "core.defaultTerminalCwd": "~", ...settings },
     {} as any,
     vi.fn(),
     vi.fn(),
   );
+  createdViews.push(view);
 
   return { panelEl, plugin, view };
 }
@@ -352,6 +370,7 @@ describe("TerminalPanelView hook warning", () => {
     mockState.activeSessions = new Map();
     mockState.activeTabs = [];
     mockState.activeItemId = null;
+    mockState.activeTabIndex = 0;
     mockState.persistedSessions = [];
     mockState.menuTitles = [];
     mockState.menuActions = new Map();
@@ -365,6 +384,9 @@ describe("TerminalPanelView hook warning", () => {
   });
 
   afterEach(() => {
+    while (createdViews.length > 0) {
+      createdViews.pop()?.disposeAll();
+    }
     vi.unstubAllGlobals();
     dom.window.close();
   });
@@ -449,7 +471,14 @@ describe("TerminalPanelView hook warning", () => {
     expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
   });
 
-  it("publishes a persistent debug global with active tab discovery helpers", async () => {
+  it("keeps the debug global disabled by default", async () => {
+    createView();
+    await flushAsync();
+
+    expect(window.__workTerminalDebug).toBeUndefined();
+  });
+
+  it("publishes a debug global only when explicitly enabled", async () => {
     mockState.activeItemId = "task-2";
     mockState.activeTabs = [
       {
@@ -471,7 +500,7 @@ describe("TerminalPanelView hook warning", () => {
     ];
     mockState.persistedSessions = [makePersistedSession("copilot")];
 
-    createView();
+    createView({ "core.exposeDebugApi": true });
     await flushAsync();
 
     expect(window.__workTerminalDebug?.activeItemId).toBe("task-2");
@@ -487,8 +516,8 @@ describe("TerminalPanelView hook warning", () => {
     });
   });
 
-  it("refreshes the debug global when tab state changes", async () => {
-    createView();
+  it("keeps the debug global live as tab state changes", async () => {
+    createView({ "core.exposeDebugApi": true });
     await flushAsync();
     expect(window.__workTerminalDebug?.activeTabs).toEqual([]);
 
@@ -503,18 +532,174 @@ describe("TerminalPanelView hook warning", () => {
       },
     ];
     mockState.activeItemId = "task-9";
-    mockState.latestTabManager?.onSessionChange?.();
-    await flushAsync();
+    mockState.activeTabIndex = 2;
 
     expect(window.__workTerminalDebug?.activeItemId).toBe("task-9");
+    expect(window.__workTerminalDebug?.activeTabIndex).toBe(2);
     expect(window.__workTerminalDebug?.activeTabs).toEqual(mockState.activeTabs);
     expect(window.__workTerminalDebug?.getAllActiveTabs()).toEqual(mockState.activeTabs);
+  });
+
+  it("clears the debug global when the setting is disabled", async () => {
+    createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+
+    expect(window.__workTerminalDebug).toBeDefined();
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.defaultTerminalCwd": "~",
+          "core.exposeDebugApi": false,
+        },
+      }),
+    );
+    await flushAsync();
+
+    expect(window.__workTerminalDebug).toBeUndefined();
+  });
+
+  it("revokes captured debug references when the setting is disabled", async () => {
+    mockState.activeItemId = "task-2";
+    mockState.activeTabs = [
+      {
+        tabId: "tab-2",
+        itemId: "task-2",
+        label: "Automatic Issues",
+        sessionId: "copilot-123",
+        sessionType: "copilot",
+        isResumableAgent: true,
+      },
+    ];
+
+    createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+
+    const debugRef = window.__workTerminalDebug;
+    expect(debugRef?.activeItemId).toBe("task-2");
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.defaultTerminalCwd": "~",
+          "core.exposeDebugApi": false,
+        },
+      }),
+    );
+    await flushAsync();
+
+    mockState.activeItemId = "task-9";
+    mockState.activeTabs = [
+      {
+        tabId: "tab-9",
+        itemId: "task-9",
+        label: "Claude",
+        sessionId: "claude-9",
+        sessionType: "claude",
+        isResumableAgent: true,
+      },
+    ];
+
+    expect(debugRef?.activeItemId).toBeNull();
+    expect(debugRef?.activeTabs).toEqual([]);
+    expect(debugRef?.getSnapshot()).toMatchObject({
+      activeItemId: null,
+      activeSessionIds: [],
+      persistedSessions: [],
+    });
+  });
+
+  it("does not republish the debug global after disposal when persisted sessions finish loading", async () => {
+    let resolvePersistedSessions: ((value: PersistedSession[]) => void) | null = null;
+    vi.mocked(SessionPersistence.loadFromDisk).mockImplementationOnce(
+      () =>
+        new Promise<PersistedSession[]>((resolve) => {
+          resolvePersistedSessions = resolve;
+        }),
+    );
+
+    const { view } = createView({ "core.exposeDebugApi": true });
+    await Promise.resolve();
+
+    expect(window.__workTerminalDebug).toBeDefined();
+
+    view.disposeAll();
+    expect(window.__workTerminalDebug).toBeUndefined();
+
+    resolvePersistedSessions?.([makePersistedSession("copilot")]);
+    await flushAsync();
+
+    expect(window.__workTerminalDebug).toBeUndefined();
+  });
+
+  it("does not republish the debug global after disposal when persistence finishes", async () => {
+    let resolveSaveData: (() => void) | null = null;
+    const saveData = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSaveData = resolve;
+        }),
+    );
+
+    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
+    const persistPromise = view.persistSessions();
+    await flushAsync();
+
+    expect(saveData).toHaveBeenCalledTimes(1);
+
+    expect(window.__workTerminalDebug).toBeDefined();
+
+    view.disposeAll();
+    expect(window.__workTerminalDebug).toBeUndefined();
+
+    resolveSaveData?.();
+    await persistPromise;
+
+    expect(window.__workTerminalDebug).toBeUndefined();
+  });
+
+  it("does not republish the debug global when public updates arrive after disposal", async () => {
+    const { view } = createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+
+    expect(window.__workTerminalDebug).toBeDefined();
+
+    view.disposeAll();
+    view.setItems([
+      {
+        id: "task-1",
+        path: "Tasks/task-1.md",
+        title: "Task 1",
+        state: "todo",
+        metadata: {},
+      },
+    ] as any);
+
+    expect(window.__workTerminalDebug).toBeUndefined();
+  });
+
+  it("restores another live view's debug global when the current owner is disposed", async () => {
+    createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+    const firstDebugRef = window.__workTerminalDebug;
+
+    const { view: secondView } = createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+    const secondDebugRef = window.__workTerminalDebug;
+
+    expect(secondDebugRef).toBeDefined();
+    expect(secondDebugRef).not.toBe(firstDebugRef);
+
+    secondView.disposeAll();
+
+    expect(window.__workTerminalDebug).toBeDefined();
+    expect(window.__workTerminalDebug).not.toBe(secondDebugRef);
   });
 
   it("keeps loaded persisted sessions available after saving active sessions", async () => {
     mockState.persistedSessions = [makePersistedSession("copilot")];
 
-    const { view } = createView();
+    const { view } = createView({ "core.exposeDebugApi": true });
     await flushAsync();
 
     await view.persistSessions();
