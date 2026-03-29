@@ -8,13 +8,15 @@ const stylesPath = path.join(repoRoot, "styles.css");
 describe("tab spinner styles", () => {
   it("keeps the active tab mask opaque on hover", async () => {
     const styles = await fs.readFile(stylesPath, "utf8");
+    const hoverRule = styles.match(/\.wt-tab:hover\s*\{([\s\S]*?)\}/)?.[1];
+    const activeHoverRule = styles.match(/\.wt-tab\.wt-tab-agent-active:hover\s*\{([\s\S]*?)\}/)?.[1];
     const hoverRuleIndex = styles.indexOf(".wt-tab:hover");
     const activeHoverRuleIndex = styles.indexOf(".wt-tab.wt-tab-agent-active:hover");
 
-    expect(styles).toMatch(/\.wt-tab:hover\s*\{\s*--wt-tab-fill: var\(--background-modifier-hover\);\s*\}/);
-    expect(styles).toMatch(
-      /\.wt-tab\.wt-tab-agent-active:hover\s*\{\s*--wt-tab-fill: var\(--background-secondary\);\s*\}/,
-    );
+    expect(hoverRule).toBeDefined();
+    expect(hoverRule).toMatch(/--wt-tab-fill:\s*var\(--background-modifier-hover\);/);
+    expect(activeHoverRule).toBeDefined();
+    expect(activeHoverRule).toMatch(/--wt-tab-fill:\s*var\(--background-secondary\);/);
     expect(styles).toMatch(
       /\.wt-tab-agent-active::after\s*\{[\s\S]*background: var\(--wt-tab-fill, var\(--background-secondary\)\);/,
     );
