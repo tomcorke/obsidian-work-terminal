@@ -859,8 +859,9 @@ export class TerminalPanelView {
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
     const settings = freshSettings ?? (await this.loadFreshSettings());
-    const basePrompt = this.promptBuilder.buildPrompt(item, this.resolveWorkItemPath(item.path));
-    const templatePrompt = buildClaudeContextPrompt(item, settings);
+    const resolvedPath = this.resolveWorkItemPath(item.path);
+    const basePrompt = this.promptBuilder.buildPrompt(item, resolvedPath);
+    const templatePrompt = buildClaudeContextPrompt(item, settings, resolvedPath);
 
     if (!basePrompt && !templatePrompt) {
       return null;

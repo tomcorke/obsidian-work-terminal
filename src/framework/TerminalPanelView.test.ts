@@ -809,6 +809,40 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("expands template $filePath with the resolved absolute work item path", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "Template path: $filePath",
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt\n\nTemplate path: /vault/Tasks/task-1.md",
+    ]);
+  });
+
   it("reuses one settings snapshot for custom contextual Claude sessions", async () => {
     const loadData = vi.fn(async () => ({ settings: {} }));
     const { view, plugin } = createView({}, { loadData });

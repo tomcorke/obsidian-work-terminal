@@ -21,6 +21,18 @@ describe("buildClaudeContextPrompt", () => {
     );
   });
 
+  it("uses the resolved absolute path when provided", () => {
+    const prompt = buildClaudeContextPrompt(
+      item,
+      {
+        "core.additionalAgentContext": "Path: $filePath",
+      },
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+
+    expect(prompt).toBe("Path: /vault/2 - Areas/Tasks/priority/task.md");
+  });
+
   it("treats an explicitly cleared template as unavailable", () => {
     const prompt = buildClaudeContextPrompt(item, {
       "core.additionalAgentContext": "",
