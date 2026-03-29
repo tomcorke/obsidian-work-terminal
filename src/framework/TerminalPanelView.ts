@@ -39,6 +39,7 @@ import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/int
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
+import { RecentlyClosedStore } from "../core/session/RecentlyClosedStore";
 import {
   getDefaultSessionLabel,
   isClaudeSession,
@@ -75,6 +76,9 @@ export class TerminalPanelView {
 
   // Periodic persist stop function
   private stopPeriodicPersist: (() => void) | null = null;
+
+  // Recently closed sessions store
+  private recentlyClosedStore = new RecentlyClosedStore();
 
   // Hook warning banner element
   private hookWarningEl: HTMLElement | null = null;
@@ -127,6 +131,15 @@ export class TerminalPanelView {
     };
     this.tabManager.onPersistRequest = () => {
       this.persistSessions();
+    };
+    this.tabManager.onTabClosed = (itemId, tab) => {
+      this.recentlyClosedStore.add({
+        sessionType: tab.sessionType,
+        label: tab.label,
+        claudeSessionId: tab.claudeSessionId,
+        closedAt: Date.now(),
+        itemId,
+      });
     };
 
     // Load persisted sessions from disk
@@ -887,9 +900,69 @@ export class TerminalPanelView {
 
     const fresh = await this.loadFreshSettings();
     const initial = await this.loadCustomSessionDefaults(item.id, fresh);
-    new CustomSessionModal(this.plugin.app, initial, (config) => {
-      this.launchAction("custom session", () => this.spawnCustomSession(item, config));
-    }).open();
+    const activeIds = this.tabManager.getActiveSessionIds();
+    const closedSessions = this.recentlyClosedStore.getEntries(activeIds, 5);
+    new CustomSessionModal(
+      this.plugin.app,
+      initial,
+      (config) => {
+        this.launchAction("custom session", () => this.spawnCustomSession(item, config));
+      },
+      closedSessions,
+      (entry) => {
+        this.launchAction("restore session", () => this.restoreClosedSession(entry));
+      },
+    ).open();
+  }
+
+  private async restoreClosedSession(
+    entry: import("../core/session/RecentlyClosedStore").ClosedSessionEntry,
+  ): Promise<void> {
+    const activeItemId = this.tabManager.getActiveItemId();
+    if (!activeItemId) {
+      new Notice(`Select a ${this.adapter.config.itemName} first`);
+      return;
+    }
+
+    const fresh = await this.loadFreshSettings();
+
+    // For resumable agent sessions (Claude/Copilot) with a session ID, resume them
+    if (
+      entry.claudeSessionId &&
+      entry.sessionType !== "shell" &&
+      entry.sessionType !== "strands" &&
+      entry.sessionType !== "strands-with-context"
+    ) {
+      this.createResumedTab({
+        targetItemId: entry.itemId,
+        sessionType: entry.sessionType,
+        label: entry.label,
+        sessionId: entry.claudeSessionId,
+        freshSettings: fresh,
+      });
+      this.renderTabBar();
+      return;
+    }
+
+    // For shell sessions, spawn a fresh one with the same label
+    if (entry.sessionType === "shell") {
+      const shell = this.getStringSetting(
+        fresh,
+        "core.defaultShell",
+        process.env.SHELL || "/bin/zsh",
+      );
+      const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+      this.tabManager.createTab(shell, cwd, entry.label, "shell");
+      this.renderTabBar();
+      return;
+    }
+
+    // For strands, spawn fresh
+    await this.spawnStrandsSession({
+      sessionType: entry.sessionType as "strands" | "strands-with-context",
+      label: entry.label,
+      freshSettings: fresh,
+    });
   }
 
   private async spawnCustomSession(item: WorkItem, rawConfig: CustomSessionConfig): Promise<void> {
