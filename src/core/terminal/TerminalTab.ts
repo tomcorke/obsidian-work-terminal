@@ -28,6 +28,7 @@ type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
     _addons?: Array<{
       instance?: unknown;
+      isDisposed?: boolean;
     }>;
   };
   _linkProviderService?: {
@@ -286,6 +287,48 @@ export class TerminalTab {
         this.webglAddon = null;
       }
     }
+  }
+
+  private getTrackedWebglAddonEntry(addon: WebglAddon) {
+    return (this.terminal as TerminalWithAddonManager)._addonManager?._addons?.find(
+      (entry) => entry.instance === addon,
+    );
+  }
+
+  private hasRenderableSessionContent(): boolean {
+    if (this.process && this.process.exitCode === null && this.process.signalCode === null) {
+      return true;
+    }
+    return this._readTerminalScreen().length > 0;
+  }
+
+  private hasBlankRenderSurface(): boolean {
+    const terminalElement = (
+      this.terminal as Terminal & { element?: ParentNode | null }
+    ).element as ParentNode | null | undefined;
+    const renderRoot =
+      terminalElement && typeof terminalElement.querySelectorAll === "function"
+        ? terminalElement
+        : ((this.containerEl as ParentNode | null | undefined) ?? null);
+    if (!renderRoot || typeof renderRoot.querySelectorAll !== "function") {
+      return false;
+    }
+    return renderRoot.querySelectorAll(".xterm-screen canvas").length === 0;
+  }
+
+  private recoverBlankRendererIfNeeded(): void {
+    if (this._isDisposed || !this.isVisible || !this.webglAddon) return;
+    if (!this.hasRenderableSessionContent() || !this.hasBlankRenderSurface()) return;
+    const staleAddon = this.webglAddon;
+    const addonEntry = this.getTrackedWebglAddonEntry(staleAddon);
+    if (!addonEntry?.isDisposed) return;
+
+    console.warn("[work-terminal] Recovering blank renderer from stale disposed WebGL addon");
+    this.detachTrackedWebglAddon(staleAddon);
+    this.loadWebglAddon();
+    this.safeFit();
+    this.terminal.refresh(0, this.terminal.rows - 1);
+    this.terminal.scrollToBottom();
   }
 
   // ---------------------------------------------------------------------------
@@ -602,6 +645,10 @@ export class TerminalTab {
         this.terminal.refresh(0, this.terminal.rows - 1);
         this.terminal.scrollToBottom();
         this.terminal.focus();
+        requestAnimationFrame(() => {
+          if (this._isDisposed) return;
+          this.recoverBlankRendererIfNeeded();
+        });
       });
     });
   }
@@ -1070,10 +1117,12 @@ export class TerminalTab {
     this.fitAddon = undefined;
   }
 
-  private detachTrackedWebglAddon(): void {
-    const webglAddon = this.webglAddon;
+  private detachTrackedWebglAddon(targetAddon: WebglAddon | null = this.webglAddon): void {
+    const webglAddon = targetAddon;
     this.disposeWebglContextLossListener();
-    this.webglAddon = null;
+    if (this.webglAddon === webglAddon) {
+      this.webglAddon = null;
+    }
     if (!webglAddon) return;
 
     const addonEntries = (this.terminal as TerminalWithAddonManager)._addonManager?._addons;
