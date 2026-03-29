@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => {
   class MockWebglAddon {
     static instances: MockWebglAddon[] = [];
 
+    clearTextureAtlas = vi.fn();
     dispose = vi.fn();
     onContextLoss = vi.fn((handler: () => void) => {
       this.handlers.push(handler);
@@ -433,8 +434,8 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(webLinksAddon.dispose).toHaveBeenCalledTimes(1);
     expect(unicode11Addon.dispose).toHaveBeenCalledTimes(1);
     expect(webglAddon.dispose).toHaveBeenCalledTimes(1);
-    expect(webglAddon.onContextLoss).not.toHaveBeenCalled();
-    expect(legacyWebglListenerDispose).not.toHaveBeenCalled();
+    expect(webglAddon.onContextLoss).toHaveBeenCalledTimes(1);
+    expect(legacyWebglListenerDispose).toHaveBeenCalledTimes(1);
     expect(addonManagerDispose).toHaveBeenCalledTimes(1);
     expect(containerEl.remove).toHaveBeenCalledTimes(1);
   });
@@ -613,6 +614,57 @@ describe("TerminalTab WebGL recovery", () => {
         .webglAddon,
     ).toBeNull();
     expect(tab.stash().webglAddon).toBeNull();
+  });
+
+  it("rebinds a legacy-restored webgl addon to the new tab's context-loss handler", () => {
+    const addon = new mocks.MockWebglAddon();
+    const terminalRefresh = vi.fn();
+    const containerEl = new FakeElement() as unknown as HTMLElement;
+    const parentEl = new FakeElement() as unknown as HTMLElement;
+    const stored = {
+      id: "term-1",
+      taskPath: "task.md",
+      label: "Claude",
+      claudeSessionId: "session-1",
+      sessionType: "claude" as const,
+      terminal: {
+        focus: vi.fn(),
+        scrollToBottom: vi.fn(),
+        refresh: terminalRefresh,
+        cols: 80,
+        rows: 24,
+        _addonManager: {
+          _addons: [{ instance: addon, isDisposed: false }],
+        },
+      },
+      fitAddon: {},
+      searchAddon: {},
+      containerEl,
+      process: null,
+      webglAddon: null,
+      webglContextLossListener: null,
+      documentListeners: [],
+      resizeObserver: new MockResizeObserver(() => {}) as unknown as ResizeObserver,
+    };
+
+    const tab = TerminalTab.fromStored(stored, parentEl);
+
+    expect(
+      (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
+        .webglAddon,
+    ).toBe(addon);
+    expect(addon.onContextLoss).toHaveBeenCalledTimes(1);
+    expect(addon.getHandlerCount()).toBe(1);
+
+    addon.emitContextLoss();
+
+    expect(addon.dispose).toHaveBeenCalledTimes(1);
+    expect(
+      (tab as unknown as { webglAddon: InstanceType<typeof mocks.MockWebglAddon> | null })
+        .webglAddon,
+    ).toBeNull();
+    expect(addon.getHandlerCount()).toBe(0);
+    expect(terminalRefresh).toHaveBeenCalledWith(0, 23);
   });
 
   it("disposes a created webgl addon if terminal.loadAddon throws", () => {

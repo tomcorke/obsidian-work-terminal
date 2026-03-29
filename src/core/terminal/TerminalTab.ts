@@ -850,10 +850,11 @@ export class TerminalTab {
     // Restore the live webglAddon reference so recovered tabs still dispose it
     // correctly, then re-subscribe onContextLoss with a callback bound to the
     // new tab instance created during reload recovery.
-    if (stored.webglAddon) {
-      tab.trackWebglAddon(stored.webglAddon);
-    }
+    const restoredWebglAddon = tab.webglAddon;
     stored.webglContextLossListener?.dispose();
+    if (restoredWebglAddon) {
+      tab.trackWebglAddon(restoredWebglAddon);
+    }
     tab._documentCleanups = [];
     tab._claudeState = "inactive" as ClaudeState;
     tab._recentCleanLines = [];
