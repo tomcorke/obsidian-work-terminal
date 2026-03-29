@@ -35,6 +35,7 @@ export interface StoredSession {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
   webLinksAddon?: WebLinksAddon;
+  linkProviderDisposable?: IDisposable | null;
   unicode11Addon?: Unicode11Addon;
   webglAddon?: WebglAddon | null;
   webglContextLossListener?: IDisposable | null;
