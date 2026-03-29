@@ -48,13 +48,13 @@ def main():
             pass
 
         # If the command is already a shell, exec directly (e.g. /bin/zsh -i).
-        # Otherwise, wrap in a login shell so the full user environment (PATH,
-        # env vars from .zprofile/.zshrc) is available. This is needed because
-        # Electron's process.env.PATH is minimal and commands like `claude`
-        # live in profile-sourced dirs like ~/.local/bin.
+        # If the command is an absolute path, exec directly to avoid shell
+        # quoting issues with arguments (e.g. multi-line context prompts).
+        # The caller (ClaudeLauncher.ts) resolves commands to absolute paths.
+        # Otherwise, wrap in a login shell for the full user environment.
         shells = {"/bin/zsh", "/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/bash",
                   "zsh", "bash", "sh"}
-        if args[0] in shells:
+        if args[0] in shells or args[0].startswith("/"):
             os.execvp(args[0], args)
         else:
             shell = os.environ.get("SHELL", "/bin/zsh")
