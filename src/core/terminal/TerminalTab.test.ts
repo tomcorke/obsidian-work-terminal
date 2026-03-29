@@ -414,7 +414,9 @@ describe("TerminalTab WebGL recovery", () => {
       terminal: {
         focus: vi.fn(),
         scrollToBottom: vi.fn(),
+        refresh: vi.fn(),
         cols: 80,
+        rows: 24,
       },
       fitAddon: {},
       searchAddon: {},
@@ -471,7 +473,9 @@ describe("TerminalTab WebGL recovery", () => {
       terminal: {
         focus: vi.fn(),
         scrollToBottom: vi.fn(),
+        refresh: vi.fn(),
         cols: 80,
+        rows: 24,
       },
       fitAddon: {},
       searchAddon: {},

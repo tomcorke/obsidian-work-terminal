@@ -260,6 +260,13 @@ export class TerminalTab {
       console.warn("[work-terminal] WebGL context lost, falling back to canvas renderer");
       addon.dispose();
       this.webglAddon = null;
+      // After disposing the WebGL addon, xterm falls back to its canvas
+      // renderer. Force a refresh so the canvas renderer paints the buffer
+      // content immediately, preventing a blank terminal.
+      requestAnimationFrame(() => {
+        if (this._isDisposed) return;
+        this.terminal.refresh(0, this.terminal.rows - 1);
+      });
     });
   }
 
@@ -585,6 +592,11 @@ export class TerminalTab {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         this.safeFit();
+        // Force a full re-render of all rows. If the renderer changed while
+        // the tab was hidden (e.g. WebGL context loss fell back to canvas),
+        // xterm may not have painted anything. Refreshing ensures the canvas
+        // renderer draws the buffer content.
+        this.terminal.refresh(0, this.terminal.rows - 1);
         this.terminal.scrollToBottom();
         this.terminal.focus();
       });
