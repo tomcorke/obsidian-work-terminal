@@ -16,7 +16,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 npm install
 npm run build        # production build
 npm run dev          # watch mode with CDP hot-reload
-npx vitest run       # 102 tests
+npx vitest run       # 104 tests
 npm run obsidian:test:init
 npm run obsidian:test:open
 ```

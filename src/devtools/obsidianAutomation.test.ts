@@ -2,7 +2,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const fixturesRoot = path.join(repoRoot, ".claude", "test-fixtures", "obsidian-automation");
@@ -10,6 +10,7 @@ const fixturesRoot = path.join(repoRoot, ".claude", "test-fixtures", "obsidian-a
 const automation = await import("../../scripts/lib/obsidianAutomation.js");
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(fixturesRoot, { recursive: true, force: true });
 });
 
@@ -300,5 +301,60 @@ describe("obsidian automation helpers", () => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
     }
+  });
+
+  it("open-view succeeds only after the work terminal leaf is present", async () => {
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(1);
+    const close = vi.fn();
+    vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
+      evaluate,
+      close,
+    });
+
+    await expect(
+      automation.runCdpCommand({
+        command: "open-view",
+        host: "127.0.0.1",
+        port: 9222,
+        timeoutMs: 1500,
+      }),
+    ).resolves.toBe("Work Terminal view opened");
+
+    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(evaluate).toHaveBeenNthCalledWith(
+      1,
+      "app.commands.executeCommandById(\"work-terminal:open-work-terminal\")",
+    );
+    expect(evaluate.mock.calls[1][0]).toContain("app?.workspace?.getLeavesOfType?.(viewType) ?? []");
+    expect(evaluate.mock.calls[1][0]).toContain('const viewType = "work-terminal-view"');
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("open-view fails when the work terminal leaf never appears", async () => {
+    const timeoutError = new Error("Timed out waiting for workspace leaf: work-terminal-view");
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(timeoutError);
+    const close = vi.fn();
+    vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
+      evaluate,
+      close,
+    });
+
+    await expect(
+      automation.runCdpCommand({
+        command: "open-view",
+        host: "127.0.0.1",
+        port: 9222,
+        timeoutMs: 1500,
+      }),
+    ).rejects.toThrow("Timed out waiting for workspace leaf: work-terminal-view");
+
+    expect(evaluate).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

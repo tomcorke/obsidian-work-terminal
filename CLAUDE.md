@@ -56,7 +56,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 ## Development workflow
 
 - **Build**: `npm run build` (production) or `npm run dev` (watch mode with CDP hot-reload)
-- **Test**: `npx vitest run` (102 tests covering utils, state detection, session types, parser, mover, template, prompt builder)
+- **Test**: `npx vitest run` (104 tests covering utils, state detection, session types, parser, mover, template, prompt builder, automation helpers)
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`

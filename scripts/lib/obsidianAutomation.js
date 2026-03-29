@@ -804,6 +804,24 @@ function waitForSelectorExpression(selector, timeoutMs) {
   `;
 }
 
+function waitForWorkspaceLeafExpression(viewType, timeoutMs) {
+  return `
+    (async () => {
+      const viewType = ${JSON.stringify(viewType)};
+      const timeoutMs = ${timeoutMs};
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() <= deadline) {
+        const leaves = app?.workspace?.getLeavesOfType?.(viewType) ?? [];
+        if (leaves.length > 0) {
+          return leaves.length;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error("Timed out waiting for workspace leaf: " + viewType);
+    })()
+  `;
+}
+
 function focusAndClearExpression(selector) {
   return `
     (async () => {
@@ -895,6 +913,7 @@ async function runCdpCommand(config) {
         return "Reload triggered";
       case "open-view":
         await client.evaluate(commandExpression(WORK_TERMINAL_COMMAND_IDS.openView));
+        await client.evaluate(waitForWorkspaceLeafExpression("work-terminal-view", config.timeoutMs));
         return "Work Terminal view opened";
       case "eval": {
         const result = await client.evaluate(config.expression);
