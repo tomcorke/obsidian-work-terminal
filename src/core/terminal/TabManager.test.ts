@@ -200,3 +200,124 @@ describe("TabManager - closeAllSessions", () => {
     expect(mgr.getSessionCounts("item-1")).toEqual({ shells: 1, agents: 2 });
   });
 });
+
+describe("TabManager - moveTabToIndex", () => {
+  it("moves a tab forward correctly (no off-by-one)", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    (mgr as any).activeTabIndex = 0;
+
+    // Move tab[0] to pre-removal index 3 - ends up at position 2 (forward move adjusts by -1)
+    const tabToMove = tabs[0];
+    mgr.moveTabToIndex("item-1", tabToMove as any, 3);
+
+    const result = mgr.getTabs("item-1");
+    expect(result[2]).toBe(tabToMove);
+    expect(result).toHaveLength(4);
+  });
+
+  it("moves a tab backward correctly", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    (mgr as any).activeTabIndex = 0;
+
+    // Move tab[3] to index 1
+    const tabToMove = tabs[3];
+    mgr.moveTabToIndex("item-1", tabToMove as any, 1);
+
+    const result = mgr.getTabs("item-1");
+    expect(result[1]).toBe(tabToMove);
+    expect(result).toHaveLength(4);
+  });
+
+  it("preserves the active tab when moving a different tab forward", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    const activeTab = tabs[1];
+    (mgr as any).activeTabIndex = 1;
+
+    // Move tab[0] to index 2 - active tab (originally at 1) should stay active
+    mgr.moveTabToIndex("item-1", tabs[0] as any, 2);
+
+    expect(mgr.getActiveTabIndex()).toBe(mgr.getTabs("item-1").indexOf(activeTab as any));
+    expect(mgr.getActiveTab()).toBe(activeTab);
+  });
+
+  it("preserves the active tab when moving a different tab backward", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    const activeTab = tabs[1];
+    (mgr as any).activeTabIndex = 1;
+
+    // Move tab[2] to index 0 - active tab (originally at 1) should stay active
+    mgr.moveTabToIndex("item-1", tabs[2] as any, 0);
+
+    expect(mgr.getActiveTabIndex()).toBe(mgr.getTabs("item-1").indexOf(activeTab as any));
+    expect(mgr.getActiveTab()).toBe(activeTab);
+  });
+
+  it("updates activeTabIndex when the active tab itself is moved", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    const activeTab = tabs[0];
+    (mgr as any).activeTabIndex = 0;
+
+    // Move the active tab to index 2
+    mgr.moveTabToIndex("item-1", activeTab as any, 2);
+
+    expect(mgr.getActiveTab()).toBe(activeTab);
+    expect(mgr.getActiveTabIndex()).toBe(mgr.getTabs("item-1").indexOf(activeTab as any));
+  });
+
+  it("calls onPersistRequest after reordering", () => {
+    const tabs = [makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    const persistSpy = vi.fn();
+    mgr.onPersistRequest = persistSpy;
+
+    mgr.moveTabToIndex("item-1", tabs[0] as any, 1);
+
+    expect(persistSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onSessionChange after reordering", () => {
+    const tabs = [makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    const sessionChangeSpy = vi.fn();
+    mgr.onSessionChange = sessionChangeSpy;
+
+    mgr.moveTabToIndex("item-1", tabs[0] as any, 1);
+
+    expect(sessionChangeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op when currentIndex equals targetIndex", () => {
+    const tabs = [makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    const sessionChangeSpy = vi.fn();
+    const persistSpy = vi.fn();
+    mgr.onSessionChange = sessionChangeSpy;
+    mgr.onPersistRequest = persistSpy;
+
+    mgr.moveTabToIndex("item-1", tabs[0] as any, 0);
+
+    expect(sessionChangeSpy).not.toHaveBeenCalled();
+    expect(persistSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not change activeTabIndex for non-active items", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    // Set up a second item and make it active
+    const otherTabs = [makeStubTab()];
+    (mgr as any).sessions.set("item-2", otherTabs);
+    (mgr as any).activeItemId = "item-2";
+    (mgr as any).activeTabIndex = 0;
+
+    // Move a tab in item-1 (not the active item)
+    mgr.moveTabToIndex("item-1", tabs[0] as any, 2);
+
+    // activeTabIndex should still reflect item-2's state
+    expect(mgr.getActiveTabIndex()).toBe(0);
+  });
+});
