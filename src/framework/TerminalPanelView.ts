@@ -104,8 +104,8 @@ export class TerminalPanelView {
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
 
-  // Tab rename state
-  private renameActive = false;
+  // Active inline rename input, if any
+  private activeRenameInput: HTMLInputElement | null = null;
 
   // Periodic persist stop function
   private stopPeriodicPersist: (() => void) | null = null;
@@ -342,7 +342,7 @@ export class TerminalPanelView {
 
         // Click to switch
         tabEl.addEventListener("click", () => {
-          if (this.renameActive) return;
+          if (this.isRenameActive()) return;
           this.tabManager.switchToTab(i);
           this.renderTabBar();
         });
@@ -462,14 +462,18 @@ export class TerminalPanelView {
   // Tab inline rename
   // ---------------------------------------------------------------------------
 
+  private isRenameActive(): boolean {
+    return this.activeRenameInput?.isConnected === true;
+  }
+
   private startTabRename(
     tabEl: HTMLElement,
     labelEl: HTMLElement,
     tab: TerminalTab,
     _index: number,
   ): void {
-    this.renameActive = true;
     const input = document.createElement("input");
+    this.activeRenameInput = input;
     input.type = "text";
     input.value = tab.label;
     input.addClass("wt-tab-rename-input");
@@ -492,7 +496,9 @@ export class TerminalPanelView {
       if (!armed) return;
       const newLabel = input.value.trim() || tab.label;
       tab.label = newLabel;
-      this.renameActive = false;
+      if (this.activeRenameInput === input) {
+        this.activeRenameInput = null;
+      }
       this.renderTabBar();
       this.tabManager.onPersistRequest?.();
     };
@@ -505,7 +511,9 @@ export class TerminalPanelView {
       }
       if (e.key === "Escape") {
         armed = true;
-        this.renameActive = false;
+        if (this.activeRenameInput === input) {
+          this.activeRenameInput = null;
+        }
         this.renderTabBar();
       }
     });
