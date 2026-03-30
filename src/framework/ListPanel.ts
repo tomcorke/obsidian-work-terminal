@@ -637,9 +637,8 @@ export class ListPanel {
 
   private renderAgentStateIndicator(cardEl: HTMLElement, item: WorkItem): void {
     const state = this.agentStates.get(item.id);
+    this.applyAgentStateClass(cardEl, state);
     if (!state || state === "inactive") return;
-
-    cardEl.addClass(`wt-claude-${state}`);
 
     if (state === "idle") {
       const idleSince = this.idleSinceMap.get(item.id) ?? this.terminalPanel.getIdleSince(item.id);
@@ -650,6 +649,22 @@ export class ListPanel {
         this.idleSinceMap.set(item.id, idleSince);
       }
     }
+  }
+
+  private applyAgentStateClass(cardEl: HTMLElement, state: string | undefined): void {
+    cardEl.removeClass(
+      "wt-agent-active",
+      "wt-agent-waiting",
+      "wt-agent-idle",
+      "wt-claude-active",
+      "wt-claude-waiting",
+      "wt-claude-idle",
+    );
+    if (!state || state === "inactive") {
+      cardEl.style.removeProperty("--idle-offset");
+      return;
+    }
+    cardEl.addClass(`wt-agent-${state}`);
   }
 
   private renderMoveToTop(containerEl: HTMLElement, item: WorkItem): void {
@@ -749,16 +764,15 @@ export class ListPanel {
     // Update card classes without full re-render
     const cardEl = this.listEl.querySelector(`[data-item-id="${itemId}"]`) as HTMLElement;
     if (cardEl) {
-      cardEl.removeClass("wt-agent-active", "wt-agent-waiting", "wt-agent-idle");
-      if (state !== "inactive") {
-        cardEl.addClass(`wt-claude-${state}`);
-      }
+      this.applyAgentStateClass(cardEl, state);
       if (state === "idle") {
         const idleSince = this.idleSinceMap.get(itemId);
         if (idleSince) {
           const elapsed = (Date.now() - idleSince) / 1000;
           cardEl.style.setProperty("--idle-offset", `${-elapsed}s`);
         }
+      } else {
+        cardEl.style.removeProperty("--idle-offset");
       }
     }
   }

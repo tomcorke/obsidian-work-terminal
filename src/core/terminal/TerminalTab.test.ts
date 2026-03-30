@@ -229,6 +229,30 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(scrollToBottom).toHaveBeenCalled();
   });
 
+  it("restores legacy session ids from hot-reload storage when agentSessionId is missing", () => {
+    const restored = TerminalTab.fromStored(
+      {
+        id: "term-1",
+        taskPath: "task.md",
+        label: "Claude",
+        claudeSessionId: "legacy-session-1",
+        sessionType: "claude",
+        terminal: { focus: vi.fn(), scrollToBottom: vi.fn(), cols: 80 } as any,
+        fitAddon: {} as any,
+        searchAddon: {} as any,
+        containerEl: { addEventListener: vi.fn(), hasClass: vi.fn(() => false) } as any,
+        process: null,
+        webglAddon: null,
+        webglContextLossListener: null,
+        documentListeners: [],
+        resizeObserver: { disconnect: vi.fn(), observe: vi.fn() } as any,
+      } as any,
+      { appendChild: vi.fn() } as any,
+    );
+
+    expect(restored.agentSessionId).toBe("legacy-session-1");
+  });
+
   it("disposes the custom link provider before terminal teardown", () => {
     const order: string[] = [];
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
@@ -397,13 +421,7 @@ describe("TerminalTab hot-reload addon handling", () => {
 
     tab.dispose();
 
-    expect(order).toEqual([
-      "tracker",
-      "cleanup",
-      "resize-observer",
-      "terminal",
-      "container",
-    ]);
+    expect(order).toEqual(["tracker", "cleanup", "resize-observer", "terminal", "container"]);
     expect(addonManagerDispose).not.toHaveBeenCalled();
   });
 
@@ -505,9 +523,9 @@ describe("TerminalTab hot-reload addon handling", () => {
       parentEl as any,
     );
 
-    const legacyWebglListener = (restored as any).webglContextLossListener as
-      | { dispose: ReturnType<typeof vi.fn> }
-      | null;
+    const legacyWebglListener = (restored as any).webglContextLossListener as {
+      dispose: ReturnType<typeof vi.fn>;
+    } | null;
 
     expect(() => restored.dispose()).not.toThrow();
     expect((restored as any).fitAddon).toBeUndefined();

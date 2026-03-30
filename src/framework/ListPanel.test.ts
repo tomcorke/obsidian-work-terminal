@@ -93,6 +93,7 @@ function createListPanel(
     creationColumns?: { id: string; label: string; default?: boolean }[];
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
+    cardClasses?: string[];
   } = {},
 ) {
   const parentEl = document.createElement("div") as HTMLElement & {
@@ -121,6 +122,9 @@ function createListPanel(
         addClass: HTMLElement["addClass"];
       };
       cardEl.textContent = item.title;
+      if (options.cardClasses?.length) {
+        cardEl.classList.add(...options.cardClasses);
+      }
       const actionsEl = document.createElement("div");
       actionsEl.className = "wt-card-actions";
       cardEl.appendChild(actionsEl);
@@ -289,6 +293,32 @@ describe("ListPanel", () => {
     expect(document.querySelector('[data-item-id="task-1"] .wt-resume-badge')?.textContent).toBe(
       "↻",
     );
+  });
+
+  it("uses wt-agent classes on initial render and clears legacy wt-claude classes", () => {
+    const { panel } = createListPanel({ cardClasses: ["wt-claude-active"] });
+    panel.updateAgentState("task-1", "waiting");
+
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    expect(cardEl.classList.contains("wt-agent-waiting")).toBe(true);
+    expect(cardEl.classList.contains("wt-claude-active")).toBe(false);
+    expect(cardEl.classList.contains("wt-claude-waiting")).toBe(false);
+  });
+
+  it("uses wt-agent classes on incremental updates and removes stale legacy classes", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    cardEl.classList.add("wt-claude-active", "wt-claude-idle");
+
+    panel.updateAgentState("task-1", "idle");
+
+    expect(cardEl.classList.contains("wt-agent-idle")).toBe(true);
+    expect(cardEl.classList.contains("wt-claude-active")).toBe(false);
+    expect(cardEl.classList.contains("wt-claude-idle")).toBe(false);
   });
 
   it("does not reorder the destination column when a cross-column move fails", async () => {

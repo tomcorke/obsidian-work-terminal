@@ -311,9 +311,8 @@ export class TerminalTab {
   }
 
   private hasBlankRenderSurface(): boolean {
-    const terminalElement = (
-      this.terminal as Terminal & { element?: ParentNode | null }
-    ).element as ParentNode | null | undefined;
+    const terminalElement = (this.terminal as Terminal & { element?: ParentNode | null })
+      .element as ParentNode | null | undefined;
     const renderRoot =
       terminalElement && typeof terminalElement.querySelectorAll === "function"
         ? terminalElement
@@ -710,9 +709,8 @@ export class TerminalTab {
   }
 
   private getRendererCanvasCount(): number {
-    const terminalElement = (
-      this.terminal as Terminal & { element?: ParentNode | null }
-    ).element as ParentNode | null | undefined;
+    const terminalElement = (this.terminal as Terminal & { element?: ParentNode | null })
+      .element as ParentNode | null | undefined;
     const renderRoot =
       terminalElement && typeof terminalElement.querySelectorAll === "function"
         ? terminalElement
@@ -739,7 +737,8 @@ export class TerminalTab {
     const canvasCount = this.getRendererCanvasCount();
     const hasRenderableContent = this.hasRenderableSessionContent();
     const hasBlankRenderSurface = canvasCount === 0;
-    const blankButLiveRenderer = processStatus === "alive" && hasRenderableContent && hasBlankRenderSurface;
+    const blankButLiveRenderer =
+      processStatus === "alive" && hasRenderableContent && hasBlankRenderSurface;
     return {
       tabId: this.id,
       label: this.label,
@@ -949,7 +948,7 @@ export class TerminalTab {
     tab.id = stored.id;
     tab.label = stored.label;
     tab.taskPath = stored.taskPath;
-    tab.agentSessionId = stored.agentSessionId || null;
+    tab.agentSessionId = stored.agentSessionId ?? stored.claudeSessionId ?? null;
     tab.sessionType = stored.sessionType;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
