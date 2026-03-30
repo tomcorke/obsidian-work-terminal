@@ -44,7 +44,7 @@ import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
-import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
+import { buildClaudeContextPrompt, getClaudeContextTemplate } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
@@ -173,6 +173,7 @@ export class TerminalPanelView {
   private isDisposed = false;
   private readonly handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    this.renderTabBar();
     this.refreshDebugGlobal();
   };
 
@@ -427,14 +428,16 @@ export class TerminalPanelView {
       this.launchAction("Claude", () => this.spawnClaude());
     });
 
-    const claudeCtxBtn = buttonsContainer.createEl("button", {
-      cls: "wt-spawn-btn wt-spawn-claude-ctx",
-    });
-    claudeCtxBtn.appendChild(createClaudeLogo());
-    claudeCtxBtn.appendText("Claude (ctx)");
-    claudeCtxBtn.addEventListener("click", () => {
-      this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
-    });
+    if (getClaudeContextTemplate(this.settings)) {
+      const claudeCtxBtn = buttonsContainer.createEl("button", {
+        cls: "wt-spawn-btn wt-spawn-claude-ctx",
+      });
+      claudeCtxBtn.appendChild(createClaudeLogo());
+      claudeCtxBtn.appendText("Claude (ctx)");
+      claudeCtxBtn.addEventListener("click", () => {
+        this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
+      });
+    }
 
     const customBtn = buttonsContainer.createEl("button", {
       cls: "wt-spawn-btn wt-spawn-custom",
@@ -980,6 +983,14 @@ export class TerminalPanelView {
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
     const settings = freshSettings ?? (await this.loadFreshSettings());
+    return buildClaudeContextPrompt(item, settings, this.resolveWorkItemPath(item.path));
+  }
+
+  private async getAgentContextPrompt(
+    item: WorkItem,
+    freshSettings?: Record<string, unknown>,
+  ): Promise<string | null> {
+    const settings = freshSettings ?? (await this.loadFreshSettings());
     const resolvedPath = this.resolveWorkItemPath(item.path);
     const basePrompt = this.promptBuilder.buildPrompt(item, resolvedPath);
     const templatePrompt = buildClaudeContextPrompt(item, settings, resolvedPath);
@@ -1261,7 +1272,9 @@ export class TerminalPanelView {
     const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
     const config = sanitizeCustomSessionConfig(rawConfig, defaultCwd);
     const prompt = isContextSession(config.sessionType)
-      ? await this.getClaudeContextPrompt(item, fresh)
+      ? config.sessionType === "claude-with-context"
+        ? await this.getClaudeContextPrompt(item, fresh)
+        : await this.getAgentContextPrompt(item, fresh)
       : undefined;
 
     if (isContextSession(config.sessionType) && !prompt) {
@@ -1587,8 +1600,13 @@ export class TerminalPanelView {
   }
 
   private buildDebugApi(): OwnedWorkTerminalDebugApi {
+    const canExposeDebugApi = this.canExposeDebugApi.bind(this);
+    const buildDebugSnapshot = this.buildDebugSnapshot.bind(this);
+    const buildRevokedDebugSnapshot = this.buildRevokedDebugSnapshot.bind(this);
+    const findTabsByLabel = this.findTabsByLabel.bind(this);
+    const getPersistedSessions = this.getPersistedSessions.bind(this);
     const getSnapshot = () =>
-      this.canExposeDebugApi() ? this.buildDebugSnapshot() : this.buildRevokedDebugSnapshot();
+      canExposeDebugApi() ? buildDebugSnapshot() : buildRevokedDebugSnapshot();
     return {
       [DEBUG_API_OWNER]: this,
       get version() {
@@ -1614,13 +1632,12 @@ export class TerminalPanelView {
       },
       getSnapshot,
       getAllActiveTabs: () => getSnapshot().activeTabs,
-      findTabsByLabel: (label: string) =>
-        this.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
+      findTabsByLabel: (label: string) => (canExposeDebugApi() ? findTabsByLabel(label) : []),
       getActiveSessionIds: () => getSnapshot().activeSessionIds,
       getPersistedSessions: (itemId?: string) =>
-        this.canExposeDebugApi()
+        canExposeDebugApi()
           ? itemId
-            ? this.getPersistedSessions(itemId)
+            ? getPersistedSessions(itemId)
             : [...this.persistedSessions]
           : [],
       getSessionDiagnostics: () =>
