@@ -8,21 +8,24 @@ Three-layer design. Each layer has clear responsibilities and boundaries:
 
 ```
 src/
-  core/           # Terminal infrastructure + Claude CLI integration
+  core/           # Terminal infrastructure + agent CLI integration
     utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
     interfaces.ts # All extension point interfaces + BaseAdapter
     terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
     claude/       # ClaudeLauncher, ClaudeStateDetector, ClaudeSessionRename, HeadlessClaude
-    session/      # SessionStore (window-global), SessionPersistence (disk), types
+    session/      # SessionStore, RecentlyClosedStore, SessionPersistence, types
+    PluginDataStore.ts # Merge-safe plugin data reads/writes for settings and persistence
 
   framework/      # Obsidian plugin scaffolding - delegates to adapters
     PluginBase.ts          # Abstract Plugin subclass, view/command/settings registration
     MainView.ts            # 2-panel ItemView (list | terminals), vault events, rename detection
     ListPanel.ts           # Column-based kanban, drag-drop, filtering, badges, state indicators
-    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation, resume
+    TerminalPanelView.ts   # Tab bar, session launch/recovery, state aggregation, persistence hooks
     PromptBox.ts           # Item creation UI with column selector
     SettingsTab.ts         # Core + adapter namespaced settings
     DangerConfirm.ts       # Modal confirmation for destructive actions
+    CustomSessionConfig.ts # Session-type defaults, labels, help text, resume semantics
+    CustomSessionModal.ts  # Spawn custom sessions or restore globally recent tabs onto their original item
 
   adapters/
     task-agent/   # Task-agent adapter (reference implementation)
@@ -42,21 +45,23 @@ src/
 
 ### Extension model
 
-The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, Claude integration, session persistence, drag-drop, state detection, keyboard capture.
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, built-in agent session types, session persistence, drag-drop, state detection, and keyboard capture.
 
 To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`.
 
 ### Key design decisions
 
-- **Claude owned by framework, not adapter** - ClaudeLauncher, StateDetector, SessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **Agent launchers stay in framework code** - launcher, state-detection, and session-rename plumbing live in framework/core code. Adapters only provide a `WorkItemPromptBuilder` for contextual agent prompts.
 - **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
+- **Recovery stays in framework code** - hot-reload stash/restore, global recent-session reopening onto the original item, durable Claude/Copilot session persistence, and WebGL recovery are not adapter concerns.
 
 ## Development workflow
 
 - **Build**: `npm run build` (production) or `npm run dev` (watch mode with CDP hot-reload)
-- **Test**: `npx vitest run` (104 tests covering utils, state detection, session types, parser, mover, template, prompt builder, automation helpers)
+- **Test**: `npm test` (runs the vitest suite covering terminal lifecycle, recovery/persistence, automation helpers, adapter parsing/moving, and launcher/state utilities)
+- **Lint**: `npm run lint`
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
@@ -67,6 +72,13 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - `npm run dev` watch mode (preferred - auto-reloads on save)
 - Command palette: "Work Terminal: Reload Plugin (preserve terminals)"
 - CDP: `node cdp.js`
+
+## Runtime features
+
+- **Session types**: shell, Claude, Claude-with-context, Copilot, Copilot-with-context, Strands, and Strands-with-context. The custom session modal remembers per-item defaults for new sessions.
+- **Recent-session restore**: the custom session modal shows up to 5 entries from a global recent-session list and always reopens the selected tab on its original item within a 30-minute recovery window.
+- **Durable recovery**: after a full close, only resumable Claude/Copilot sessions with persisted metadata are restored. Shell and Strands are never part of durable restart recovery, but can be relaunched from the separate recent-session flow while still inside that 30-minute window.
+- **Diagnostics**: command palette action "Copy Session Diagnostics" snapshots session/process state, renderer health, recovery status, and persisted metadata for issue reports.
 
 ## Development rules
 
@@ -91,7 +103,7 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 - **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing
-Run `npx vitest run` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
+Run `npm test` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
 
 ## Known constraints
 
@@ -102,4 +114,5 @@ Run `npx vitest run` after changes to verify nothing is broken. Build with `npm 
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Shift+Enter, Option+Backspace, macOptionIsMeta.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
-- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs.
+- **Session persistence**: Three layers - window-global stash for hot-reload, recent closed-session tracking for short-term reopen flows on the original item, and disk persistence for full restart recovery of Claude/Copilot session metadata only (7-day retention). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs; Strands sessions always relaunch fresh, and shell sessions are never durably persisted.
+- **WebGL recovery**: TerminalTab owns addon/context-loss cleanup so fresh tabs and restored tabs can recover from disposed or blank renderers without crashing on close.
