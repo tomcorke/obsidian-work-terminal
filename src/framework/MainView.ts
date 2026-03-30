@@ -516,6 +516,8 @@ export class MainView extends ItemView {
       this.terminalPanel?.disposeAll();
     }
 
+    this.listPanel?.dispose();
+
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();
 

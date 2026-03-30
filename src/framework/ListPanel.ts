@@ -884,8 +884,21 @@ export class ListPanel {
     if (cardEl.querySelector(".wt-success-bar")) return;
     const bar = document.createElement("div");
     bar.addClass("wt-success-bar");
-    bar.textContent = "new task created";
+    bar.textContent = `new ${this.adapter.config.itemName} created`;
     cardEl.appendChild(bar);
+  }
+
+  dispose(): void {
+    if (this.filterDebounce) {
+      clearTimeout(this.filterDebounce);
+      this.filterDebounce = null;
+    }
+
+    for (const timeout of this.successTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.successTimeouts.clear();
+    this.activeSuccessIds.clear();
   }
 
   private getDefaultColumnCardsEl(): Element | null {

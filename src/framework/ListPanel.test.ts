@@ -94,6 +94,7 @@ function createListPanel(
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
     cardClasses?: string[];
+    itemName?: string;
   } = {},
 ) {
   const parentEl = document.createElement("div") as HTMLElement & {
@@ -110,7 +111,7 @@ function createListPanel(
 
   const adapter = {
     config: {
-      itemName: "task",
+      itemName: options.itemName ?? "task",
       columns,
       creationColumns,
     },
@@ -208,6 +209,39 @@ describe("ListPanel", () => {
     expect(
       document.querySelector('[data-item-id="task-1"]')?.classList.contains("wt-card-new-success"),
     ).toBe(true);
+  });
+
+  it("uses the adapter item name in the success bar copy and removes the bar after the timeout", () => {
+    const { panel } = createListPanel({ itemName: "ticket" });
+    panel.render({ todo: [] }, {});
+
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+    panel.resolvePlaceholder("placeholder-1", true);
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    const successBar = cardEl.querySelector(".wt-success-bar");
+    expect(successBar?.textContent).toBe("new ticket created");
+
+    vi.advanceTimersByTime(4500);
+
+    expect(cardEl.classList.contains("wt-card-new-success")).toBe(false);
+    expect(cardEl.querySelector(".wt-success-bar")).toBeNull();
+  });
+
+  it("clears pending success animation timers on dispose", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [] }, {});
+
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+    panel.resolvePlaceholder("placeholder-1", true);
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    expect(vi.getTimerCount()).toBe(1);
+
+    panel.dispose();
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("matches success animations to the correct placeholder when completions arrive out of order", () => {
