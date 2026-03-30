@@ -7,7 +7,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 - **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
 - **Tabbed terminals** per work item - Shell, Claude, Claude (ctx), Copilot, Copilot (ctx), Strands, Strands (ctx), and per-item custom sessions
 - **Agent integration** - Claude/Copilot/Strands command resolution, Claude and Copilot state detection, Claude session rename detection, and headless enrichment hooks
-- **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen a global list of recently closed tabs onto their original work item, and durable restart recovery resumes Claude/Copilot sessions from persisted metadata. Shell and Strands can be relaunched from the recent-session flow, but are not durably restored after a full close
+- **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen up to 5 entries from a global recently closed list onto each tab's original work item within 30 minutes, and durable restart recovery resumes persisted Claude/Copilot sessions only. Shell and Strands are not part of durable restart recovery after a full close, but can still be relaunched from that separate recent-session flow while the window remains open
 - **Built-in diagnostics** - the command palette action "Copy Session Diagnostics" copies a JSON snapshot of session, renderer, recovery, and persistence state without reloading the plugin
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
@@ -116,8 +116,9 @@ export class MyAdapter extends BaseAdapter {
   }
 
   createPromptBuilder(): WorkItemPromptBuilder {
-    // Build work-item prompts for contextual agent sessions such as
-    // Claude (ctx), Copilot (ctx), and Strands (ctx)
+    // Build work-item prompts for contextual agent sessions.
+    // The shipped integrations currently use this for
+    // Claude (ctx), Copilot (ctx), and Strands (ctx).
     // See task-agent/TaskPromptBuilder.ts for a full example
   }
 }
@@ -138,8 +139,8 @@ const adapter = new MyAdapter();
 
 Your adapter inherits all of this without writing any terminal code:
 
-- Shell plus built-in Claude, Copilot, and Strands terminal tabs per item, including contextual `(ctx)` variants powered by your prompt builder
-- Hot-reload stash/restore, recent-session reopen flows, and 7-day persisted metadata for Claude/Copilot restart resume
+- Shell plus built-in agent terminal tabs per item, including contextual `(ctx)` variants powered by your prompt builder. The shipped session types are Claude, Copilot, and Strands
+- Hot-reload stash/restore, a global recent-session reopen flow that restores the selected tab on its original item, and 7-day persisted metadata for durable Claude/Copilot restart resume only
 - Claude and Copilot state detection (active/waiting/idle) with card indicators
 - Claude session rename detection with adapter hook
 - Keyboard capture (Option+Arrow, Shift+Enter, macOptionIsMeta)
