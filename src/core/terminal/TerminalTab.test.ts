@@ -556,6 +556,8 @@ describe("TerminalTab hot-reload addon handling", () => {
   });
 
   it("reports renderer and process diagnostics for live tabs", () => {
+    const querySelectorAll = vi.fn(() => []);
+    const hasBlankRenderSurface = vi.fn(() => true);
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
       id: "term-1",
       label: "Claude",
@@ -571,7 +573,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       webglAddon: { dispose: vi.fn() },
       terminal: {
         element: {
-          querySelectorAll: vi.fn(() => []),
+          querySelectorAll,
         },
       },
       containerEl: {
@@ -583,7 +585,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       _isDisposed: false,
       _readTerminalScreen: vi.fn(() => ["line 1", "line 2"]),
       hasRenderableSessionContent: vi.fn(() => true),
-      hasBlankRenderSurface: vi.fn(() => true),
+      hasBlankRenderSurface,
       getTrackedWebglAddonEntry: vi.fn(() => ({ isDisposed: true })),
     }) as TerminalTab;
 
@@ -619,6 +621,8 @@ describe("TerminalTab hot-reload addon handling", () => {
         staleDisposedWebglOwnership: true,
       },
     });
+    expect(querySelectorAll).toHaveBeenCalledTimes(1);
+    expect(hasBlankRenderSurface).not.toHaveBeenCalled();
   });
 });
 

@@ -439,6 +439,12 @@ export class TabManager {
     for (const [itemId, tabs] of this.sessions) {
       for (const [tabIndex, tab] of tabs.entries()) {
         const tabDiagnostics = tab.getDiagnostics();
+        const lifecycle =
+          tab.isDisposed || tabDiagnostics.isDisposed
+            ? "disposed"
+            : tabDiagnostics.process.status === "alive"
+              ? "live"
+              : "lost";
         diagnostics.push({
           itemId: tab.taskPath ?? itemId,
           tabIndex,
@@ -450,7 +456,7 @@ export class TabManager {
             canResumeAfterRestart: false,
             missingPersistedMetadata: false,
             wouldBeLostOnFullClose: false,
-            lifecycle: tab.isDisposed ? "disposed" : tab.process ? "live" : "lost",
+            lifecycle,
           },
           ...tabDiagnostics,
           derived: {

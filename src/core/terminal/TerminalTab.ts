@@ -725,7 +725,7 @@ export class TerminalTab {
     );
     const canvasCount = this.getRendererCanvasCount();
     const hasRenderableContent = this.hasRenderableSessionContent();
-    const hasBlankRenderSurface = canvasCount === 0 && this.hasBlankRenderSurface();
+    const hasBlankRenderSurface = canvasCount === 0;
     const blankButLiveRenderer = processStatus === "alive" && hasRenderableContent && hasBlankRenderSurface;
     return {
       tabId: this.id,
