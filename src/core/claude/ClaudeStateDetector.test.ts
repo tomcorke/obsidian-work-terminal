@@ -99,6 +99,129 @@ describe("ClaudeStateDetector", () => {
       expect(detector.state).toBe("idle");
       detector.stop();
     });
+
+    it("keeps a visible asking-user prompt in range even with a full recent-output tail", () => {
+      const terminal = mockTerminal([
+        "  ○ Asking user What kind of question would you like me to ask?",
+      ]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.trackOutput(
+        [
+          "╭────────────────────────────────────────────────────────────╮",
+          "│ What kind of question would you like me to ask?           │",
+          "│ ❯ 1. Something thoughtful (Recommended)                   │",
+          "│   2. Something fun                                        │",
+          "│   3. Something practical                                  │",
+          "│   4. Surprise me                                          │",
+          "│   5. Other (type your answer)                             │",
+          "│ ↑↓ to select · Enter to confirm · Esc to cancel           │",
+          "╰────────────────────────────────────────────────────────────╯",
+          "○ Asking user What kind of question would you like me to ask?",
+          "history line 1",
+          "history line 2",
+          "history line 3",
+          "history line 4",
+          "history line 5",
+        ].join("\n"),
+      );
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
+
+    it("detects boxed Copilot ask_user prompts on the visible screen", () => {
+      const terminal = mockTerminal([
+        "╭────────────────────────────────────────────────────────────╮",
+        "│ What kind of question would you like me to ask?           │",
+        "│ ❯ 1. Something thoughtful (Recommended)                   │",
+        "│   2. Something fun                                        │",
+        "│ ↑↓ to select · Enter to confirm · Esc to cancel           │",
+        "╰────────────────────────────────────────────────────────────╯",
+      ]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
+
+    it("prefers a newer active status below an older visible prompt box", () => {
+      const terminal = mockTerminal([
+        "╭────────────────────────────────────────────────────────────╮",
+        "│ What kind of question would you like me to ask?           │",
+        "│ ❯ 1. Something thoughtful (Recommended)                   │",
+        "│   2. Something fun                                        │",
+        "╰────────────────────────────────────────────────────────────╯",
+        "○ Thinking (Esc to cancel)",
+      ]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("does not keep waiting from stale boxed recent output after the screen moves on", () => {
+      const terminal = mockTerminal(["  ○ Thinking (Esc to cancel)"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.trackOutput(
+        [
+          "╭────────────────────────────────────────────────────────────╮",
+          "│ What kind of question would you like me to ask?           │",
+          "│ ❯ 1. Something thoughtful (Recommended)                   │",
+          "│   2. Something fun                                        │",
+          "│ ↑↓ to select · Enter to confirm · Esc to cancel           │",
+          "╰────────────────────────────────────────────────────────────╯",
+        ].join("\n"),
+      );
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("does not treat ordinary boxed output as waiting", () => {
+      const terminal = mockTerminal(["  some previous output"]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.trackOutput(
+        [
+          "╭────────────────────────────────────────────────────────────╮",
+          "│ Repository summary                                        │",
+          "│ Build completed successfully                              │",
+          "╰────────────────────────────────────────────────────────────╯",
+        ].join("\n"),
+      );
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("falls back to recent boxed output only when the visible screen is empty", () => {
+      const terminal = mockTerminal([]);
+      const detector = new ClaudeStateDetector(terminal, () => false);
+      detector.trackOutput(
+        [
+          "╭────────────────────────────────────────────────────────────╮",
+          "│ What kind of question would you like me to ask?           │",
+          "│ ❯ 1. Something thoughtful (Recommended)                   │",
+          "│   2. Something fun                                        │",
+          "│ ↑↓ to select · Enter to confirm · Esc to cancel           │",
+          "╰────────────────────────────────────────────────────────────╯",
+        ].join("\n"),
+      );
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
   });
 
   describe("active indicator detection", () => {
