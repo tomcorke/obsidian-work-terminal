@@ -628,8 +628,8 @@ describe("TaskParser", () => {
       expect(modifyMock).not.toHaveBeenCalled();
     });
 
-    it("recovers indented ids when malformed frontmatter prevents parsing the whole block", async () => {
-      const file = makeFile("2 - Areas/Tasks/active/task-with-indented-id.md");
+    it("does not reuse nested ids from malformed frontmatter when no top-level id exists", async () => {
+      const file = makeFile("2 - Areas/Tasks/active/task-with-nested-id.md");
       const caches = {
         [file.path]: makeFrontmatter({ id: undefined }),
       };
@@ -638,13 +638,24 @@ describe("TaskParser", () => {
       const item = parser.parse(file as unknown as TFile);
       const readMock = vi.mocked(app.vault.read as any);
       const modifyMock = vi.mocked(app.vault.modify as any);
+      const uuidSpy = vi
+        .spyOn(globalThis.crypto, "randomUUID")
+        .mockReturnValue("uuid-from-backfill");
 
-      readMock.mockResolvedValue('---\n  id: "quoted-uuid"\nbroken: [\n---\nBody');
+      readMock.mockResolvedValue(
+        "---\nsource:\n  id: jira-123\nbroken: [\n---\nBody",
+      );
+      modifyMock.mockResolvedValue(undefined);
 
       const updatedItem = await parser.backfillItemId(item!);
 
-      expect(updatedItem?.id).toBe("quoted-uuid");
-      expect(modifyMock).not.toHaveBeenCalled();
+      expect(updatedItem?.id).toBe("uuid-from-backfill");
+      expect(modifyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ path: file.path }),
+        "---\nid: uuid-from-backfill\nsource:\n  id: jira-123\nbroken: [\n---\nBody",
+      );
+
+      uuidSpy.mockRestore();
     });
 
     it("backfills into an empty frontmatter block", async () => {
