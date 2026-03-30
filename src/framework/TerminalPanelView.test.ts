@@ -1339,7 +1339,7 @@ describe("TerminalPanelView hook warning", () => {
     );
   });
 
-  it("uses the adapter prompt builder for Claude-with-context launches without a template", async () => {
+  it("refuses Claude-with-context launches when no template is configured", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
@@ -1364,20 +1364,43 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
-    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "task-1" }),
-      "/vault/Tasks/task-1.md",
-    );
-    expect(mockState.latestCreateTabArgs).not.toBeNull();
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "--session-id",
-      expect.any(String),
-      "Built prompt for /vault/Tasks/task-1.md",
-    ]);
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain("Could not build a contextual prompt for this item");
   });
 
-  it("appends the extra context template after the adapter prompt builder output", async () => {
+  it("refuses Claude-with-context launches when the template is whitespace only", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "  \n\t  ",
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain("Could not build a contextual prompt for this item");
+  });
+
+  it("uses only the configured context template for Claude-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn(() => "Built prompt"),
@@ -1403,11 +1426,12 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
       "--session-id",
       expect.any(String),
-      "Built prompt\n\nTemplate for Task One in doing",
+      "Template for Task One in doing",
     ]);
   });
 
@@ -1437,12 +1461,97 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
       "--session-id",
       expect.any(String),
-      "Built prompt\n\nTemplate path: /vault/Tasks/task-1.md",
+      "Template path: /vault/Tasks/task-1.md",
     ]);
+  });
+
+  it("launches the same prompt exposed by getClaudeContextPrompt", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.additionalAgentContext": "Template for $title in $state",
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/ctx",
+    });
+    const item = {
+      id: "task-1",
+      title: "Task One",
+      state: "doing",
+      path: "Tasks/task-1.md",
+    } as any;
+    view.setItems([item]);
+    await flushAsync();
+
+    const prompt = await (view as any).getClaudeContextPrompt(item);
+    await (view as any).spawnClaudeWithContext();
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      prompt,
+    ]);
+  });
+
+  it("does not inject the context template into plain Claude sessions", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.additionalAgentContext": "Template path: $filePath",
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/ctx",
+    });
+    await flushAsync();
+
+    await (view as any).spawnClaude();
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+    ]);
+  });
+
+  it("hides the Claude-with-context button when no template is configured", async () => {
+    const { panelEl } = createView({
+      "core.additionalAgentContext": "",
+    });
+    await flushAsync();
+
+    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
+  });
+
+  it("hides the Claude-with-context button when the template is whitespace only", async () => {
+    const { panelEl } = createView({
+      "core.additionalAgentContext": "  \n\t  ",
+    });
+    await flushAsync();
+
+    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
+  });
+
+  it("rerenders the Claude-with-context button when the template setting changes", async () => {
+    const { panelEl } = createView({
+      "core.additionalAgentContext": "",
+    });
+    await flushAsync();
+
+    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.additionalAgentContext": "Template for $title",
+          "core.defaultTerminalCwd": "~",
+        },
+      }),
+    );
+    await flushAsync();
+
+    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).not.toBeNull();
   });
 
   it("reuses one settings snapshot for custom contextual Claude sessions", async () => {
@@ -1508,8 +1617,8 @@ describe("TerminalPanelView hook warning", () => {
       path: "Tasks/task-1.md",
     };
     const loadFreshSettings = vi.spyOn(view as any, "loadFreshSettings").mockResolvedValue(fresh);
-    const getClaudeContextPrompt = vi
-      .spyOn(view as any, "getClaudeContextPrompt")
+    const getAgentContextPrompt = vi
+      .spyOn(view as any, "getAgentContextPrompt")
       .mockResolvedValue("Prompt A for Task One");
     const spawnCopilotSession = vi
       .spyOn(view as any, "spawnCopilotSession")
@@ -1523,7 +1632,7 @@ describe("TerminalPanelView hook warning", () => {
     });
 
     expect(loadFreshSettings).toHaveBeenCalledOnce();
-    expect(getClaudeContextPrompt).toHaveBeenCalledWith(item, fresh);
+    expect(getAgentContextPrompt).toHaveBeenCalledWith(item, fresh);
     expect(spawnCopilotSession).toHaveBeenCalledWith({
       sessionType: "copilot-with-context",
       cwd: "~/custom",
@@ -1534,12 +1643,11 @@ describe("TerminalPanelView hook warning", () => {
     });
   });
 
-  it("keeps Windows absolute vault paths intact for context prompts", async () => {
-    const promptBuilder = {
-      buildPrompt: vi.fn((_item, fullPath) => `Path: ${fullPath}`),
-    };
+  it("keeps Windows absolute vault paths intact for Claude context prompts", async () => {
     const { view } = createView(
-      {},
+      {
+        "core.additionalAgentContext": "Path: $filePath",
+      },
       {
         app: {
           setting: {
@@ -1553,7 +1661,6 @@ describe("TerminalPanelView hook warning", () => {
           },
         },
       },
-      promptBuilder,
     );
     await flushAsync();
     vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
@@ -1566,18 +1673,13 @@ describe("TerminalPanelView hook warning", () => {
     });
 
     expect(prompt).toBe("Path: C:\\Users\\me\\Vault\\Tasks\\task-1.md");
-    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "task-1" }),
-      "C:\\Users\\me\\Vault\\Tasks\\task-1.md",
-    );
   });
 
-  it("keeps UNC vault paths intact for context prompts", async () => {
-    const promptBuilder = {
-      buildPrompt: vi.fn((_item, fullPath) => `Path: ${fullPath}`),
-    };
+  it("keeps UNC vault paths intact for Claude context prompts", async () => {
     const { view } = createView(
-      {},
+      {
+        "core.additionalAgentContext": "Path: $filePath",
+      },
       {
         app: {
           setting: {
@@ -1591,7 +1693,6 @@ describe("TerminalPanelView hook warning", () => {
           },
         },
       },
-      promptBuilder,
     );
     await flushAsync();
     vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
@@ -1604,10 +1705,6 @@ describe("TerminalPanelView hook warning", () => {
     });
 
     expect(prompt).toBe("Path: \\\\server\\share\\Vault\\Tasks\\task-1.md");
-    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "task-1" }),
-      "\\\\server\\share\\Vault\\Tasks\\task-1.md",
-    );
   });
 
   it("renders a Jira link badge ahead of the selected title and opens it externally", async () => {
