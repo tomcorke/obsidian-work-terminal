@@ -208,11 +208,11 @@ export class ListPanel {
           cardEl.addClass("wt-card-new-success");
         }
 
-        cardsEl.appendChild(cardEl);
-
         if (this.activeSuccessIds.has(item.id)) {
           this.appendSuccessBar(cardEl);
         }
+
+        cardsEl.appendChild(cardEl);
       }
 
       // Re-insert any active placeholders for this column
@@ -890,7 +890,7 @@ export class ListPanel {
       const el = this.listEl.querySelector(`[data-item-id="${id}"]`);
       if (el) {
         el.removeClass("wt-card-new-success");
-        el.nextElementSibling?.classList.contains("wt-success-bar") && el.nextElementSibling.remove();
+        this.removeSuccessBar(el);
       }
       this.successTimeouts.delete(id);
     }, 4500);
@@ -898,11 +898,23 @@ export class ListPanel {
   }
 
   private appendSuccessBar(cardEl: Element): void {
-    if (cardEl.nextElementSibling?.classList.contains("wt-success-bar")) return;
+    if (cardEl.querySelector(":scope > .wt-success-bar-slot")) return;
+
+    const slot = document.createElement("div");
+    slot.addClass("wt-success-bar-slot");
+
     const bar = document.createElement("div");
     bar.addClass("wt-success-bar");
     bar.textContent = `new ${this.adapter.config.itemName} created`;
-    cardEl.insertAdjacentElement("afterend", bar);
+    slot.appendChild(bar);
+    cardEl.appendChild(slot);
+
+    const height = bar.getBoundingClientRect().height || bar.scrollHeight;
+    slot.style.setProperty("--wt-success-bar-height", `${height}px`);
+  }
+
+  private removeSuccessBar(cardEl: Element): void {
+    cardEl.querySelector(":scope > .wt-success-bar-slot")?.remove();
   }
 
   dispose(): void {

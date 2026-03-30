@@ -94,6 +94,7 @@ function createListPanel(
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
     cardClasses?: string[];
+    includeMetaRow?: boolean;
     itemName?: string;
   } = {},
 ) {
@@ -122,7 +123,15 @@ function createListPanel(
       const cardEl = document.createElement("div") as HTMLElement & {
         addClass: HTMLElement["addClass"];
       };
-      cardEl.textContent = item.title;
+      const titleEl = document.createElement("div");
+      titleEl.textContent = item.title;
+      cardEl.appendChild(titleEl);
+      if (options.includeMetaRow) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "wt-card-meta";
+        metaEl.textContent = "meta";
+        cardEl.appendChild(metaEl);
+      }
       if (options.cardClasses?.length) {
         cardEl.classList.add(...options.cardClasses);
       }
@@ -220,14 +229,13 @@ describe("ListPanel", () => {
     panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
 
     const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
-    const successBar = cardEl.nextElementSibling;
-    expect(successBar?.classList.contains("wt-success-bar")).toBe(true);
+    const successBar = cardEl.querySelector(".wt-success-bar");
     expect(successBar?.textContent).toBe("new ticket created");
 
     vi.advanceTimersByTime(4500);
 
     expect(cardEl.classList.contains("wt-card-new-success")).toBe(false);
-    expect(cardEl.nextElementSibling?.classList.contains("wt-success-bar")).toBeFalsy();
+    expect(cardEl.querySelector(".wt-success-bar")).toBeNull();
   });
 
   it("clears pending success animation timers on dispose", () => {
@@ -306,6 +314,45 @@ describe("ListPanel", () => {
     const cardEl = document.querySelector('[data-item-id="task-1"]');
     expect(cardEl?.classList.contains("wt-card-is-ingesting")).toBe(true);
     expect(cardEl?.classList.contains("wt-card-ingesting")).toBe(false);
+  });
+
+  it("hides the active success bar with its card when filtering removes the match", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [] }, {});
+
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+    panel.resolvePlaceholder("placeholder-1", true);
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    const filterEl = document.querySelector(".wt-filter-input") as HTMLInputElement;
+
+    expect(cardEl.querySelector(".wt-success-bar")).not.toBeNull();
+
+    filterEl.value = "no match";
+    filterEl.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(100);
+
+    expect(cardEl.style.display).toBe("none");
+    expect(cardEl.querySelector(".wt-success-bar")).not.toBeNull();
+    expect(document.querySelector(".wt-section")?.getAttribute("style")).toContain("display: none");
+  });
+
+  it("inserts and removes the ingesting badge exactly once", () => {
+    const { panel } = createListPanel({ includeMetaRow: true });
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    panel.setIngesting("task-1");
+    panel.setIngesting("task-1");
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    const badges = cardEl.querySelectorAll(".wt-card-ingesting-badge");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].parentElement?.classList.contains("wt-card-meta")).toBe(true);
+
+    panel.clearIngesting("task-1");
+
+    expect(cardEl.querySelector(".wt-card-ingesting-badge")).toBeNull();
   });
 
   it("keeps the resume badge visible when only non-resumable agent tabs are active", () => {

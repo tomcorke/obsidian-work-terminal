@@ -127,8 +127,10 @@
    ============================================================================= */
 
 .wt-card-wrapper {
+  --wt-card-padding-x: 10px;
+  --wt-card-padding-y: 8px;
   position: relative;
-  padding: 8px 10px;
+  padding: var(--wt-card-padding-y) var(--wt-card-padding-x);
   margin: 3px 0;
   border-radius: 4px;
   font-size: 13px;
@@ -1180,7 +1182,15 @@ button.wt-spawn-claude-ctx:hover svg {
   z-index: 1;
 }
 
-/* Green bar rendered as a sibling below the card, slides up behind it */
+.wt-success-bar-slot {
+  --wt-success-bar-height: 0px;
+  margin: 4px calc(-1 * var(--wt-card-padding-x)) calc(-1 * var(--wt-card-padding-y));
+  overflow: hidden;
+  max-height: var(--wt-success-bar-height);
+  animation: wt-success-bar-slot-collapse 3.5s ease-in-out forwards;
+}
+
+/* Green bar rendered inside the card wrapper so filtering/removal keeps it coupled */
 .wt-success-bar {
   display: flex;
   align-items: center;
@@ -1193,6 +1203,8 @@ button.wt-spawn-claude-ctx:hover svg {
   font-weight: 500;
   letter-spacing: 0.02em;
   pointer-events: none;
+  transform: translateY(0);
+  transform-origin: top center;
   animation: wt-success-bar-rise 3.5s ease-in-out forwards;
 }
 
@@ -1203,10 +1215,28 @@ button.wt-spawn-claude-ctx:hover svg {
 }
 
 @keyframes wt-success-bar-rise {
-  0%   { margin-top: 0;    opacity: 1; }
-  50%  { margin-top: 0;    opacity: 1; }
-  85%  { margin-top: -28px; opacity: 0.5; }
-  100% { margin-top: -28px; opacity: 0; }
+  0%, 50% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  85%, 100% {
+    transform: translateY(-100%);
+  }
+  85% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes wt-success-bar-slot-collapse {
+  0%, 70% {
+    max-height: var(--wt-success-bar-height);
+  }
+  100% {
+    max-height: 0;
+  }
 }
 
 @keyframes wt-success-border-fade {
