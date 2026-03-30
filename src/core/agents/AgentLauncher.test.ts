@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { buildClaudeArgs, buildCopilotArgs, buildStrandsArgs } from "./AgentLauncher";
+import {
+  buildClaudeArgs,
+  buildCopilotArgs,
+  buildStrandsArgs,
+  mergeExtraArgs,
+  parseExtraArgs,
+} from "./AgentLauncher";
 
 describe("AgentLauncher", () => {
+  it("parses backslash-newline continuations without keeping literal slash args", () => {
+    expect(
+      parseExtraArgs(`--dangerously-skip-permissions \\
+        --plugin-dir /path/a \\
+        --plugin-dir /path/b`),
+    ).toEqual([
+      "--dangerously-skip-permissions",
+      "--plugin-dir",
+      "/path/a",
+      "--plugin-dir",
+      "/path/b",
+    ]);
+  });
+
+  it("merges multiline extra args without leaving continuation tokens behind", () => {
+    expect(
+      mergeExtraArgs(
+        `--dangerously-skip-permissions \\
+          --plugin-dir /path/a`,
+        `--plugin-dir /path/b \\
+          --verbose`,
+      ),
+    ).toBe("--dangerously-skip-permissions --plugin-dir /path/a --plugin-dir /path/b --verbose");
+  });
+
   it("builds Claude args with session id and prompt", () => {
     expect(
       buildClaudeArgs(
@@ -39,6 +70,15 @@ describe("AgentLauncher", () => {
     ]);
   });
 
+  it("builds Copilot args from multiline extra args with continuations", () => {
+    expect(
+      buildCopilotArgs({
+        copilotExtraArgs: `--model gpt-5.4 \\
+          --allow-all-tools`,
+      }),
+    ).toEqual(["--model", "gpt-5.4", "--allow-all-tools"]);
+  });
+
   it("builds Strands args with prompt as positional arg", () => {
     expect(
       buildStrandsArgs({ strandsExtraArgs: "--verbose --region us-east-1" }, "Review this task"),
@@ -51,5 +91,23 @@ describe("AgentLauncher", () => {
 
   it("builds Strands args with no extra args or prompt", () => {
     expect(buildStrandsArgs({})).toEqual([]);
+  });
+
+  it("builds Claude args from multiline extra args with continuations", () => {
+    expect(
+      buildClaudeArgs(
+        {
+          claudeExtraArgs: `--dangerously-skip-permissions \\
+            --plugin-dir /path/a`,
+        },
+        "session-123",
+      ),
+    ).toEqual([
+      "--dangerously-skip-permissions",
+      "--plugin-dir",
+      "/path/a",
+      "--session-id",
+      "session-123",
+    ]);
   });
 });

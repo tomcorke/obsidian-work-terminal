@@ -1301,6 +1301,43 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("normalizes multiline continuation args when restoring a closed session from settings", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/fallback",
+      "core.claudeExtraArgs": `--dangerously-skip-permissions \\
+        --plugin-dir /path/a`,
+    });
+    await flushAsync();
+
+    await (view as any).restoreClosedSession({
+      sessionType: "claude",
+      label: "Recovered Claude",
+      agentSessionId: "session-456",
+      closedAt: Date.now(),
+      itemId: "task-1",
+    });
+    await flushAsync();
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "task-1",
+      "/bin/echo",
+      expandTilde("~/fallback"),
+      "Recovered Claude",
+      "claude",
+      undefined,
+      [
+        "/bin/echo",
+        "--dangerously-skip-permissions",
+        "--plugin-dir",
+        "/path/a",
+        "--resume",
+        "session-456",
+      ],
+      "session-456",
+    ]);
+  });
+
   it("restores recently closed legacy entries using claudeSessionId fallback", async () => {
     const { view } = createView({
       "core.copilotCommand": "/bin/echo",
@@ -1630,6 +1667,40 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
+      "--session-id",
+      expect.any(String),
+    ]);
+  });
+
+  it("merges multiline continuation args from settings and custom launches", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/ctx",
+      "core.claudeExtraArgs": `--dangerously-skip-permissions \\
+        --plugin-dir /path/a`,
+    });
+    await flushAsync();
+
+    await (view as any).spawnClaudeSession({
+      sessionType: "claude",
+      extraArgs: `--plugin-dir /path/b \\
+        --verbose`,
+      freshSettings: {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+        "core.claudeExtraArgs": `--dangerously-skip-permissions \\
+          --plugin-dir /path/a`,
+      },
+    });
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--dangerously-skip-permissions",
+      "--plugin-dir",
+      "/path/a",
+      "--plugin-dir",
+      "/path/b",
+      "--verbose",
       "--session-id",
       expect.any(String),
     ]);
