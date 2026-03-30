@@ -2932,6 +2932,27 @@ describe("TerminalPanelView hook warning", () => {
     });
   });
 
+  it("shows a notice instead of launching Strands when the configured command is blank", async () => {
+    const { view } = createView({
+      "core.strandsCommand": "   ",
+      "core.defaultTerminalCwd": "~/one",
+    });
+    await flushAsync();
+
+    await (view as any).spawnStrandsSession({
+      sessionType: "strands",
+      freshSettings: {
+        "core.strandsCommand": "   ",
+        "core.defaultTerminalCwd": "~/one",
+      },
+    });
+
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain(
+      "Set a Strands command in Work Terminal settings before launching Strands sessions.",
+    );
+  });
+
   it("keeps Windows absolute vault paths intact for Claude context prompts", async () => {
     const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
     const { view } = createView(
