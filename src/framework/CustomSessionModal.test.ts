@@ -24,21 +24,29 @@ type TextAreaComponent = {
   onChange: (handler: (value: string) => void) => TextAreaComponent;
 };
 
-declare global {
-  interface HTMLElement {
-    createEl: (
-      tag: string,
-      options?: { cls?: string; text?: string; attr?: Record<string, string> },
-    ) => HTMLElement;
-    createDiv: (options?: { cls?: string; text?: string; attr?: Record<string, string> }) => HTMLDivElement;
-    createSpan: (
-      options?: { cls?: string; text?: string; attr?: Record<string, string> },
-    ) => HTMLSpanElement;
-    addClass: (...classes: string[]) => void;
-    removeClass: (...classes: string[]) => void;
-    empty: () => void;
-  }
-}
+type CreateChildOptions = {
+  cls?: string;
+  text?: string;
+  attr?: Record<string, string>;
+};
+
+type ObsidianHTMLElement = HTMLElement & {
+  createEl: (tag: string, options?: CreateChildOptions) => HTMLElement;
+  createDiv: (options?: CreateChildOptions) => HTMLDivElement;
+  createSpan: (options?: CreateChildOptions) => HTMLSpanElement;
+  addClass: (...classes: string[]) => void;
+  removeClass: (...classes: string[]) => void;
+  empty: () => void;
+};
+
+type ObsidianHTMLElementPrototype = typeof HTMLElement.prototype & {
+  createEl: ObsidianHTMLElement["createEl"];
+  createDiv: ObsidianHTMLElement["createDiv"];
+  createSpan: ObsidianHTMLElement["createSpan"];
+  addClass: ObsidianHTMLElement["addClass"];
+  removeClass: ObsidianHTMLElement["removeClass"];
+  empty: ObsidianHTMLElement["empty"];
+};
 
 vi.mock("obsidian", () => {
   class App {}
@@ -160,12 +168,13 @@ type DomGlobals = {
 
 function installDomHelpers(globals: DomGlobals) {
   const { HTMLElement } = globals;
+  const prototype = HTMLElement.prototype as ObsidianHTMLElementPrototype;
   const createEl = function (
-    this: HTMLElement,
+    this: ObsidianHTMLElement,
     tag: string,
-    options: { cls?: string; text?: string; attr?: Record<string, string> } = {},
+    options: CreateChildOptions = {},
   ) {
-    const el = globals.document.createElement(tag) as HTMLElement;
+    const el = globals.document.createElement(tag) as ObsidianHTMLElement;
     if (options.cls) el.className = options.cls;
     if (options.text) el.textContent = options.text;
     if (options.attr) {
@@ -177,24 +186,26 @@ function installDomHelpers(globals: DomGlobals) {
     return el;
   };
 
-  HTMLElement.prototype.createEl = createEl;
-  HTMLElement.prototype.createDiv = function (
-    options: { cls?: string; text?: string; attr?: Record<string, string> } = {},
+  prototype.createEl = createEl;
+  prototype.createDiv = function (
+    this: ObsidianHTMLElement,
+    options: CreateChildOptions = {},
   ) {
     return createEl.call(this, "div", options);
   };
-  HTMLElement.prototype.createSpan = function (
-    options: { cls?: string; text?: string; attr?: Record<string, string> } = {},
+  prototype.createSpan = function (
+    this: ObsidianHTMLElement,
+    options: CreateChildOptions = {},
   ) {
     return createEl.call(this, "span", options);
   };
-  HTMLElement.prototype.addClass = function (...classes: string[]) {
+  prototype.addClass = function (...classes: string[]) {
     this.classList.add(...classes);
   };
-  HTMLElement.prototype.removeClass = function (...classes: string[]) {
+  prototype.removeClass = function (...classes: string[]) {
     this.classList.remove(...classes);
   };
-  HTMLElement.prototype.empty = function () {
+  prototype.empty = function () {
     this.replaceChildren();
   };
 }
