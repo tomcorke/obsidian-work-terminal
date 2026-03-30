@@ -7,7 +7,7 @@
  *                core.defaultShell, core.defaultTerminalCwd
  * Adapter settings: adapter.* (from adapter.config.settingsSchema)
  */
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
 import type { AdapterBundle, SettingField } from "../core/interfaces";
 import {
@@ -18,6 +18,7 @@ import {
 } from "../core/agents/AgentLauncher";
 import { checkHookStatus, installHooks, removeHooks } from "../core/claude/ClaudeHookManager";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
+import { resetGuidedTourStatus } from "./GuidedTour";
 import { expandTilde } from "../core/utils";
 
 interface CoreSettings {
@@ -146,6 +147,20 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Expose debug API",
       "Publishes window.__workTerminalDebug for CDP inspection. Disabled by default because it exposes active session metadata to other renderer plugins.",
     );
+
+    new Setting(containerEl)
+      .setName("Reset guided tour")
+      .setDesc(
+        "Clear guided tour completion status so it starts again next time you open Work Terminal.",
+      )
+      .addButton((btn) =>
+        btn.setButtonText("Reset").onClick(async () => {
+          await resetGuidedTourStatus(this.plugin);
+          new Notice(
+            "Guided tour will start next time you open Work Terminal",
+          );
+        }),
+      );
 
     // Session Resume Tracking section
     containerEl.createEl("h2", { text: "Claude /resume hooks" });
