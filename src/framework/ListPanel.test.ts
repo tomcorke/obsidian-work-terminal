@@ -182,6 +182,7 @@ function createListPanel(
 
 describe("ListPanel", () => {
   let dom: JSDOM;
+  let originalGetBoundingClientRect: typeof HTMLElement.prototype.getBoundingClientRect;
 
   beforeEach(() => {
     dom = new JSDOM("<!doctype html><html><body></body></html>");
@@ -197,11 +198,34 @@ describe("ListPanel", () => {
       Element: dom.window.Element,
       Node: dom.window.Node,
     });
+    originalGetBoundingClientRect = dom.window.HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(dom.window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        if (this.classList.contains("wt-success-bar")) {
+          const height = this.isConnected ? 18 : 0;
+          return {
+            x: 0,
+            y: 0,
+            bottom: height,
+            height,
+            left: 0,
+            right: 0,
+            top: 0,
+            width: 0,
+            toJSON() {
+              return {};
+            },
+          } as DOMRect;
+        }
+        return originalGetBoundingClientRect.call(this);
+      },
+    );
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     dom.window.close();
   });
@@ -236,6 +260,20 @@ describe("ListPanel", () => {
 
     expect(cardEl.classList.contains("wt-card-new-success")).toBe(false);
     expect(cardEl.querySelector(".wt-success-bar")).toBeNull();
+  });
+
+  it("measures the rerendered success bar after the card is attached to the DOM", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [] }, {});
+
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+    panel.resolvePlaceholder("placeholder-1", true);
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    const slot = document.querySelector(
+      '[data-item-id="task-1"] > .wt-success-bar-slot',
+    ) as HTMLElement;
+    expect(slot.style.getPropertyValue("--wt-success-bar-height")).toBe("18px");
   });
 
   it("clears pending success animation timers on dispose", () => {

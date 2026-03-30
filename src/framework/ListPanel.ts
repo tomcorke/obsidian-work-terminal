@@ -208,11 +208,11 @@ export class ListPanel {
           cardEl.addClass("wt-card-new-success");
         }
 
+        cardsEl.appendChild(cardEl);
+
         if (this.activeSuccessIds.has(item.id)) {
           this.appendSuccessBar(cardEl);
         }
-
-        cardsEl.appendChild(cardEl);
       }
 
       // Re-insert any active placeholders for this column
@@ -909,8 +909,24 @@ export class ListPanel {
     slot.appendChild(bar);
     cardEl.appendChild(slot);
 
-    const height = bar.getBoundingClientRect().height || bar.scrollHeight;
-    slot.style.setProperty("--wt-success-bar-height", `${height}px`);
+    this.measureSuccessBarHeight(slot, bar);
+  }
+
+  private measureSuccessBarHeight(slot: HTMLElement, bar: HTMLElement): void {
+    const applyHeight = () => {
+      if (!slot.isConnected || !bar.isConnected) return;
+      const height = bar.getBoundingClientRect().height || bar.scrollHeight || bar.offsetHeight;
+      if (height > 0) {
+        slot.style.setProperty("--wt-success-bar-height", `${height}px`);
+      }
+    };
+
+    if (slot.isConnected && bar.isConnected) {
+      applyHeight();
+      return;
+    }
+
+    setTimeout(applyHeight, 0);
   }
 
   private removeSuccessBar(cardEl: Element): void {
