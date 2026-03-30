@@ -35,6 +35,8 @@ function makeStubTab(
     id?: string;
     claudeSessionId?: string | null;
     taskPath?: string;
+    isDisposed?: boolean;
+    processStatus?: "alive" | "exited" | "killed" | "missing";
   } = {},
 ): {
   id: string;
@@ -51,7 +53,11 @@ function makeStubTab(
   hide: ReturnType<typeof vi.fn>;
   clearWaiting: ReturnType<typeof vi.fn>;
   taskPath: string;
+  isDisposed: boolean;
+  getDiagnostics: ReturnType<typeof vi.fn>;
 } {
+  const isDisposed = overrides.isDisposed ?? false;
+  const processStatus = overrides.processStatus ?? "alive";
   return {
     id: overrides.id ?? "tab-1",
     label: overrides.label ?? "Shell",
@@ -64,6 +70,42 @@ function makeStubTab(
     hide: vi.fn(),
     clearWaiting: vi.fn(),
     taskPath: overrides.taskPath ?? "item-1",
+    isDisposed,
+    getDiagnostics: vi.fn(() => ({
+      tabId: overrides.id ?? "tab-1",
+      label: overrides.label ?? "Shell",
+      sessionId: overrides.claudeSessionId ?? null,
+      sessionType: overrides.sessionType ?? "shell",
+      claudeState: overrides.claudeState ?? "inactive",
+      isResumableAgent: overrides.isResumableAgent ?? false,
+      isVisible: true,
+      isDisposed,
+      process: {
+        pid: null,
+        status: processStatus,
+        killed: processStatus === "killed",
+        exitCode: processStatus === "exited" ? 0 : null,
+        signalCode: processStatus === "killed" ? "SIGTERM" : null,
+        spawnTime: null,
+        uptimeMs: null,
+      },
+      renderer: {
+        canvasCount: 1,
+        hasRenderableContent: processStatus === "alive",
+        hasBlankRenderSurface: false,
+        trackedWebglAddonPresent: false,
+        trackedWebglAddonDisposed: false,
+        staleDisposedWebglOwnership: false,
+      },
+      buffer: {
+        screenLineCount: 0,
+        screenTail: [],
+      },
+      derived: {
+        blankButLiveRenderer: false,
+        staleDisposedWebglOwnership: false,
+      },
+    })),
   };
 }
 
@@ -436,5 +478,35 @@ describe("TabManager - active tab discovery", () => {
       },
     ]);
     expect(mgr.getActiveSessionIds()).toEqual(new Set(["session-1", "session-2"]));
+  });
+});
+
+describe("TabManager - diagnostics lifecycle", () => {
+  it("marks exited and missing processes as lost instead of live", () => {
+    const exitedTab = makeStubTab({
+      id: "tab-exited",
+      processStatus: "exited",
+      taskPath: "item-1",
+    });
+    const missingTab = makeStubTab({
+      id: "tab-missing",
+      processStatus: "missing",
+      taskPath: "item-1",
+    });
+    const mgr = makeTabManagerWithSessions("item-1", [exitedTab, missingTab]);
+
+    expect(mgr.getTabDiagnostics().map((tab) => tab.recovery.lifecycle)).toEqual(["lost", "lost"]);
+  });
+
+  it("marks disposed tabs as disposed even when diagnostics still report an alive process", () => {
+    const disposedTab = makeStubTab({
+      id: "tab-disposed",
+      isDisposed: true,
+      processStatus: "alive",
+      taskPath: "item-1",
+    });
+    const mgr = makeTabManagerWithSessions("item-1", [disposedTab]);
+
+    expect(mgr.getTabDiagnostics()[0].recovery.lifecycle).toBe("disposed");
   });
 });

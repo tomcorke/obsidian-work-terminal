@@ -11,7 +11,7 @@
 import { TerminalTab, type ClaudeState } from "./TerminalTab";
 import { aggregateState } from "../claude/ClaudeStateDetector";
 import { SessionStore } from "../session/SessionStore";
-import type { ActiveTabInfo, StoredSession, SessionType } from "../session/types";
+import type { ActiveTabInfo, StoredSession, SessionType, TabDiagnostics } from "../session/types";
 
 export class TabManager {
   private sessions: Map<string, TerminalTab[]> = new Map();
@@ -431,6 +431,43 @@ export class TabManager {
       }
     }
     return activeTabs;
+  }
+
+  /** Return diagnostics for every live tab across every item. */
+  getTabDiagnostics(): TabDiagnostics[] {
+    const diagnostics: TabDiagnostics[] = [];
+    for (const [itemId, tabs] of this.sessions) {
+      for (const [tabIndex, tab] of tabs.entries()) {
+        const tabDiagnostics = tab.getDiagnostics();
+        const lifecycle =
+          tab.isDisposed || tabDiagnostics.isDisposed
+            ? "disposed"
+            : tabDiagnostics.process.status === "alive"
+              ? "live"
+              : "lost";
+        diagnostics.push({
+          itemId: tab.taskPath ?? itemId,
+          tabIndex,
+          isSelected: this.activeItemId === itemId && this.activeTabIndex === tabIndex,
+          recovery: {
+            resumable: tab.isResumableAgent,
+            relaunchable: !tab.isResumableAgent,
+            hasPersistedSession: false,
+            canResumeAfterRestart: false,
+            missingPersistedMetadata: false,
+            wouldBeLostOnFullClose: false,
+            lifecycle,
+          },
+          ...tabDiagnostics,
+          derived: {
+            ...tabDiagnostics.derived,
+            disposedTabStillSelected:
+              tab.isDisposed && this.activeItemId === itemId && this.activeTabIndex === tabIndex,
+          },
+        });
+      }
+    }
+    return diagnostics;
   }
 
   /** Find active tabs whose labels exactly match the supplied label. */

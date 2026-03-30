@@ -33,14 +33,20 @@ import {
 } from "../core/claude/ClaudeLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import { SessionStore } from "../core/session/SessionStore";
-import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
+import { isResumableSessionType } from "../core/session/types";
+import type {
+  ActiveTabInfo,
+  AgentRuntimeState,
+  PersistedSession,
+  TabDiagnostics,
+} from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
-import { RecentlyClosedStore } from "../core/session/RecentlyClosedStore";
+import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import {
   getDefaultSessionLabel,
@@ -68,6 +74,47 @@ interface WorkTerminalDebugApi extends WorkTerminalDebugSnapshot {
   findTabsByLabel(label: string): ActiveTabInfo[];
   getActiveSessionIds(): string[];
   getPersistedSessions(itemId?: string): PersistedSession[];
+  getSessionDiagnostics(): WorkTerminalSessionDiagnosticsSnapshot;
+}
+
+interface DiagnosticsSummary {
+  activeItemId: string | null;
+  activeTabIndex: number;
+  activeItemCount: number;
+  activeTabCount: number;
+  persistedSessionCount: number;
+  recentlyClosedCount: number;
+  hasHotReloadStore: boolean;
+  derivedCounts: {
+    blankButLiveRenderer: number;
+    staleDisposedWebglOwnership: number;
+    missingPersistedMetadata: number;
+    liveNonResumableSessions: number;
+    disposedTabStillSelected: number;
+  };
+}
+
+interface DiagnosticsItemSnapshot {
+  itemId: string;
+  isActiveItem: boolean;
+  activeTabIndex: number;
+  aggregateState: AgentRuntimeState;
+  idleSince: number | null;
+  sessionCounts: { shells: number; agents: number };
+  tabs: TabDiagnostics[];
+}
+
+interface WorkTerminalSessionDiagnosticsSnapshot {
+  version: 1;
+  generatedAt: string;
+  summary: DiagnosticsSummary;
+  items: DiagnosticsItemSnapshot[];
+  persistedSessions: PersistedSession[];
+  recentlyClosedSessions: Array<
+    ClosedSessionEntry & {
+      recoveryAvailable: boolean;
+    }
+  >;
 }
 
 const DEBUG_API_OWNER = Symbol("work-terminal-debug-owner");
@@ -100,6 +147,7 @@ export class TerminalPanelView {
 
   // Persisted sessions from disk
   private persistedSessions: PersistedSession[] = [];
+  private durablePersistedSessions: PersistedSession[] = [];
 
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
@@ -832,16 +880,31 @@ export class TerminalPanelView {
     const persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
     if (this.isDisposed) return;
     this.persistedSessions = persistedSessions;
+    this.durablePersistedSessions = [...persistedSessions];
     this.refreshDebugGlobal();
     await this.checkHookWarning();
   }
 
   async persistSessions(): Promise<void> {
     if (this.isDisposed) return;
+    const freshPersistedSessions = SessionPersistence.buildPersistedSessions(
+      this.tabManager.getSessions(),
+    );
     await mergeAndSavePluginData(this.plugin, async (data) => {
       SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
     });
     if (this.isDisposed) return;
+    this.durablePersistedSessions = freshPersistedSessions;
+    const preservedLoadedSessions = this.persistedSessions.filter(
+      (session) =>
+        !freshPersistedSessions.some(
+          (fresh) =>
+            fresh.taskPath === session.taskPath &&
+            fresh.claudeSessionId === session.claudeSessionId &&
+            fresh.sessionType === session.sessionType,
+        ),
+    );
+    this.persistedSessions = [...freshPersistedSessions, ...preservedLoadedSessions];
     this.refreshDebugGlobal();
   }
 
@@ -961,6 +1024,127 @@ export class TerminalPanelView {
 
   getActiveSessionIds(): string[] {
     return Array.from(this.tabManager.getActiveSessionIds());
+  }
+
+  private buildSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
+    const activeSessionIds = this.tabManager.getActiveSessionIds();
+    const activeTabs = this.tabManager.getTabDiagnostics().map((tab) => {
+      const hasPersistedSession =
+        !!tab.sessionId &&
+        this.durablePersistedSessions.some(
+          (session) =>
+            session.taskPath === tab.itemId &&
+            session.claudeSessionId === tab.sessionId &&
+            session.sessionType === tab.sessionType,
+        );
+      const missingPersistedMetadata = tab.isResumableAgent && !hasPersistedSession;
+      const wouldBeLostOnFullClose = tab.process.status === "alive" && !tab.isResumableAgent;
+      const lifecycle =
+        tab.isDisposed
+          ? "disposed"
+          : tab.process.status === "alive"
+            ? "live"
+            : tab.isResumableAgent && hasPersistedSession
+              ? "resumable"
+              : missingPersistedMetadata
+                ? "resume-metadata-missing"
+                : "lost";
+      return {
+        ...tab,
+        recovery: {
+          resumable: tab.isResumableAgent,
+          relaunchable: !tab.isResumableAgent,
+          hasPersistedSession,
+          canResumeAfterRestart: tab.isResumableAgent && hasPersistedSession,
+          missingPersistedMetadata,
+          wouldBeLostOnFullClose,
+          lifecycle,
+        },
+      };
+    });
+    const itemIds = this.tabManager.getSessionItemIds();
+    const items = itemIds.map((itemId) => ({
+      itemId,
+      isActiveItem: itemId === this.tabManager.getActiveItemId(),
+      activeTabIndex:
+        itemId === this.tabManager.getActiveItemId() ? this.tabManager.getActiveTabIndex() : 0,
+      aggregateState: this.tabManager.getClaudeState(itemId),
+      idleSince: this.tabManager.getIdleSince(itemId) ?? null,
+      sessionCounts: this.tabManager.getSessionCounts(itemId),
+      tabs: activeTabs.filter((tab) => tab.itemId === itemId),
+    }));
+    const recentlyClosedSessions = this.recentlyClosedStore.getEntries(activeSessionIds, 20).map((entry) => ({
+      ...entry,
+      recoveryAvailable: isResumableSessionType(entry.sessionType) && !!entry.claudeSessionId,
+    }));
+    const summary: DiagnosticsSummary = {
+      activeItemId: this.tabManager.getActiveItemId(),
+      activeTabIndex: this.tabManager.getActiveTabIndex(),
+      activeItemCount: items.length,
+      activeTabCount: activeTabs.length,
+      persistedSessionCount: this.durablePersistedSessions.length,
+      recentlyClosedCount: recentlyClosedSessions.length,
+      hasHotReloadStore: SessionStore.isReload(),
+      derivedCounts: {
+        blankButLiveRenderer: activeTabs.filter((tab) => tab.derived.blankButLiveRenderer).length,
+        staleDisposedWebglOwnership: activeTabs.filter(
+          (tab) => tab.derived.staleDisposedWebglOwnership,
+        ).length,
+        missingPersistedMetadata: activeTabs.filter(
+          (tab) => tab.recovery.missingPersistedMetadata,
+        ).length,
+        liveNonResumableSessions: activeTabs.filter(
+          (tab) => tab.recovery.wouldBeLostOnFullClose,
+        ).length,
+        disposedTabStillSelected: activeTabs.filter(
+          (tab) => tab.derived.disposedTabStillSelected,
+        ).length,
+      },
+    };
+
+    return {
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      summary,
+      items,
+      persistedSessions: [...this.durablePersistedSessions],
+      recentlyClosedSessions,
+    };
+  }
+
+  getSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
+    return this.buildSessionDiagnosticsSnapshot();
+  }
+
+  getSessionDiagnosticsJson(): string {
+    return JSON.stringify(this.buildSessionDiagnosticsSnapshot(), null, 2);
+  }
+
+  async copySessionDiagnostics(): Promise<boolean> {
+    try {
+      const diagnosticsJson = this.getSessionDiagnosticsJson();
+      const electron = electronRequire("electron") as
+        | {
+            clipboard?: {
+              writeText?: (text: string) => void;
+            };
+          }
+        | undefined;
+      if (electron?.clipboard?.writeText) {
+        electron.clipboard.writeText(diagnosticsJson);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(diagnosticsJson);
+      } else {
+        throw new Error("Clipboard API unavailable");
+      }
+      new Notice("Session diagnostics copied to clipboard");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[work-terminal] Failed to copy session diagnostics:", error);
+      new Notice(`Failed to copy session diagnostics: ${message}`);
+      return false;
+    }
   }
 
   private getActiveItem(): WorkItem | null {
@@ -1403,13 +1587,10 @@ export class TerminalPanelView {
   }
 
   private buildDebugApi(): OwnedWorkTerminalDebugApi {
-    const thisView = this;
     const getSnapshot = () =>
-      thisView.canExposeDebugApi()
-        ? thisView.buildDebugSnapshot()
-        : thisView.buildRevokedDebugSnapshot();
+      this.canExposeDebugApi() ? this.buildDebugSnapshot() : this.buildRevokedDebugSnapshot();
     return {
-      [DEBUG_API_OWNER]: thisView,
+      [DEBUG_API_OWNER]: this,
       get version() {
         return 1 as const;
       },
@@ -1434,14 +1615,40 @@ export class TerminalPanelView {
       getSnapshot,
       getAllActiveTabs: () => getSnapshot().activeTabs,
       findTabsByLabel: (label: string) =>
-        thisView.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
+        this.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
       getActiveSessionIds: () => getSnapshot().activeSessionIds,
       getPersistedSessions: (itemId?: string) =>
-        thisView.canExposeDebugApi()
+        this.canExposeDebugApi()
           ? itemId
             ? this.getPersistedSessions(itemId)
             : [...this.persistedSessions]
           : [],
+      getSessionDiagnostics: () =>
+        this.canExposeDebugApi()
+          ? this.getSessionDiagnosticsSnapshot()
+          : {
+              version: 1,
+              generatedAt: new Date(0).toISOString(),
+              summary: {
+                activeItemId: null,
+                activeTabIndex: 0,
+                activeItemCount: 0,
+                activeTabCount: 0,
+                persistedSessionCount: 0,
+                recentlyClosedCount: 0,
+                hasHotReloadStore: false,
+                derivedCounts: {
+                  blankButLiveRenderer: 0,
+                  staleDisposedWebglOwnership: 0,
+                  missingPersistedMetadata: 0,
+                  liveNonResumableSessions: 0,
+                  disposedTabStillSelected: 0,
+                },
+              },
+              items: [],
+              persistedSessions: [],
+              recentlyClosedSessions: [],
+            },
     };
   }
 }
