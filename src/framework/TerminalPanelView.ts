@@ -116,7 +116,7 @@ export class TerminalPanelView {
   private stopPeriodicPersist: (() => void) | null = null;
 
   // Recently closed sessions store
-  private recentlyClosedStore = new RecentlyClosedStore();
+  private recentlyClosedStore = RecentlyClosedStore.createWindowScoped();
 
   // Hook warning banner element
   private hookWarningEl: HTMLElement | null = null;
@@ -184,6 +184,7 @@ export class TerminalPanelView {
       const entry = this.buildClosedSessionEntry(itemId, tab);
       if (!entry) return;
       this.recentlyClosedStore.add(entry);
+      this.syncRecentlyClosedState();
       void this.persistRecentlyClosedSessions();
     };
 
@@ -839,6 +840,35 @@ export class TerminalPanelView {
       .some((tab) => this.matchesRecoverySession(tab, entry));
   }
 
+  private isClosedSessionActiveAcrossViews(entry: ClosedSessionEntry): boolean {
+    return Array.from(liveTerminalViews).some((view) =>
+      view.tabManager.getTabs(entry.itemId).some((tab) => view.matchesRecoverySession(tab, entry)),
+    );
+  }
+
+  private getActiveSessionIdsAcrossViews(): Set<string> {
+    const activeIds = new Set<string>();
+    for (const view of liveTerminalViews) {
+      if (view.isDisposed) {
+        continue;
+      }
+      for (const sessionId of view.tabManager.getActiveSessionIds()) {
+        activeIds.add(sessionId);
+      }
+    }
+    return activeIds;
+  }
+
+  private syncRecentlyClosedState(): void {
+    for (const view of liveTerminalViews) {
+      if (view.isDisposed) {
+        continue;
+      }
+      view.refreshDebugGlobal();
+      void view.checkHookWarning();
+    }
+  }
+
   private removePersistedSession(session: PersistedSession): void {
     const matches = (candidate: PersistedSession): boolean => {
       if (candidate.recoveryMode !== session.recoveryMode) {
@@ -1145,9 +1175,12 @@ export class TerminalPanelView {
   private async loadRecentlyClosedSessions(): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     if (this.isDisposed) return;
-    for (const entry of RecentlyClosedStore.fromData(data.recentlyClosedSessions || [])) {
-      this.recentlyClosedStore.add(entry);
+    if (RecentlyClosedStore.claimWindowHydration()) {
+      for (const entry of RecentlyClosedStore.fromData(data.recentlyClosedSessions || [])) {
+        this.recentlyClosedStore.add(entry);
+      }
     }
+    this.syncRecentlyClosedState();
     await this.checkHookWarning();
   }
 
@@ -1175,6 +1208,7 @@ export class TerminalPanelView {
       }
     });
     if (this.isDisposed) return;
+    this.syncRecentlyClosedState();
     this.refreshDebugGlobal();
   }
 
@@ -1335,9 +1369,9 @@ export class TerminalPanelView {
 
     const fresh = await this.loadFreshSettings();
     const initial = await this.loadCustomSessionDefaults(item.id, fresh);
-    const activeIds = this.tabManager.getActiveSessionIds();
+    const activeIds = this.getActiveSessionIdsAcrossViews();
     const closedSessions = this.recentlyClosedStore.getEntries(activeIds, 5, (entry) =>
-      this.isClosedSessionActive(entry),
+      this.isClosedSessionActiveAcrossViews(entry),
     );
     new CustomSessionModal(
       this.plugin.app,
@@ -1355,37 +1389,56 @@ export class TerminalPanelView {
   private async restoreClosedSession(
     entry: ClosedSessionEntry,
   ): Promise<void> {
+    const claimedEntry = this.recentlyClosedStore.take(entry);
+    if (!claimedEntry) {
+      return;
+    }
+
+    this.syncRecentlyClosedState();
+    this.persistRecentlyClosedSessions().catch(() => {});
+
     const fresh = await this.loadFreshSettings();
     const tab =
-      entry.recoveryMode === "relaunch"
+      claimedEntry.recoveryMode === "relaunch"
         ? this.createRelaunchedTab({
-            targetItemId: entry.itemId,
-            sessionType: entry.sessionType,
-            label: entry.label,
-            command: entry.command,
-            cwd: entry.cwd,
-            commandArgs: entry.commandArgs,
-            durableSessionId: entry.durableSessionId,
+            targetItemId: claimedEntry.itemId,
+            sessionType: claimedEntry.sessionType,
+            label: claimedEntry.label,
+            command: claimedEntry.command,
+            cwd: claimedEntry.cwd,
+            commandArgs: claimedEntry.commandArgs,
+            durableSessionId: claimedEntry.durableSessionId,
           })
-        : entry.claudeSessionId
+        : claimedEntry.claudeSessionId
           ? this.createResumedTab({
-              targetItemId: entry.itemId,
-              sessionType: entry.sessionType,
-              label: entry.label,
-              sessionId: entry.claudeSessionId,
+              targetItemId: claimedEntry.itemId,
+              sessionType: claimedEntry.sessionType,
+              label: claimedEntry.label,
+              sessionId: claimedEntry.claudeSessionId,
               freshSettings: fresh,
-              ...this.getSavedResumeLaunchContext(entry),
+              ...this.getSavedResumeLaunchContext(claimedEntry),
             })
           : null;
 
     if (!tab) {
+      this.recentlyClosedStore.add(claimedEntry);
+      this.syncRecentlyClosedState();
+      this.persistRecentlyClosedSessions().catch(() => {});
       return;
     }
 
-    this.trackRecoverySuccess(tab, () => {
-      this.recentlyClosedStore.remove(entry);
-      this.persistRecentlyClosedSessions().catch(() => {});
-    });
+    this.trackRecoverySuccess(
+      tab,
+      () => {
+        this.syncRecentlyClosedState();
+        this.persistRecentlyClosedSessions().catch(() => {});
+      },
+      () => {
+        this.recentlyClosedStore.add(claimedEntry);
+        this.syncRecentlyClosedState();
+        this.persistRecentlyClosedSessions().catch(() => {});
+      },
+    );
     this.renderTabBar();
   }
 

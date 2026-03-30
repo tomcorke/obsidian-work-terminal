@@ -1134,7 +1134,7 @@ describe("TerminalPanelView hook warning", () => {
     const { view } = createView();
     await flushAsync();
 
-    await (view as any).restoreClosedSession({
+    const entry = {
       sessionType: "shell",
       label: "Shell",
       claudeSessionId: null,
@@ -1145,7 +1145,10 @@ describe("TerminalPanelView hook warning", () => {
       cwd: "/vault",
       command: "/bin/zsh",
       commandArgs: undefined,
-    });
+    };
+    (view as any).recentlyClosedStore.add(entry);
+
+    await (view as any).restoreClosedSession(entry);
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",
@@ -1158,6 +1161,64 @@ describe("TerminalPanelView hook warning", () => {
       null,
       "durable-shell-1",
     ]);
+  });
+
+  it("hydrates recently closed sessions from disk only once across live views", async () => {
+    const loadData = vi.fn(async () => ({
+      settings: {},
+      recentlyClosedSessions: [
+        {
+          sessionType: "shell",
+          label: "Shell",
+          claudeSessionId: null,
+          closedAt: Date.now(),
+          itemId: "Tasks/task-1.md",
+          recoveryMode: "relaunch",
+          cwd: "/vault",
+          command: "/bin/zsh",
+        },
+      ],
+    }));
+
+    const { view: firstView } = createView({}, { loadData });
+    const { view: secondView } = createView({}, { loadData });
+    await flushAsync();
+
+    expect((firstView as any).recentlyClosedStore.serialize()).toHaveLength(1);
+    expect((secondView as any).recentlyClosedStore.serialize()).toHaveLength(1);
+  });
+
+  it("claims recently closed entries once across concurrent live views", async () => {
+    const entry = {
+      sessionType: "shell",
+      label: "Shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      closedAt: Date.now(),
+      itemId: "Tasks/task-1.md",
+      recoveryMode: "relaunch" as const,
+      cwd: "/vault",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+    };
+    const loadData = vi.fn(async () => ({
+      settings: {},
+      recentlyClosedSessions: [entry],
+    }));
+
+    const { view: firstView } = createView({}, { loadData });
+    const { view: secondView } = createView({}, { loadData });
+    await flushAsync();
+    mockState.tabManagerCalls = [];
+
+    await Promise.all([
+      (firstView as any).restoreClosedSession(entry),
+      (secondView as any).restoreClosedSession(entry),
+    ]);
+
+    expect(mockState.tabManagerCalls.filter((call) => call === "createTabForItem")).toHaveLength(1);
+    expect((firstView as any).recentlyClosedStore.serialize()).toEqual([]);
+    expect((secondView as any).recentlyClosedStore.serialize()).toEqual([]);
   });
 
   it("restores persisted resumable sessions with their saved launch context", async () => {
@@ -1211,7 +1272,7 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).restoreClosedSession({
+    const entry = {
       sessionType: "claude",
       label: "Claude",
       claudeSessionId: "saved-session",
@@ -1228,7 +1289,10 @@ describe("TerminalPanelView hook warning", () => {
         "old-session",
         "--session-id=legacy",
       ],
-    });
+    };
+    (view as any).recentlyClosedStore.add(entry);
+
+    await (view as any).restoreClosedSession(entry);
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",
@@ -1288,7 +1352,7 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).restoreClosedSession({
+    const entry = {
       sessionType: "copilot-with-context",
       label: "Copilot (ctx)",
       claudeSessionId: "saved-session",
@@ -1305,7 +1369,10 @@ describe("TerminalPanelView hook warning", () => {
         "-i",
         "Prompt that should not replay",
       ],
-    });
+    };
+    (view as any).recentlyClosedStore.add(entry);
+
+    await (view as any).restoreClosedSession(entry);
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",

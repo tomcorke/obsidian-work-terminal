@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { RecentlyClosedStore, type ClosedSessionEntry } from "./RecentlyClosedStore";
+import {
+  RecentlyClosedStore,
+  type ClosedSessionEntry,
+  type RecentlyClosedState,
+} from "./RecentlyClosedStore";
 
 function makeEntry(overrides: Partial<ClosedSessionEntry> = {}): ClosedSessionEntry {
   return {
@@ -199,5 +203,39 @@ describe("RecentlyClosedStore", () => {
     const entries = store.getEntries(new Set(), 5, (entry) => entry.label === "Active shell");
     expect(entries).toHaveLength(1);
     expect(entries[0].label).toBe("Inactive shell");
+  });
+
+  it("shares add and take operations across stores backed by the same state", () => {
+    const sharedState: RecentlyClosedState = {
+      entries: [],
+      hydratedFromDisk: false,
+    };
+    const firstStore = new RecentlyClosedStore([], sharedState);
+    const secondStore = new RecentlyClosedStore([], sharedState);
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+    });
+
+    firstStore.add(entry);
+
+    expect(secondStore.serialize()).toEqual([
+      expect.objectContaining({
+        durableSessionId: "durable-shell-1",
+        label: "Shell",
+      }),
+    ]);
+    expect(secondStore.take(entry)).toEqual(
+      expect.objectContaining({
+        durableSessionId: "durable-shell-1",
+        label: "Shell",
+      }),
+    );
+    expect(firstStore.serialize()).toEqual([]);
   });
 });
