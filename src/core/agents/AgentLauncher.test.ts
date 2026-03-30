@@ -378,4 +378,30 @@ describe("AgentLauncher", () => {
       "agent.py",
     ]);
   });
+
+  it("preserves quoted Windows executable paths and escaped quotes in configured commands", () => {
+    expect(
+      splitConfiguredCommand(
+        `"C:\\Program Files\\Python\\python.exe" "agent \\"quoted\\".py" --profile local`,
+      ),
+    ).toEqual([
+      "C:\\Program Files\\Python\\python.exe",
+      'agent "quoted".py',
+      "--profile",
+      "local",
+    ]);
+  });
+
+  it("preserves quoted POSIX executable paths in configured commands", () => {
+    expect(
+      splitConfiguredCommand(
+        '"/Applications/Strands Agent/bin/python3" "./agents/agent.py" --mode interactive',
+      ),
+    ).toEqual([
+      "/Applications/Strands Agent/bin/python3",
+      "./agents/agent.py",
+      "--mode",
+      "interactive",
+    ]);
+  });
 });

@@ -2953,6 +2953,41 @@ describe("TerminalPanelView hook warning", () => {
     );
   });
 
+  it("launches Strands with quoted POSIX executable paths intact", async () => {
+    const { view } = createView({
+      "core.strandsCommand": `"/Applications/Strands Agent/bin/python3" "./agents/agent.py"`,
+      "core.strandsExtraArgs": "--mode interactive",
+      "core.defaultTerminalCwd": "~/one",
+    });
+    await flushAsync();
+
+    await (view as any).spawnStrandsSession({
+      sessionType: "strands",
+      prompt: "Review this task",
+      freshSettings: {
+        "core.strandsCommand": `"/Applications/Strands Agent/bin/python3" "./agents/agent.py"`,
+        "core.strandsExtraArgs": "--mode interactive",
+        "core.defaultTerminalCwd": "~/one",
+      },
+    });
+
+    expect(mockState.notices).toEqual([]);
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "/Applications/Strands Agent/bin/python3",
+      expandTilde("~/one"),
+      "Strands",
+      "strands",
+      undefined,
+      [
+        "/Applications/Strands Agent/bin/python3",
+        "./agents/agent.py",
+        "--mode",
+        "interactive",
+        "Review this task",
+      ],
+    ]);
+  });
+
   it("keeps Windows absolute vault paths intact for Claude context prompts", async () => {
     const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
     const { view } = createView(

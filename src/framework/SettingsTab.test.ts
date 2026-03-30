@@ -414,6 +414,49 @@ describe("WorkTerminalSettingsTab", () => {
     expect(copilotBadge?.textContent).toBe("Not found");
   });
 
+  it("validates quoted Windows Strands executable paths with spaces using the executable token only", async () => {
+    splitConfiguredCommandMock.mockReturnValue([
+      "C:\\Program Files\\Python\\python.exe",
+      "agent.py",
+      "--profile",
+      "local",
+    ]);
+    resolveCommandInfoMock.mockImplementation((command: string) => {
+      if (command === "C:\\Program Files\\Python\\python.exe") {
+        return {
+          requested: command,
+          resolved: command,
+          found: true,
+        };
+      }
+      return {
+        requested: command,
+        resolved: command,
+        found: false,
+      };
+    });
+    const plugin = makePlugin({
+      "core.claudeCommand": "claude",
+      "core.copilotCommand": "./package.json",
+      "core.strandsCommand": `"C:\\Program Files\\Python\\python.exe" agent.py --profile local`,
+      "core.defaultTerminalCwd": "C:\\vault",
+    });
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+
+    tab.display();
+    await flushAsyncWork();
+
+    const strandsBadge = tab.containerEl.querySelector<HTMLElement>(
+      '[data-command-validation-key="core.strandsCommand"] .wt-command-status-badge',
+    );
+    expect(strandsBadge?.textContent).toBe("Found");
+    expect(tab.containerEl.textContent).toContain("Inline args: agent.py --profile local");
+    expect(resolveCommandInfoMock).toHaveBeenCalledWith(
+      "C:\\Program Files\\Python\\python.exe",
+      "C:\\vault",
+    );
+  });
+
   it("labels Windows absolute and relative command paths correctly", async () => {
     resolveCommandInfoMock.mockImplementation((command: string, cwd?: string) => {
       if (command === "C:\\Tools\\claude.exe") {
