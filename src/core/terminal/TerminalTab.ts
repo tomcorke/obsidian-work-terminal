@@ -44,6 +44,12 @@ type TerminalWithAddonManager = Terminal & {
   };
 };
 
+function shouldPreservePrintableOptionCombo(event: KeyboardEvent): boolean {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return false;
+  if (event.getModifierState?.("AltGraph")) return false;
+  return /^Digit\d$/.test(event.code);
+}
+
 export class TerminalTab {
   id: string;
   label: string;
@@ -158,6 +164,7 @@ export class TerminalTab {
         },
       },
     });
+    this.configureOptionKeyHandling();
 
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
@@ -390,6 +397,20 @@ export class TerminalTab {
       if (this._isDisposed) return;
       this.terminal.write(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
+    });
+  }
+
+  private configureOptionKeyHandling(): void {
+    const terminal = this.terminal as Terminal & {
+      options?: { macOptionIsMeta?: boolean };
+      attachCustomKeyEventHandler?: (handler: (event: KeyboardEvent) => boolean) => void;
+    };
+    if (!terminal.options || typeof terminal.attachCustomKeyEventHandler !== "function") return;
+
+    terminal.options.macOptionIsMeta = true;
+    terminal.attachCustomKeyEventHandler((event) => {
+      terminal.options!.macOptionIsMeta = !shouldPreservePrintableOptionCombo(event);
+      return true;
     });
   }
 
@@ -972,6 +993,7 @@ export class TerminalTab {
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
     tab.terminal = stored.terminal;
+    tab.configureOptionKeyHandling();
     tab.fitAddon = stored.fitAddon;
     tab.searchAddon = stored.searchAddon;
     tab.webLinksAddon = stored.webLinksAddon;

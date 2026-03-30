@@ -73,7 +73,10 @@ vi.mock("../agents/AgentSessionTracker", () => ({
 }));
 
 vi.mock("@xterm/xterm", () => ({
-  Terminal: class {},
+  Terminal: class {
+    options: Record<string, unknown> = {};
+    attachCustomKeyEventHandler = vi.fn();
+  },
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
