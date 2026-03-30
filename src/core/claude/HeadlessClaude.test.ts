@@ -13,4 +13,16 @@ describe("HeadlessClaude", () => {
       missingCli: true,
     });
   });
+
+  it("does not treat a missing relative wrapper path as available", async () => {
+    await expect(
+      spawnHeadlessClaude("Review this task", process.cwd(), "./missing-claude-wrapper"),
+    ).resolves.toEqual({
+      exitCode: -1,
+      stdout: "",
+      stderr:
+        'Claude Code CLI not found for "./missing-claude-wrapper". Install it first, for example with brew install --cask claude-code, then update Work Terminal\'s Claude command setting if needed.',
+      missingCli: true,
+    });
+  });
 });

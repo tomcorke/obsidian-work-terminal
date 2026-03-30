@@ -31,7 +31,15 @@ export interface ResolvedCommand {
   found: boolean;
 }
 
-export function resolveCommandInfo(cmd: string): ResolvedCommand {
+function safeExistsSync(fs: typeof import("fs"), pathToCheck: string): boolean {
+  try {
+    return fs.existsSync(pathToCheck);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveCommandInfo(cmd: string, cwd?: string): ResolvedCommand {
   const requested = cmd.trim();
   const fs = electronRequire("fs") as typeof import("fs");
   if (!requested) {
@@ -42,14 +50,23 @@ export function resolveCommandInfo(cmd: string): ResolvedCommand {
     return {
       requested,
       resolved: expanded,
-      found: fs.existsSync(expanded),
+      found: safeExistsSync(fs, expanded),
     };
   }
   if (expanded.includes("/")) {
+    if (cwd) {
+      const path = electronRequire("path") as typeof import("path");
+      const resolved = path.resolve(expandTilde(cwd), expanded);
+      return {
+        requested,
+        resolved,
+        found: safeExistsSync(fs, resolved),
+      };
+    }
     return {
       requested,
       resolved: expanded,
-      found: true,
+      found: false,
     };
   }
   const path = electronRequire("path") as typeof import("path");

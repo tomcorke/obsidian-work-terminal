@@ -8,6 +8,7 @@ import {
   parseExtraArgs,
   resolveCommandInfo,
 } from "./AgentLauncher";
+import { expandTilde } from "../utils";
 
 describe("AgentLauncher", () => {
   it("parses backslash-newline continuations without keeping continuation tokens", () => {
@@ -129,11 +130,35 @@ describe("AgentLauncher", () => {
     });
   });
 
-  it("passes through relative command paths so wrapper scripts still work", () => {
+  it("treats slash-containing relative paths as unresolved when no launch cwd is known", () => {
     expect(resolveCommandInfo("./bin/claude-wrapper")).toEqual({
       requested: "./bin/claude-wrapper",
       resolved: "./bin/claude-wrapper",
+      found: false,
+    });
+  });
+
+  it("resolves relative wrapper paths against the launch cwd", () => {
+    expect(resolveCommandInfo("./sh", "/bin")).toEqual({
+      requested: "./sh",
+      resolved: "/bin/sh",
       found: true,
+    });
+  });
+
+  it("treats malformed absolute paths as unresolved instead of throwing", () => {
+    expect(resolveCommandInfo("/bin/\u0000bad-command")).toEqual({
+      requested: "/bin/\u0000bad-command",
+      resolved: "/bin/\u0000bad-command",
+      found: false,
+    });
+  });
+
+  it("treats missing relative wrapper paths as unresolved even when cwd is provided", () => {
+    expect(resolveCommandInfo("./missing-wrapper", expandTilde("~"))).toEqual({
+      requested: "./missing-wrapper",
+      resolved: `${expandTilde("~")}/missing-wrapper`,
+      found: false,
     });
   });
 

@@ -1514,6 +1514,74 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.notices).toEqual([]);
   });
 
+  it("falls back to the current configured command when a saved relative Copilot wrapper path is stale", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "/bin/echo",
+      "core.copilotExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("copilot", {
+        label: "Copilot",
+        cwd: "/saved-cwd",
+        command: "./missing/copilot-wrapper",
+        commandArgs: [
+          "./missing/copilot-wrapper",
+          "--saved-flag",
+          "value",
+          "--resume=old-session",
+        ],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "/bin/echo",
+      "/saved-cwd",
+      "Copilot",
+      "copilot",
+      undefined,
+      ["/bin/echo", "--saved-flag", "value", "--resume=saved-session"],
+      "saved-session",
+    ]);
+    expect(mockState.notices).toEqual([]);
+  });
+
+  it("resolves the current relative Copilot command against the current configured cwd after a stale saved wrapper path", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "./sh",
+      "core.defaultTerminalCwd": "/bin",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("copilot", {
+        label: "Copilot",
+        cwd: "/saved-cwd",
+        command: "./missing/copilot-wrapper",
+        commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "/bin/sh",
+      "/saved-cwd",
+      "Copilot",
+      "copilot",
+      undefined,
+      ["/bin/sh", "--saved-flag", "value", "--resume=saved-session"],
+      "saved-session",
+    ]);
+    expect(mockState.notices).toEqual([]);
+  });
+
   it("restores recently closed resumable sessions with their saved launch context", async () => {
     const { view } = createView({
       "core.claudeCommand": "claude-current",

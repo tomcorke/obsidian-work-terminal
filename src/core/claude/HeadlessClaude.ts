@@ -29,7 +29,7 @@ export function spawnHeadlessClaude(
 ): Promise<HeadlessClaudeResult> {
   return new Promise((resolve) => {
     const cp = electronRequire("child_process") as typeof import("child_process");
-    const resolution = resolveCommandInfo(claudeCommand);
+    const resolution = resolveCommandInfo(claudeCommand, cwd);
     if (!resolution.found) {
       resolve({
         exitCode: -1,

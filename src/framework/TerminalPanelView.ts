@@ -1183,17 +1183,23 @@ export class TerminalPanelView {
     const isCopilot =
       options.sessionType === "copilot" || options.sessionType === "copilot-with-context";
     const agent = isCopilot ? "copilot" : "claude";
+    const configuredCwd = expandTilde(
+      this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"),
+    );
+    const cwd =
+      options.cwd ||
+      configuredCwd;
     const configuredCommand = this.getStringSetting(
       options.freshSettings,
       isCopilot ? "core.copilotCommand" : "core.claudeCommand",
       isCopilot ? "copilot" : "claude",
     );
     const savedResolution = options.resolvedCommand
-      ? resolveCommandInfo(options.resolvedCommand)
+      ? resolveCommandInfo(options.resolvedCommand, cwd)
       : null;
     const command = savedResolution?.found
       ? savedResolution.resolved
-      : this.resolveAgentCommandOrNotice(agent, configuredCommand);
+      : this.resolveAgentCommandOrNotice(agent, configuredCommand, configuredCwd);
     if (!command) {
       return null;
     }
@@ -1209,9 +1215,6 @@ export class TerminalPanelView {
       args.unshift(...parsedExtraArgs);
     }
 
-    const cwd =
-      options.cwd ||
-      expandTilde(this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"));
     const tab = this.tabManager.createTabForItem(
       options.targetItemId,
       command,
@@ -1861,7 +1864,10 @@ export class TerminalPanelView {
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
-    const resolved = this.resolveAgentCommandOrNotice("claude", claudeCmd);
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+    );
+    const resolved = this.resolveAgentCommandOrNotice("claude", claudeCmd, cwd);
     if (!resolved) {
       return null;
     }
@@ -1871,9 +1877,6 @@ export class TerminalPanelView {
       options.extraArgs || "",
     );
     const args = buildClaudeArgs({ claudeExtraArgs: mergedExtraArgs }, sessionId, prompt);
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     const tab = this.tabManager.createTab(
       resolved,
@@ -1901,7 +1904,10 @@ export class TerminalPanelView {
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
-    const resolved = this.resolveAgentCommandOrNotice("copilot", copilotCmd);
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+    );
+    const resolved = this.resolveAgentCommandOrNotice("copilot", copilotCmd, cwd);
     if (!resolved) {
       return;
     }
@@ -1914,9 +1920,6 @@ export class TerminalPanelView {
       `--resume=${sessionId}`,
       ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, options.prompt),
     ];
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     this.tabManager.createTab(
       resolved,
@@ -1962,8 +1965,9 @@ export class TerminalPanelView {
   private resolveAgentCommandOrNotice(
     agent: "claude" | "copilot",
     command: string,
+    cwd?: string,
   ): string | null {
-    const resolution = resolveCommandInfo(command);
+    const resolution = resolveCommandInfo(command, cwd);
     if (resolution.found) {
       return resolution.resolved;
     }
