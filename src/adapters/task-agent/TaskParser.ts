@@ -415,25 +415,53 @@ export class TaskParser implements WorkItemParser {
 
   private extractFrontmatterId(content: string): string | null {
     const frontmatter = this.extractFrontmatterBlock(content);
-    if (!frontmatter) {
+    if (frontmatter === null) {
       return null;
     }
 
-    const match = frontmatter.match(/^id:\s*(.+?)\s*$/m);
-    return match?.[1]?.trim() || null;
+    const match = frontmatter.match(/^id:[ \t]*([^\r\n]*)$/m);
+    if (!match) {
+      return null;
+    }
+
+    return this.normaliseFrontmatterId(match[1]);
   }
 
   private insertFrontmatterId(content: string, id: string): string | null {
-    if (!this.extractFrontmatterBlock(content)) {
+    const match = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+    if (!match) {
       return null;
     }
 
-    return content.replace(/^---(\r?\n)/, `---$1id: ${id}$1`);
+    const [, openingFence, frontmatter, closingFence] = match;
+    const newline = openingFence.endsWith("\r\n") ? "\r\n" : "\n";
+    const updatedFrontmatter = frontmatter.match(/^id:[ \t]*[^\r\n]*$/m)
+      ? frontmatter.replace(/^id:[ \t]*[^\r\n]*$/m, `id: ${id}`)
+      : frontmatter
+        ? `id: ${id}${newline}${frontmatter}`
+        : `id: ${id}${newline}`;
+
+    return content.replace(match[0], `${openingFence}${updatedFrontmatter}${closingFence}`);
   }
 
   private extractFrontmatterBlock(content: string): string | null {
-    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-    return match?.[1] || null;
+    const match = content.match(/^---\r?\n([\s\S]*?)^---(?:\r?\n|$)/m);
+    return match ? match[1] : null;
+  }
+
+  private normaliseFrontmatterId(value: string): string | null {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const quotedMatch = trimmed.match(/^(['"])([\s\S]*)\1$/);
+    if (!quotedMatch) {
+      return trimmed;
+    }
+
+    const unquoted = quotedMatch[2].trim();
+    return unquoted || null;
   }
 
   async backfillIds(): Promise<number> {
