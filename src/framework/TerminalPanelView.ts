@@ -212,21 +212,7 @@ export class TerminalPanelView {
     panelEl.insertBefore(this.tabBarEl, terminalWrapperEl);
 
     // Initialize TabManager
-    const path = electronRequire("path") as typeof import("path");
-    const vaultAdapter = this.plugin.app.vault.adapter as any;
-    let vaultBasePath: string = vaultAdapter.basePath || vaultAdapter.getBasePath?.() || "";
-    const home = process.env.HOME || "";
-    if (vaultBasePath.startsWith("~/") || vaultBasePath === "~") {
-      vaultBasePath = expandTilde(vaultBasePath);
-    } else if (!path.isAbsolute(vaultBasePath) && home) {
-      vaultBasePath = path.join(home, vaultBasePath);
-    }
-    const manifestDir = this.plugin.manifest.dir || `.obsidian/plugins/${this.plugin.manifest.id}`;
-    const pluginDir = path.isAbsolute(manifestDir)
-      ? manifestDir
-      : path.join(vaultBasePath, manifestDir);
-
-    this.tabManager = new TabManager(terminalWrapperEl, pluginDir);
+    this.tabManager = new TabManager(terminalWrapperEl, this.resolvePluginDir());
     this.tabManager.onSessionChange = () => {
       this.refreshDebugGlobal();
       this.renderTabBar();
@@ -1478,18 +1464,33 @@ export class TerminalPanelView {
     return `${basePrompt}\n\n${templatePrompt}`;
   }
 
-  private resolveWorkItemPath(itemPath: string): string {
+  private resolveVaultBasePath(): string {
     const path = electronRequire("path") as typeof import("path");
     const adapter = (this.plugin.app as any)?.vault?.adapter as any;
     let vaultPath = expandTilde(adapter?.basePath || adapter?.getBasePath?.() || "");
-    const home = process.env.HOME || process.env.USERPROFILE || "";
+    const homeDir = process.env.HOME || process.env.USERPROFILE || "";
 
     if (vaultPath && !path.isAbsolute(vaultPath)) {
-      if (!home) {
-        return itemPath;
-      }
-      vaultPath = path.resolve(home, vaultPath);
+      vaultPath = homeDir ? path.resolve(homeDir, vaultPath) : path.resolve(vaultPath);
     }
+
+    return vaultPath;
+  }
+
+  private resolvePluginDir(): string {
+    const path = electronRequire("path") as typeof import("path");
+    const manifestDir = this.plugin.manifest.dir || `.obsidian/plugins/${this.plugin.manifest.id}`;
+    if (path.isAbsolute(manifestDir)) {
+      return manifestDir;
+    }
+
+    const vaultBasePath = this.resolveVaultBasePath();
+    return vaultBasePath ? path.resolve(vaultBasePath, manifestDir) : path.resolve(manifestDir);
+  }
+
+  private resolveWorkItemPath(itemPath: string): string {
+    const path = electronRequire("path") as typeof import("path");
+    const vaultPath = this.resolveVaultBasePath();
     if (!vaultPath) {
       return itemPath;
     }

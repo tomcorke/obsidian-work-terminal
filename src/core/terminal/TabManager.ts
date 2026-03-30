@@ -159,7 +159,6 @@ export class TabManager {
       commandArgs,
       agentSessionId,
       durableSessionId,
-      this.pluginDir,
     );
   }
 

@@ -287,7 +287,8 @@ describe("TabManager - createTab", () => {
     mgr.createTab("/bin/zsh", "~", "Shell", "shell");
 
     expect(terminalTabMock.MockTerminalTab.constructorArgs).toHaveLength(1);
-    expect(terminalTabMock.MockTerminalTab.constructorArgs[0][10]).toBe(pluginDir);
+    const firstCallArgs = terminalTabMock.MockTerminalTab.constructorArgs[0];
+    expect(firstCallArgs[firstCallArgs.length - 1]).toBe(pluginDir);
   });
 });
 
