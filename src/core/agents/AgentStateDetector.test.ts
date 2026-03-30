@@ -100,6 +100,82 @@ describe("AgentStateDetector", () => {
       detector.stop();
     });
 
+    it("keeps hidden Claude prompts waiting when the question is six lines from the end", () => {
+      const terminal = mockTerminal([
+        "  Want me to fix this and open a PR?",
+        "  ✻ Sautéed for 3m 51s",
+        "  ────────────────",
+        "  ❯",
+        "  ────────────────",
+        "  ➜  obsidian-work-terminal git:(main) cwd context",
+        "  ⏵⏵ permissions",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
+
+    it("keeps hidden Claude prompts waiting from recent output when the screen is empty", () => {
+      const detector = new AgentStateDetector(mockTerminal([]), () => false);
+      detector.trackOutput(
+        [
+          "Who do you actually want using this on day one?",
+          "✻ Sautéed for 3m 51s",
+          "────────────────",
+          "❯",
+          "────────────────",
+          "➜  obsidian-work-terminal git:(main) cwd context",
+          "⏵⏵ permissions",
+        ].join("\n"),
+      );
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
+
+    it("does not treat a plain hidden question without Claude prompt chrome as waiting", () => {
+      const terminal = mockTerminal([
+        "  Should I refactor this?",
+        "  Done.",
+        "  Tests passed.",
+        "  Working tree clean.",
+        "  Ready for the next step.",
+        "  ➜  obsidian-work-terminal git:(main) cwd context",
+        "  plain status line",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start(true);
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("does not treat recent output without Claude prompt chrome as waiting", () => {
+      const detector = new AgentStateDetector(mockTerminal([]), () => false);
+      detector.trackOutput(
+        [
+          "Should I refactor this?",
+          "Done.",
+          "Tests passed.",
+          "Working tree clean.",
+          "Ready for the next step.",
+          "➜  obsidian-work-terminal git:(main) cwd context",
+          "plain status line",
+        ].join("\n"),
+      );
+      detector.start(true);
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
     it("keeps a visible asking-user prompt in range even with a full recent-output tail", () => {
       const terminal = mockTerminal([
         "  ○ Asking user What kind of question would you like me to ask?",
