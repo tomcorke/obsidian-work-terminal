@@ -8,6 +8,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 - **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom sessions (including GitHub Copilot CLI)
 - **Agent integration** - Claude/Copilot command resolution, Claude state detection (active/waiting/idle), session rename detection, headless spawning
 - **Session persistence** - hot-reload preserves live terminals; disk persistence enables session resume after restart. Copilot uses native `--resume[=sessionId]`, while Claude hook setup is only needed if you use Claude's in-app `/resume`.
+- **Built-in diagnostics** - command palette action copies a JSON snapshot of session, renderer, recovery, and persistence health without reloading the plugin
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
 ## Development
