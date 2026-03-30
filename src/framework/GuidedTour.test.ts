@@ -101,6 +101,21 @@ async function pressEnterOnButton(button: HTMLButtonElement): Promise<boolean> {
   return !keydown.defaultPrevented;
 }
 
+async function pressTab(
+  target: HTMLElement,
+  options: { shiftKey?: boolean } = {},
+): Promise<boolean> {
+  const keydown = new KeyboardEvent("keydown", {
+    key: "Tab",
+    bubbles: true,
+    cancelable: true,
+    shiftKey: options.shiftKey === true,
+  });
+  target.dispatchEvent(keydown);
+  await flushTourUpdates();
+  return keydown.defaultPrevented;
+}
+
 describe("GuidedTour", () => {
   const scrollIntoViewMock = vi.fn();
 
@@ -488,6 +503,208 @@ describe("GuidedTour", () => {
     expect(document.querySelector(".wt-tour-card")).toBeNull();
   });
 
+  it("keeps board-hosted interactive steps inside the tour focus scope", async () => {
+    const plugin = createMockPlugin({});
+    const boardTarget = document.createElement("textarea");
+    boardTarget.className = "board-target";
+    document.body.appendChild(boardTarget);
+
+    const unrelatedButton = document.createElement("button");
+    unrelatedButton.className = "background-action";
+    unrelatedButton.textContent = "Launch session";
+    document.body.appendChild(unrelatedButton);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".board-target",
+        surface: "board",
+        allowTargetFocus: true,
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    const nextButton = document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement;
+
+    expect(document.activeElement).toBe(card);
+
+    expect(await pressTab(card)).toBe(true);
+    expect(document.activeElement).toBe(boardTarget);
+
+    boardTarget.focus();
+    expect(document.activeElement).toBe(boardTarget);
+
+    expect(await pressTab(boardTarget)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton)).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+
+    expect(await pressTab(nextButton, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(boardTarget);
+
+    expect(await pressTab(boardTarget, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+    expect(document.activeElement).not.toBe(unrelatedButton);
+  });
+
+  it("keeps settings-hosted interactive steps inside the tour focus scope", async () => {
+    const plugin = createMockPlugin({});
+    plugin.getSettingManager().open();
+
+    const settingsTarget = document.createElement("input");
+    settingsTarget.className = "settings-target";
+    settingsTarget.type = "text";
+    settingsTarget.setAttribute("data-wt-tour", "core.claudeExtraArgsInput");
+    (document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement).appendChild(
+      settingsTarget,
+    );
+
+    const settingsRoot = document.querySelector(".settings-root") as HTMLElement;
+    const unrelatedButton = document.createElement("button");
+    unrelatedButton.className = "settings-background-action";
+    unrelatedButton.textContent = "Edit setting";
+    settingsRoot.appendChild(unrelatedButton);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Settings",
+        body: "Settings target",
+        target: '[data-wt-tour="core.claudeExtraArgsInput"]',
+        surface: "settings",
+        allowTargetFocus: true,
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    const nextButton = document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement;
+
+    expect(document.activeElement).toBe(card);
+
+    expect(await pressTab(card)).toBe(true);
+    expect(document.activeElement).toBe(settingsTarget);
+
+    settingsTarget.focus();
+    expect(document.activeElement).toBe(settingsTarget);
+
+    expect(await pressTab(settingsTarget)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton)).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+
+    expect(await pressTab(nextButton, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(settingsTarget);
+
+    expect(await pressTab(settingsTarget, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+    expect(document.activeElement).not.toBe(unrelatedButton);
+  });
+
+  it("keeps board-hosted container steps trapped on the card by default", async () => {
+    const plugin = createMockPlugin({});
+    const boardTarget = document.createElement("div");
+    boardTarget.className = "board-target";
+    const boardControl = document.createElement("button");
+    boardControl.className = "board-target-control";
+    boardControl.textContent = "Board control";
+    boardTarget.appendChild(boardControl);
+    document.body.appendChild(boardTarget);
+
+    const unrelatedButton = document.createElement("button");
+    unrelatedButton.className = "background-action";
+    unrelatedButton.textContent = "Launch session";
+    document.body.appendChild(unrelatedButton);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".board-target",
+        surface: "board",
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    const nextButton = document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement;
+
+    expect(await pressTab(card)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton)).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+
+    boardControl.focus();
+    expect(document.activeElement).toBe(skipButton);
+    expect(document.activeElement).not.toBe(unrelatedButton);
+  });
+
+  it("keeps settings-hosted container steps trapped on the card by default", async () => {
+    const plugin = createMockPlugin({});
+    plugin.getSettingManager().open();
+
+    const settingsTarget = document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement;
+    const settingsControl = document.createElement("button");
+    settingsControl.className = "settings-target-control";
+    settingsControl.textContent = "Settings control";
+    settingsTarget.appendChild(settingsControl);
+
+    const settingsRoot = document.querySelector(".settings-root") as HTMLElement;
+    const unrelatedButton = document.createElement("button");
+    unrelatedButton.className = "settings-background-action";
+    unrelatedButton.textContent = "Edit setting";
+    settingsRoot.appendChild(unrelatedButton);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Settings",
+        body: "Settings target",
+        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        surface: "settings",
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    const nextButton = document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement;
+
+    expect(await pressTab(card)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton)).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+
+    settingsControl.focus();
+    expect(document.activeElement).toBe(skipButton);
+    expect(document.activeElement).not.toBe(unrelatedButton);
+  });
+
   it("only scrolls targets into view when the step changes", async () => {
     const plugin = createMockPlugin({});
     const target = document.createElement("div");
@@ -552,7 +769,12 @@ describe("GuidedTour", () => {
 
     await controller.start();
 
-    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Welcome");
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    expect(card.textContent).toContain("Welcome");
+    expect(card.getAttribute("role")).toBe("dialog");
+    expect(card.hasAttribute("aria-modal")).toBe(false);
+    expect(card.getAttribute("aria-labelledby")).toBe("wt-tour-title");
+    expect(document.getElementById("wt-tour-title")?.textContent).toBe("Welcome");
     expect(target.classList.contains("wt-tour-target")).toBe(true);
 
     (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();

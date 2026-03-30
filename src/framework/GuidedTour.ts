@@ -23,6 +23,7 @@ interface GuidedTourStep {
   target: string;
   placement?: "top" | "bottom" | "left" | "right";
   surface?: GuidedTourSurface;
+  allowTargetFocus?: boolean;
   beforeShow?: () => void | Promise<void>;
 }
 
@@ -62,6 +63,30 @@ function isInteractiveShortcutTarget(
     'input, textarea, select, button, [contenteditable=""], [contenteditable="true"], [role="button"], [role="checkbox"], [role="combobox"], [role="gridcell"], [role="link"], [role="listbox"], [role="menuitem"], [role="option"], [role="radio"], [role="searchbox"], [role="slider"], [role="spinbutton"], [role="switch"], [role="tab"], [role="textbox"]',
   );
   return interactiveAncestor !== null;
+}
+
+function isTabbableElement(element: HTMLElement): boolean {
+  if (element.matches(":disabled")) return false;
+  if (element.getAttribute("aria-hidden") === "true") return false;
+
+  const tabIndex = element.getAttribute("tabindex");
+  if (tabIndex !== null && Number(tabIndex) < 0) return false;
+
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
+
+const TABBABLE_SELECTOR =
+  'a[href], button, input:not([type="hidden"]), select, textarea, [contenteditable=""], [contenteditable="true"], [tabindex]';
+
+function getTabbableElements(container: HTMLElement): HTMLElement[] {
+  const elements = Array.from(container.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR)).filter(
+    isTabbableElement,
+  );
+  if (container.matches(TABBABLE_SELECTOR) && isTabbableElement(container)) {
+    elements.unshift(container);
+  }
+  return elements;
 }
 
 function readGuidedTourRecord(data: unknown): GuidedTourRecord | null {
@@ -160,10 +185,20 @@ export class GuidedTourController {
   private isDisposed = false;
   private readonly handleResize = () => this.schedulePosition();
   private readonly handleScroll = () => this.schedulePosition();
+  private readonly handleFocusIn = (event: FocusEvent) => {
+    if (!this.cardEl || this.isDisposed) return;
+    if (this.isAllowedFocusTarget(event.target)) return;
+    this.focusWithinCard();
+  };
   private readonly handleKeydown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
       void this.finish("dismissed");
+      return;
+    }
+
+    if (event.key === "Tab") {
+      this.cycleCardFocus(event);
       return;
     }
 
@@ -233,11 +268,12 @@ export class GuidedTourController {
     this.highlightEl = createChild(this.layerEl, "div", "wt-tour-highlight");
     this.cardEl = createChild(this.layerEl, "div", "wt-tour-card");
     this.cardEl.setAttribute("role", "dialog");
-    this.cardEl.setAttribute("aria-modal", "true");
     this.cardEl.tabIndex = -1;
 
     this.counterEl = createChild(this.cardEl, "div", "wt-tour-counter");
     this.titleEl = createChild(this.cardEl, "h3", "wt-tour-title");
+    this.titleEl.id = "wt-tour-title";
+    this.cardEl.setAttribute("aria-labelledby", this.titleEl.id);
     this.bodyEl = createChild(this.cardEl, "p", "wt-tour-body");
 
     const actionsEl = createChild(this.cardEl, "div", "wt-tour-actions");
@@ -260,12 +296,14 @@ export class GuidedTourController {
   private registerEvents(): void {
     window.addEventListener("resize", this.handleResize);
     document.addEventListener("scroll", this.handleScroll, true);
+    document.addEventListener("focusin", this.handleFocusIn, true);
     document.addEventListener("keydown", this.handleKeydown, true);
   }
 
   private unregisterEvents(): void {
     window.removeEventListener("resize", this.handleResize);
     document.removeEventListener("scroll", this.handleScroll, true);
+    document.removeEventListener("focusin", this.handleFocusIn, true);
     document.removeEventListener("keydown", this.handleKeydown, true);
   }
 
@@ -525,6 +563,58 @@ export class GuidedTourController {
     const bottom = Math.min(hostRect.height, rect.bottom + 8);
 
     return `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${left}px ${top}px, ${left}px ${bottom}px, ${right}px ${bottom}px, ${right}px ${top}px, ${left}px ${top}px)`;
+  }
+
+  private cycleCardFocus(event: KeyboardEvent): void {
+    if (!this.cardEl) return;
+
+    const tabbableElements = this.getAllowedTabbableElements();
+    if (!tabbableElements.length) {
+      event.preventDefault();
+      this.cardEl.focus();
+      return;
+    }
+
+    const activeElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const activeIndex = activeElement ? tabbableElements.indexOf(activeElement) : -1;
+    const nextIndex =
+      activeIndex === -1
+        ? event.shiftKey
+          ? tabbableElements.length - 1
+          : 0
+        : (activeIndex + (event.shiftKey ? -1 : 1) + tabbableElements.length) %
+          tabbableElements.length;
+
+    event.preventDefault();
+    tabbableElements[nextIndex]?.focus();
+  }
+
+  private focusWithinCard(): void {
+    if (!this.cardEl) return;
+    const [firstTabbable] = this.getAllowedTabbableElements();
+    (firstTabbable ?? this.cardEl).focus();
+  }
+
+  private getAllowedTabbableElements(): HTMLElement[] {
+    const allowedElements =
+      this.activeTargetEl && this.steps[this.activeIndex]?.allowTargetFocus
+        ? getTabbableElements(this.activeTargetEl)
+        : [];
+    const seen = new Set<HTMLElement>(allowedElements);
+    for (const element of getTabbableElements(this.cardEl!)) {
+      if (seen.has(element)) continue;
+      seen.add(element);
+      allowedElements.push(element);
+    }
+    return allowedElements;
+  }
+
+  private isAllowedFocusTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Node) || !this.cardEl) return false;
+    if (this.cardEl.contains(target)) return true;
+    if (!this.steps[this.activeIndex]?.allowTargetFocus) return false;
+    return this.activeTargetEl?.contains(target) ?? false;
   }
 
   private clearActiveTarget(): void {
