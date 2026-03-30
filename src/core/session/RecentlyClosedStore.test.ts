@@ -115,6 +115,19 @@ describe("RecentlyClosedStore", () => {
     expect(restored).toEqual([entry]);
   });
 
+  it("drops entries with invalid disk session types", () => {
+    const restored = RecentlyClosedStore.fromData([
+      makeEntry({ sessionType: "claude" }),
+      { ...makeEntry(), sessionType: "not-a-session-type" },
+    ]);
+
+    expect(restored).toEqual([
+      expect.objectContaining({
+        sessionType: "claude",
+      }),
+    ]);
+  });
+
   it("filters entries with a custom activity predicate", () => {
     store.add(makeEntry({ label: "Active shell", recoveryMode: "relaunch", claudeSessionId: null }));
     store.add(makeEntry({ label: "Inactive shell", recoveryMode: "relaunch", claudeSessionId: null }));

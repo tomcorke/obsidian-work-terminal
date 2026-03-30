@@ -199,6 +199,22 @@ describe("SessionPersistence", () => {
         }),
       ]);
     });
+
+    it("drops entries with invalid disk session types", async () => {
+      const plugin = createMockPlugin({
+        persistedSessions: [
+          makePersisted({ sessionType: "claude" }),
+          makePersisted({ sessionType: "not-a-session-type" }),
+        ],
+      });
+
+      const result = await SessionPersistence.loadFromDisk(plugin);
+      expect(result).toEqual([
+        expect.objectContaining({
+          sessionType: "claude",
+        }),
+      ]);
+    });
   });
 
   describe("clearPersistedFromDisk", () => {

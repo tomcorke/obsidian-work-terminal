@@ -9,14 +9,17 @@ import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 
-export type SessionType =
-  | "shell"
-  | "claude"
-  | "claude-with-context"
-  | "copilot"
-  | "copilot-with-context"
-  | "strands"
-  | "strands-with-context";
+export const SESSION_TYPES = [
+  "shell",
+  "claude",
+  "claude-with-context",
+  "copilot",
+  "copilot-with-context",
+  "strands",
+  "strands-with-context",
+] as const;
+
+export type SessionType = (typeof SESSION_TYPES)[number];
 
 export type DurableRecoveryMode = "resume" | "relaunch";
 
@@ -77,6 +80,10 @@ export interface StoredState {
   sessions: Map<string, StoredSession[]>;
   activeTaskPath: string | null;
   activeTabIndex: number;
+}
+
+export function isSessionType(value: unknown): value is SessionType {
+  return typeof value === "string" && SESSION_TYPES.includes(value as SessionType);
 }
 
 export function isResumableSessionType(sessionType: SessionType): boolean {

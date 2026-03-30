@@ -249,7 +249,12 @@ vi.mock("../core/session/SessionPersistence", () => ({
         })),
       ),
     ),
-    setPersistedSessions: vi.fn(),
+    setPersistedSessions: vi.fn((data: Record<string, unknown>, persistedSessions: PersistedSession[]) => {
+      data.persistedSessions = persistedSessions.map((session) => ({
+        ...session,
+        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+      }));
+    }),
   },
 }));
 
@@ -754,7 +759,8 @@ describe("TerminalPanelView hook warning", () => {
       ],
     ]);
 
-    const { view } = createView({ "core.exposeDebugApi": true });
+    const saveData = vi.fn(async () => {});
+    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
     await flushAsync();
 
     await view.persistSessions();
@@ -765,6 +771,9 @@ describe("TerminalPanelView hook warning", () => {
         recoveryMode: "resume",
       }),
     ]);
+    expect(saveData.mock.calls.at(-1)?.[0].persistedSessions).toEqual(
+      window.__workTerminalDebug?.persistedSessions,
+    );
   });
 
   it("filters persisted sessions that already match a recovered active tab", async () => {
@@ -800,6 +809,35 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
 
     expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
+  });
+
+  it("keeps distinct relaunch sessions recoverable when only labels differ", async () => {
+    mockState.persistedSessions = [
+      makePersistedSession("shell", { label: "Shell A" }),
+      makePersistedSession("shell", { label: "Shell B" }),
+    ];
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.tabsByItem = new Map([
+      [
+        "Tasks/task-1.md",
+        [
+          {
+            sessionType: "shell",
+            label: "Shell A",
+            launchShell: "/bin/zsh",
+            launchCwd: "/vault",
+            launchCommandArgs: undefined,
+          },
+        ],
+      ],
+    ]);
+
+    const { view } = createView();
+    await flushAsync();
+
+    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([
+      expect.objectContaining({ label: "Shell B" }),
+    ]);
   });
 
   it("shows the hook warning for recently closed Claude resume entries", async () => {
@@ -870,6 +908,165 @@ describe("TerminalPanelView hook warning", () => {
       undefined,
       undefined,
       null,
+    ]);
+  });
+
+  it("restores persisted resumable sessions with their saved launch context", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "copilot-current",
+      "core.copilotExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("copilot", {
+        label: "Copilot",
+        cwd: "/saved-cwd",
+        command: "copilot-saved",
+        commandArgs: [
+          "copilot-saved",
+          "--saved-flag",
+          "value",
+          "--resume=old-session",
+          "--another=saved",
+        ],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "copilot-saved",
+      "/saved-cwd",
+      "Copilot",
+      "copilot",
+      undefined,
+      [
+        "copilot-saved",
+        "--saved-flag",
+        "value",
+        "--another=saved",
+        "--resume=saved-session",
+      ],
+      "saved-session",
+    ]);
+  });
+
+  it("restores recently closed resumable sessions with their saved launch context", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "claude-current",
+      "core.claudeExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await (view as any).restoreClosedSession({
+      sessionType: "claude",
+      label: "Claude",
+      claudeSessionId: "saved-session",
+      closedAt: Date.now(),
+      itemId: "Tasks/task-1.md",
+      recoveryMode: "resume",
+      cwd: "/saved-cwd",
+      command: "claude-saved",
+      commandArgs: [
+        "claude-saved",
+        "--saved-flag",
+        "value",
+        "--resume",
+        "old-session",
+        "--session-id=legacy",
+      ],
+    });
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "claude-saved",
+      "/saved-cwd",
+      "Claude",
+      "claude",
+      undefined,
+      ["claude-saved", "--saved-flag", "value", "--resume", "saved-session"],
+      "saved-session",
+    ]);
+  });
+
+  it("does not replay Claude context prompts when resuming persisted sessions", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "claude-current",
+      "core.claudeExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("claude-with-context", {
+        label: "Claude (ctx)",
+        cwd: "/saved-cwd",
+        command: "claude-saved",
+        commandArgs: [
+          "claude-saved",
+          "--model",
+          "sonnet",
+          "--session-id",
+          "old-session",
+          "Prompt that should not replay",
+        ],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "claude-saved",
+      "/saved-cwd",
+      "Claude (ctx)",
+      "claude-with-context",
+      undefined,
+      ["claude-saved", "--model", "sonnet", "--resume", "saved-session"],
+      "saved-session",
+    ]);
+  });
+
+  it("does not replay Copilot context prompts when restoring recently closed sessions", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "copilot-current",
+      "core.copilotExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await (view as any).restoreClosedSession({
+      sessionType: "copilot-with-context",
+      label: "Copilot (ctx)",
+      claudeSessionId: "saved-session",
+      closedAt: Date.now(),
+      itemId: "Tasks/task-1.md",
+      recoveryMode: "resume",
+      cwd: "/saved-cwd",
+      command: "copilot-saved",
+      commandArgs: [
+        "copilot-saved",
+        "--resume=old-session",
+        "--model",
+        "gpt-5.4",
+        "-i",
+        "Prompt that should not replay",
+      ],
+    });
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "copilot-saved",
+      "/saved-cwd",
+      "Copilot (ctx)",
+      "copilot-with-context",
+      undefined,
+      ["copilot-saved", "--model", "gpt-5.4", "--resume=saved-session"],
+      "saved-session",
     ]);
   });
 

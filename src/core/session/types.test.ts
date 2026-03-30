@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { PersistedSession, SessionType } from "./types";
+import { isSessionType, SESSION_TYPES, type PersistedSession, type SessionType } from "./types";
 
 describe("PersistedSession", () => {
   it("stores the durable schema version", () => {
@@ -49,15 +49,7 @@ describe("PersistedSession", () => {
   });
 
   it("supports all session types", () => {
-    const types: SessionType[] = [
-      "shell",
-      "claude",
-      "claude-with-context",
-      "copilot",
-      "copilot-with-context",
-      "strands",
-      "strands-with-context",
-    ];
+    const types: SessionType[] = [...SESSION_TYPES];
     for (const sessionType of types) {
       const session: PersistedSession = {
         version: 2,
@@ -73,5 +65,11 @@ describe("PersistedSession", () => {
       };
       expect(session.sessionType).toBe(sessionType);
     }
+  });
+
+  it("validates unknown session types", () => {
+    expect(isSessionType("claude")).toBe(true);
+    expect(isSessionType("unknown")).toBe(false);
+    expect(isSessionType(null)).toBe(false);
   });
 });

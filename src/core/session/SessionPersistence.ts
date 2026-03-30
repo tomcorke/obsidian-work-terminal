@@ -8,7 +8,12 @@
  *
  * Sessions older than 7 days are pruned on load.
  */
-import type { DurableRecoveryMode, PersistedSession, SessionType } from "./types";
+import {
+  isSessionType,
+  type DurableRecoveryMode,
+  type PersistedSession,
+  type SessionType,
+} from "./types";
 import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore";
 
 /** Tab-like interface for extracting persistable data. */
@@ -74,7 +79,7 @@ export class SessionPersistence {
     const candidate = raw as Record<string, unknown>;
     const taskPath = typeof candidate.taskPath === "string" ? candidate.taskPath : null;
     const label = typeof candidate.label === "string" ? candidate.label : null;
-    const sessionType = typeof candidate.sessionType === "string" ? candidate.sessionType : null;
+    const sessionType = isSessionType(candidate.sessionType) ? candidate.sessionType : null;
     const savedAt = typeof candidate.savedAt === "string" ? candidate.savedAt : null;
 
     if (!taskPath || !label || !sessionType || !savedAt) {
@@ -112,7 +117,7 @@ export class SessionPersistence {
       taskPath,
       claudeSessionId,
       label,
-      sessionType: sessionType as SessionType,
+      sessionType,
       savedAt,
       recoveryMode,
       cwd,
@@ -137,9 +142,12 @@ export class SessionPersistence {
 
   static setPersistedSessions(
     data: Record<string, any>,
-    sessions: Map<string, PersistableTab[]>,
+    persistedSessions: PersistedSession[],
   ): void {
-    data.persistedSessions = this.buildPersistedSessions(sessions);
+    data.persistedSessions = persistedSessions.map((session) => ({
+      ...session,
+      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+    }));
   }
 
   /**
@@ -150,10 +158,9 @@ export class SessionPersistence {
     plugin: PluginDataStore,
     sessions: Map<string, PersistableTab[]>,
   ): Promise<void> {
-    let persisted: PersistedSession[] = [];
+    const persisted = this.buildPersistedSessions(sessions);
     await mergeAndSavePluginData(plugin, async (data) => {
-      this.setPersistedSessions(data, sessions);
-      persisted = data.persistedSessions as PersistedSession[];
+      this.setPersistedSessions(data, persisted);
     });
     if (persisted.length > 0) {
       console.log("[work-terminal] Saved", persisted.length, "resumable sessions to disk");

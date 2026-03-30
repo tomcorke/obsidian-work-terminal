@@ -173,7 +173,9 @@ export class TerminalPanelView {
       this.updateTabStateClasses();
     };
     this.tabManager.onPersistRequest = () => {
-      this.persistSessions();
+      void this.persistSessions().catch((error) => {
+        console.error("[work-terminal] Failed to persist sessions:", error);
+      });
     };
     this.tabManager.onTabClosed = (itemId, tab) => {
       const entry = this.buildClosedSessionEntry(itemId, tab);
@@ -182,9 +184,9 @@ export class TerminalPanelView {
       void this.persistRecentlyClosedSessions();
     };
 
-    // Load persisted sessions from disk
-    this.loadPersistedSessions();
-    this.loadRecentlyClosedSessions();
+    // Load durable recovery state from disk
+    this.fireAndForget("load persisted sessions", () => this.loadPersistedSessions());
+    this.fireAndForget("load recently closed sessions", () => this.loadRecentlyClosedSessions());
 
     // Start periodic disk persist as safety net (every 30s)
     this.stopPeriodicPersist = SessionPersistence.startPeriodicPersist(
@@ -197,7 +199,7 @@ export class TerminalPanelView {
     this.refreshDebugGlobal();
 
     // Check hook status and show warning banner if needed
-    this.checkHookWarning();
+    this.fireAndForget("check hook warning", () => this.checkHookWarning());
   }
 
   // ---------------------------------------------------------------------------
@@ -698,9 +700,40 @@ export class TerminalPanelView {
     return (
       tab.launchCwd === session.cwd &&
       tabCommand === session.command &&
+      tab.label === session.label &&
       tabArgs.length === sessionArgs.length &&
       tabArgs.every((arg, index) => arg === sessionArgs[index])
     );
+  }
+
+  private fireAndForget(taskName: string, task: () => Promise<void>): void {
+    void task().catch((error) => {
+      console.error(`[work-terminal] Failed to ${taskName}:`, error);
+    });
+  }
+
+  private getSavedResumeLaunchContext(
+    session: Pick<
+      PersistedSession | ClosedSessionEntry,
+      "sessionType" | "cwd" | "command" | "commandArgs"
+    >,
+  ): {
+    cwd?: string;
+    resolvedCommand?: string;
+    extraArgs?: string[];
+  } {
+    const resolvedCommand = session.commandArgs?.[0] || session.command;
+    const extraArgs = session.commandArgs
+      ? this.extractResumeExtraArgs(session.sessionType, session.commandArgs)
+      : resolvedCommand || session.cwd
+        ? []
+        : undefined;
+
+    return {
+      cwd: session.cwd,
+      resolvedCommand,
+      extraArgs,
+    };
   }
 
   private isPersistedSessionActive(session: PersistedSession): boolean {
@@ -803,6 +836,7 @@ export class TerminalPanelView {
               label: persisted.label,
               sessionId: persisted.claudeSessionId,
               freshSettings: fresh,
+              ...this.getSavedResumeLaunchContext(persisted),
             })
           : null;
 
@@ -916,7 +950,7 @@ export class TerminalPanelView {
         resolvedCommand:
           tab.launchCommandArgs?.[0] ||
           resolveCommand(this.getStringSetting(fresh, "core.claudeCommand", "claude")),
-        extraArgs: this.extractResumeExtraArgs(tab),
+        extraArgs: this.extractResumeExtraArgs(tab.sessionType, tab.launchCommandArgs),
       });
     } else if (tab.launchCommandArgs?.length) {
       replacement = this.tabManager.createTabForItem(
@@ -947,22 +981,39 @@ export class TerminalPanelView {
     }
   }
 
-  private extractResumeExtraArgs(tab: TerminalTab): string[] {
-    if (!tab.launchCommandArgs?.length) {
+  private extractResumeExtraArgs(
+    sessionType: PersistedSession["sessionType"],
+    commandArgs?: string[],
+  ): string[] {
+    if (!commandArgs?.length) {
       return [];
     }
-    const args = tab.launchCommandArgs.slice(1);
+    const args = commandArgs.slice(1);
     const extraArgs: string[] = [];
+    const stripClaudeContextPrompt = sessionType === "claude-with-context";
+    const stripCopilotContextPrompt = sessionType === "copilot-with-context";
 
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
-      if (arg === "--session-id" || arg === "--resume") {
+      if (stripCopilotContextPrompt && arg === "-i") {
         if (i + 1 < args.length) {
           i++;
         }
         continue;
       }
+      if (arg === "--session-id" || arg === "--resume") {
+        if (i + 1 < args.length) {
+          i++;
+        }
+        if (stripClaudeContextPrompt && arg === "--session-id" && i + 1 < args.length) {
+          i++;
+        }
+        continue;
+      }
       if (arg.startsWith("--session-id=") || arg.startsWith("--resume=")) {
+        if (stripClaudeContextPrompt && arg.startsWith("--session-id=") && i + 1 < args.length) {
+          i++;
+        }
         continue;
       }
       extraArgs.push(arg);
@@ -996,7 +1047,7 @@ export class TerminalPanelView {
     if (this.isDisposed) return;
     const persistedSessions = SessionPersistence.buildPersistedSessions(this.tabManager.getSessions());
     await mergeAndSavePluginData(this.plugin, async (data) => {
-      SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
+      SessionPersistence.setPersistedSessions(data, persistedSessions);
     });
     if (this.isDisposed) return;
     this.persistedSessions = persistedSessions;
@@ -1212,6 +1263,7 @@ export class TerminalPanelView {
               label: entry.label,
               sessionId: entry.claudeSessionId,
               freshSettings: fresh,
+              ...this.getSavedResumeLaunchContext(entry),
             })
           : null;
 

@@ -2,7 +2,7 @@
  * RecentlyClosedStore - tracks sessions closed within the last 30 minutes
  * so users can restore them from the custom session spawner dialog.
  */
-import type { DurableRecoveryMode, SessionType } from "./types";
+import { isSessionType, type DurableRecoveryMode, type SessionType } from "./types";
 
 export interface ClosedSessionEntry {
   sessionType: SessionType;
@@ -101,7 +101,7 @@ export class RecentlyClosedStore {
     const candidate = raw as Record<string, unknown>;
     const itemId = typeof candidate.itemId === "string" ? candidate.itemId : null;
     const label = typeof candidate.label === "string" ? candidate.label : null;
-    const sessionType = typeof candidate.sessionType === "string" ? candidate.sessionType : null;
+    const sessionType = isSessionType(candidate.sessionType) ? candidate.sessionType : null;
     const claudeSessionId =
       typeof candidate.claudeSessionId === "string" ? candidate.claudeSessionId : null;
     const closedAt =
@@ -137,7 +137,7 @@ export class RecentlyClosedStore {
     return {
       itemId,
       label,
-      sessionType: sessionType as SessionType,
+      sessionType,
       claudeSessionId,
       closedAt,
       recoveryMode,
