@@ -135,6 +135,8 @@ export class TerminalTab {
     this.containerEl.addClass("wt-terminal-instance");
     parentEl.appendChild(this.containerEl);
 
+    const electronShell = electronRequire("electron").shell;
+
     this.terminal = new Terminal({
       cursorBlink: true,
       fontSize: 13,
@@ -147,6 +149,14 @@ export class TerminalTab {
         selectionBackground: "#264f78",
       },
       allowProposedApi: true,
+      // Handle OSC 8 hyperlinks (e.g. Claude Code issue/PR links) via Electron
+      // shell instead of xterm's default confirm() + window.open() which fails
+      // in Obsidian's Electron renderer.
+      linkHandler: {
+        activate: (_event: MouseEvent, uri: string) => {
+          electronShell.openExternal(uri);
+        },
+      },
     });
 
     this.fitAddon = new FitAddon();
@@ -157,7 +167,6 @@ export class TerminalTab {
     this.terminal.loadAddon(this.searchAddon);
 
     // Web links - Cmd+click to open URLs in browser
-    const electronShell = electronRequire("electron").shell;
     this.webLinksAddon = new WebLinksAddon((_, uri) => {
       electronShell.openExternal(uri);
     });
@@ -956,7 +965,8 @@ export class TerminalTab {
     tab.taskPath = stored.taskPath;
     tab.agentSessionId = stored.agentSessionId ?? stored.claudeSessionId ?? null;
     tab.durableSessionId =
-      stored.durableSessionId || (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
+      stored.durableSessionId ||
+      (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     tab.sessionType = stored.sessionType;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
