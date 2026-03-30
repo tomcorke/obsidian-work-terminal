@@ -20,7 +20,8 @@ import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore
 interface PersistableTab {
   label: string;
   taskPath: string | null;
-  claudeSessionId: string | null;
+  agentSessionId?: string | null;
+  claudeSessionId?: string | null;
   durableSessionId?: string | null;
   isResumableAgent: boolean;
   sessionType: SessionType;
@@ -46,10 +47,12 @@ export class SessionPersistence {
       return null;
     }
 
+    const claudeSessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+
     return {
       version: 2,
       taskPath,
-      claudeSessionId: tab.claudeSessionId,
+      claudeSessionId,
       durableSessionId:
         recoveryMode === "relaunch"
           ? (tab.durableSessionId ?? globalThis.crypto.randomUUID())
@@ -65,7 +68,8 @@ export class SessionPersistence {
   }
 
   private static getRecoveryMode(tab: PersistableTab): DurableRecoveryMode | null {
-    if (tab.isResumableAgent && tab.claudeSessionId) {
+    const claudeSessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+    if (tab.isResumableAgent && claudeSessionId) {
       return "resume";
     }
 

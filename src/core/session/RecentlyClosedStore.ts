@@ -7,7 +7,8 @@ import { isSessionType, type DurableRecoveryMode, type SessionType } from "./typ
 export interface ClosedSessionEntry {
   sessionType: SessionType;
   label: string;
-  claudeSessionId: string | null;
+  agentSessionId?: string | null;
+  claudeSessionId?: string | null;
   durableSessionId?: string;
   durableSessionIdGenerated?: boolean;
   closedAt: number; // Date.now() timestamp
@@ -110,7 +111,8 @@ export class RecentlyClosedStore {
     for (const entry of this.state.entries) {
       if (result.length >= limit) break;
       // Skip if the session is currently active (reopened by any means)
-      if (entry.claudeSessionId && activeSessionIds.has(entry.claudeSessionId)) {
+      const sessionId = entry.claudeSessionId ?? entry.agentSessionId;
+      if (sessionId && activeSessionIds.has(sessionId)) {
         continue;
       }
       if (isEntryActive?.(entry)) {
@@ -146,7 +148,11 @@ export class RecentlyClosedStore {
     const label = typeof candidate.label === "string" ? candidate.label : null;
     const sessionType = isSessionType(candidate.sessionType) ? candidate.sessionType : null;
     const claudeSessionId =
-      typeof candidate.claudeSessionId === "string" ? candidate.claudeSessionId : null;
+      typeof candidate.claudeSessionId === "string"
+        ? candidate.claudeSessionId
+        : typeof candidate.agentSessionId === "string"
+          ? candidate.agentSessionId
+          : null;
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
     const durableSessionIdGenerated = candidate.durableSessionIdGenerated === true;

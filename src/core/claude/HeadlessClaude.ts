@@ -4,7 +4,7 @@
  * Used for background operations like generating summaries, extracting context,
  * or running one-shot prompts without a visible terminal.
  */
-import { resolveCommand, augmentPath } from "./ClaudeLauncher";
+import { resolveCommand, augmentPath, parseExtraArgs } from "../agents/AgentLauncher";
 import { expandTilde, electronRequire } from "../utils";
 
 const TIMEOUT_MS = 120_000;
@@ -25,7 +25,7 @@ export function spawnHeadlessClaude(
 
     // Include user-configured extra args (permissions, plugin dirs, etc.)
     if (extraArgs) {
-      args.push(...extraArgs.split(/\s+/).filter(Boolean));
+      args.push(...parseExtraArgs(extraArgs));
     }
 
     args.push("-p", prompt, "--output-format", "text");

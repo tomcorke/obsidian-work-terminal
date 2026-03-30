@@ -24,21 +24,29 @@ function createClaudeLogo(size = 14): SVGSVGElement {
 }
 import type { Plugin } from "obsidian";
 import { TabManager } from "../core/terminal/TabManager";
-import type { TerminalTab, ClaudeState } from "../core/terminal/TerminalTab";
+import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
   resolveCommand,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
-} from "../core/claude/ClaudeLauncher";
+  mergeExtraArgs,
+  parseExtraArgs,
+} from "../core/agents/AgentLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import { SessionStore } from "../core/session/SessionStore";
-import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
+import { isResumableSessionType } from "../core/session/types";
+import type {
+  ActiveTabInfo,
+  AgentRuntimeState,
+  PersistedSession,
+  TabDiagnostics,
+} from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
-import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
+import { buildAgentContextPrompt, getAgentContextTemplate } from "./AgentContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
 import {
   RecentlyClosedStore,
@@ -71,6 +79,47 @@ interface WorkTerminalDebugApi extends WorkTerminalDebugSnapshot {
   findTabsByLabel(label: string): ActiveTabInfo[];
   getActiveSessionIds(): string[];
   getPersistedSessions(itemId?: string): PersistedSession[];
+  getSessionDiagnostics(): WorkTerminalSessionDiagnosticsSnapshot;
+}
+
+interface DiagnosticsSummary {
+  activeItemId: string | null;
+  activeTabIndex: number;
+  activeItemCount: number;
+  activeTabCount: number;
+  persistedSessionCount: number;
+  recentlyClosedCount: number;
+  hasHotReloadStore: boolean;
+  derivedCounts: {
+    blankButLiveRenderer: number;
+    staleDisposedWebglOwnership: number;
+    missingPersistedMetadata: number;
+    liveNonResumableSessions: number;
+    disposedTabStillSelected: number;
+  };
+}
+
+interface DiagnosticsItemSnapshot {
+  itemId: string;
+  isActiveItem: boolean;
+  activeTabIndex: number;
+  aggregateState: AgentRuntimeState;
+  idleSince: number | null;
+  sessionCounts: { shells: number; agents: number };
+  tabs: TabDiagnostics[];
+}
+
+interface WorkTerminalSessionDiagnosticsSnapshot {
+  version: 1;
+  generatedAt: string;
+  summary: DiagnosticsSummary;
+  items: DiagnosticsItemSnapshot[];
+  persistedSessions: PersistedSession[];
+  recentlyClosedSessions: Array<
+    ClosedSessionEntry & {
+      recoveryAvailable: boolean;
+    }
+  >;
 }
 
 const DEBUG_API_OWNER = Symbol("work-terminal-debug-owner");
@@ -93,7 +142,7 @@ export class TerminalPanelView {
   private adapter: AdapterBundle;
   private settings: Record<string, any>;
   private promptBuilder: WorkItemPromptBuilder;
-  private onClaudeStateChange: (itemId: string, state: string) => void;
+  private onAgentStateChange: (itemId: string, state: string) => void;
   private onSessionChange: () => void;
 
   // DOM elements
@@ -105,6 +154,7 @@ export class TerminalPanelView {
   // Persisted sessions from disk
   private persistedSessions: PersistedSession[] = [];
   private pendingPersistedSessions: PersistedSession[] = [];
+  private durablePersistedSessions: PersistedSession[] = [];
 
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
@@ -130,6 +180,7 @@ export class TerminalPanelView {
   private isDisposed = false;
   private readonly handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    this.renderTabBar();
     this.refreshDebugGlobal();
   };
 
@@ -140,7 +191,7 @@ export class TerminalPanelView {
     adapter: AdapterBundle,
     settings: Record<string, any>,
     promptBuilder: WorkItemPromptBuilder,
-    onClaudeStateChange: (itemId: string, state: string) => void,
+    onAgentStateChange: (itemId: string, state: string) => void,
     onSessionChange: () => void,
   ) {
     this.panelEl = panelEl;
@@ -149,7 +200,7 @@ export class TerminalPanelView {
     this.adapter = adapter;
     this.settings = settings;
     this.promptBuilder = promptBuilder;
-    this.onClaudeStateChange = onClaudeStateChange;
+    this.onAgentStateChange = onAgentStateChange;
     this.onSessionChange = onSessionChange;
     liveTerminalViews.add(this);
     window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
@@ -171,8 +222,8 @@ export class TerminalPanelView {
       void this.checkHookWarning();
       this.onSessionChange();
     };
-    this.tabManager.onClaudeStateChange = (itemId: string, state: ClaudeState) => {
-      this.onClaudeStateChange(itemId, state);
+    this.tabManager.onAgentStateChange = (itemId: string, state: AgentState) => {
+      this.onAgentStateChange(itemId, state);
       this.updateTabStateClasses();
     };
     this.tabManager.onPersistRequest = () => {
@@ -339,7 +390,7 @@ export class TerminalPanelView {
         const tabEl = tabsContainer.createDiv({ cls: "wt-tab" });
         if (i === activeIdx) tabEl.addClass("wt-tab-active");
         if (tab.isResumableAgent) {
-          const state = tab.claudeState;
+          const state = tab.agentState;
           if (state !== "inactive") tabEl.addClass(`wt-tab-agent-${state}`);
         }
         tabEl.setAttribute("draggable", "true");
@@ -393,14 +444,16 @@ export class TerminalPanelView {
       this.launchAction("Claude", () => this.spawnClaude());
     });
 
-    const claudeCtxBtn = buttonsContainer.createEl("button", {
-      cls: "wt-spawn-btn wt-spawn-claude-ctx",
-    });
-    claudeCtxBtn.appendChild(createClaudeLogo());
-    claudeCtxBtn.appendText("Claude (ctx)");
-    claudeCtxBtn.addEventListener("click", () => {
-      this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
-    });
+    if (getAgentContextTemplate(this.settings)) {
+      const claudeCtxBtn = buttonsContainer.createEl("button", {
+        cls: "wt-spawn-btn wt-spawn-claude-ctx",
+      });
+      claudeCtxBtn.appendChild(createClaudeLogo());
+      claudeCtxBtn.appendText("Claude (ctx)");
+      claudeCtxBtn.addEventListener("click", () => {
+        this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
+      });
+    }
 
     const customBtn = buttonsContainer.createEl("button", {
       cls: "wt-spawn-btn wt-spawn-custom",
@@ -413,7 +466,7 @@ export class TerminalPanelView {
     });
   }
 
-  /** Update Claude state classes on existing tab elements without full re-render. */
+  /** Update agent state classes on existing tab elements without full re-render. */
   private updateTabStateClasses(): void {
     const activeItemId = this.tabManager.getActiveItemId();
     if (!activeItemId) return;
@@ -424,7 +477,7 @@ export class TerminalPanelView {
       const el = tabEls[i] as HTMLElement;
       for (const cls of stateClasses) el.removeClass(cls);
       if (tabs[i].isResumableAgent) {
-        const state = tabs[i].claudeState;
+        const state = tabs[i].agentState;
         if (state !== "inactive") el.addClass(`wt-tab-agent-${state}`);
       }
     }
@@ -615,8 +668,8 @@ export class TerminalPanelView {
     this.onSessionChange();
 
     // Notify both source and destination for badge updates
-    this.onClaudeStateChange(currentItemId, this.tabManager.getClaudeState(currentItemId));
-    this.onClaudeStateChange(targetItemId, this.tabManager.getClaudeState(targetItemId));
+    this.onAgentStateChange(currentItemId, this.tabManager.getAgentState(currentItemId));
+    this.onAgentStateChange(targetItemId, this.tabManager.getAgentState(targetItemId));
   }
 
   // ---------------------------------------------------------------------------
@@ -827,6 +880,10 @@ export class TerminalPanelView {
 
   private applyPersistedSessionState(persistedSessions: PersistedSession[]): void {
     this.persistedSessions = persistedSessions.map((session) => ({
+      ...session,
+      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+    }));
+    this.durablePersistedSessions = this.persistedSessions.map((session) => ({
       ...session,
       commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
     }));
@@ -1065,12 +1122,12 @@ export class TerminalPanelView {
             commandArgs: persisted.commandArgs,
             durableSessionId: persisted.durableSessionId,
           })
-        : persisted.claudeSessionId
+        : this.getPersistedSessionId(persisted)
           ? this.createResumedTab({
               targetItemId,
               sessionType: persisted.sessionType,
               label: persisted.label,
-              sessionId: persisted.claudeSessionId,
+              sessionId: this.getPersistedSessionId(persisted) || "",
               freshSettings: fresh,
               ...this.getSavedResumeLaunchContext(persisted),
             })
@@ -1137,12 +1194,11 @@ export class TerminalPanelView {
       (isCopilot
         ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
         : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "")
-      )
-        .split(/\s+/)
-        .filter(Boolean);
+      );
+    const parsedExtraArgs = Array.isArray(extraArgs) ? extraArgs : parseExtraArgs(extraArgs);
 
-    if (extraArgs) {
-      args.unshift(...extraArgs);
+    if (parsedExtraArgs.length > 0) {
+      args.unshift(...parsedExtraArgs);
     }
 
     const cwd =
@@ -1177,12 +1233,12 @@ export class TerminalPanelView {
     const fresh = await this.loadFreshSettings();
     const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     let replacement: TerminalTab | null;
-    if (tab.claudeSessionId) {
+    if (tab.agentSessionId) {
       replacement = this.createResumedTab({
         targetItemId,
         sessionType: tab.sessionType,
         label: tab.label,
-        sessionId: tab.claudeSessionId,
+        sessionId: tab.agentSessionId,
         freshSettings: fresh,
         cwd: tab.launchCommandArgs?.length ? tab.launchCwd : fallbackCwd,
         resolvedCommand:
@@ -1386,9 +1442,17 @@ export class TerminalPanelView {
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
     const settings = freshSettings ?? (await this.loadFreshSettings());
+    return buildAgentContextPrompt(item, settings, this.resolveWorkItemPath(item.path));
+  }
+
+  async getAgentContextPrompt(
+    item: WorkItem,
+    freshSettings?: Record<string, unknown>,
+  ): Promise<string | null> {
+    const settings = freshSettings ?? (await this.loadFreshSettings());
     const resolvedPath = this.resolveWorkItemPath(item.path);
     const basePrompt = this.promptBuilder.buildPrompt(item, resolvedPath);
-    const templatePrompt = buildClaudeContextPrompt(item, settings, resolvedPath);
+    const templatePrompt = buildAgentContextPrompt(item, settings, resolvedPath);
 
     if (!basePrompt && !templatePrompt) {
       return null;
@@ -1432,14 +1496,140 @@ export class TerminalPanelView {
     return Array.from(this.tabManager.getActiveSessionIds());
   }
 
+  private getPersistedSessionId(session: PersistedSession): string | null {
+    return session.agentSessionId || session.claudeSessionId || null;
+  }
+
+  private getClosedSessionId(entry: ClosedSessionEntry): string | null {
+    return entry.agentSessionId || (entry as { claudeSessionId?: string | null }).claudeSessionId || null;
+  }
+
+  private buildSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
+    const activeSessionIds = this.tabManager.getActiveSessionIds();
+    const activeTabs = this.tabManager.getTabDiagnostics().map((tab) => {
+      const hasPersistedSession =
+        !!tab.sessionId &&
+        this.durablePersistedSessions.some(
+          (session) =>
+            session.taskPath === tab.itemId &&
+            this.getPersistedSessionId(session) === tab.sessionId &&
+            session.sessionType === tab.sessionType,
+        );
+      const missingPersistedMetadata = tab.isResumableAgent && !hasPersistedSession;
+      const wouldBeLostOnFullClose = tab.process.status === "alive" && !tab.isResumableAgent;
+      const lifecycle =
+        tab.isDisposed
+          ? "disposed"
+          : tab.process.status === "alive"
+            ? "live"
+            : tab.isResumableAgent && hasPersistedSession
+              ? "resumable"
+              : missingPersistedMetadata
+                ? "resume-metadata-missing"
+                : "lost";
+      return {
+        ...tab,
+        recovery: {
+          resumable: tab.isResumableAgent,
+          relaunchable: !tab.isResumableAgent,
+          hasPersistedSession,
+          canResumeAfterRestart: tab.isResumableAgent && hasPersistedSession,
+          missingPersistedMetadata,
+          wouldBeLostOnFullClose,
+          lifecycle,
+        },
+      };
+    });
+    const itemIds = this.tabManager.getSessionItemIds();
+    const items = itemIds.map((itemId) => ({
+      itemId,
+      isActiveItem: itemId === this.tabManager.getActiveItemId(),
+      activeTabIndex:
+        itemId === this.tabManager.getActiveItemId() ? this.tabManager.getActiveTabIndex() : 0,
+      aggregateState: this.tabManager.getAgentState(itemId),
+      idleSince: this.tabManager.getIdleSince(itemId) ?? null,
+      sessionCounts: this.tabManager.getSessionCounts(itemId),
+      tabs: activeTabs.filter((tab) => tab.itemId === itemId),
+    }));
+    const recentlyClosedSessions = this.recentlyClosedStore.getEntries(activeSessionIds, 20).map((entry) => ({
+      ...entry,
+      recoveryAvailable:
+        isResumableSessionType(entry.sessionType) && !!this.getClosedSessionId(entry),
+    }));
+    const summary: DiagnosticsSummary = {
+      activeItemId: this.tabManager.getActiveItemId(),
+      activeTabIndex: this.tabManager.getActiveTabIndex(),
+      activeItemCount: items.length,
+      activeTabCount: activeTabs.length,
+      persistedSessionCount: this.durablePersistedSessions.length,
+      recentlyClosedCount: recentlyClosedSessions.length,
+      hasHotReloadStore: SessionStore.isReload(),
+      derivedCounts: {
+        blankButLiveRenderer: activeTabs.filter((tab) => tab.derived.blankButLiveRenderer).length,
+        staleDisposedWebglOwnership: activeTabs.filter(
+          (tab) => tab.derived.staleDisposedWebglOwnership,
+        ).length,
+        missingPersistedMetadata: activeTabs.filter(
+          (tab) => tab.recovery.missingPersistedMetadata,
+        ).length,
+        liveNonResumableSessions: activeTabs.filter(
+          (tab) => tab.recovery.wouldBeLostOnFullClose,
+        ).length,
+        disposedTabStillSelected: activeTabs.filter(
+          (tab) => tab.derived.disposedTabStillSelected,
+        ).length,
+      },
+    };
+
+    return {
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      summary,
+      items,
+      persistedSessions: [...this.durablePersistedSessions],
+      recentlyClosedSessions,
+    };
+  }
+
+  getSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
+    return this.buildSessionDiagnosticsSnapshot();
+  }
+
+  getSessionDiagnosticsJson(): string {
+    return JSON.stringify(this.buildSessionDiagnosticsSnapshot(), null, 2);
+  }
+
+  async copySessionDiagnostics(): Promise<boolean> {
+    try {
+      const diagnosticsJson = this.getSessionDiagnosticsJson();
+      const electron = electronRequire("electron") as
+        | {
+            clipboard?: {
+              writeText?: (text: string) => void;
+            };
+          }
+        | undefined;
+      if (electron?.clipboard?.writeText) {
+        electron.clipboard.writeText(diagnosticsJson);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(diagnosticsJson);
+      } else {
+        throw new Error("Clipboard API unavailable");
+      }
+      new Notice("Session diagnostics copied to clipboard");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("[work-terminal] Failed to copy session diagnostics:", error);
+      new Notice(`Failed to copy session diagnostics: ${message}`);
+      return false;
+    }
+  }
+
   private getActiveItem(): WorkItem | null {
     const activeItemId = this.tabManager.getActiveItemId();
     if (!activeItemId) return null;
     return this.allItems.find((item) => item.id === activeItemId) || null;
-  }
-
-  private mergeExtraArgs(baseArgs: string, extraArgs: string): string {
-    return [baseArgs.trim(), extraArgs.trim()].filter(Boolean).join(" ");
   }
 
   private async loadCustomSessionDefaults(
@@ -1491,15 +1681,21 @@ export class TerminalPanelView {
   private async restoreClosedSession(
     entry: ClosedSessionEntry,
   ): Promise<void> {
-    const claimedEntry = this.recentlyClosedStore.take(entry);
+    const claimedFromStore = this.recentlyClosedStore.take(entry);
+    const claimedEntry =
+      claimedFromStore ??
+      (this.getClosedSessionId(entry) ? RecentlyClosedStore.fromData([entry])[0] : undefined);
     if (!claimedEntry) {
       return;
     }
 
-    this.syncRecentlyClosedState();
-    this.persistRecentlyClosedSessions().catch(() => {});
+    if (claimedFromStore) {
+      this.syncRecentlyClosedState();
+      this.persistRecentlyClosedSessions().catch(() => {});
+    }
 
     const fresh = await this.loadFreshSettings();
+    const sessionId = this.getClosedSessionId(claimedEntry);
     const tab =
       claimedEntry.recoveryMode === "relaunch"
         ? this.createRelaunchedTab({
@@ -1511,12 +1707,12 @@ export class TerminalPanelView {
             commandArgs: claimedEntry.commandArgs,
             durableSessionId: claimedEntry.durableSessionId,
           })
-        : claimedEntry.claudeSessionId
+        : sessionId
           ? this.createResumedTab({
               targetItemId: claimedEntry.itemId,
               sessionType: claimedEntry.sessionType,
               label: claimedEntry.label,
-              sessionId: claimedEntry.claudeSessionId,
+              sessionId,
               freshSettings: fresh,
               ...this.getSavedResumeLaunchContext(claimedEntry),
             })
@@ -1549,7 +1745,9 @@ export class TerminalPanelView {
     const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
     const config = sanitizeCustomSessionConfig(rawConfig, defaultCwd);
     const prompt = isContextSession(config.sessionType)
-      ? await this.getClaudeContextPrompt(item, fresh)
+      ? config.sessionType === "claude-with-context"
+        ? await this.getClaudeContextPrompt(item, fresh)
+        : await this.getAgentContextPrompt(item, fresh)
       : undefined;
 
     if (isContextSession(config.sessionType) && !prompt) {
@@ -1637,7 +1835,7 @@ export class TerminalPanelView {
     const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = this.mergeExtraArgs(
+    const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
       options.extraArgs || "",
     );
@@ -1674,7 +1872,7 @@ export class TerminalPanelView {
     const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
     const resolved = resolveCommand(copilotCmd);
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = this.mergeExtraArgs(
+    const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
       options.extraArgs || "",
     );
@@ -1710,7 +1908,7 @@ export class TerminalPanelView {
     const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
     const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
     const resolved = resolveCommand(cmdToken);
-    const mergedExtraArgs = this.mergeExtraArgs(
+    const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
       options.extraArgs || "",
     );
@@ -1773,15 +1971,19 @@ export class TerminalPanelView {
   }
 
   /**
-   * Broadcast current Claude state for all items with sessions.
+   * Broadcast current agent state for all items with sessions.
    * Call after initial list render to sync state indicators that may have been
    * set before the ListPanel existed (e.g. recovered from hot-reload).
    */
-  broadcastClaudeStates(): void {
+  broadcastAgentStates(): void {
     for (const itemId of this.tabManager.getSessionItemIds()) {
-      const state = this.tabManager.getClaudeState(itemId);
-      this.onClaudeStateChange(itemId, state);
+      const state = this.tabManager.getAgentState(itemId);
+      this.onAgentStateChange(itemId, state);
     }
+  }
+
+  broadcastClaudeStates(): void {
+    this.broadcastAgentStates();
   }
 
   rekeyItem(oldId: string, newId: string): void {
@@ -1826,8 +2028,12 @@ export class TerminalPanelView {
     this.refreshDebugGlobal();
   }
 
-  getClaudeState(itemId: string): ClaudeState {
-    return this.tabManager.getClaudeState(itemId);
+  getAgentState(itemId: string): AgentState {
+    return this.tabManager.getAgentState(itemId);
+  }
+
+  getClaudeState(itemId: string): AgentState {
+    return this.getAgentState(itemId);
   }
 
   private detachSettingsListener(): void {
@@ -1928,9 +2134,35 @@ export class TerminalPanelView {
       getPersistedSessions: (itemId?: string) =>
         this.canExposeDebugApi()
           ? itemId
-            ? this.getPersistedSessions(itemId)
+            ? getPersistedSessions(itemId)
             : [...this.persistedSessions]
           : [],
+      getSessionDiagnostics: () =>
+        this.canExposeDebugApi()
+          ? this.getSessionDiagnosticsSnapshot()
+          : {
+              version: 1,
+              generatedAt: new Date(0).toISOString(),
+              summary: {
+                activeItemId: null,
+                activeTabIndex: 0,
+                activeItemCount: 0,
+                activeTabCount: 0,
+                persistedSessionCount: 0,
+                recentlyClosedCount: 0,
+                hasHotReloadStore: false,
+                derivedCounts: {
+                  blankButLiveRenderer: 0,
+                  staleDisposedWebglOwnership: 0,
+                  missingPersistedMetadata: 0,
+                  liveNonResumableSessions: 0,
+                  disposedTabStillSelected: 0,
+                },
+              },
+              items: [],
+              persistedSessions: [],
+              recentlyClosedSessions: [],
+            },
     };
   }
 }

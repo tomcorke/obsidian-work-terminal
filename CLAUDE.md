@@ -8,11 +8,12 @@ Three-layer design. Each layer has clear responsibilities and boundaries:
 
 ```
 src/
-  core/           # Terminal infrastructure + Claude CLI integration
+  core/           # Terminal infrastructure + agent integrations
     utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
     interfaces.ts # All extension point interfaces + BaseAdapter
     terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
-    claude/       # ClaudeLauncher, ClaudeStateDetector, ClaudeSessionRename, HeadlessClaude
+    agents/       # AgentLauncher, AgentStateDetector, AgentSessionRename, AgentSessionTracker
+    claude/       # ClaudeHookManager, HeadlessClaude
     session/      # SessionStore (window-global), SessionPersistence (disk), types
 
   framework/      # Obsidian plugin scaffolding - delegates to adapters
@@ -48,7 +49,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 
 ### Key design decisions
 
-- **Claude owned by framework, not adapter** - ClaudeLauncher, StateDetector, SessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **Agent integration owned by framework, not adapter** - AgentLauncher, AgentStateDetector, and AgentSessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
 - **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.

@@ -1,28 +1,79 @@
 /**
- * Standalone Claude state detection from xterm.js terminal buffer.
+ * Standalone agent state detection from xterm.js terminal buffer.
  *
- * Reads the terminal screen buffer directly to determine Claude CLI state,
+ * Reads the terminal screen buffer directly to determine interactive agent state,
  * avoiding the fundamental problem of classifying raw stdout (status line
  * redraws produce continuous output even when idle).
  */
 import type { Terminal } from "@xterm/xterm";
 import { stripAnsi } from "../utils";
 
-export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
+export type AgentState = "inactive" | "active" | "idle" | "waiting";
+export type ClaudeState = AgentState;
 
-export class ClaudeStateDetector {
-  private _state: ClaudeState = "inactive";
+function normalizeWaitingLine(line: string): string {
+  return line.replace(/[│┃║╭╮╰╯─═]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function findLastWaitingLineIndex(lines: string[]): number {
+  if (lines.length === 0) return -1;
+
+  const tailStart = Math.max(0, lines.length - 20);
+  const tail = lines.slice(tailStart);
+
+  for (let i = tail.length - 1; i >= Math.max(0, tail.length - 15); i--) {
+    const normalizedLine = normalizeWaitingLine(tail[i]);
+    if (!normalizedLine) continue;
+
+    if (/Enter to (?:select|confirm)|to navigate/i.test(normalizedLine)) return tailStart + i;
+
+    if (/\bAllow\b.*\?/i.test(normalizedLine)) return tailStart + i;
+    if (/\ballowOnce\b|\bdenyOnce\b|\ballowAlways\b/i.test(normalizedLine)) return tailStart + i;
+
+    if (/^\s*[>\u276f]\s*\d+\.\s+\S/.test(normalizedLine)) return tailStart + i;
+    if (/^\s*\(?\d+\)?\s+\S/.test(normalizedLine) && i > 0) {
+      for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+        const normalizedPreviousLine = normalizeWaitingLine(tail[j]);
+        if (normalizedPreviousLine.endsWith("?")) return tailStart + i;
+      }
+    }
+
+    if (i >= tail.length - 5 && normalizedLine.endsWith("?") && normalizedLine.length > 10) {
+      return tailStart + i;
+    }
+
+    if (/^\s*(Yes|No)\s*$/i.test(normalizedLine)) return tailStart + i;
+  }
+
+  return -1;
+}
+
+export function hasAgentWaitingIndicator(
+  screenLines: string[] = [],
+  recentCleanLines: string[] = [],
+): boolean {
+  const waitingIndex = findLastWaitingLineIndex(screenLines);
+  if (waitingIndex !== -1) {
+    if (hasAgentActiveIndicator(screenLines.slice(waitingIndex + 1))) return false;
+    return true;
+  }
+  if (screenLines.length > 0) return false;
+  return findLastWaitingLineIndex(recentCleanLines.slice(-15)) !== -1;
+}
+
+export class AgentStateDetector {
+  private _state: AgentState = "inactive";
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _suppressActiveUntil = 0;
   private _recentCleanLines: string[] = [];
-  onChange?: (state: ClaudeState) => void;
+  onChange?: (state: AgentState) => void;
 
   constructor(
     private terminal: Terminal,
     private isVisible: () => boolean,
   ) {}
 
-  get state(): ClaudeState {
+  get state(): AgentState {
     return this._state;
   }
 
@@ -83,7 +134,7 @@ export class ClaudeStateDetector {
   }
 
   private _check(): void {
-    // Read the terminal screen directly to determine Claude's state.
+    // Read the terminal screen directly to determine the agent state.
     const screenLines = this._readScreen();
 
     // Check for waiting patterns first (highest priority).
@@ -113,43 +164,12 @@ export class ClaudeStateDetector {
   }
 
   /**
-   * Check if Claude is waiting for user input by inspecting both the terminal
+   * Check if the agent is waiting for user input by inspecting both the terminal
    * screen buffer and recent output lines. The screen buffer is the primary
    * source since it shows the current rendered state.
    */
   private _looksLikeWaiting(screenLines?: string[]): boolean {
-    // Merge screen lines and recent output for comprehensive detection
-    const sources = [...(screenLines || []), ...(this._recentCleanLines || []).slice(-15)];
-    if (sources.length === 0) return false;
-
-    const tail = sources.slice(-20);
-
-    for (let i = tail.length - 1; i >= Math.max(0, tail.length - 15); i--) {
-      const line = tail[i].trim();
-
-      // Interactive selection UI: "Enter to select", "up/down to navigate"
-      if (/Enter to select|to navigate/i.test(line)) return true;
-
-      // Permission prompt patterns: "Allow", "allowOnce", "denyOnce"
-      if (/\bAllow\b.*\?/i.test(line)) return true;
-      if (/\ballowOnce\b|\bdenyOnce\b|\ballowAlways\b/i.test(line)) return true;
-
-      // AskUserQuestion patterns: numbered options with ">" selector or "(N)"
-      if (/^\s*[>\u276f]\s*\d+\.\s+\S/.test(line)) return true;
-      if (/^\s*\(?\d+\)?\s+\S/.test(line) && i > 0) {
-        for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
-          if (tail[j].trim().endsWith("?")) return true;
-        }
-      }
-
-      // Generic question pattern: line ends with "?" and is near the bottom
-      if (i >= tail.length - 5 && line.endsWith("?") && line.length > 10) return true;
-
-      // "Yes" / "No" option pair
-      if (/^\s*(Yes|No)\s*$/i.test(line)) return true;
-    }
-
-    return false;
+    return hasAgentWaitingIndicator(screenLines || [], this._recentCleanLines || []);
   }
 
   /** Clear the waiting state (e.g. when the user activates this tab). */
@@ -159,7 +179,7 @@ export class ClaudeStateDetector {
     }
   }
 
-  private _setState(s: ClaudeState): void {
+  private _setState(s: AgentState): void {
     if (this._state === s) return;
     this._state = s;
     this.onChange?.(s);
@@ -167,10 +187,10 @@ export class ClaudeStateDetector {
 }
 
 /**
- * Aggregate multiple Claude states into a single state.
+ * Aggregate multiple agent states into a single state.
  * Priority: waiting > active > idle > inactive.
  */
-export function aggregateState(states: ClaudeState[]): ClaudeState {
+export function aggregateState(states: AgentState[]): AgentState {
   for (const s of states) {
     if (s === "waiting") return "waiting";
   }
@@ -224,3 +244,5 @@ export function hasAgentActiveIndicator(screenLines: string[]): boolean {
         copilotCancelHintPattern.test(tailCompactJoined)));
   return hasClaudeActiveIndicator || hasCopilotActiveIndicator;
 }
+
+export { AgentStateDetector as ClaudeStateDetector };

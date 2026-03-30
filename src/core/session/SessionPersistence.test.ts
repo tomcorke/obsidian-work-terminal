@@ -53,7 +53,7 @@ describe("SessionPersistence", () => {
       sessions.set("task-1", [
         {
           isResumableAgent: true,
-          claudeSessionId: "s1",
+          agentSessionId: "s1",
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
@@ -63,7 +63,7 @@ describe("SessionPersistence", () => {
         },
         {
           isResumableAgent: true,
-          claudeSessionId: "s2",
+          agentSessionId: "s2",
           label: "Copilot",
           taskPath: "task-1",
           sessionType: "copilot",
@@ -73,7 +73,7 @@ describe("SessionPersistence", () => {
         },
         {
           isResumableAgent: false,
-          claudeSessionId: null,
+          agentSessionId: null,
           label: "Shell",
           taskPath: "task-1",
           sessionType: "shell",
@@ -82,7 +82,7 @@ describe("SessionPersistence", () => {
         },
         {
           isResumableAgent: true,
-          claudeSessionId: null,
+          agentSessionId: null,
           label: "Claude2",
           taskPath: "task-1",
           sessionType: "claude",
@@ -200,7 +200,7 @@ describe("SessionPersistence", () => {
       sessions.set("task-1", [
         {
           isResumableAgent: true,
-          claudeSessionId: "s1",
+          agentSessionId: "s1",
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",

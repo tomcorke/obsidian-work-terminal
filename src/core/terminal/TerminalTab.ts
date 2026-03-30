@@ -2,7 +2,7 @@
  * TerminalTab - xterm.js terminal + Python PTY wrapper spawn.
  *
  * Each tab owns a Terminal instance, FitAddon, ResizeObserver, PTY child process,
- * and Claude state detection. Supports stash/restore for hot-reload persistence.
+ * and agent state detection. Supports stash/restore for hot-reload persistence.
  */
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -16,11 +16,19 @@ import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
-import { type StoredSession, type SessionType, isResumableSessionType } from "../session/types";
-import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
-import { hasAgentActiveIndicator } from "../claude/ClaudeStateDetector";
+import {
+  type AgentRuntimeState,
+  type StoredSession,
+  type SessionType,
+  type TerminalTabDiagnostics,
+  type TabProcessDiagnostics,
+  isResumableSessionType,
+} from "../session/types";
+import { AgentSessionTracker } from "../agents/AgentSessionTracker";
+import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
 
-export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
+export type AgentState = AgentRuntimeState;
+export type ClaudeState = AgentState;
 
 let sessionCounter = 0;
 
@@ -40,7 +48,7 @@ export class TerminalTab {
   id: string;
   label: string;
   taskPath: string | null;
-  claudeSessionId: string | null = null;
+  agentSessionId: string | null = null;
   durableSessionId: string | null = null;
   sessionType: SessionType;
 
@@ -51,7 +59,7 @@ export class TerminalTab {
   onOutputData?: (data: Buffer | string) => void;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: string | null) => void;
-  onStateChange?: (state: ClaudeState) => void;
+  onStateChange?: (state: AgentState) => void;
 
   private fitAddon: FitAddon | undefined;
   private searchAddon: SearchAddon | undefined;
@@ -74,8 +82,8 @@ export class TerminalTab {
   private cwd: string = "";
   private spawnTime = 0;
 
-  // Claude state detection
-  private _claudeState: ClaudeState = "inactive";
+  // Agent state detection
+  private _agentState: AgentState = "inactive";
   private _recentCleanLines: string[] = [];
   private _stateTimer: ReturnType<typeof setInterval> | null = null;
   private _isResumableAgent = false;
@@ -84,7 +92,7 @@ export class TerminalTab {
   _suppressActiveUntil = 0;
 
   // Session tracking (/resume detection)
-  private _sessionTracker: ClaudeSessionTracker | null = null;
+  private _sessionTracker: AgentSessionTracker | null = null;
 
   // Rename detection
   private _renameDecoder = new StringDecoder("utf8");
@@ -102,12 +110,12 @@ export class TerminalTab {
     sessionType: SessionType,
     preCommand?: string,
     private commandArgs?: string[],
-    claudeSessionId?: string | null,
+    agentSessionId?: string | null,
     durableSessionId?: string | null,
   ) {
-    this.claudeSessionId = claudeSessionId || null;
+    this.agentSessionId = agentSessionId || null;
     this.durableSessionId =
-      durableSessionId || (claudeSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
+      durableSessionId || (agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     this.taskPath = taskPath;
     this.label = label;
     this.sessionType = sessionType;
@@ -307,9 +315,8 @@ export class TerminalTab {
   }
 
   private hasBlankRenderSurface(): boolean {
-    const terminalElement = (
-      this.terminal as Terminal & { element?: ParentNode | null }
-    ).element as ParentNode | null | undefined;
+    const terminalElement = (this.terminal as Terminal & { element?: ParentNode | null })
+      .element as ParentNode | null | undefined;
     const renderRoot =
       terminalElement && typeof terminalElement.querySelectorAll === "function"
         ? terminalElement
@@ -622,6 +629,10 @@ export class TerminalTab {
     return !this.containerEl.hasClass("hidden");
   }
 
+  get isDisposed(): boolean {
+    return this._isDisposed;
+  }
+
   get launchShell(): string {
     return this.shell;
   }
@@ -669,15 +680,104 @@ export class TerminalTab {
   }
 
   // ---------------------------------------------------------------------------
-  // Claude state detection
+  // Agent state detection
   // ---------------------------------------------------------------------------
 
-  get claudeState(): ClaudeState {
-    return this._claudeState;
+  get agentState(): AgentState {
+    return this._agentState;
+  }
+
+  get claudeState(): AgentState {
+    return this.agentState;
+  }
+
+  get claudeSessionId(): string | null {
+    return this.agentSessionId;
+  }
+
+  set claudeSessionId(value: string | null) {
+    this.agentSessionId = value;
   }
 
   get isResumableAgent(): boolean {
     return this._isResumableAgent;
+  }
+
+  private getProcessStatus(): TabProcessDiagnostics["status"] {
+    if (!this.process) return "missing";
+    if (this.process.exitCode !== null || this.process.signalCode !== null) {
+      return this.process.signalCode ? "killed" : "exited";
+    }
+    if (this.process.killed) return "killed";
+    return "alive";
+  }
+
+  private getRendererCanvasCount(): number {
+    const terminalElement = (this.terminal as Terminal & { element?: ParentNode | null })
+      .element as ParentNode | null | undefined;
+    const renderRoot =
+      terminalElement && typeof terminalElement.querySelectorAll === "function"
+        ? terminalElement
+        : ((this.containerEl as ParentNode | null | undefined) ?? null);
+    if (!renderRoot || typeof renderRoot.querySelectorAll !== "function") {
+      return 0;
+    }
+    return renderRoot.querySelectorAll(".xterm-screen canvas").length;
+  }
+
+  private redactDiagnosticLine(line: string): string {
+    const trimmed = line.trim();
+    if (!trimmed) return "";
+    return `[redacted:${trimmed.length} chars]`;
+  }
+
+  getDiagnostics(): TerminalTabDiagnostics {
+    const screenLines = this._readTerminalScreen();
+    const processStatus = this.getProcessStatus();
+    const trackedWebglAddonPresent = !!this.webglAddon;
+    const trackedWebglAddonDisposed = Boolean(
+      this.webglAddon && this.getTrackedWebglAddonEntry(this.webglAddon)?.isDisposed,
+    );
+    const canvasCount = this.getRendererCanvasCount();
+    const hasRenderableContent = this.hasRenderableSessionContent();
+    const hasBlankRenderSurface = canvasCount === 0;
+    const blankButLiveRenderer =
+      processStatus === "alive" && hasRenderableContent && hasBlankRenderSurface;
+    return {
+      tabId: this.id,
+      label: this.label,
+      sessionId: this.agentSessionId,
+      sessionType: this.sessionType,
+      claudeState: this.claudeState,
+      isResumableAgent: this.isResumableAgent,
+      isVisible: this.isVisible,
+      isDisposed: this.isDisposed,
+      process: {
+        pid: typeof this.process?.pid === "number" ? this.process.pid : null,
+        status: processStatus,
+        killed: this.process?.killed === true,
+        exitCode: this.process?.exitCode ?? null,
+        signalCode: this.process?.signalCode ?? null,
+        spawnTime: this.spawnTime > 0 ? this.spawnTime : null,
+        uptimeMs: this.spawnTime > 0 ? Math.max(0, Date.now() - this.spawnTime) : null,
+      },
+      renderer: {
+        canvasCount,
+        hasRenderableContent,
+        hasBlankRenderSurface,
+        trackedWebglAddonPresent,
+        trackedWebglAddonDisposed,
+        staleDisposedWebglOwnership: trackedWebglAddonPresent && trackedWebglAddonDisposed,
+      },
+      buffer: {
+        screenLineCount: screenLines.length,
+        screenTail: screenLines.slice(-6).map((line) => this.redactDiagnosticLine(line)),
+      },
+      derived: {
+        blankButLiveRenderer,
+        staleDisposedWebglOwnership: trackedWebglAddonPresent && trackedWebglAddonDisposed,
+      },
+    };
   }
 
   /** Start state tracking for Claude/Agent sessions. Call after label is known. */
@@ -687,7 +787,7 @@ export class TerminalTab {
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
-    this._claudeState = this._suppressActiveUntil > 0 ? "idle" : "active";
+    this._agentState = this._suppressActiveUntil > 0 ? "idle" : "active";
     if (!this._recentCleanLines) this._recentCleanLines = [];
 
     // Check state every 2 seconds
@@ -698,18 +798,18 @@ export class TerminalTab {
   private _initSessionTracker(): void {
     if (
       (this.sessionType === "claude" || this.sessionType === "claude-with-context") &&
-      this.claudeSessionId
+      this.agentSessionId
     ) {
-      this._sessionTracker = new ClaudeSessionTracker(this.cwd, this.claudeSessionId);
+      this._sessionTracker = new AgentSessionTracker(this.cwd, this.agentSessionId);
       this._sessionTracker.onSessionChange = (newId) => {
-        this.claudeSessionId = newId;
+        this.agentSessionId = newId;
         console.log("[work-terminal] Session ID updated via /resume:", newId);
       };
     }
   }
 
   private _detectResumableAgent(): boolean {
-    return isResumableSessionType(this.sessionType) && !!this.claudeSessionId;
+    return isResumableSessionType(this.sessionType) && !!this.agentSessionId;
   }
 
   /** Called on each chunk of output data to track activity. */
@@ -756,7 +856,7 @@ export class TerminalTab {
     // Check for waiting patterns first (highest priority).
     // Suppress waiting if the tab is currently visible - the user can already see it.
     if (this._looksLikeWaiting(screenLines)) {
-      this._setClaudeState("waiting");
+      this._setAgentState("waiting");
       return;
     }
 
@@ -768,14 +868,14 @@ export class TerminalTab {
     if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
       if (Date.now() < this._suppressActiveUntil) {
-        this._setClaudeState("idle");
+        this._setAgentState("idle");
       } else {
-        this._setClaudeState("active");
+        this._setAgentState("active");
       }
     } else {
       // Real output clears the suppression early
       this._suppressActiveUntil = 0;
-      this._setClaudeState("idle");
+      this._setAgentState("idle");
     }
   }
 
@@ -784,49 +884,19 @@ export class TerminalTab {
    * screen buffer and recent output lines.
    */
   private _looksLikeWaiting(screenLines?: string[]): boolean {
-    const sources = [...(screenLines || []), ...(this._recentCleanLines || []).slice(-15)];
-    if (sources.length === 0) return false;
-
-    const tail = sources.slice(-20);
-
-    for (let i = tail.length - 1; i >= Math.max(0, tail.length - 15); i--) {
-      const line = tail[i].trim();
-
-      // Interactive selection UI: "Enter to select", "up/down to navigate"
-      if (/Enter to select|to navigate/i.test(line)) return true;
-
-      // Permission prompt patterns
-      if (/\bAllow\b.*\?/i.test(line)) return true;
-      if (/\ballowOnce\b|\bdenyOnce\b|\ballowAlways\b/i.test(line)) return true;
-
-      // AskUserQuestion patterns: numbered options with ">" selector or "(N)"
-      if (/^\s*[>\u276f]\s*\d+\.\s+\S/.test(line)) return true;
-      if (/^\s*\(?\d+\)?\s+\S/.test(line) && i > 0) {
-        for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
-          if (tail[j].trim().endsWith("?")) return true;
-        }
-      }
-
-      // Generic question pattern near the bottom
-      if (i >= tail.length - 5 && line.endsWith("?") && line.length > 10) return true;
-
-      // "Yes" / "No" option pair
-      if (/^\s*(Yes|No)\s*$/i.test(line)) return true;
-    }
-
-    return false;
+    return hasAgentWaitingIndicator(screenLines || [], this._recentCleanLines || []);
   }
 
   /** Clear the waiting state (e.g. when the user activates this tab to respond). */
   clearWaiting(): void {
-    if (this._claudeState === "waiting") {
-      this._setClaudeState("idle");
+    if (this._agentState === "waiting") {
+      this._setAgentState("idle");
     }
   }
 
-  private _setClaudeState(state: ClaudeState): void {
-    if (this._claudeState === state) return;
-    this._claudeState = state;
+  private _setAgentState(state: AgentState): void {
+    if (this._agentState === state) return;
+    this._agentState = state;
     this.onStateChange?.(state);
   }
 
@@ -848,6 +918,7 @@ export class TerminalTab {
       id: this.id,
       taskPath: this.taskPath,
       label: this.label,
+      agentSessionId: this.agentSessionId,
       claudeSessionId: this.claudeSessionId,
       durableSessionId: this.durableSessionId,
       sessionType: this.sessionType,
@@ -883,9 +954,9 @@ export class TerminalTab {
     tab.id = stored.id;
     tab.label = stored.label;
     tab.taskPath = stored.taskPath;
-    tab.claudeSessionId = stored.claudeSessionId || null;
+    tab.agentSessionId = stored.agentSessionId ?? stored.claudeSessionId ?? null;
     tab.durableSessionId =
-      stored.durableSessionId || (tab.claudeSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
+      stored.durableSessionId || (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     tab.sessionType = stored.sessionType;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
@@ -910,7 +981,7 @@ export class TerminalTab {
       tab.trackWebglAddon(restoredWebglAddon);
     }
     tab._documentCleanups = [];
-    tab._claudeState = "inactive" as ClaudeState;
+    tab._agentState = "inactive" as AgentState;
     tab._recentCleanLines = [];
     tab._stateTimer = null;
     tab._isResumableAgent = false;

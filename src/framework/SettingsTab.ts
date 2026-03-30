@@ -101,7 +101,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       containerEl,
       "core.additionalAgentContext",
       "Additional context template",
-      "Optional extra context appended after the adapter-built prompt for contextual Claude, Copilot, and Strands sessions. Placeholders: $title, $state, $filePath, $id.",
+      "Optional template used as the initial prompt for Claude (ctx), and appended after the adapter prompt for contextual custom Copilot and Strands sessions. The Claude (ctx) button is hidden when this is empty. Placeholders: $title, $state, $filePath, $id.",
     );
     this.addCoreSetting(
       containerEl,

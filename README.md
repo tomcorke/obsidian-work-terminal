@@ -6,7 +6,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 
 - **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
 - **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom sessions (including GitHub Copilot CLI)
-- **Agent integration** - Claude/Copilot command resolution, Claude state detection (active/waiting/idle), session rename detection, headless spawning
+- **Agent integration** - Claude/Copilot command resolution, agent state detection (active/waiting/idle), session rename detection, headless spawning
 - **Session persistence** - hot-reload preserves live terminals; disk persistence enables session resume after restart. Copilot uses native `--resume[=sessionId]`, while Claude hook setup is only needed if you use Claude's in-app `/resume`.
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
@@ -103,7 +103,7 @@ export class MyAdapter extends BaseAdapter {
   }
 
   createPromptBuilder(): WorkItemPromptBuilder {
-    // Build context prompts for Claude sessions
+    // Build context prompts for agent sessions
     // See task-agent/TaskPromptBuilder.ts for a full example
   }
 }
@@ -126,8 +126,8 @@ Your adapter inherits all of this without writing any terminal code:
 
 - Shell + Claude + Claude-with-context terminal tabs per item
 - Session persistence (hot-reload + disk resume with 7-day retention)
-- Claude state detection (active/waiting/idle) with card indicators
-- Claude session rename detection with adapter hook
+- Agent state detection (active/waiting/idle) with card indicators
+- Agent session rename detection with adapter hook
 - Keyboard capture (Option+Arrow, Shift+Enter, macOptionIsMeta)
 - xterm.js rendering with PTY wrapper, resize protocol, scroll-to-bottom
 - Drag-drop reordering (within-section and cross-section)
@@ -143,7 +143,7 @@ Override these in your adapter for extra functionality:
 - `createDetailView(item, app, ownerLeaf)` - Open a detail panel (e.g. MarkdownView) when an item is selected
 - `detachDetailView()` - Clean up the detail panel on close/reload
 - `onItemCreated(path, settings)` - Run post-creation logic (e.g. background AI enrichment)
-- `transformSessionLabel(oldLabel, detectedLabel)` - Transform Claude session rename labels
+- `transformSessionLabel(oldLabel, detectedLabel)` - Transform detected agent session labels
 
 ## Architecture
 

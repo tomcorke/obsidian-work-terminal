@@ -93,6 +93,8 @@ function createListPanel(
     creationColumns?: { id: string; label: string; default?: boolean }[];
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
+    cardClasses?: string[];
+    itemName?: string;
   } = {},
 ) {
   const parentEl = document.createElement("div") as HTMLElement & {
@@ -109,7 +111,7 @@ function createListPanel(
 
   const adapter = {
     config: {
-      itemName: "task",
+      itemName: options.itemName ?? "task",
       columns,
       creationColumns,
     },
@@ -121,6 +123,9 @@ function createListPanel(
         addClass: HTMLElement["addClass"];
       };
       cardEl.textContent = item.title;
+      if (options.cardClasses?.length) {
+        cardEl.classList.add(...options.cardClasses);
+      }
       const actionsEl = document.createElement("div");
       actionsEl.className = "wt-card-actions";
       cardEl.appendChild(actionsEl);
@@ -133,7 +138,7 @@ function createListPanel(
 
   const terminalPanel = {
     closeAllSessions: vi.fn(),
-    getClaudeContextPrompt: vi.fn(),
+    getAgentContextPrompt: vi.fn(),
     getSessionCounts: vi.fn(() => ({ shells: 0, agents: 0 })),
     hasResumableAgentSessions: vi.fn(() => false),
     getPersistedSessions: vi.fn(() => []),
@@ -206,6 +211,39 @@ describe("ListPanel", () => {
     ).toBe(true);
   });
 
+  it("uses the adapter item name in the success bar copy and removes the bar after the timeout", () => {
+    const { panel } = createListPanel({ itemName: "ticket" });
+    panel.render({ todo: [] }, {});
+
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+    panel.resolvePlaceholder("placeholder-1", true);
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    const successBar = cardEl.querySelector(".wt-success-bar");
+    expect(successBar?.textContent).toBe("new ticket created");
+
+    vi.advanceTimersByTime(4500);
+
+    expect(cardEl.classList.contains("wt-card-new-success")).toBe(false);
+    expect(cardEl.querySelector(".wt-success-bar")).toBeNull();
+  });
+
+  it("clears pending success animation timers on dispose", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [] }, {});
+
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+    panel.resolvePlaceholder("placeholder-1", true);
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    expect(vi.getTimerCount()).toBe(1);
+
+    panel.dispose();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("matches success animations to the correct placeholder when completions arrive out of order", () => {
     const { panel } = createListPanel();
     panel.render({ todo: [makeItem("task-1"), makeItem("task-2")] }, {});
@@ -276,7 +314,7 @@ describe("ListPanel", () => {
       {
         version: 1,
         taskPath: "Tasks/task-1.md",
-        claudeSessionId: "session-1",
+        agentSessionId: "session-1",
         label: "Claude",
         sessionType: "claude",
         savedAt: new Date().toISOString(),
@@ -289,6 +327,32 @@ describe("ListPanel", () => {
     expect(document.querySelector('[data-item-id="task-1"] .wt-resume-badge')?.textContent).toBe(
       "↻",
     );
+  });
+
+  it("uses wt-agent classes on initial render and clears legacy wt-claude classes", () => {
+    const { panel } = createListPanel({ cardClasses: ["wt-claude-active"] });
+    panel.updateAgentState("task-1", "waiting");
+
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    expect(cardEl.classList.contains("wt-agent-waiting")).toBe(true);
+    expect(cardEl.classList.contains("wt-claude-active")).toBe(false);
+    expect(cardEl.classList.contains("wt-claude-waiting")).toBe(false);
+  });
+
+  it("uses wt-agent classes on incremental updates and removes stale legacy classes", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+    cardEl.classList.add("wt-claude-active", "wt-claude-idle");
+
+    panel.updateAgentState("task-1", "idle");
+
+    expect(cardEl.classList.contains("wt-agent-idle")).toBe(true);
+    expect(cardEl.classList.contains("wt-claude-active")).toBe(false);
+    expect(cardEl.classList.contains("wt-claude-idle")).toBe(false);
   });
 
   it("does not reorder the destination column when a cross-column move fails", async () => {

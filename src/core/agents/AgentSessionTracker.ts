@@ -1,5 +1,5 @@
 /**
- * Monitor for session ID changes when a user does /resume inside Claude.
+ * Monitor for session ID changes when a user does /resume inside a resumable agent.
  *
  * Continuously polls ~/.work-terminal/events/ for hook event files matching
  * this session's ID. When a SessionEnd event appears for our session, pairs
@@ -13,13 +13,13 @@
  * intervals. Consecutive errors stop polling to avoid log spam. dispose()
  * is idempotent and always clears the timer.
  */
-import { readResumeEvent, cleanupStaleEvents } from "./ClaudeHookManager";
+import { readResumeEvent, cleanupStaleEvents } from "../claude/ClaudeHookManager";
 
 const POLL_INTERVAL_MS = 2000;
 /** Stop polling after this many consecutive errors to avoid log spam. */
 const MAX_CONSECUTIVE_ERRORS = 5;
 
-export class ClaudeSessionTracker {
+export class AgentSessionTracker {
   private _sessionId: string;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _disposed = false;
@@ -72,9 +72,9 @@ export class ClaudeSessionTracker {
       this._consecutiveErrors = 0;
     } catch (err) {
       this._consecutiveErrors++;
-      console.warn("[ClaudeSessionTracker] Poll error:", err);
+      console.warn("[AgentSessionTracker] Poll error:", err);
       if (this._consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        console.warn("[ClaudeSessionTracker] Too many errors, stopping poll");
+        console.warn("[AgentSessionTracker] Too many errors, stopping poll");
         this._stopPolling();
       }
     }
@@ -94,13 +94,13 @@ export class ClaudeSessionTracker {
       // Stale files will be cleaned on next successful poll
     }
 
-    console.log("[ClaudeSessionTracker] Session ID changed:", newId);
+    console.log("[AgentSessionTracker] Session ID changed:", newId);
 
     // Fire callback - catch errors so tracker state stays consistent
     try {
       this.onSessionChange?.(newId);
     } catch (err) {
-      console.warn("[ClaudeSessionTracker] onSessionChange callback error:", err);
+      console.warn("[AgentSessionTracker] onSessionChange callback error:", err);
     }
   }
 }

@@ -84,6 +84,7 @@ export class MainView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    (this.pluginRef as any).rememberWorkTerminalLeaf?.(this.leaf);
     const container = this.contentEl;
     container.empty();
     container.addClass("wt-main-view");
@@ -123,6 +124,7 @@ export class MainView extends ItemView {
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         if (leaf === this.leaf) {
+          (this.pluginRef as any).rememberWorkTerminalLeaf?.(this.leaf);
           // Double-rAF: first frame for layout, second for correct dimensions
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -142,9 +144,13 @@ export class MainView extends ItemView {
       this.listPanel?.selectById(recoveredId);
     }
 
-    // Broadcast Claude states for any recovered sessions so ListPanel
+    // Broadcast agent states for any recovered sessions so ListPanel
     // picks up state indicators that were set before it existed.
-    this.terminalPanel?.broadcastClaudeStates();
+    this.terminalPanel?.broadcastAgentStates();
+  }
+
+  async copySessionDiagnostics(): Promise<boolean> {
+    return (await this.terminalPanel?.copySessionDiagnostics()) ?? false;
   }
 
   /**
@@ -301,9 +307,9 @@ export class MainView extends ItemView {
       this.adapter,
       settings,
       promptBuilder,
-      // onClaudeStateChange callback
+      // onAgentStateChange callback
       (itemId: string, state: string) => {
-        this.listPanel?.updateClaudeState(itemId, state);
+        this.listPanel?.updateAgentState(itemId, state);
       },
       // onSessionChange callback
       () => {
@@ -481,6 +487,9 @@ export class MainView extends ItemView {
   // ---------------------------------------------------------------------------
 
   async onClose(): Promise<void> {
+    if ((this.pluginRef as any)._lastWorkTerminalLeaf === this.leaf) {
+      (this.pluginRef as any).rememberWorkTerminalLeaf?.(null);
+    }
     // Remove close guards
     if (this._beforeUnloadHandler) {
       window.removeEventListener("beforeunload", this._beforeUnloadHandler);
@@ -506,6 +515,8 @@ export class MainView extends ItemView {
       await this.terminalPanel?.persistSessions();
       this.terminalPanel?.disposeAll();
     }
+
+    this.listPanel?.dispose();
 
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();
