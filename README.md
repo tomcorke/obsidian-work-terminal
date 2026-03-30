@@ -5,9 +5,10 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 ## What you get
 
 - **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
-- **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom sessions (including GitHub Copilot CLI)
-- **Agent integration** - Claude/Copilot command resolution, Claude state detection (active/waiting/idle), session rename detection, headless spawning
-- **Session persistence** - hot-reload preserves live terminals; disk persistence enables session resume after restart. Copilot uses native `--resume[=sessionId]`, while Claude hook setup is only needed if you use Claude's in-app `/resume`.
+- **Tabbed terminals** per work item - Shell, Claude, Claude (ctx), Copilot, Copilot (ctx), Strands, Strands (ctx), and per-item custom sessions
+- **Agent integration** - Claude/Copilot/Strands command resolution, Claude and Copilot state detection, session rename detection, and headless enrichment hooks
+- **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen recently closed tabs, and durable recovery can resume or relaunch supported sessions after a full close
+- **Built-in diagnostics** - the command palette action "Copy Session Diagnostics" captures a JSON snapshot of session, renderer, recovery, and persistence state without reloading the plugin
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
 ## Development
@@ -16,7 +17,8 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 npm install
 npm run build        # production build
 npm run dev          # watch mode with CDP hot-reload
-npx vitest run       # 104 tests
+npm test             # 276 tests
+npm run lint
 npm run obsidian:test:init
 npm run obsidian:test:open
 ```
@@ -43,6 +45,17 @@ The repo now includes a repo-local automation path for isolated manual or agent-
   - `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`
 
 Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port. The launcher now fails fast if that debugger port is already occupied, and it also stops early with a clear singleton warning when another Obsidian app process is already running instead of timing out against an unusable second-instance launch.
+
+## Reporting issues
+
+Report bugs and feature requests in this repo's [GitHub Issues](https://github.com/tomcorke/obsidian-work-terminal/issues).
+
+Include:
+
+- Obsidian version, plugin version, and platform
+- steps to reproduce and the expected vs actual result
+- whether the problem happened after hot-reload, full restart, or restoring a recent session
+- relevant console errors, screenshots, or a "Copy Session Diagnostics" snapshot when available
 
 ## Creating Your Own Adapter
 

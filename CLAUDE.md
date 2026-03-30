@@ -13,16 +13,19 @@ src/
     interfaces.ts # All extension point interfaces + BaseAdapter
     terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
     claude/       # ClaudeLauncher, ClaudeStateDetector, ClaudeSessionRename, HeadlessClaude
-    session/      # SessionStore (window-global), SessionPersistence (disk), types
+    session/      # SessionStore, RecentlyClosedStore, SessionPersistence, types
+    PluginDataStore.ts # Merge-safe plugin data reads/writes for settings and persistence
 
   framework/      # Obsidian plugin scaffolding - delegates to adapters
     PluginBase.ts          # Abstract Plugin subclass, view/command/settings registration
     MainView.ts            # 2-panel ItemView (list | terminals), vault events, rename detection
     ListPanel.ts           # Column-based kanban, drag-drop, filtering, badges, state indicators
-    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation, resume
+    TerminalPanelView.ts   # Tab bar, session launch/recovery, state aggregation, persistence hooks
     PromptBox.ts           # Item creation UI with column selector
     SettingsTab.ts         # Core + adapter namespaced settings
     DangerConfirm.ts       # Modal confirmation for destructive actions
+    CustomSessionConfig.ts # Session-type defaults, labels, help text, resume semantics
+    CustomSessionModal.ts  # Spawn custom sessions or restore recent ones per item
 
   adapters/
     task-agent/   # Task-agent adapter (reference implementation)
@@ -52,11 +55,13 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
+- **Recovery stays in framework code** - hot-reload stash/restore, recent-session reopening, durable session persistence, and WebGL recovery are not adapter concerns.
 
 ## Development workflow
 
 - **Build**: `npm run build` (production) or `npm run dev` (watch mode with CDP hot-reload)
-- **Test**: `npx vitest run` (104 tests covering utils, state detection, session types, parser, mover, template, prompt builder, automation helpers)
+- **Test**: `npm test` (276 tests across terminal lifecycle, recovery/persistence, automation helpers, adapter parsing/moving, and launcher/state utilities)
+- **Lint**: `npm run lint`
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
@@ -67,6 +72,13 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - `npm run dev` watch mode (preferred - auto-reloads on save)
 - Command palette: "Work Terminal: Reload Plugin (preserve terminals)"
 - CDP: `node cdp.js`
+
+## Runtime features
+
+- **Session types**: shell, Claude, Claude-with-context, Copilot, Copilot-with-context, Strands, and Strands-with-context. The custom session modal remembers per-item defaults.
+- **Recent-session restore**: the custom session modal can reopen up to 5 recently closed tabs per item flow, with a 30-minute recovery window.
+- **Durable recovery**: after a full close, resumable agent sessions restore from persisted metadata, while non-resumable sessions can relaunch when enough launch data is available.
+- **Diagnostics**: command palette action "Copy Session Diagnostics" snapshots session/process state, renderer health, recovery status, and persisted metadata for issue reports.
 
 ## Development rules
 
@@ -102,4 +114,5 @@ Run `npx vitest run` after changes to verify nothing is broken. Build with `npm 
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Shift+Enter, Option+Backspace, macOptionIsMeta.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
-- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs.
+- **Session persistence**: Three layers - window-global stash for hot-reload, recent closed-session tracking for short-term reopen flows, and disk persistence for full restart recovery (7-day retention for persisted metadata). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs; Strands sessions always relaunch fresh.
+- **WebGL recovery**: TerminalTab owns addon/context-loss cleanup so fresh tabs and restored tabs can recover from disposed or blank renderers without crashing on close.
