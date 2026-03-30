@@ -1,16 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
-  buildMissingCliNotice,
   buildClaudeArgs,
   buildCopilotArgs,
+  buildMissingCliNotice,
   buildStrandsArgs,
   mergeExtraArgs,
   parseExtraArgs,
+  resolveCommand,
   resolveCommandInfo,
+  splitConfiguredCommand,
 } from "./AgentLauncher";
 import { expandTilde } from "../utils";
 
 describe("AgentLauncher", () => {
+  const originalPath = process.env.PATH;
+  const originalPathext = process.env.PATHEXT;
+
+  afterEach(() => {
+    process.env.PATH = originalPath;
+    process.env.PATHEXT = originalPathext;
+  });
+
   it("parses backslash-newline continuations without keeping continuation tokens", () => {
     expect(
       parseExtraArgs(`--dangerously-skip-permissions \\
@@ -114,19 +124,32 @@ describe("AgentLauncher", () => {
     ]);
   });
 
+  it("reports found status for commands discovered on PATH", () => {
+    const path = require("path") as typeof import("path");
+    process.env.PATH = path.dirname(process.execPath);
+
+    const resolution = resolveCommandInfo(path.basename(process.execPath));
+
+    expect(resolution.found).toBe(true);
+    expect(path.basename(resolution.resolved)).toBe(path.basename(process.execPath));
+    expect(resolveCommand(path.basename(process.execPath))).toBe(resolution.resolved);
+  });
+
+  it("reports found status for absolute paths", () => {
+    const resolution = resolveCommandInfo(process.execPath);
+
+    expect(resolution).toEqual({
+      requested: process.execPath,
+      resolved: process.execPath,
+      found: true,
+    });
+  });
+
   it("reports when a command cannot be resolved", () => {
     expect(resolveCommandInfo("definitely-not-a-real-command-issue-158")).toEqual({
       requested: "definitely-not-a-real-command-issue-158",
       resolved: "definitely-not-a-real-command-issue-158",
       found: false,
-    });
-  });
-
-  it("treats existing absolute paths as resolved commands", () => {
-    expect(resolveCommandInfo("/bin/sh")).toEqual({
-      requested: "/bin/sh",
-      resolved: "/bin/sh",
-      found: true,
     });
   });
 
@@ -154,11 +177,186 @@ describe("AgentLauncher", () => {
     });
   });
 
+  it("resolves executable relative paths from the provided cwd", () => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const scriptPath = path.join(process.cwd(), "issue-160-launchable-test.sh");
+    try {
+      fs.writeFileSync(scriptPath, "#!/bin/sh\nexit 0\n");
+      fs.chmodSync(scriptPath, 0o755);
+      const executablePath = "./issue-160-launchable-test.sh";
+      const resolution = resolveCommandInfo(executablePath, process.cwd());
+
+      expect(resolution.resolved).toBe(path.resolve(process.cwd(), executablePath));
+      expect(resolution.found).toBe(true);
+    } finally {
+      try {
+        fs.unlinkSync(scriptPath);
+      } catch {
+        /* ignore cleanup failures */
+      }
+    }
+  });
+
+  it("reports non-executable relative paths as not found", () => {
+    const resolution = resolveCommandInfo("./package.json", process.cwd());
+
+    expect(resolution.resolved).toBe(require("path").resolve(process.cwd(), "./package.json"));
+    expect(resolution.found).toBe(false);
+  });
+
   it("treats missing relative wrapper paths as unresolved even when cwd is provided", () => {
     expect(resolveCommandInfo("./missing-wrapper", expandTilde("~"))).toEqual({
       requested: "./missing-wrapper",
       resolved: `${expandTilde("~")}/missing-wrapper`,
       found: false,
+    });
+  });
+
+  it("reports missing commands without changing the requested command", () => {
+    const missing = "definitely-not-a-real-command-issue-160";
+    const resolution = resolveCommandInfo(missing);
+
+    expect(resolution).toEqual({
+      requested: missing,
+      resolved: missing,
+      found: false,
+    });
+    expect(resolveCommand(missing)).toBe(missing);
+  });
+
+  it("resolves Windows drive-letter paths as executable commands", () => {
+    const path = require("path") as typeof import("path");
+    const fs = {
+      statSync: (target: string) => {
+        if (target === "C:\\Tools\\claude.exe") {
+          return { isDirectory: () => false };
+        }
+        throw new Error(`Unexpected statSync path: ${target}`);
+      },
+      accessSync: () => undefined,
+      constants: { X_OK: 0 },
+    } as unknown as typeof import("fs");
+    const resolution = resolveCommandInfo("C:\\Tools\\claude.exe", undefined, {
+      fs,
+      pathModule: path,
+      platform: "win32",
+      env: { ...process.env, PATHEXT: ".EXE;.CMD" },
+    });
+
+    expect(resolution).toEqual({
+      requested: "C:\\Tools\\claude.exe",
+      resolved: "C:\\Tools\\claude.exe",
+      found: true,
+    });
+  });
+
+  it("resolves Windows UNC paths as executable commands", () => {
+    const path = require("path") as typeof import("path");
+    const fs = {
+      statSync: (target: string) => {
+        if (target === "\\\\server\\share\\copilot.cmd") {
+          return { isDirectory: () => false };
+        }
+        throw new Error(`Unexpected statSync path: ${target}`);
+      },
+      accessSync: () => undefined,
+      constants: { X_OK: 0 },
+    } as unknown as typeof import("fs");
+    const resolution = resolveCommandInfo("\\\\server\\share\\copilot.cmd", undefined, {
+      fs,
+      pathModule: path,
+      platform: "win32",
+      env: { ...process.env, PATHEXT: ".EXE;.CMD" },
+    });
+
+    expect(resolution).toEqual({
+      requested: "\\\\server\\share\\copilot.cmd",
+      resolved: "\\\\server\\share\\copilot.cmd",
+      found: true,
+    });
+  });
+
+  it("resolves Windows backslash-relative paths from the provided cwd", () => {
+    const path = require("path") as typeof import("path");
+    const resolvedPath = "C:\\repo\\agent.cmd";
+    const fs = {
+      statSync: (target: string) => {
+        if (target === resolvedPath) {
+          return { isDirectory: () => false };
+        }
+        throw new Error(`Unexpected statSync path: ${target}`);
+      },
+      accessSync: () => undefined,
+      constants: { X_OK: 0 },
+    } as unknown as typeof import("fs");
+    const resolution = resolveCommandInfo(".\\agent.cmd", "C:\\repo", {
+      fs,
+      pathModule: path,
+      platform: "win32",
+      env: { ...process.env, PATHEXT: ".EXE;.CMD" },
+    });
+
+    expect(resolution).toEqual({
+      requested: ".\\agent.cmd",
+      resolved: resolvedPath,
+      found: true,
+    });
+  });
+
+  it("treats existing non-executable Windows files as not found", () => {
+    const path = require("path") as typeof import("path");
+    const fs = {
+      statSync: (target: string) => {
+        if (target === "C:\\repo\\package.json") {
+          return { isDirectory: () => false };
+        }
+        throw new Error(`Unexpected statSync path: ${target}`);
+      },
+      accessSync: () => undefined,
+      constants: { X_OK: 0 },
+    } as unknown as typeof import("fs");
+    const resolution = resolveCommandInfo("C:\\repo\\package.json", undefined, {
+      fs,
+      pathModule: path,
+      platform: "win32",
+      env: { ...process.env, PATHEXT: ".EXE;.CMD" },
+    });
+
+    expect(resolution).toEqual({
+      requested: "C:\\repo\\package.json",
+      resolved: "C:\\repo\\package.json",
+      found: false,
+    });
+  });
+
+  it("searches Windows PATH entries with the platform delimiter and PATHEXT", () => {
+    const path = require("path") as typeof import("path");
+    const fs = {
+      statSync: (target: string) => {
+        if (target === "C:\\Tools\\copilot.exe") {
+          return { isDirectory: () => false };
+        }
+        throw new Error(`Unexpected statSync path: ${target}`);
+      },
+      accessSync: () => undefined,
+      constants: { X_OK: 0 },
+    } as unknown as typeof import("fs");
+    const resolution = resolveCommandInfo("copilot", undefined, {
+      fs,
+      pathModule: path,
+      platform: "win32",
+      env: {
+        ...process.env,
+        PATH: "C:\\Tools;C:\\Windows\\System32",
+        PATHEXT: ".EXE;.CMD",
+      },
+    });
+
+    expect(resolution).toEqual({
+      requested: "copilot",
+      resolved: "C:\\Tools\\copilot.exe",
+      found: true,
     });
   });
 
@@ -170,5 +368,40 @@ describe("AgentLauncher", () => {
 
   it("builds the Copilot missing CLI notice", () => {
     expect(buildMissingCliNotice("copilot", "copilot")).toContain("brew install copilot-cli");
+  });
+
+  it("splits multi-token configured commands consistently", () => {
+    expect(splitConfiguredCommand("uv run python agent.py")).toEqual([
+      "uv",
+      "run",
+      "python",
+      "agent.py",
+    ]);
+  });
+
+  it("preserves quoted Windows executable paths and escaped quotes in configured commands", () => {
+    expect(
+      splitConfiguredCommand(
+        `"C:\\Program Files\\Python\\python.exe" "agent \\"quoted\\".py" --profile local`,
+      ),
+    ).toEqual([
+      "C:\\Program Files\\Python\\python.exe",
+      'agent "quoted".py',
+      "--profile",
+      "local",
+    ]);
+  });
+
+  it("preserves quoted POSIX executable paths in configured commands", () => {
+    expect(
+      splitConfiguredCommand(
+        '"/Applications/Strands Agent/bin/python3" "./agents/agent.py" --mode interactive',
+      ),
+    ).toEqual([
+      "/Applications/Strands Agent/bin/python3",
+      "./agents/agent.py",
+      "--mode",
+      "interactive",
+    ]);
   });
 });

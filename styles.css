@@ -1047,6 +1047,11 @@ button.wt-spawn-claude-ctx:hover svg {
   padding: 8px 0;
 }
 
+.wt-command-validation {
+  margin-top: 8px;
+}
+
+.wt-command-status-badge,
 .wt-hook-status-badge {
   display: inline-flex;
   align-items: center;
@@ -1057,6 +1062,7 @@ button.wt-spawn-claude-ctx:hover svg {
   font-weight: 600;
 }
 
+.wt-command-status-badge::before,
 .wt-hook-status-badge::before {
   content: "";
   display: inline-block;
@@ -1065,11 +1071,13 @@ button.wt-spawn-claude-ctx:hover svg {
   border-radius: 50%;
 }
 
+.wt-command-status-ok,
 .wt-hook-status-ok {
   background: rgba(56, 161, 105, 0.15);
   color: #38a169;
 }
 
+.wt-command-status-ok::before,
 .wt-hook-status-ok::before {
   background: #38a169;
 }
@@ -1083,13 +1091,29 @@ button.wt-spawn-claude-ctx:hover svg {
   background: #d69e2e;
 }
 
+.wt-command-status-missing,
 .wt-hook-status-missing {
   background: rgba(229, 62, 62, 0.15);
   color: #e53e3e;
 }
 
+.wt-command-status-missing::before,
 .wt-hook-status-missing::before {
   background: #e53e3e;
+}
+
+.wt-command-validation-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wt-command-validation-note-found {
+  color: var(--text-muted);
+}
+
+.wt-command-validation-note-missing {
+  color: #e53e3e;
 }
 
 /* =============================================================================

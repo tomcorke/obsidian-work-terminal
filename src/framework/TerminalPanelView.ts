@@ -29,6 +29,7 @@ import {
   buildMissingCliNotice,
   resolveCommand,
   resolveCommandInfo,
+  splitConfiguredCommand,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
@@ -1951,7 +1952,11 @@ export class TerminalPanelView {
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
-    const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
+    const [cmdToken, ...cmdArgs] = splitConfiguredCommand(strandsCmd);
+    if (!cmdToken) {
+      new Notice("Set a Strands command in Work Terminal settings before launching Strands sessions.");
+      return;
+    }
     const resolved = resolveCommand(cmdToken);
     const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.strandsExtraArgs", ""),

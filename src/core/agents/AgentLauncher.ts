@@ -10,15 +10,136 @@ const EXTRA_PATH_DIRS = [
   "/opt/homebrew/bin",
 ];
 
+const DEFAULT_WINDOWS_PATHEXT =
+  ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
+
+type FsModule = typeof import("fs");
+type PathModule = typeof import("path");
+
+export interface ResolveCommandInfoDeps {
+  fs?: FsModule;
+  pathModule?: PathModule;
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+}
+
+function isWindowsPlatform(platform: NodeJS.Platform): boolean {
+  return platform === "win32";
+}
+
+function getPathDelimiter(pathModule: PathModule, platform: NodeJS.Platform): string {
+  return isWindowsPlatform(platform) ? pathModule.win32.delimiter : pathModule.delimiter;
+}
+
+function isWindowsAbsolutePath(command: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(command) || command.startsWith("\\\\");
+}
+
+function isWindowsPathLike(command: string): boolean {
+  return isWindowsAbsolutePath(command) || command.includes("\\");
+}
+
+function getPathVariant(
+  pathModule: PathModule,
+  value: string,
+  platform: NodeJS.Platform,
+  cwd?: string,
+): typeof import("path").posix | typeof import("path").win32 {
+  if (isWindowsPlatform(platform) || isWindowsPathLike(value) || (cwd && isWindowsPathLike(cwd))) {
+    return pathModule.win32;
+  }
+  return pathModule.posix;
+}
+
+function getWindowsExecutableExtensions(env: NodeJS.ProcessEnv): string[] {
+  return (env.PATHEXT ?? DEFAULT_WINDOWS_PATHEXT)
+    .split(";")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getExecutableCandidates(
+  pathToCheck: string,
+  pathModule: PathModule,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): string[] {
+  if (!isWindowsPlatform(platform)) {
+    return [pathToCheck];
+  }
+  const ext = pathModule.win32.extname(pathToCheck);
+  if (ext) {
+    return [pathToCheck];
+  }
+  return [
+    pathToCheck,
+    ...getWindowsExecutableExtensions(env).map((entry) => `${pathToCheck}${entry}`),
+  ];
+}
+
+function safeIsExecutable(
+  fs: FsModule,
+  pathToCheck: string,
+  pathModule: PathModule,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  try {
+    const stats = fs.statSync(pathToCheck);
+    if (stats.isDirectory()) {
+      return false;
+    }
+    if (isWindowsPlatform(platform)) {
+      const ext = pathModule.win32.extname(pathToCheck).toLowerCase();
+      return !!ext && getWindowsExecutableExtensions(env).includes(ext);
+    }
+    fs.accessSync(pathToCheck, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findLaunchablePath(
+  fs: FsModule,
+  pathToCheck: string,
+  pathModule: PathModule,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): string | null {
+  for (const candidate of getExecutableCandidates(pathToCheck, pathModule, platform, env)) {
+    if (safeIsExecutable(fs, candidate, pathModule, platform, env)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export function isAbsoluteCommandPath(
+  command: string,
+  pathModule: PathModule = electronRequire("path") as PathModule,
+): boolean {
+  return pathModule.isAbsolute(command) || isWindowsAbsolutePath(command);
+}
+
+export function isPathLikeCommand(command: string): boolean {
+  return command.includes("/") || isWindowsPathLike(command);
+}
+
 /**
  * Build an augmented PATH that includes common tool directories.
  * Deduplicates entries while preserving order (extra dirs first, then existing).
  */
-export function augmentPath(): string {
-  const existing = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
+export function augmentPath(
+  env: NodeJS.ProcessEnv = process.env,
+  pathModule: PathModule = electronRequire("path") as PathModule,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const delimiter = getPathDelimiter(pathModule, platform);
+  const existing = env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin");
   const dirs = EXTRA_PATH_DIRS.map((d) => expandTilde(d));
-  const all = [...dirs, ...existing.split(":")];
-  return [...new Set(all)].join(":");
+  const all = [...dirs, ...existing.split(delimiter)].filter(Boolean);
+  return [...new Set(all)].join(delimiter);
 }
 
 /**
@@ -31,36 +152,38 @@ export interface ResolvedCommand {
   found: boolean;
 }
 
-function safeExistsSync(fs: typeof import("fs"), pathToCheck: string): boolean {
-  try {
-    return fs.existsSync(pathToCheck);
-  } catch {
-    return false;
-  }
-}
-
-export function resolveCommandInfo(cmd: string, cwd?: string): ResolvedCommand {
+export function resolveCommandInfo(
+  cmd: string,
+  cwd?: string,
+  deps: ResolveCommandInfoDeps = {},
+): ResolvedCommand {
   const requested = cmd.trim();
-  const fs = electronRequire("fs") as typeof import("fs");
+  const fs = deps.fs ?? (electronRequire("fs") as FsModule);
+  const pathModule = deps.pathModule ?? (electronRequire("path") as PathModule);
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
   if (!requested) {
     return { requested, resolved: requested, found: false };
   }
   const expanded = requested.startsWith("~") ? expandTilde(requested) : requested;
-  if (expanded.startsWith("/")) {
+  if (isAbsoluteCommandPath(expanded, pathModule)) {
+    const foundPath = findLaunchablePath(fs, expanded, pathModule, platform, env);
     return {
       requested,
-      resolved: expanded,
-      found: safeExistsSync(fs, expanded),
+      resolved: foundPath ?? expanded,
+      found: !!foundPath,
     };
   }
-  if (expanded.includes("/")) {
+  if (isPathLikeCommand(expanded)) {
     if (cwd) {
-      const path = electronRequire("path") as typeof import("path");
-      const resolved = path.resolve(expandTilde(cwd), expanded);
+      const expandedCwd = expandTilde(cwd);
+      const pathVariant = getPathVariant(pathModule, expanded, platform, expandedCwd);
+      const resolved = pathVariant.resolve(expandedCwd, expanded);
+      const foundPath = findLaunchablePath(fs, resolved, pathModule, platform, env);
       return {
         requested,
-        resolved,
-        found: safeExistsSync(fs, resolved),
+        resolved: foundPath ?? resolved,
+        found: !!foundPath,
       };
     }
     return {
@@ -69,13 +192,17 @@ export function resolveCommandInfo(cmd: string, cwd?: string): ResolvedCommand {
       found: false,
     };
   }
-  const path = electronRequire("path") as typeof import("path");
-  const pathDirs = augmentPath().split(":");
+  const delimiter = getPathDelimiter(pathModule, platform);
+  const pathDirs = augmentPath(env, pathModule, platform)
+    .split(delimiter)
+    .filter(Boolean);
   for (const dir of pathDirs) {
-    const full = path.join(dir, expanded);
+    const pathVariant = getPathVariant(pathModule, dir, platform);
+    const full = pathVariant.join(dir, expanded);
     try {
-      if (fs.existsSync(full)) {
-        return { requested, resolved: full, found: true };
+      const foundPath = findLaunchablePath(fs, full, pathModule, platform, env);
+      if (foundPath) {
+        return { requested, resolved: foundPath, found: true };
       }
     } catch {
       /* skip inaccessible dirs */
@@ -94,6 +221,71 @@ export function buildMissingCliNotice(agent: "claude" | "copilot", command: stri
     return `Claude Code CLI not found for "${normalized}". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`;
   }
   return `GitHub Copilot CLI not found for "${normalized}". Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.`;
+}
+
+export function splitConfiguredCommand(command: string): string[] {
+  const normalized = normalizeExtraArgs(command);
+  if (!normalized) {
+    return [];
+  }
+
+  const tokens: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let tokenStarted = false;
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+
+    if (quote === null && /\s/.test(char)) {
+      if (tokenStarted) {
+        tokens.push(current);
+        current = "";
+        tokenStarted = false;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      if (quote === null) {
+        quote = char;
+        tokenStarted = true;
+        continue;
+      }
+      if (quote === char) {
+        quote = null;
+        continue;
+      }
+    }
+
+    if (char === "\\") {
+      const next = normalized[index + 1];
+      if (next !== undefined) {
+        if (quote === '"') {
+          if (next === '"') {
+            current += next;
+            tokenStarted = true;
+            index += 1;
+            continue;
+          }
+        } else if (quote === null && (/\s/.test(next) || next === '"' || next === "'")) {
+          current += next;
+          tokenStarted = true;
+          index += 1;
+          continue;
+        }
+      }
+    }
+
+    current += char;
+    tokenStarted = true;
+  }
+
+  if (tokenStarted) {
+    tokens.push(current);
+  }
+
+  return tokens;
 }
 
 export function normalizeExtraArgs(extraArgs = ""): string {
