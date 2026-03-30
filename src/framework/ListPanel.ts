@@ -205,6 +205,7 @@ export class ListPanel {
 
         if (this.activeSuccessIds.has(item.id)) {
           cardEl.addClass("wt-card-new-success");
+          this.appendSuccessBar(cardEl);
         }
 
         cardsEl.appendChild(cardEl);
@@ -864,14 +865,40 @@ export class ListPanel {
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`) as HTMLElement | null;
     if (cardEl) {
       cardEl.addClass("wt-card-new-success");
+      this.appendSuccessBar(cardEl);
     }
 
     const timeout = setTimeout(() => {
       this.activeSuccessIds.delete(id);
-      this.listEl.querySelector(`[data-item-id="${id}"]`)?.removeClass("wt-card-new-success");
+      const el = this.listEl.querySelector(`[data-item-id="${id}"]`);
+      if (el) {
+        el.removeClass("wt-card-new-success");
+        el.querySelector(".wt-success-bar")?.remove();
+      }
       this.successTimeouts.delete(id);
     }, 4500);
     this.successTimeouts.set(id, timeout);
+  }
+
+  private appendSuccessBar(cardEl: Element): void {
+    if (cardEl.querySelector(".wt-success-bar")) return;
+    const bar = document.createElement("div");
+    bar.addClass("wt-success-bar");
+    bar.textContent = `new ${this.adapter.config.itemName} created`;
+    cardEl.appendChild(bar);
+  }
+
+  dispose(): void {
+    if (this.filterDebounce) {
+      clearTimeout(this.filterDebounce);
+      this.filterDebounce = null;
+    }
+
+    for (const timeout of this.successTimeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.successTimeouts.clear();
+    this.activeSuccessIds.clear();
   }
 
   private getDefaultColumnCardsEl(): Element | null {
