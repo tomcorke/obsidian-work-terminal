@@ -12,7 +12,35 @@ export type AgentState = "inactive" | "active" | "idle" | "waiting";
 export type ClaudeState = AgentState;
 
 function normalizeWaitingLine(line: string): string {
-  return line.replace(/[│┃║╭╮╰╯─═]+/g, " ").replace(/\s+/g, " ").trim();
+  return line
+    .replace(/[│┃║╭╮╰╯─═]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const GENERIC_WAITING_QUESTION_WINDOW = 5;
+const HIDDEN_CLAUDE_QUESTION_WINDOW = 10;
+
+function looksLikeHiddenClaudePrompt(tail: string[], questionIndex: number): boolean {
+  const normalizedQuestion = normalizeWaitingLine(tail[questionIndex]);
+  if (
+    questionIndex < tail.length - HIDDEN_CLAUDE_QUESTION_WINDOW ||
+    !normalizedQuestion.endsWith("?") ||
+    normalizedQuestion.length <= 10
+  ) {
+    return false;
+  }
+
+  const normalizedAfterQuestion = tail
+    .slice(questionIndex + 1, Math.min(tail.length, questionIndex + 7))
+    .map((line) => normalizeWaitingLine(line))
+    .filter((line) => line.length > 0);
+  const promptIndex = normalizedAfterQuestion.findIndex((line) => line === "❯");
+  if (promptIndex === -1) return false;
+
+  return normalizedAfterQuestion
+    .slice(promptIndex + 1)
+    .some((line) => /^➜\s+\S/.test(line) || /^⏵⏵/.test(line));
 }
 
 function findLastWaitingLineIndex(lines: string[]): number {
@@ -38,7 +66,13 @@ function findLastWaitingLineIndex(lines: string[]): number {
       }
     }
 
-    if (i >= tail.length - 5 && normalizedLine.endsWith("?") && normalizedLine.length > 10) {
+    if (looksLikeHiddenClaudePrompt(tail, i)) return tailStart + i;
+
+    if (
+      i >= tail.length - GENERIC_WAITING_QUESTION_WINDOW &&
+      normalizedLine.endsWith("?") &&
+      normalizedLine.length > 10
+    ) {
       return tailStart + i;
     }
 
