@@ -23,6 +23,10 @@ function resolveFullPath(app: App, vaultRelativePath: string): string {
   return `${resolveVaultPath(app)}/${vaultRelativePath}`;
 }
 
+function resolveClaudeLaunchCwd(settings: Record<string, any>): string {
+  return expandTilde(settings["core.defaultTerminalCwd"] || "~");
+}
+
 export interface ItemCreatedResult {
   id: string;
   columnId: string;
@@ -61,10 +65,9 @@ export async function handleItemCreated(
     `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
     RENAME_INSTRUCTION;
 
-  const home = process.env.HOME || "/";
   const enrichmentDone = spawnHeadlessClaude(
     enrichPrompt,
-    home,
+    resolveClaudeLaunchCwd(settings),
     claudeCommand,
     claudeExtraArgs,
   ).then(
