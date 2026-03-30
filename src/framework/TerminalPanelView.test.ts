@@ -1411,6 +1411,38 @@ describe("TerminalPanelView hook warning", () => {
     expect((secondView as any).recentlyClosedStore.serialize()).toEqual([]);
   });
 
+  it("claims recently closed resumable entries once across concurrent live views", async () => {
+    const entry = {
+      sessionType: "claude",
+      label: "Claude",
+      claudeSessionId: "session-1",
+      closedAt: Date.now(),
+      itemId: "Tasks/task-1.md",
+      recoveryMode: "resume" as const,
+      cwd: "/vault",
+      command: "claude",
+      commandArgs: ["claude", "--resume", "session-1"],
+    };
+    const loadData = vi.fn(async () => ({
+      settings: {},
+      recentlyClosedSessions: [entry],
+    }));
+
+    const { view: firstView } = createView({}, { loadData });
+    const { view: secondView } = createView({}, { loadData });
+    await flushAsync();
+    mockState.tabManagerCalls = [];
+
+    await Promise.all([
+      (firstView as any).restoreClosedSession(entry),
+      (secondView as any).restoreClosedSession(entry),
+    ]);
+
+    expect(mockState.tabManagerCalls.filter((call) => call === "createTabForItem")).toHaveLength(1);
+    expect((firstView as any).recentlyClosedStore.serialize()).toEqual([]);
+    expect((secondView as any).recentlyClosedStore.serialize()).toEqual([]);
+  });
+
   it("restores persisted resumable sessions with their saved launch context", async () => {
     const { view } = createView({
       "core.copilotCommand": "copilot-current",

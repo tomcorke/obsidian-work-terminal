@@ -1682,9 +1682,16 @@ export class TerminalPanelView {
     entry: ClosedSessionEntry,
   ): Promise<void> {
     const claimedFromStore = this.recentlyClosedStore.take(entry);
+    const entryRecoveryMode = (entry as { recoveryMode?: ClosedSessionEntry["recoveryMode"] }).recoveryMode;
+    const fallbackEntry =
+      claimedFromStore ||
+      entryRecoveryMode === "resume" ||
+      entryRecoveryMode === "relaunch" ||
+      !this.getClosedSessionId(entry)
+        ? undefined
+        : RecentlyClosedStore.fromData([entry])[0];
     const claimedEntry =
-      claimedFromStore ??
-      (this.getClosedSessionId(entry) ? RecentlyClosedStore.fromData([entry])[0] : undefined);
+      claimedFromStore ?? fallbackEntry;
     if (!claimedEntry) {
       return;
     }
