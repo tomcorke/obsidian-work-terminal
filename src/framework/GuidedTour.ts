@@ -161,6 +161,13 @@ export async function saveGuidedTourStatus(
 }
 
 export class GuidedTourController {
+  private static readonly BOARD_FOCUS_RESTORE_SELECTORS = [
+    '[data-wt-tour="prompt-box"] .wt-prompt-toggle',
+    ".wt-filter-input",
+    '[data-wt-tour="launch-buttons"] button',
+    '[data-wt-tour="custom-session-button"]',
+  ];
+
   private readonly steps: GuidedTourStep[];
   private layerEl: HTMLElement | null = null;
   private backdropEl: HTMLElement | null = null;
@@ -175,6 +182,7 @@ export class GuidedTourController {
   private activeTargetEl: HTMLElement | null = null;
   private chromeHostEl: HTMLElement | null = null;
   private chromeHostOriginalPosition: string | null = null;
+  private openedSettingsForTour = false;
   private activeIndex = 0;
   private positionFrameId: number | null = null;
   private positionInFlight = false;
@@ -183,14 +191,17 @@ export class GuidedTourController {
   private latestPositionRequestId = 0;
   private isTransitioning = false;
   private isDisposed = false;
+  private isFinishing = false;
   private readonly handleResize = () => this.schedulePosition();
   private readonly handleScroll = () => this.schedulePosition();
   private readonly handleFocusIn = (event: FocusEvent) => {
-    if (!this.cardEl || this.isDisposed) return;
+    if (!this.cardEl || this.isDisposed || this.isFinishing) return;
     if (this.isAllowedFocusTarget(event.target)) return;
     this.focusWithinCard();
   };
   private readonly handleKeydown = (event: KeyboardEvent) => {
+    if (this.isDisposed || this.isFinishing) return;
+
     if (event.key === "Escape") {
       event.preventDefault();
       void this.finish("dismissed");
@@ -325,8 +336,21 @@ export class GuidedTourController {
   }
 
   private async finish(status: GuidedTourStatus): Promise<void> {
-    await saveGuidedTourStatus(this.plugin, status);
-    this.dispose();
+    if (this.isDisposed || this.isFinishing) return;
+
+    this.isFinishing = true;
+    let restoredBoardSurface = false;
+    try {
+      restoredBoardSurface = await this.restoreSurfaceBeforeFinish();
+      await saveGuidedTourStatus(this.plugin, status);
+    } finally {
+      this.dispose();
+    }
+
+    if (restoredBoardSurface) {
+      await this.waitForNextFrame();
+      this.focusStableBoardControl();
+    }
   }
 
   private async showStep(index: number): Promise<void> {
@@ -358,12 +382,26 @@ export class GuidedTourController {
     if (this.isDisposed) return;
     const settings = (this.plugin.app as any).setting;
     if (surface === "settings") {
+      const wasOpen = this.isPluginSettingsOpen();
       settings?.open?.();
       settings?.openTabById?.(this.plugin.manifest.id);
+      this.openedSettingsForTour ||= !wasOpen;
     } else {
       settings?.close?.();
     }
     await this.waitForNextFrame();
+  }
+
+  private async restoreSurfaceBeforeFinish(): Promise<boolean> {
+    if ((this.steps[this.activeIndex]?.surface ?? "board") !== "settings") return false;
+    if (!this.openedSettingsForTour) return false;
+
+    this.unregisterEvents();
+    const settings = (this.plugin.app as any).setting;
+    settings?.close?.();
+    await this.waitForNextFrame();
+    this.focusStableBoardControl();
+    return true;
   }
 
   private schedulePosition(options: { scrollIntoView?: boolean } = {}): void {
@@ -620,6 +658,25 @@ export class GuidedTourController {
   private clearActiveTarget(): void {
     this.activeTargetEl?.classList.remove("wt-tour-target");
     this.activeTargetEl = null;
+  }
+
+  private isPluginSettingsOpen(): boolean {
+    return (
+      document.querySelector(
+        ".modal .settings-root, .modal .vertical-tab-content-container, .modal .vertical-tab-nav",
+      ) !== null
+    );
+  }
+
+  private focusStableBoardControl(): void {
+    for (const selector of GuidedTourController.BOARD_FOCUS_RESTORE_SELECTORS) {
+      const target = document.querySelector<HTMLElement>(selector);
+      if (!target || !isTabbableElement(target)) continue;
+      target.focus();
+      if (document.activeElement === target) {
+        return;
+      }
+    }
   }
 
   private async waitForNextFrame(): Promise<void> {

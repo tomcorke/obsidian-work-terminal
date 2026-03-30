@@ -37,6 +37,42 @@ function setupSettingsDom() {
   return modalContainer;
 }
 
+function setupDefaultTourBoardDom() {
+  const mainView = document.createElement("div");
+  mainView.className = "wt-main-view";
+  document.body.appendChild(mainView);
+
+  const promptBox = document.createElement("div");
+  promptBox.setAttribute("data-wt-tour", "prompt-box");
+  const promptToggle = document.createElement("button");
+  promptToggle.className = "wt-prompt-toggle";
+  promptToggle.textContent = "New task";
+  promptBox.appendChild(promptToggle);
+  document.body.appendChild(promptBox);
+
+  const listPanel = document.createElement("div");
+  listPanel.setAttribute("data-wt-tour", "list-panel");
+  document.body.appendChild(listPanel);
+
+  const launchButtons = document.createElement("div");
+  launchButtons.setAttribute("data-wt-tour", "launch-buttons");
+  const launchButton = document.createElement("button");
+  launchButton.textContent = "Launch";
+  launchButtons.appendChild(launchButton);
+  document.body.appendChild(launchButtons);
+
+  const tabBar = document.createElement("div");
+  tabBar.setAttribute("data-wt-tour", "tab-bar");
+  document.body.appendChild(tabBar);
+
+  const customSessionButton = document.createElement("button");
+  customSessionButton.setAttribute("data-wt-tour", "custom-session-button");
+  customSessionButton.textContent = "Custom session";
+  document.body.appendChild(customSessionButton);
+
+  return { promptToggle };
+}
+
 function createMockPlugin(initialData: Record<string, unknown> | null = null) {
   let data = initialData;
   let settingsRoot: HTMLElement | null = null;
@@ -114,6 +150,16 @@ async function pressTab(
   target.dispatchEvent(keydown);
   await flushTourUpdates();
   return keydown.defaultPrevented;
+}
+
+async function clickPrimaryAndWait(): Promise<void> {
+  (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
+  await flushTourUpdates();
+  if (document.querySelector(".wt-tour-card")) {
+    await waitFor(
+      () => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled,
+    );
+  }
 }
 
 describe("GuidedTour", () => {
@@ -792,5 +838,98 @@ describe("GuidedTour", () => {
       },
     });
     expect(document.querySelector(".wt-tour-card")).toBeNull();
+  });
+
+  it("restores the board surface and focus when finishing the default tour from settings", async () => {
+    const plugin = createMockPlugin({});
+    const { promptToggle } = setupDefaultTourBoardDom();
+    const controller = new GuidedTourController(plugin as never);
+
+    await controller.start();
+
+    for (let index = 0; index < 7; index += 1) {
+      await clickPrimaryAndWait();
+    }
+
+    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Save reusable task context");
+    expect(plugin.isSettingsOpen()).toBe(true);
+
+    await clickPrimaryAndWait();
+    await waitFor(() => document.querySelector(".wt-tour-card") === null);
+
+    expect(plugin.isSettingsOpen()).toBe(false);
+    await waitFor(() => document.activeElement === promptToggle);
+    expect(document.activeElement).toBe(promptToggle);
+  });
+
+  it("restores the board surface and focus when skipping from a settings step", async () => {
+    const plugin = createMockPlugin({});
+    const { promptToggle } = setupDefaultTourBoardDom();
+    const boardTarget = document.querySelector(".wt-main-view") as HTMLElement;
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".wt-main-view",
+        surface: "board",
+      },
+      {
+        title: "Settings",
+        body: "Settings target",
+        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        surface: "settings",
+      },
+    ]);
+
+    await controller.start();
+    expect(document.activeElement).toBe(document.querySelector(".wt-tour-card"));
+    expect(boardTarget.classList.contains("wt-tour-target")).toBe(true);
+
+    await clickPrimaryAndWait();
+    expect(plugin.isSettingsOpen()).toBe(true);
+
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    skipButton.click();
+    await waitFor(() => document.querySelector(".wt-tour-card") === null);
+
+    expect(plugin.isSettingsOpen()).toBe(false);
+    await waitFor(() => document.activeElement === promptToggle);
+    expect(document.activeElement).toBe(promptToggle);
+  });
+
+  it("restores the board surface and focus when escaping from a settings step", async () => {
+    const plugin = createMockPlugin({});
+    const { promptToggle } = setupDefaultTourBoardDom();
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".wt-main-view",
+        surface: "board",
+      },
+      {
+        title: "Settings",
+        body: "Settings target",
+        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        surface: "settings",
+      },
+    ]);
+
+    await controller.start();
+    await clickPrimaryAndWait();
+    expect(plugin.isSettingsOpen()).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    await waitFor(() => document.querySelector(".wt-tour-card") === null);
+
+    expect(plugin.isSettingsOpen()).toBe(false);
+    await waitFor(() => document.activeElement === promptToggle);
+    expect(document.activeElement).toBe(promptToggle);
   });
 });
