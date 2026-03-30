@@ -92,7 +92,10 @@ export class ListPanel {
 
     // List container
     this.containerEl = parentEl;
-    this.listEl = parentEl.createDiv({ cls: "wt-list-panel" });
+    this.listEl = parentEl.createDiv({
+      cls: "wt-list-panel",
+      attr: { "data-wt-tour": "list-panel" },
+    });
     this.listEl.style.cssText = "flex: 1; overflow-y: auto; overflow-x: hidden;";
 
     // Collapse last section by default

@@ -44,7 +44,10 @@ export class PromptBox {
     this.onPlaceholderResolve = onPlaceholderResolve;
     this.onNewItemCreated = onNewItemCreated;
 
-    this.containerEl = parentEl.createDiv({ cls: "wt-prompt-box" });
+    this.containerEl = parentEl.createDiv({
+      cls: "wt-prompt-box",
+      attr: { "data-wt-tour": "prompt-box" },
+    });
 
     // Toggle button
     const toggleBtn = this.containerEl.createEl("button", {

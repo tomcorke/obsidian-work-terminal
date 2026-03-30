@@ -21,6 +21,7 @@ import { loadAllSettings } from "./SettingsTab";
 import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
+import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 
 interface PendingRename {
   uuid: string | null;
@@ -36,6 +37,7 @@ export class MainView extends ItemView {
   private listPanel: ListPanel | null = null;
   private terminalPanel: TerminalPanelView | null = null;
   private promptBox: PromptBox | null = null;
+  private guidedTour: GuidedTourController | null = null;
 
   // Layout elements
   private leftPanelEl: HTMLElement | null = null;
@@ -140,7 +142,7 @@ export class MainView extends ItemView {
     );
 
     // Initial data load
-    await this.refreshList();
+    const items = await this.refreshList();
 
     // Recover selection from hot-reload AFTER list is populated
     const recoveredId = this.terminalPanel?.getRecoveredItemId();
@@ -151,6 +153,11 @@ export class MainView extends ItemView {
     // Broadcast agent states for any recovered sessions so ListPanel
     // picks up state indicators that were set before it existed.
     this.terminalPanel?.broadcastAgentStates();
+
+    if (await shouldAutoStartGuidedTour(this.pluginRef, { hasExistingItems: items.length > 0 })) {
+      this.guidedTour = new GuidedTourController(this.pluginRef);
+      await this.guidedTour.start();
+    }
   }
 
   async copySessionDiagnostics(): Promise<boolean> {
@@ -547,14 +554,15 @@ export class MainView extends ItemView {
     );
   }
 
-  private async refreshList(): Promise<void> {
-    if (!this.listPanel || !this.parser) return;
+  private async refreshList(): Promise<WorkItem[]> {
+    if (!this.listPanel || !this.parser) return [];
     const items = await this.parser.loadAll();
     const groups = this.parser.groupByColumn(items);
     const data = (await this.pluginRef.loadData()) || {};
     const customOrder = this.pendingCustomOrderOverride || data.customOrder || {};
     this.listPanel.render(groups, customOrder);
     this.terminalPanel?.setItems(items);
+    return items;
   }
 
   // ---------------------------------------------------------------------------
@@ -595,6 +603,10 @@ export class MainView extends ItemView {
 
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();
+
+    // Clean up guided tour
+    this.guidedTour?.dispose();
+    this.guidedTour = null;
 
     // Clean up vault event refs
     for (const ref of this.vaultEventRefs) {
