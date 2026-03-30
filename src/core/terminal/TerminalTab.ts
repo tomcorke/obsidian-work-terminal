@@ -49,6 +49,7 @@ export class TerminalTab {
   label: string;
   taskPath: string | null;
   agentSessionId: string | null = null;
+  durableSessionId: string | null = null;
   sessionType: SessionType;
 
   terminal: Terminal;
@@ -110,8 +111,11 @@ export class TerminalTab {
     preCommand?: string,
     private commandArgs?: string[],
     agentSessionId?: string | null,
+    durableSessionId?: string | null,
   ) {
     this.agentSessionId = agentSessionId || null;
+    this.durableSessionId =
+      durableSessionId || (agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     this.taskPath = taskPath;
     this.label = label;
     this.sessionType = sessionType;
@@ -915,6 +919,8 @@ export class TerminalTab {
       taskPath: this.taskPath,
       label: this.label,
       agentSessionId: this.agentSessionId,
+      claudeSessionId: this.claudeSessionId,
+      durableSessionId: this.durableSessionId,
       sessionType: this.sessionType,
       shell: this.shell,
       cwd: this.cwd,
@@ -949,6 +955,8 @@ export class TerminalTab {
     tab.label = stored.label;
     tab.taskPath = stored.taskPath;
     tab.agentSessionId = stored.agentSessionId ?? stored.claudeSessionId ?? null;
+    tab.durableSessionId =
+      stored.durableSessionId || (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     tab.sessionType = stored.sessionType;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";

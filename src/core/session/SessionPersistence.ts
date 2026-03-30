@@ -8,16 +8,26 @@
  *
  * Sessions older than 7 days are pruned on load.
  */
-import type { PersistedSession, SessionType } from "./types";
+import {
+  isSessionType,
+  type DurableRecoveryMode,
+  type PersistedSession,
+  type SessionType,
+} from "./types";
 import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore";
 
 /** Tab-like interface for extracting persistable data. */
 interface PersistableTab {
   label: string;
   taskPath: string | null;
-  agentSessionId: string | null;
+  agentSessionId?: string | null;
+  claudeSessionId?: string | null;
+  durableSessionId?: string | null;
   isResumableAgent: boolean;
   sessionType: SessionType;
+  launchShell: string;
+  launchCwd: string;
+  launchCommandArgs?: string[];
 }
 
 /** 7 days in milliseconds */
@@ -27,30 +37,191 @@ const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const PERSIST_INTERVAL_MS = 30_000;
 
 export class SessionPersistence {
+  private static buildPersistedSession(
+    taskPath: string,
+    tab: PersistableTab,
+    savedAt: string,
+  ): PersistedSession | null {
+    const recoveryMode = this.getRecoveryMode(tab);
+    if (!recoveryMode) {
+      return null;
+    }
+
+    const claudeSessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+
+    return {
+      version: 2,
+      taskPath,
+      claudeSessionId,
+      durableSessionId:
+        recoveryMode === "relaunch"
+          ? (tab.durableSessionId ?? globalThis.crypto.randomUUID())
+          : undefined,
+      label: tab.label,
+      sessionType: tab.sessionType,
+      savedAt,
+      recoveryMode,
+      cwd: tab.launchCwd,
+      command: tab.launchCommandArgs?.[0] || tab.launchShell,
+      commandArgs: tab.launchCommandArgs ? [...tab.launchCommandArgs] : undefined,
+    };
+  }
+
+  private static getRecoveryMode(tab: PersistableTab): DurableRecoveryMode | null {
+    const claudeSessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+    if (tab.isResumableAgent && claudeSessionId) {
+      return "resume";
+    }
+
+    if (tab.launchCwd && (tab.launchCommandArgs?.length || tab.launchShell)) {
+      return "relaunch";
+    }
+
+    return null;
+  }
+
+  private static normalizePersistedSession(raw: unknown): PersistedSession | null {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+
+    const candidate = raw as Record<string, unknown>;
+    const taskPath = typeof candidate.taskPath === "string" ? candidate.taskPath : null;
+    const label = typeof candidate.label === "string" ? candidate.label : null;
+    const sessionType = isSessionType(candidate.sessionType) ? candidate.sessionType : null;
+    const savedAt = typeof candidate.savedAt === "string" ? candidate.savedAt : null;
+
+    if (!taskPath || !label || !sessionType || !savedAt) {
+      return null;
+    }
+
+    // Support both legacy claudeSessionId and newer agentSessionId from disk
+    const claudeSessionId =
+      typeof candidate.claudeSessionId === "string"
+        ? candidate.claudeSessionId
+        : typeof candidate.agentSessionId === "string"
+          ? candidate.agentSessionId
+          : null;
+    const durableSessionId =
+      typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
+    const durableSessionIdGenerated = candidate.durableSessionIdGenerated === true;
+    const recoveryMode =
+      candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
+        ? candidate.recoveryMode
+        : claudeSessionId
+          ? "resume"
+          : null;
+    const cwd = typeof candidate.cwd === "string" ? candidate.cwd : undefined;
+    const command = typeof candidate.command === "string" ? candidate.command : undefined;
+    const commandArgs = Array.isArray(candidate.commandArgs)
+      ? candidate.commandArgs.filter((value): value is string => typeof value === "string")
+      : undefined;
+
+    if (!recoveryMode) {
+      return null;
+    }
+
+    if (recoveryMode === "resume" && !claudeSessionId) {
+      return null;
+    }
+
+    if (recoveryMode === "relaunch" && (!cwd || !command)) {
+      return null;
+    }
+
+    const generatedDurableSessionId =
+      recoveryMode === "relaunch" && !durableSessionId ? globalThis.crypto.randomUUID() : undefined;
+
+    return {
+      version: candidate.version === 1 ? 1 : 2,
+      taskPath,
+      claudeSessionId,
+      durableSessionId:
+        recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
+      durableSessionIdGenerated:
+        recoveryMode === "relaunch" && (durableSessionIdGenerated || !!generatedDurableSessionId)
+          ? true
+          : undefined,
+      label,
+      sessionType,
+      savedAt,
+      recoveryMode,
+      cwd,
+      command,
+      commandArgs,
+    };
+  }
+
   static buildPersistedSessions(sessions: Map<string, PersistableTab[]>): PersistedSession[] {
     const persisted: PersistedSession[] = [];
+    const savedAt = new Date().toISOString();
     for (const [taskPath, tabs] of sessions) {
       for (const tab of tabs) {
-        if (tab.isResumableAgent && tab.agentSessionId) {
-          persisted.push({
-            version: 1,
-            taskPath,
-            agentSessionId: tab.agentSessionId,
-            label: tab.label,
-            sessionType: tab.sessionType,
-            savedAt: new Date().toISOString(),
-          });
+        const session = this.buildPersistedSession(taskPath, tab, savedAt);
+        if (session) {
+          persisted.push(session);
         }
       }
     }
     return persisted;
   }
 
+  private static getSessionKey(
+    session: Pick<
+      PersistedSession,
+      | "taskPath"
+      | "sessionType"
+      | "claudeSessionId"
+      | "durableSessionId"
+      | "durableSessionIdGenerated"
+      | "label"
+      | "cwd"
+      | "command"
+      | "commandArgs"
+      | "recoveryMode"
+    >,
+  ): string {
+    if (session.recoveryMode === "resume") {
+      return `resume:${session.claudeSessionId || ""}`;
+    }
+
+    if (session.durableSessionId) {
+      return `relaunch:${session.taskPath}\u0001${session.durableSessionId}`;
+    }
+
+    const args = JSON.stringify(session.commandArgs || []);
+    return [
+      "relaunch",
+      session.taskPath,
+      session.sessionType,
+      session.label,
+      session.cwd || "",
+      session.command || "",
+      args,
+    ].join("\u0001");
+  }
+
+  static mergePersistedSessions(
+    existingPersisted: PersistedSession[],
+    sessions: Map<string, PersistableTab[]>,
+  ): PersistedSession[] {
+    const activePersisted = this.buildPersistedSessions(sessions);
+    const activeKeys = new Set(activePersisted.map((session) => this.getSessionKey(session)));
+    return [
+      ...activePersisted,
+      ...existingPersisted.filter((session) => !activeKeys.has(this.getSessionKey(session))),
+    ];
+  }
+
   static setPersistedSessions(
     data: Record<string, any>,
-    sessions: Map<string, PersistableTab[]>,
+    persistedSessions: PersistedSession[],
   ): void {
-    data.persistedSessions = this.buildPersistedSessions(sessions);
+    data.persistedSessions = persistedSessions.map((session) => ({
+      ...session,
+      durableSessionIdGenerated: session.durableSessionIdGenerated ? true : undefined,
+      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+    }));
   }
 
   /**
@@ -60,15 +231,19 @@ export class SessionPersistence {
   static async saveToDisk(
     plugin: PluginDataStore,
     sessions: Map<string, PersistableTab[]>,
-  ): Promise<void> {
-    let persisted: PersistedSession[] = [];
+    existingPersisted?: PersistedSession[],
+  ): Promise<PersistedSession[]> {
+    const persisted =
+      existingPersisted !== undefined
+        ? this.mergePersistedSessions(existingPersisted, sessions)
+        : this.mergePersistedSessions(await this.loadFromDisk(plugin), sessions);
     await mergeAndSavePluginData(plugin, async (data) => {
-      this.setPersistedSessions(data, sessions);
-      persisted = data.persistedSessions as PersistedSession[];
+      this.setPersistedSessions(data, persisted);
     });
     if (persisted.length > 0) {
       console.log("[work-terminal] Saved", persisted.length, "resumable sessions to disk");
     }
+    return persisted;
   }
 
   /**
@@ -77,16 +252,13 @@ export class SessionPersistence {
    */
   static async loadFromDisk(plugin: PluginDataStore): Promise<PersistedSession[]> {
     const data = (await plugin.loadData()) || {};
-    const raw = (data.persistedSessions || []) as Array<
-      PersistedSession & { claudeSessionId?: string }
-    >;
+    const raw = Array.isArray(data.persistedSessions) ? data.persistedSessions : [];
     const cutoff = Date.now() - SESSION_MAX_AGE_MS;
     const valid = raw
-      .map((session) => ({
-        ...session,
-        agentSessionId: session.agentSessionId || session.claudeSessionId || "",
-      }))
-      .filter((s) => s.agentSessionId && new Date(s.savedAt).getTime() > cutoff);
+      .map((session) => this.normalizePersistedSession(session))
+      .filter((session): session is PersistedSession => {
+        return !!session && new Date(session.savedAt).getTime() > cutoff;
+      });
     if (valid.length !== raw.length) {
       console.log("[work-terminal] Pruned", raw.length - valid.length, "stale persisted sessions");
     }

@@ -167,7 +167,7 @@ export class CustomSessionModal extends Modal {
   private renderRestoreTab(contentEl: HTMLElement): void {
     contentEl.createEl("h3", { text: "Restore recent sessions" });
     contentEl.createEl("p", {
-      text: "Sessions closed within the past 30 minutes. Click to reopen.",
+      text: "Resume reopens the original agent session. Relaunch starts a fresh terminal, so prior scrollback is not restored.",
       cls: "wt-custom-spawn-help",
     });
 
@@ -180,6 +180,11 @@ export class CustomSessionModal extends Modal {
       labelEl.createSpan({ text: entry.label, cls: "wt-recently-closed-name" });
       labelEl.createSpan({
         text: getDefaultSessionLabel(entry.sessionType),
+        cls: "wt-recently-closed-type",
+      });
+      labelEl.createSpan({
+        text:
+          entry.recoveryMode === "resume" ? "Resume exact session" : "Relaunch fresh session",
         cls: "wt-recently-closed-type",
       });
 

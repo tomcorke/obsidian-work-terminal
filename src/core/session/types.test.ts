@@ -1,28 +1,36 @@
 import { describe, it, expect } from "vitest";
-import type { PersistedSession, SessionType } from "./types";
+import { isSessionType, SESSION_TYPES, type PersistedSession, type SessionType } from "./types";
 
 describe("PersistedSession", () => {
-  it("has version field set to 1", () => {
+  it("stores the durable schema version", () => {
     const session: PersistedSession = {
-      version: 1,
+      version: 2,
       taskPath: "2 - Areas/Tasks/active/my-task.md",
-      agentSessionId: "abc-123",
+      claudeSessionId: "abc-123",
       label: "Agent 1",
       sessionType: "claude-with-context",
       savedAt: "2026-03-27T10:00:00.000Z",
+      recoveryMode: "resume",
+      cwd: "/vault",
+      command: "claude",
+      commandArgs: ["claude", "--resume", "abc-123"],
     };
 
-    expect(session.version).toBe(1);
+    expect(session.version).toBe(2);
   });
 
   it("round-trip serialization preserves all fields", () => {
     const original: PersistedSession = {
-      version: 1,
+      version: 2,
       taskPath: "2 - Areas/Tasks/active/my-task.md",
-      agentSessionId: "session-uuid-456",
+      claudeSessionId: "session-uuid-456",
       label: "Claude 2",
       sessionType: "claude",
       savedAt: "2026-03-27T12:30:00.000Z",
+      recoveryMode: "resume",
+      cwd: "/vault",
+      command: "claude",
+      commandArgs: ["claude", "--resume", "session-uuid-456"],
     };
 
     const json = JSON.stringify(original);
@@ -30,32 +38,39 @@ describe("PersistedSession", () => {
 
     expect(restored.version).toBe(original.version);
     expect(restored.taskPath).toBe(original.taskPath);
-    expect(restored.agentSessionId).toBe(original.agentSessionId);
+    expect(restored.claudeSessionId).toBe(original.claudeSessionId);
     expect(restored.label).toBe(original.label);
     expect(restored.sessionType).toBe(original.sessionType);
     expect(restored.savedAt).toBe(original.savedAt);
+    expect(restored.recoveryMode).toBe(original.recoveryMode);
+    expect(restored.cwd).toBe(original.cwd);
+    expect(restored.command).toBe(original.command);
+    expect(restored.commandArgs).toEqual(original.commandArgs);
   });
 
   it("supports all session types", () => {
-    const types: SessionType[] = [
-      "shell",
-      "claude",
-      "claude-with-context",
-      "copilot",
-      "copilot-with-context",
-      "strands",
-      "strands-with-context",
-    ];
+    const types: SessionType[] = [...SESSION_TYPES];
     for (const sessionType of types) {
       const session: PersistedSession = {
-        version: 1,
+        version: 2,
         taskPath: "path",
-        agentSessionId: "id",
+        claudeSessionId: sessionType === "shell" ? null : "id",
+        durableSessionId: sessionType === "shell" ? "durable-shell" : undefined,
         label: "label",
         sessionType,
         savedAt: new Date().toISOString(),
+        recoveryMode: sessionType === "shell" ? "relaunch" : "resume",
+        cwd: "/vault",
+        command: sessionType === "shell" ? "/bin/zsh" : "agent",
+        commandArgs: sessionType === "shell" ? undefined : ["agent", "--resume", "id"],
       };
       expect(session.sessionType).toBe(sessionType);
     }
+  });
+
+  it("validates unknown session types", () => {
+    expect(isSessionType("claude")).toBe(true);
+    expect(isSessionType("unknown")).toBe(false);
+    expect(isSessionType(null)).toBe(false);
   });
 });

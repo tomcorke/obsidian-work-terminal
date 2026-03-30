@@ -66,8 +66,7 @@ export abstract class PluginBase extends Plugin {
     // Explicitly stash terminal sessions BEFORE disabling, because
     // disablePlugin's cleanup sequence may trigger selection changes
     // that reset activeItemId before onClose can stash.
-    const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-    if (leaf) {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
       const view = leaf.view as any;
       view?.terminalPanel?.stashAll();
     }
@@ -125,15 +124,31 @@ export abstract class PluginBase extends Plugin {
     if (!this._isReloading) {
       // Iterate all leaves to persist sessions from every open Work Terminal view
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+      const shutdownSessions = new Map<string, any[]>();
+      let shutdownPendingPersisted: any[] | undefined;
       for (const leaf of leaves) {
         const view = leaf.view as any;
         const sessions = view?.terminalPanel?.tabManager?.getSessions?.();
+        const pendingPersisted = view?.terminalPanel?.getPendingPersistedSessionsForPersist?.();
         if (sessions) {
-          // Fire-and-forget: onunload is sync, so we can't await this,
-          // but it gives us one more chance to persist before shutdown.
-          SessionPersistence.saveToDisk(this, sessions).catch(() => {});
+          for (const [itemId, tabs] of sessions as Map<string, any[]>) {
+            const existingTabs = shutdownSessions.get(itemId) || [];
+            shutdownSessions.set(itemId, [...existingTabs, ...tabs]);
+          }
+        }
+        if (
+          Array.isArray(pendingPersisted) &&
+          (!shutdownPendingPersisted || pendingPersisted.length > shutdownPendingPersisted.length)
+        ) {
+          shutdownPendingPersisted = pendingPersisted;
         }
       }
+      if (shutdownSessions.size === 0 && !shutdownPendingPersisted?.length) {
+        return;
+      }
+      // Fire-and-forget: onunload is sync, so we can't await this,
+      // but it gives us one more chance to persist before shutdown.
+      SessionPersistence.saveToDisk(this, shutdownSessions, shutdownPendingPersisted).catch(() => {});
     }
   }
 }

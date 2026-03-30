@@ -142,6 +142,7 @@ export class TabManager {
     preCommand?: string,
     commandArgs?: string[],
     agentSessionId?: string | null,
+    durableSessionId?: string | null,
   ): TerminalTab | null {
     if (!this.activeItemId) return null;
 
@@ -154,6 +155,7 @@ export class TabManager {
       preCommand,
       commandArgs,
       agentSessionId,
+      durableSessionId,
     );
   }
 
@@ -166,6 +168,7 @@ export class TabManager {
     preCommand?: string,
     commandArgs?: string[],
     agentSessionId?: string | null,
+    durableSessionId?: string | null,
   ): TerminalTab {
     const isActiveItem = this.activeItemId === itemId;
 
@@ -182,6 +185,7 @@ export class TabManager {
       preCommand,
       commandArgs,
       agentSessionId,
+      durableSessionId,
     );
 
     tab.onLabelChange = () => {

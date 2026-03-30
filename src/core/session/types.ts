@@ -9,14 +9,19 @@ import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 
-export type SessionType =
-  | "shell"
-  | "claude"
-  | "claude-with-context"
-  | "copilot"
-  | "copilot-with-context"
-  | "strands"
-  | "strands-with-context";
+export const SESSION_TYPES = [
+  "shell",
+  "claude",
+  "claude-with-context",
+  "copilot",
+  "copilot-with-context",
+  "strands",
+  "strands-with-context",
+] as const;
+
+export type SessionType = (typeof SESSION_TYPES)[number];
+
+export type DurableRecoveryMode = "resume" | "relaunch";
 
 export type AgentRuntimeState = "inactive" | "active" | "idle" | "waiting";
 
@@ -28,8 +33,9 @@ export interface StoredSession {
   id: string;
   taskPath: string | null;
   label: string;
-  agentSessionId: string | null;
+  agentSessionId?: string | null;
   claudeSessionId?: string | null;
+  durableSessionId?: string | null;
   sessionType: SessionType;
   shell?: string;
   cwd?: string;
@@ -53,13 +59,19 @@ export interface StoredSession {
  * resumed after a full plugin close/restart (not just hot-reload).
  */
 export interface PersistedSession {
-  version: 1;
+  version: 1 | 2;
   taskPath: string;
-  agentSessionId: string;
-  claudeSessionId?: string;
+  agentSessionId?: string | null;
+  claudeSessionId?: string | null;
+  durableSessionId?: string;
+  durableSessionIdGenerated?: boolean;
   label: string;
   sessionType: SessionType;
   savedAt: string; // ISO timestamp
+  recoveryMode?: DurableRecoveryMode;
+  cwd?: string;
+  command?: string;
+  commandArgs?: string[];
 }
 
 export interface ActiveTabInfo {
@@ -135,6 +147,10 @@ export interface StoredState {
   sessions: Map<string, StoredSession[]>;
   activeTaskPath: string | null;
   activeTabIndex: number;
+}
+
+export function isSessionType(value: unknown): value is SessionType {
+  return typeof value === "string" && SESSION_TYPES.includes(value as SessionType);
 }
 
 export function isResumableSessionType(sessionType: SessionType): boolean {
