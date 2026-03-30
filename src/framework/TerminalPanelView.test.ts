@@ -1128,6 +1128,62 @@ describe("TerminalPanelView hook warning", () => {
     expect(persistedSessions[0]).not.toHaveProperty("durableSessionIdGenerated");
   });
 
+  it("keeps one migrated relaunch alias pending when identical aliases are reopened one at a time", async () => {
+    const saveData = vi.fn(async () => {});
+    mockState.persistedSessions = [
+      makePersistedSession("shell", {
+        label: "Shell",
+        durableSessionId: "durable-from-migration-1",
+        durableSessionIdGenerated: true,
+      }),
+      makePersistedSession("shell", {
+        label: "Shell",
+        durableSessionId: "durable-from-migration-2",
+        durableSessionIdGenerated: true,
+      }),
+    ];
+
+    const { view } = createView({}, { saveData });
+    await flushAsync();
+
+    const liveShell = {
+      id: "live-shell",
+      sessionType: "shell",
+      label: "Shell",
+      durableSessionId: "durable-manual-reopen",
+      launchShell: "/bin/zsh",
+      launchCwd: "/vault",
+      launchCommandArgs: undefined,
+    };
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.activeSessions = new Map([["Tasks/task-1.md", [liveShell]]]);
+    mockState.tabsByItem = new Map([["Tasks/task-1.md", [liveShell]]]);
+
+    await view.persistSessions();
+
+    const pendingSessions = view.getPersistedSessions("Tasks/task-1.md");
+    expect(pendingSessions).toHaveLength(1);
+    expect(pendingSessions[0]).toMatchObject({
+      durableSessionIdGenerated: true,
+    });
+    expect(["durable-from-migration-1", "durable-from-migration-2"]).toContain(
+      pendingSessions[0].durableSessionId,
+    );
+
+    const persistedSessions = saveData.mock.calls.at(-1)?.[0].persistedSessions;
+    expect(persistedSessions).toHaveLength(2);
+    expect(
+      persistedSessions.filter((session: PersistedSession) => session.durableSessionIdGenerated),
+    ).toHaveLength(1);
+    expect(persistedSessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          durableSessionId: "durable-manual-reopen",
+        }),
+      ]),
+    );
+  });
+
   it("rekeys pending durable recovery entries when an item path changes", async () => {
     mockState.persistedSessions = [
       makePersistedSession("shell", {

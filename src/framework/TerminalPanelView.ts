@@ -757,12 +757,72 @@ export class TerminalPanelView {
     }
   }
 
-  private isPersistedSessionActiveAcrossViews(session: PersistedSession): boolean {
-    return Array.from(liveTerminalViews).some((view) =>
-      view.tabManager
-        .getTabs(session.taskPath)
-        .some((tab) => view.matchesRecoverySession(tab, session)),
-    );
+  private findPersistedSessionTabAcrossViews(
+    session: PersistedSession,
+    claimedTabs: Set<TerminalTab>,
+    candidate: Pick<
+      PersistedSession,
+      | "sessionType"
+      | "label"
+      | "claudeSessionId"
+      | "durableSessionId"
+      | "durableSessionIdGenerated"
+      | "recoveryMode"
+      | "cwd"
+      | "command"
+      | "commandArgs"
+    >,
+  ): TerminalTab | null {
+    const views = Array.from(liveTerminalViews).filter((view) => !view.isDisposed);
+    for (const view of views) {
+      const matchingTab = view.tabManager.getTabs(session.taskPath).find(
+        (tab) => !claimedTabs.has(tab) && view.matchesRecoverySession(tab, candidate),
+      );
+      if (matchingTab) {
+        return matchingTab;
+      }
+    }
+    return null;
+  }
+
+  private findPersistedSessionExactMatchAcrossViews(
+    session: PersistedSession,
+    claimedTabs: Set<TerminalTab>,
+  ): TerminalTab | null {
+    if (session.recoveryMode === "relaunch" && session.durableSessionId) {
+      const views = Array.from(liveTerminalViews).filter((view) => !view.isDisposed);
+      for (const view of views) {
+        const matchingTab = view.tabManager.getTabs(session.taskPath).find(
+          (tab) =>
+            !claimedTabs.has(tab) &&
+            tab.sessionType === session.sessionType &&
+            tab.durableSessionId === session.durableSessionId,
+        );
+        if (matchingTab) {
+          return matchingTab;
+        }
+      }
+      return null;
+    }
+
+    return this.findPersistedSessionTabAcrossViews(session, claimedTabs, session);
+  }
+
+  private findPersistedSessionFallbackMatchAcrossViews(
+    session: PersistedSession,
+    claimedTabs: Set<TerminalTab>,
+  ): TerminalTab | null {
+    return this.findPersistedSessionTabAcrossViews(session, claimedTabs, {
+      sessionType: session.sessionType,
+      label: session.label,
+      claudeSessionId: session.claudeSessionId,
+      durableSessionId: undefined,
+      durableSessionIdGenerated: undefined,
+      recoveryMode: session.recoveryMode,
+      cwd: session.cwd,
+      command: session.command,
+      commandArgs: session.commandArgs,
+    });
   }
 
   private applyPersistedSessionState(persistedSessions: PersistedSession[]): void {
@@ -775,9 +835,46 @@ export class TerminalPanelView {
   }
 
   private recalculatePendingPersistedSessions(): void {
-    this.pendingPersistedSessions = this.persistedSessions.filter(
-      (session) => !this.isPersistedSessionActiveAcrossViews(session),
-    );
+    const claimedTabs = new Set<TerminalTab>();
+    const pendingGeneratedAliases: PersistedSession[] = [];
+    const pendingSessions: PersistedSession[] = [];
+
+    for (const session of this.persistedSessions) {
+      const exactMatch = this.findPersistedSessionExactMatchAcrossViews(session, claimedTabs);
+      if (exactMatch) {
+        claimedTabs.add(exactMatch);
+        continue;
+      }
+
+      if (
+        session.recoveryMode === "relaunch" &&
+        session.durableSessionIdGenerated &&
+        session.durableSessionId
+      ) {
+        pendingGeneratedAliases.push(session);
+        continue;
+      }
+
+      const fallbackMatch = this.findPersistedSessionTabAcrossViews(session, claimedTabs, session);
+      if (fallbackMatch) {
+        claimedTabs.add(fallbackMatch);
+        continue;
+      }
+
+      pendingSessions.push(session);
+    }
+
+    for (const session of pendingGeneratedAliases) {
+      const fallbackMatch = this.findPersistedSessionFallbackMatchAcrossViews(session, claimedTabs);
+      if (fallbackMatch) {
+        claimedTabs.add(fallbackMatch);
+        continue;
+      }
+
+      pendingSessions.push(session);
+    }
+
+    this.pendingPersistedSessions = pendingSessions;
   }
 
   private syncPersistedSessionState(persistedSessions: PersistedSession[]): void {
@@ -1664,9 +1761,8 @@ export class TerminalPanelView {
   }
 
   getPersistedSessions(itemId: string): PersistedSession[] {
-    return this.persistedSessions.filter(
-      (session) => session.taskPath === itemId && !this.isPersistedSessionActiveAcrossViews(session),
-    );
+    this.recalculatePendingPersistedSessions();
+    return this.pendingPersistedSessions.filter((session) => session.taskPath === itemId);
   }
 
   getPendingPersistedSessionsForPersist(): PersistedSession[] {
