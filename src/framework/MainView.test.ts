@@ -34,15 +34,19 @@ vi.mock("./PromptBox", () => ({
 
 vi.mock("./SettingsTab", () => ({
   loadAllSettings: vi.fn(),
+  SETTINGS_CHANGED_EVENT: "work-terminal:settings-changed",
 }));
 
 vi.mock("./PluginBase", () => ({
   VIEW_TYPE: "work-terminal-view",
 }));
 
+const { sessionStoreIsReloadMock } = vi.hoisted(() => ({
+  sessionStoreIsReloadMock: vi.fn(() => false),
+}));
 vi.mock("../core/session/SessionStore", () => ({
   SessionStore: {
-    isReload: vi.fn(() => false),
+    isReload: sessionStoreIsReloadMock,
   },
 }));
 
@@ -272,5 +276,156 @@ describe("MainView selection ID backfill", () => {
     await (view as any).refreshList();
 
     expect(listPanel.render).toHaveBeenCalledWith({ todo: [] }, { todo: ["uuid-123"] });
+  });
+});
+
+describe("MainView stash-on-close (keepSessionsAlive)", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionStoreIsReloadMock.mockReturnValue(false);
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function makeView(settings: Record<string, unknown> = {}) {
+    const view = new MainView(
+      {} as any,
+      {} as any,
+      { isReloading: false } as any,
+    );
+    (view as any).settings = { "core.keepSessionsAlive": true, ...settings };
+    return view;
+  }
+
+  function makeTerminalPanel() {
+    return {
+      persistSessions: vi.fn().mockResolvedValue(undefined),
+      stashAll: vi.fn(),
+      disposeAll: vi.fn(),
+      hasAnySessions: vi.fn(() => true),
+    };
+  }
+
+  it("stashes sessions instead of disposing when keepSessionsAlive is enabled", async () => {
+    const view = makeView({ "core.keepSessionsAlive": true });
+    const terminalPanel = makeTerminalPanel();
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).listPanel = { dispose: vi.fn() };
+    (view as any).vaultEventRefs = [];
+    (view as any).pendingRenames = new Map();
+    (view as any).adapter = {};
+
+    await view.onClose();
+
+    expect(terminalPanel.persistSessions).toHaveBeenCalled();
+    expect(terminalPanel.stashAll).toHaveBeenCalled();
+    expect(terminalPanel.disposeAll).not.toHaveBeenCalled();
+  });
+
+  it("disposes sessions when keepSessionsAlive is disabled", async () => {
+    const view = makeView({ "core.keepSessionsAlive": false });
+    const terminalPanel = makeTerminalPanel();
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).listPanel = { dispose: vi.fn() };
+    (view as any).vaultEventRefs = [];
+    (view as any).pendingRenames = new Map();
+    (view as any).adapter = {};
+
+    await view.onClose();
+
+    expect(terminalPanel.persistSessions).toHaveBeenCalled();
+    expect(terminalPanel.disposeAll).toHaveBeenCalled();
+    expect(terminalPanel.stashAll).not.toHaveBeenCalled();
+  });
+
+  it("defaults to stashing when keepSessionsAlive setting is absent", async () => {
+    const view = makeView({});
+    // Remove the setting entirely to test the default
+    delete (view as any).settings["core.keepSessionsAlive"];
+    const terminalPanel = makeTerminalPanel();
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).listPanel = { dispose: vi.fn() };
+    (view as any).vaultEventRefs = [];
+    (view as any).pendingRenames = new Map();
+    (view as any).adapter = {};
+
+    await view.onClose();
+
+    expect(terminalPanel.stashAll).toHaveBeenCalled();
+    expect(terminalPanel.disposeAll).not.toHaveBeenCalled();
+  });
+
+  it("does not double-stash if SessionStore already has stashed data", async () => {
+    sessionStoreIsReloadMock.mockReturnValue(true);
+    const view = makeView({ "core.keepSessionsAlive": true });
+    const terminalPanel = makeTerminalPanel();
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).listPanel = { dispose: vi.fn() };
+    (view as any).vaultEventRefs = [];
+    (view as any).pendingRenames = new Map();
+    (view as any).adapter = {};
+
+    await view.onClose();
+
+    expect(terminalPanel.stashAll).not.toHaveBeenCalled();
+    expect(terminalPanel.persistSessions).toHaveBeenCalled();
+  });
+
+  it("skips close guard confirmation when keepSessionsAlive is enabled", () => {
+    const view = makeView({ "core.keepSessionsAlive": true });
+    const terminalPanel = makeTerminalPanel();
+    (view as any).terminalPanel = terminalPanel;
+
+    const origDetach = vi.fn();
+    const leaf = { detach: origDetach };
+    (view as any).leaf = leaf;
+    (view as any)._origLeafDetach = origDetach;
+
+    // Install the close guard
+    (view as any).installCloseGuard();
+
+    // Spy on confirm - should NOT be called
+    const confirmSpy = vi.spyOn(dom.window, "confirm" as any).mockReturnValue(false);
+    vi.stubGlobal("confirm", confirmSpy);
+
+    // Trigger detach
+    leaf.detach();
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(origDetach).toHaveBeenCalled();
+  });
+
+  it("shows close guard confirmation when keepSessionsAlive is disabled", () => {
+    const view = makeView({ "core.keepSessionsAlive": false });
+    const terminalPanel = makeTerminalPanel();
+    (view as any).terminalPanel = terminalPanel;
+
+    const origDetach = vi.fn();
+    const leaf = { detach: origDetach };
+    (view as any).leaf = leaf;
+    (view as any)._origLeafDetach = origDetach;
+
+    // Install the close guard
+    (view as any).installCloseGuard();
+
+    const confirmSpy = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("confirm", confirmSpy);
+
+    // Trigger detach
+    leaf.detach();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(origDetach).toHaveBeenCalled();
   });
 });

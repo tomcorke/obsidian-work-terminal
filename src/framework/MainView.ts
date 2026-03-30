@@ -17,7 +17,7 @@ import { VIEW_TYPE } from "./PluginBase";
 import { ListPanel } from "./ListPanel";
 import { TerminalPanelView } from "./TerminalPanelView";
 import { PromptBox } from "./PromptBox";
-import { loadAllSettings } from "./SettingsTab";
+import { loadAllSettings, SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
@@ -67,6 +67,11 @@ export class MainView extends ItemView {
   private _beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
   private _origLeafDetach: (() => void) | null = null;
 
+  // Settings change handler - keeps this.settings in sync
+  private readonly _handleSettingsChanged = (event: Event) => {
+    this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+  };
+
   constructor(
     leaf: WorkspaceLeaf,
     adapter: AdapterBundle,
@@ -106,6 +111,9 @@ export class MainView extends ItemView {
 
     // Intercept tab close to confirm when active sessions exist
     this.installCloseGuard();
+
+    // Listen for settings changes to keep cached settings current
+    window.addEventListener(SETTINGS_CHANGED_EVENT, this._handleSettingsChanged as EventListener);
 
     // Warn on app quit with active sessions
     this._beforeUnloadHandler = (e: BeforeUnloadEvent) => {
@@ -180,12 +188,16 @@ export class MainView extends ItemView {
         return;
       }
 
-      // Check for active sessions
+      // Check for active sessions - skip confirmation when stash-on-close
+      // is enabled since sessions will be preserved in memory
       if (this.terminalPanel?.hasAnySessions()) {
-        const confirmed = confirm(
-          "This tab has active terminal sessions. Closing will end them.\n\nClose anyway?",
-        );
-        if (!confirmed) return;
+        const keepAlive = this.settings["core.keepSessionsAlive"] ?? true;
+        if (!keepAlive) {
+          const confirmed = confirm(
+            "This tab has active terminal sessions. Closing will end them.\n\nClose anyway?",
+          );
+          if (!confirmed) return;
+        }
       }
 
       this._origLeafDetach?.();
@@ -588,7 +600,13 @@ export class MainView extends ItemView {
     // subsequent cleanup (detaching detail view, unregistering events)
     // can trigger selection changes that reset activeItemId to null.
     // Skip stash if already stashed by hotReload() (sessions would be empty).
-    if (this.pluginRef.isReloading) {
+    const keepAlive = this.settings["core.keepSessionsAlive"] ?? true;
+    if (this.pluginRef.isReloading || keepAlive) {
+      // Stash sessions to window-global store so PTY processes survive
+      // and can be restored when the view is reopened.
+      // Always persist to disk as a fallback (e.g. if Obsidian quits
+      // before the tab is reopened, the window-global stash is lost).
+      await this.terminalPanel?.persistSessions();
       // Only stash if not already stashed (hotReload pre-stashes explicitly)
       if (!SessionStore.isReload()) {
         this.terminalPanel?.stashAll();
@@ -600,6 +618,9 @@ export class MainView extends ItemView {
     }
 
     this.listPanel?.dispose();
+
+    // Stop listening for settings changes
+    window.removeEventListener(SETTINGS_CHANGED_EVENT, this._handleSettingsChanged as EventListener);
 
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();
