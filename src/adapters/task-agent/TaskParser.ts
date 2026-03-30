@@ -48,7 +48,7 @@ export class TaskParser implements WorkItemParser {
     const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
 
     return {
-      id: fm.id || "",
+      id: fm.id || file.path,
       path: file.path,
       filename: file.name,
       state,

@@ -150,6 +150,20 @@ describe("TaskParser", () => {
       expect(item!.title).toBe("my-task");
     });
 
+    it("uses file.path as the ID when frontmatter id is missing", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task-without-id.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ id: undefined }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.id).toBe(file.path);
+      expect(item!.path).toBe(file.path);
+      expect(item!.state).toBe("active");
+    });
+
     it("defaults source.type to 'other' when missing", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {
