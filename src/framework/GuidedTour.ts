@@ -115,11 +115,15 @@ function isTabbableElement(element: HTMLElement): boolean {
   const tabIndex = element.getAttribute("tabindex");
   if (tabIndex !== null && Number(tabIndex) < 0) return false;
 
-  if (typeof element.checkVisibility === "function") {
-    return element.checkVisibility({
+  const supportsCheckVisibility = typeof element.checkVisibility === "function";
+  if (
+    supportsCheckVisibility &&
+    !element.checkVisibility({
       checkOpacity: false,
       checkVisibilityCSS: true,
-    });
+    })
+  ) {
+    return false;
   }
 
   for (
@@ -130,6 +134,8 @@ function isTabbableElement(element: HTMLElement): boolean {
     if (current.hidden) return false;
     if (current.hasAttribute("inert")) return false;
     if (current.getAttribute("aria-hidden") === "true") return false;
+
+    if (supportsCheckVisibility) continue;
 
     const style = window.getComputedStyle(current);
     if (style.display === "none") return false;
@@ -259,10 +265,12 @@ export class GuidedTourController {
   private isTransitioning = false;
   private isDisposed = false;
   private isFinishing = false;
+  private restoreFocusTarget: HTMLElement | null = null;
   private readonly handleResize = () => this.schedulePosition();
   private readonly handleScroll = () => this.schedulePosition();
   private readonly handleFocusIn = (event: FocusEvent) => {
     if (!this.cardEl || this.isDisposed || this.isFinishing) return;
+    this.maybeStoreRestoreFocusTarget(event.target);
     if (this.isAllowedFocusTarget(event.target)) return;
     this.focusWithinCard();
   };
@@ -307,6 +315,7 @@ export class GuidedTourController {
     if (!claimGuidedTourSingleton(this)) return;
 
     this.isDisposed = false;
+    this.restoreFocusTarget = this.resolveRestorableFocusTarget(document.activeElement);
     try {
       this.createChrome();
       this.registerEvents();
@@ -414,18 +423,15 @@ export class GuidedTourController {
     if (this.isDisposed || this.isFinishing) return;
 
     this.isFinishing = true;
-    let restoredBoardSurface = false;
     try {
-      restoredBoardSurface = await this.restoreSurfaceBeforeFinish();
+      await this.restoreSurfaceBeforeFinish();
       await saveGuidedTourStatus(this.plugin, status);
     } finally {
       this.dispose();
     }
 
-    if (restoredBoardSurface) {
-      await this.waitForNextFrame();
-      this.focusStableBoardControl();
-    }
+    await this.waitForNextFrame();
+    this.restoreFocusAfterFinish();
   }
 
   private async showStep(index: number): Promise<void> {
@@ -467,16 +473,14 @@ export class GuidedTourController {
     await this.waitForNextFrame();
   }
 
-  private async restoreSurfaceBeforeFinish(): Promise<boolean> {
-    if ((this.steps[this.activeIndex]?.surface ?? "board") !== "settings") return false;
-    if (!this.openedSettingsForTour) return false;
+  private async restoreSurfaceBeforeFinish(): Promise<void> {
+    if ((this.steps[this.activeIndex]?.surface ?? "board") !== "settings") return;
+    if (!this.openedSettingsForTour) return;
 
     this.unregisterEvents();
     const settings = (this.plugin.app as any).setting;
     settings?.close?.();
     await this.waitForNextFrame();
-    this.focusStableBoardControl();
-    return true;
   }
 
   private schedulePosition(options: { scrollIntoView?: boolean } = {}): void {
@@ -752,6 +756,33 @@ export class GuidedTourController {
         return;
       }
     }
+  }
+
+  private maybeStoreRestoreFocusTarget(target: EventTarget | null): void {
+    const restorableTarget = this.resolveRestorableFocusTarget(target);
+    if (!restorableTarget) return;
+    if (!this.activeTargetEl?.contains(restorableTarget)) return;
+    this.restoreFocusTarget = restorableTarget;
+  }
+
+  private resolveRestorableFocusTarget(target: EventTarget | null): HTMLElement | null {
+    if (!(target instanceof HTMLElement)) return null;
+    if (target === document.body || target === document.documentElement) return null;
+    if (!target.isConnected) return null;
+    if (target.closest(".wt-tour-layer")) return null;
+    if (!isTabbableElement(target)) return null;
+    return target;
+  }
+
+  private restoreFocusAfterFinish(): void {
+    const restorableTarget = this.resolveRestorableFocusTarget(this.restoreFocusTarget);
+    if (restorableTarget) {
+      restorableTarget.focus();
+      if (document.activeElement === restorableTarget) {
+        return;
+      }
+    }
+    this.focusStableBoardControl();
   }
 
   private async waitForNextFrame(): Promise<void> {

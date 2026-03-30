@@ -191,6 +191,10 @@ async function clickPrimaryAndWait(): Promise<void> {
 
 describe("GuidedTour", () => {
   const scrollIntoViewMock = vi.fn();
+  const originalCheckVisibilityDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "checkVisibility",
+  );
 
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -205,6 +209,15 @@ describe("GuidedTour", () => {
   afterEach(() => {
     resetGuidedTourSingletonForTests();
     vi.restoreAllMocks();
+    if (originalCheckVisibilityDescriptor) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "checkVisibility",
+        originalCheckVisibilityDescriptor,
+      );
+    } else {
+      delete (HTMLElement.prototype as { checkVisibility?: unknown }).checkVisibility;
+    }
   });
 
   it("auto-starts for a fresh user and records an eligibility sentinel", async () => {
@@ -740,6 +753,67 @@ describe("GuidedTour", () => {
     controller.dispose();
   });
 
+  it("ignores inert and aria-hidden descendants even when checkVisibility reports visible", async () => {
+    const checkVisibilityMock = vi.fn(() => true);
+    Object.defineProperty(HTMLElement.prototype, "checkVisibility", {
+      configurable: true,
+      value: checkVisibilityMock,
+    });
+
+    const plugin = createMockPlugin({});
+    const boardTarget = document.createElement("div");
+    boardTarget.className = "board-target";
+
+    const visibleButton = document.createElement("button");
+    visibleButton.className = "visible-target";
+    visibleButton.textContent = "Visible";
+    boardTarget.appendChild(visibleButton);
+
+    const inertGroup = document.createElement("div");
+    inertGroup.setAttribute("inert", "");
+    const inertButton = document.createElement("button");
+    inertButton.className = "inert-target";
+    inertButton.textContent = "Inert";
+    inertGroup.appendChild(inertButton);
+    boardTarget.appendChild(inertGroup);
+
+    const ariaHiddenGroup = document.createElement("div");
+    ariaHiddenGroup.setAttribute("aria-hidden", "true");
+    const ariaHiddenButton = document.createElement("button");
+    ariaHiddenButton.className = "aria-hidden-target";
+    ariaHiddenButton.textContent = "Hidden";
+    ariaHiddenGroup.appendChild(ariaHiddenButton);
+    boardTarget.appendChild(ariaHiddenGroup);
+
+    document.body.appendChild(boardTarget);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".board-target",
+        surface: "board",
+        allowTargetFocus: true,
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+
+    expect(await pressTab(card)).toBe(true);
+    expect(document.activeElement).toBe(visibleButton);
+
+    expect(await pressTab(visibleButton)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+    expect(document.activeElement).not.toBe(inertButton);
+    expect(document.activeElement).not.toBe(ariaHiddenButton);
+    expect(checkVisibilityMock).toHaveBeenCalled();
+  });
+
   it("keeps settings-hosted interactive steps inside the tour focus scope", async () => {
     const plugin = createMockPlugin({});
     plugin.getSettingManager().open();
@@ -1066,6 +1140,99 @@ describe("GuidedTour", () => {
     await waitFor(() => document.querySelector(".wt-tour-card") === null);
 
     expect(plugin.isSettingsOpen()).toBe(false);
+    await waitFor(() => document.activeElement === promptToggle);
+    expect(document.activeElement).toBe(promptToggle);
+  });
+
+  it("restores meaningful focus for every board-step exit path", async () => {
+    const runExitCase = async (
+      exit: "skip" | "finish" | "escape",
+      restoreTargetFactory: () => HTMLElement,
+    ): Promise<void> => {
+      document.body.innerHTML = "";
+      resetGuidedTourSingletonForTests();
+
+      setupDefaultTourBoardDom();
+      const restoreTarget = restoreTargetFactory();
+      document.body.appendChild(restoreTarget);
+      restoreTarget.focus();
+
+      const plugin = createMockPlugin({});
+      const controller = new GuidedTourController(plugin as never, [
+        {
+          title: "Board",
+          body: "Board target",
+          target: ".wt-main-view",
+          surface: "board",
+        },
+      ]);
+
+      await controller.start();
+
+      if (exit === "skip") {
+        const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+          (button) => button.textContent === "Skip",
+        ) as HTMLButtonElement;
+        skipButton.click();
+      } else if (exit === "finish") {
+        (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
+      } else {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        );
+      }
+
+      await waitFor(() => document.querySelector(".wt-tour-card") === null);
+      await waitFor(() => document.activeElement === restoreTarget);
+      expect(document.activeElement).toBe(restoreTarget);
+    };
+
+    await runExitCase("skip", () => {
+      const boardButton = document.createElement("button");
+      boardButton.className = "restore-target-skip";
+      boardButton.textContent = "Restore skip";
+      return boardButton;
+    });
+
+    await runExitCase("finish", () => {
+      const boardButton = document.createElement("button");
+      boardButton.className = "restore-target-finish";
+      boardButton.textContent = "Restore finish";
+      return boardButton;
+    });
+
+    await runExitCase("escape", () => {
+      const boardButton = document.createElement("button");
+      boardButton.className = "restore-target-escape";
+      boardButton.textContent = "Restore escape";
+      return boardButton;
+    });
+  });
+
+  it("falls back to a stable board control when the prior board focus target disappears", async () => {
+    const plugin = createMockPlugin({});
+    const { promptToggle } = setupDefaultTourBoardDom();
+    const transientButton = document.createElement("button");
+    transientButton.className = "transient-restore-target";
+    transientButton.textContent = "Transient";
+    document.body.appendChild(transientButton);
+    transientButton.focus();
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".wt-main-view",
+        surface: "board",
+      },
+    ]);
+
+    await controller.start();
+    transientButton.remove();
+
+    (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
+    await waitFor(() => document.querySelector(".wt-tour-card") === null);
+
     await waitFor(() => document.activeElement === promptToggle);
     expect(document.activeElement).toBe(promptToggle);
   });
