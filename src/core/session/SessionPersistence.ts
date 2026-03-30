@@ -91,8 +91,13 @@ export class SessionPersistence {
       return null;
     }
 
+    // Support both legacy claudeSessionId and newer agentSessionId from disk
     const claudeSessionId =
-      typeof candidate.claudeSessionId === "string" ? candidate.claudeSessionId : null;
+      typeof candidate.claudeSessionId === "string"
+        ? candidate.claudeSessionId
+        : typeof candidate.agentSessionId === "string"
+          ? candidate.agentSessionId
+          : null;
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
     const recoveryMode =
