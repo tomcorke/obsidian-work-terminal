@@ -221,13 +221,19 @@ describe("GuidedTour", () => {
     expect(plugin.getSettingManager().open).toHaveBeenCalledTimes(1);
     expect(plugin.getSettingManager().openTabById).toHaveBeenCalledWith("work-terminal");
     expect(plugin.isSettingsOpen()).toBe(true);
-    expect(document.querySelector('[data-wt-tour="core.claudeExtraArgs"]')?.classList.contains("wt-tour-target")).toBe(true);
+    expect(
+      document
+        .querySelector('[data-wt-tour="core.claudeExtraArgs"]')
+        ?.classList.contains("wt-tour-target"),
+    ).toBe(true);
     expect(document.querySelector(".wt-tour-layer")?.parentElement?.className).toBe("modal");
     expect((document.querySelector(".wt-tour-backdrop") as HTMLElement).style.clipPath).toContain(
       "polygon(evenodd",
     );
     expect(boardTarget.classList.contains("wt-tour-target")).toBe(false);
-    await waitFor(() => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled);
+    await waitFor(
+      () => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled,
+    );
 
     (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
     await flushTourUpdates();
@@ -290,12 +296,8 @@ describe("GuidedTour", () => {
     const modal = document.querySelector(".modal") as HTMLElement;
     const target = document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement;
 
-    vi.spyOn(modal, "getBoundingClientRect").mockReturnValue(
-      new DOMRect(100, 40, 360, 300),
-    );
-    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(
-      new DOMRect(340, 140, 80, 32),
-    );
+    vi.spyOn(modal, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 40, 360, 300));
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(340, 140, 80, 32));
 
     const controller = new GuidedTourController(plugin as never, [
       {
@@ -341,6 +343,59 @@ describe("GuidedTour", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not use keyboard shortcuts while focus is inside an interactive target", async () => {
+    const plugin = createMockPlugin({});
+    const boardTarget = document.createElement("div");
+    boardTarget.className = "board-target";
+    document.body.appendChild(boardTarget);
+
+    const promptTextarea = document.createElement("textarea");
+    promptTextarea.className = "prompt-target";
+    document.body.appendChild(promptTextarea);
+
+    const nextBoardTarget = document.createElement("div");
+    nextBoardTarget.className = "board-target-next";
+    document.body.appendChild(nextBoardTarget);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".board-target",
+      },
+      {
+        title: "Prompt",
+        body: "Edit here",
+        target: ".prompt-target",
+      },
+      {
+        title: "Next",
+        body: "Next board target",
+        target: ".board-target-next",
+      },
+    ]);
+
+    await controller.start();
+    (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
+    await flushTourUpdates();
+
+    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Prompt");
+
+    promptTextarea.focus();
+    promptTextarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    promptTextarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+    promptTextarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
+    );
+    await flushTourUpdates();
+
+    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Prompt");
   });
 
   it("only scrolls targets into view when the step changes", async () => {

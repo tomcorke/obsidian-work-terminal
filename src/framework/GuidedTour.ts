@@ -52,6 +52,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object";
 }
 
+function isInteractiveShortcutTarget(
+  target: EventTarget | null,
+  tourCard: HTMLElement | null,
+): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (tourCard?.contains(target)) return false;
+  if (target.isContentEditable) return true;
+
+  const interactiveAncestor = target.closest(
+    'input, textarea, select, button, [contenteditable=""], [contenteditable="true"], [role="button"], [role="checkbox"], [role="combobox"], [role="gridcell"], [role="link"], [role="listbox"], [role="menuitem"], [role="option"], [role="radio"], [role="searchbox"], [role="slider"], [role="spinbutton"], [role="switch"], [role="tab"], [role="textbox"]',
+  );
+  return interactiveAncestor !== null;
+}
+
 function readGuidedTourRecord(data: unknown): GuidedTourRecord | null {
   if (!isRecord(data) || !isRecord(data.guidedTour)) return null;
   const version = data.guidedTour.version;
@@ -154,6 +168,11 @@ export class GuidedTourController {
       void this.finish("dismissed");
       return;
     }
+
+    if (isInteractiveShortcutTarget(event.target, this.cardEl)) {
+      return;
+    }
+
     if (event.key === "ArrowRight" || event.key === "Enter") {
       event.preventDefault();
       void this.goNext();
@@ -531,7 +550,7 @@ export class GuidedTourController {
   }
 }
 
-export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
+export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] {
   return [
     {
       title: "Welcome to Work Terminal",
