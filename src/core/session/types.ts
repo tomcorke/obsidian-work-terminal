@@ -32,6 +32,7 @@ export interface StoredSession {
   taskPath: string | null;
   label: string;
   claudeSessionId: string | null;
+  durableSessionId?: string | null;
   sessionType: SessionType;
   shell?: string;
   cwd?: string;
@@ -58,6 +59,8 @@ export interface PersistedSession {
   version: 1 | 2;
   taskPath: string;
   claudeSessionId?: string | null;
+  durableSessionId?: string;
+  durableSessionIdGenerated?: boolean;
   label: string;
   sessionType: SessionType;
   savedAt: string; // ISO timestamp

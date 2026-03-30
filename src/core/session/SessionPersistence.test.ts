@@ -24,13 +24,15 @@ function makePersisted(
     recoveryMode: "resume" | "relaunch";
     cwd: string;
     command: string;
-    commandArgs: string[];
+    commandArgs: string[] | undefined;
+    durableSessionId: string;
   }> = {},
 ) {
   return {
     version: 2 as const,
     taskPath: overrides.taskPath ?? "tasks/my-task.md",
     claudeSessionId: overrides.claudeSessionId ?? "session-1",
+    durableSessionId: overrides.durableSessionId,
     label: overrides.label ?? "Claude",
     sessionType: (overrides.sessionType ?? "claude") as any,
     savedAt: overrides.savedAt ?? new Date().toISOString(),
@@ -98,12 +100,14 @@ describe("SessionPersistence", () => {
       expect(saved.persistedSessions[2]).toMatchObject({
         sessionType: "shell",
         recoveryMode: "relaunch",
+        durableSessionId: expect.any(String),
         command: "/bin/zsh",
         cwd: "/vault",
       });
       expect(saved.persistedSessions[3]).toMatchObject({
         sessionType: "claude",
         recoveryMode: "relaunch",
+        durableSessionId: expect.any(String),
         command: "claude",
       });
     });
@@ -117,6 +121,75 @@ describe("SessionPersistence", () => {
       const saved = plugin.saveData.mock.calls[0][0];
       expect(saved.settings).toEqual({ foo: "bar" });
       expect(saved.persistedSessions).toEqual([]);
+    });
+
+    it("preserves preloaded persisted sessions when there are no active tabs yet", async () => {
+      const existing = makePersisted({
+        taskPath: "tasks/cold-start.md",
+        sessionType: "shell",
+        claudeSessionId: null,
+        recoveryMode: "relaunch",
+        label: "Cold shell",
+        command: "/bin/zsh",
+        commandArgs: undefined,
+        durableSessionId: "durable-cold-shell",
+      });
+      const plugin = createMockPlugin({ persistedSessions: [existing] });
+
+      await SessionPersistence.saveToDisk(plugin, new Map());
+
+      expect(plugin._getData().persistedSessions).toEqual([existing]);
+    });
+
+    it("replaces a matching pending relaunch entry with the active session identity", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: false,
+          claudeSessionId: null,
+          durableSessionId: "durable-shell-1",
+          label: "Shell",
+          taskPath: "task-1",
+          sessionType: "shell",
+          launchShell: "/bin/zsh",
+          launchCwd: "/vault",
+        },
+      ]);
+
+      const merged = SessionPersistence.mergePersistedSessions(
+        [
+          makePersisted({
+            taskPath: "task-1",
+            sessionType: "shell",
+            claudeSessionId: null,
+            recoveryMode: "relaunch",
+            label: "Shell",
+            command: "/bin/zsh",
+            commandArgs: undefined,
+            durableSessionId: "durable-shell-1",
+          }),
+          makePersisted({
+            taskPath: "task-1",
+            sessionType: "shell",
+            claudeSessionId: null,
+            recoveryMode: "relaunch",
+            label: "Shell",
+            command: "/bin/zsh",
+            commandArgs: undefined,
+            durableSessionId: "durable-shell-2",
+          }),
+        ],
+        sessions,
+      );
+
+      expect(merged).toHaveLength(2);
+      expect(merged).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ durableSessionId: "durable-shell-1" }),
+          expect.objectContaining({ durableSessionId: "durable-shell-2" }),
+        ]),
+      );
     });
 
     it("shares the queued merge path with other plugin data writes", async () => {
@@ -198,6 +271,41 @@ describe("SessionPersistence", () => {
           recoveryMode: "resume",
         }),
       ]);
+    });
+
+    it("assigns durable relaunch identities to legacy relaunch entries", async () => {
+      const plugin = createMockPlugin({
+        persistedSessions: [
+          {
+            version: 2,
+            taskPath: "tasks/my-task.md",
+            claudeSessionId: null,
+            label: "Shell",
+            sessionType: "shell",
+            savedAt: new Date().toISOString(),
+            recoveryMode: "relaunch",
+            cwd: "/vault",
+            command: "/bin/zsh",
+          },
+          {
+            version: 2,
+            taskPath: "tasks/my-task.md",
+            claudeSessionId: null,
+            label: "Shell",
+            sessionType: "shell",
+            savedAt: new Date().toISOString(),
+            recoveryMode: "relaunch",
+            cwd: "/vault",
+            command: "/bin/zsh",
+          },
+        ],
+      });
+
+      const result = await SessionPersistence.loadFromDisk(plugin);
+      expect(result).toHaveLength(2);
+      expect(result[0].durableSessionId).toEqual(expect.any(String));
+      expect(result[1].durableSessionId).toEqual(expect.any(String));
+      expect(result[0].durableSessionId).not.toBe(result[1].durableSessionId);
     });
 
     it("drops entries with invalid disk session types", async () => {

@@ -8,6 +8,8 @@ export interface ClosedSessionEntry {
   sessionType: SessionType;
   label: string;
   claudeSessionId: string | null;
+  durableSessionId?: string;
+  durableSessionIdGenerated?: boolean;
   closedAt: number; // Date.now() timestamp
   itemId: string;
   recoveryMode: DurableRecoveryMode;
@@ -79,6 +81,7 @@ export class RecentlyClosedStore {
     this.prune();
     return this.entries.map((entry) => ({
       ...entry,
+      durableSessionIdGenerated: undefined,
       commandArgs: entry.commandArgs ? [...entry.commandArgs] : undefined,
     }));
   }
@@ -104,6 +107,8 @@ export class RecentlyClosedStore {
     const sessionType = isSessionType(candidate.sessionType) ? candidate.sessionType : null;
     const claudeSessionId =
       typeof candidate.claudeSessionId === "string" ? candidate.claudeSessionId : null;
+    const durableSessionId =
+      typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
     const closedAt =
       typeof candidate.closedAt === "number"
         ? candidate.closedAt
@@ -134,11 +139,17 @@ export class RecentlyClosedStore {
       return null;
     }
 
+    const generatedDurableSessionId =
+      recoveryMode === "relaunch" && !durableSessionId ? globalThis.crypto.randomUUID() : undefined;
+
     return {
       itemId,
       label,
       sessionType,
       claudeSessionId,
+      durableSessionId:
+        recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
+      durableSessionIdGenerated: generatedDurableSessionId ? true : undefined,
       closedAt,
       recoveryMode,
       cwd,
@@ -150,6 +161,10 @@ export class RecentlyClosedStore {
   private static entryKey(entry: ClosedSessionEntry): string {
     if (entry.recoveryMode === "resume" && entry.claudeSessionId) {
       return `resume:${entry.claudeSessionId}`;
+    }
+
+    if (entry.durableSessionId) {
+      return `relaunch:${entry.itemId}\u0001${entry.durableSessionId}`;
     }
 
     const args = entry.commandArgs?.join("\u0000") || "";

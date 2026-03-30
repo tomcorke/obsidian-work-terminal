@@ -24,8 +24,19 @@ export class SessionStore {
     activeTaskPath: string | null,
     activeTabIndex: number,
   ): void {
-    window.__workTerminalStore = { sessions, activeTaskPath, activeTabIndex };
-    console.log("[work-terminal] Stashed", sessions.size, "task groups for reload");
+    const existing = window.__workTerminalStore;
+    const mergedSessions = new Map(existing?.sessions || []);
+    for (const [itemId, tabs] of sessions) {
+      const existingTabs = mergedSessions.get(itemId) || [];
+      mergedSessions.set(itemId, [...existingTabs, ...tabs]);
+    }
+    window.__workTerminalStore = {
+      sessions: mergedSessions,
+      activeTaskPath: activeTaskPath ?? existing?.activeTaskPath ?? null,
+      activeTabIndex:
+        activeTaskPath !== null || !existing ? activeTabIndex : (existing.activeTabIndex ?? 0),
+    };
+    console.log("[work-terminal] Stashed", mergedSessions.size, "task groups for reload");
   }
 
   /**

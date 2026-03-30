@@ -21,6 +21,7 @@ interface PersistableTab {
   label: string;
   taskPath: string | null;
   claudeSessionId: string | null;
+  durableSessionId?: string | null;
   isResumableAgent: boolean;
   sessionType: SessionType;
   launchShell: string;
@@ -49,6 +50,10 @@ export class SessionPersistence {
       version: 2,
       taskPath,
       claudeSessionId: tab.claudeSessionId,
+      durableSessionId:
+        recoveryMode === "relaunch"
+          ? (tab.durableSessionId ?? globalThis.crypto.randomUUID())
+          : undefined,
       label: tab.label,
       sessionType: tab.sessionType,
       savedAt,
@@ -88,6 +93,8 @@ export class SessionPersistence {
 
     const claudeSessionId =
       typeof candidate.claudeSessionId === "string" ? candidate.claudeSessionId : null;
+    const durableSessionId =
+      typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
     const recoveryMode =
       candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
         ? candidate.recoveryMode
@@ -112,10 +119,16 @@ export class SessionPersistence {
       return null;
     }
 
+    const generatedDurableSessionId =
+      recoveryMode === "relaunch" && !durableSessionId ? globalThis.crypto.randomUUID() : undefined;
+
     return {
       version: candidate.version === 1 ? 1 : 2,
       taskPath,
       claudeSessionId,
+      durableSessionId:
+        recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
+      durableSessionIdGenerated: generatedDurableSessionId ? true : undefined,
       label,
       sessionType,
       savedAt,
@@ -140,12 +153,60 @@ export class SessionPersistence {
     return persisted;
   }
 
+  private static getSessionKey(
+    session: Pick<
+      PersistedSession,
+      | "taskPath"
+      | "sessionType"
+      | "claudeSessionId"
+      | "durableSessionId"
+      | "durableSessionIdGenerated"
+      | "label"
+      | "cwd"
+      | "command"
+      | "commandArgs"
+      | "recoveryMode"
+    >,
+  ): string {
+    if (session.recoveryMode === "resume") {
+      return `resume:${session.claudeSessionId || ""}`;
+    }
+
+    if (session.durableSessionId) {
+      return `relaunch:${session.taskPath}\u0001${session.durableSessionId}`;
+    }
+
+    const args = JSON.stringify(session.commandArgs || []);
+    return [
+      "relaunch",
+      session.taskPath,
+      session.sessionType,
+      session.label,
+      session.cwd || "",
+      session.command || "",
+      args,
+    ].join("\u0001");
+  }
+
+  static mergePersistedSessions(
+    existingPersisted: PersistedSession[],
+    sessions: Map<string, PersistableTab[]>,
+  ): PersistedSession[] {
+    const activePersisted = this.buildPersistedSessions(sessions);
+    const activeKeys = new Set(activePersisted.map((session) => this.getSessionKey(session)));
+    return [
+      ...activePersisted,
+      ...existingPersisted.filter((session) => !activeKeys.has(this.getSessionKey(session))),
+    ];
+  }
+
   static setPersistedSessions(
     data: Record<string, any>,
     persistedSessions: PersistedSession[],
   ): void {
     data.persistedSessions = persistedSessions.map((session) => ({
       ...session,
+      durableSessionIdGenerated: undefined,
       commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
     }));
   }
@@ -157,14 +218,19 @@ export class SessionPersistence {
   static async saveToDisk(
     plugin: PluginDataStore,
     sessions: Map<string, PersistableTab[]>,
-  ): Promise<void> {
-    const persisted = this.buildPersistedSessions(sessions);
+    existingPersisted?: PersistedSession[],
+  ): Promise<PersistedSession[]> {
+    const persisted =
+      existingPersisted !== undefined
+        ? this.mergePersistedSessions(existingPersisted, sessions)
+        : this.mergePersistedSessions(await this.loadFromDisk(plugin), sessions);
     await mergeAndSavePluginData(plugin, async (data) => {
       this.setPersistedSessions(data, persisted);
     });
     if (persisted.length > 0) {
       console.log("[work-terminal] Saved", persisted.length, "resumable sessions to disk");
     }
+    return persisted;
   }
 
   /**

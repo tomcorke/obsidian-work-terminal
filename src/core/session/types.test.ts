@@ -55,6 +55,7 @@ describe("PersistedSession", () => {
         version: 2,
         taskPath: "path",
         claudeSessionId: sessionType === "shell" ? null : "id",
+        durableSessionId: sessionType === "shell" ? "durable-shell" : undefined,
         label: "label",
         sessionType,
         savedAt: new Date().toISOString(),

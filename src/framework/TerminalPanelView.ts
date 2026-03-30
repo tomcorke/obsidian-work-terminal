@@ -75,6 +75,7 @@ interface WorkTerminalDebugApi extends WorkTerminalDebugSnapshot {
 
 const DEBUG_API_OWNER = Symbol("work-terminal-debug-owner");
 const debugApiOwners = new Set<TerminalPanelView>();
+const liveTerminalViews = new Set<TerminalPanelView>();
 
 type OwnedWorkTerminalDebugApi = WorkTerminalDebugApi & {
   [DEBUG_API_OWNER]: TerminalPanelView;
@@ -103,6 +104,7 @@ export class TerminalPanelView {
 
   // Persisted sessions from disk
   private persistedSessions: PersistedSession[] = [];
+  private pendingPersistedSessions: PersistedSession[] = [];
 
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
@@ -149,6 +151,7 @@ export class TerminalPanelView {
     this.promptBuilder = promptBuilder;
     this.onClaudeStateChange = onClaudeStateChange;
     this.onSessionChange = onSessionChange;
+    liveTerminalViews.add(this);
     window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
 
     // Task title heading above tab bar
@@ -646,6 +649,7 @@ export class TerminalPanelView {
         sessionType: tab.sessionType,
         label: tab.label,
         claudeSessionId: tab.claudeSessionId,
+        durableSessionId: tab.durableSessionId ?? undefined,
         closedAt: Date.now(),
         itemId,
         recoveryMode: "resume",
@@ -664,6 +668,7 @@ export class TerminalPanelView {
       sessionType: tab.sessionType,
       label: tab.label,
       claudeSessionId: null,
+      durableSessionId: tab.durableSessionId ?? undefined,
       closedAt: Date.now(),
       itemId,
       recoveryMode: "relaunch",
@@ -680,6 +685,8 @@ export class TerminalPanelView {
       | "sessionType"
       | "label"
       | "claudeSessionId"
+      | "durableSessionId"
+      | "durableSessionIdGenerated"
       | "recoveryMode"
       | "cwd"
       | "command"
@@ -694,6 +701,15 @@ export class TerminalPanelView {
       return !!session.claudeSessionId && tab.claudeSessionId === session.claudeSessionId;
     }
 
+    if (session.durableSessionId && tab.durableSessionId) {
+      if (session.durableSessionId === tab.durableSessionId) {
+        return true;
+      }
+      if (!session.durableSessionIdGenerated) {
+        return false;
+      }
+    }
+
     const tabCommand = tab.launchCommandArgs?.[0] || tab.launchShell;
     const tabArgs = tab.launchCommandArgs || [];
     const sessionArgs = session.commandArgs || [];
@@ -704,6 +720,81 @@ export class TerminalPanelView {
       tabArgs.length === sessionArgs.length &&
       tabArgs.every((arg, index) => arg === sessionArgs[index])
     );
+  }
+
+  private adoptSynthesizedDurableSessionIds(sessions: PersistedSession[]): void {
+    const claimedTabIds = new Set<string>();
+    for (const session of sessions) {
+      if (
+        session.recoveryMode !== "relaunch" ||
+        !session.durableSessionIdGenerated ||
+        !session.durableSessionId
+      ) {
+        continue;
+      }
+
+      const matchingTab = this.tabManager.getTabs(session.taskPath).find(
+        (tab) =>
+          !claimedTabIds.has(tab.id) &&
+          this.matchesRecoverySession(tab, {
+            sessionType: session.sessionType,
+            label: session.label,
+            claudeSessionId: session.claudeSessionId,
+            durableSessionId: undefined,
+            durableSessionIdGenerated: undefined,
+            recoveryMode: session.recoveryMode,
+            cwd: session.cwd,
+            command: session.command,
+            commandArgs: session.commandArgs,
+          }),
+      );
+      if (matchingTab) {
+        claimedTabIds.add(matchingTab.id);
+        matchingTab.durableSessionId = session.durableSessionId;
+        session.durableSessionIdGenerated = undefined;
+      }
+    }
+  }
+
+  private isPersistedSessionActiveAcrossViews(session: PersistedSession): boolean {
+    return Array.from(liveTerminalViews).some((view) =>
+      view.tabManager
+        .getTabs(session.taskPath)
+        .some((tab) => view.matchesRecoverySession(tab, session)),
+    );
+  }
+
+  private applyPersistedSessionState(persistedSessions: PersistedSession[]): void {
+    this.persistedSessions = persistedSessions.map((session) => ({
+      ...session,
+      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+    }));
+    this.pendingPersistedSessions = this.persistedSessions.filter(
+      (session) => !this.isPersistedSessionActiveAcrossViews(session),
+    );
+    this.refreshDebugGlobal();
+  }
+
+  private syncPersistedSessionState(persistedSessions: PersistedSession[]): void {
+    for (const view of liveTerminalViews) {
+      if (!view.isDisposed) {
+        view.applyPersistedSessionState(persistedSessions);
+      }
+    }
+  }
+
+  private getLiveSessionsAcrossViews(): Map<string, TerminalTab[]> {
+    const sessions = new Map<string, TerminalTab[]>();
+    for (const view of liveTerminalViews) {
+      if (view.isDisposed) {
+        continue;
+      }
+      for (const [itemId, tabs] of view.tabManager.getSessions()) {
+        const existingTabs = sessions.get(itemId) || [];
+        sessions.set(itemId, [...existingTabs, ...tabs]);
+      }
+    }
+    return sessions;
   }
 
   private fireAndForget(taskName: string, task: () => Promise<void>): void {
@@ -749,16 +840,23 @@ export class TerminalPanelView {
   }
 
   private removePersistedSession(session: PersistedSession): void {
-    this.persistedSessions = this.persistedSessions.filter((candidate) => {
+    const matches = (candidate: PersistedSession): boolean => {
       if (candidate.recoveryMode !== session.recoveryMode) {
-        return true;
+        return false;
       }
 
       if (session.recoveryMode === "resume") {
-        return candidate.claudeSessionId !== session.claudeSessionId;
+        return candidate.claudeSessionId === session.claudeSessionId;
       }
 
-      return !(
+      if (session.durableSessionId && candidate.durableSessionId) {
+        return (
+          candidate.taskPath === session.taskPath &&
+          candidate.durableSessionId === session.durableSessionId
+        );
+      }
+
+      return (
         candidate.taskPath === session.taskPath &&
         candidate.sessionType === session.sessionType &&
         candidate.label === session.label &&
@@ -766,7 +864,13 @@ export class TerminalPanelView {
         candidate.command === session.command &&
         JSON.stringify(candidate.commandArgs || []) === JSON.stringify(session.commandArgs || [])
       );
-    });
+    };
+
+    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
+      (candidate) => !matches(candidate),
+    );
+    this.persistedSessions = this.persistedSessions.filter((candidate) => !matches(candidate));
+    this.syncPersistedSessionState(this.persistedSessions);
   }
 
   private trackRecoverySuccess(
@@ -828,6 +932,7 @@ export class TerminalPanelView {
             command: persisted.command,
             cwd: persisted.cwd,
             commandArgs: persisted.commandArgs,
+            durableSessionId: persisted.durableSessionId,
           })
         : persisted.claudeSessionId
           ? this.createResumedTab({
@@ -857,6 +962,7 @@ export class TerminalPanelView {
     command?: string;
     cwd?: string;
     commandArgs?: string[];
+    durableSessionId?: string;
   }): TerminalTab | null {
     if (!options.command || !options.cwd) {
       return null;
@@ -871,6 +977,7 @@ export class TerminalPanelView {
       undefined,
       options.commandArgs,
       null,
+      options.durableSessionId,
     );
   }
 
@@ -962,6 +1069,7 @@ export class TerminalPanelView {
         undefined,
         tab.launchCommandArgs,
         null,
+        tab.durableSessionId,
       );
     } else {
       replacement = await this.spawnClaudeSession({
@@ -1029,8 +1137,8 @@ export class TerminalPanelView {
   private async loadPersistedSessions(): Promise<void> {
     const persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
     if (this.isDisposed) return;
-    this.persistedSessions = persistedSessions;
-    this.refreshDebugGlobal();
+    this.adoptSynthesizedDurableSessionIds(persistedSessions);
+    this.syncPersistedSessionState(persistedSessions);
     await this.checkHookWarning();
   }
 
@@ -1045,13 +1153,15 @@ export class TerminalPanelView {
 
   async persistSessions(): Promise<void> {
     if (this.isDisposed) return;
-    const persistedSessions = SessionPersistence.buildPersistedSessions(this.tabManager.getSessions());
+    const persistedSessions = SessionPersistence.mergePersistedSessions(
+      this.pendingPersistedSessions,
+      this.getLiveSessionsAcrossViews(),
+    );
     await mergeAndSavePluginData(this.plugin, async (data) => {
       SessionPersistence.setPersistedSessions(data, persistedSessions);
     });
     if (this.isDisposed) return;
-    this.persistedSessions = persistedSessions;
-    this.refreshDebugGlobal();
+    this.syncPersistedSessionState(persistedSessions);
   }
 
   private async persistRecentlyClosedSessions(): Promise<void> {
@@ -1255,6 +1365,7 @@ export class TerminalPanelView {
             command: entry.command,
             cwd: entry.cwd,
             commandArgs: entry.commandArgs,
+            durableSessionId: entry.durableSessionId,
           })
         : entry.claudeSessionId
           ? this.createResumedTab({
@@ -1496,8 +1607,15 @@ export class TerminalPanelView {
 
   getPersistedSessions(itemId: string): PersistedSession[] {
     return this.persistedSessions.filter(
-      (session) => session.taskPath === itemId && !this.isPersistedSessionActive(session),
+      (session) => session.taskPath === itemId && !this.isPersistedSessionActiveAcrossViews(session),
     );
+  }
+
+  getPendingPersistedSessionsForPersist(): PersistedSession[] {
+    return this.pendingPersistedSessions.map((session) => ({
+      ...session,
+      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+    }));
   }
 
   /**
@@ -1514,7 +1632,13 @@ export class TerminalPanelView {
 
   rekeyItem(oldId: string, newId: string): void {
     this.tabManager.rekeyItem(oldId, newId);
-    this.refreshDebugGlobal();
+    this.persistedSessions = this.persistedSessions.map((session) =>
+      session.taskPath === oldId ? { ...session, taskPath: newId } : session,
+    );
+    this.pendingPersistedSessions = this.pendingPersistedSessions.map((session) =>
+      session.taskPath === oldId ? { ...session, taskPath: newId } : session,
+    );
+    this.syncPersistedSessionState(this.persistedSessions);
   }
 
   stashAll(): void {
@@ -1528,7 +1652,13 @@ export class TerminalPanelView {
   }
 
   disposeAll(): void {
+    const persistedSessions = this.persistedSessions.map((session) => ({
+      ...session,
+      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+    }));
     this.isDisposed = true;
+    liveTerminalViews.delete(this);
+    this.syncPersistedSessionState(persistedSessions);
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
     this.stopHookWarningPoller();

@@ -6,6 +6,9 @@ function makeEntry(overrides: Partial<ClosedSessionEntry> = {}): ClosedSessionEn
     sessionType: "claude",
     label: "Claude",
     claudeSessionId: `session-${Math.random().toString(36).slice(2)}`,
+    durableSessionId:
+      overrides.durableSessionId ??
+      (overrides.recoveryMode === "relaunch" ? "durable-session" : undefined),
     closedAt: Date.now(),
     itemId: "item-1",
     recoveryMode: "resume",
@@ -105,6 +108,7 @@ describe("RecentlyClosedStore", () => {
     const entry = makeEntry({
       sessionType: "shell",
       claudeSessionId: null,
+      durableSessionId: "durable-shell",
       label: "Shell",
       recoveryMode: "relaunch",
       command: "/bin/zsh",
@@ -126,6 +130,66 @@ describe("RecentlyClosedStore", () => {
         sessionType: "claude",
       }),
     ]);
+  });
+
+  it("keeps identical relaunch entries distinct when their durable identities differ", () => {
+    store.add(
+      makeEntry({
+        sessionType: "shell",
+        claudeSessionId: null,
+        durableSessionId: "durable-shell-1",
+        label: "Shell",
+        recoveryMode: "relaunch",
+        command: "/bin/zsh",
+      }),
+    );
+    store.add(
+      makeEntry({
+        sessionType: "shell",
+        claudeSessionId: null,
+        durableSessionId: "durable-shell-2",
+        label: "Shell",
+        recoveryMode: "relaunch",
+        command: "/bin/zsh",
+      }),
+    );
+
+    const entries = store.serialize();
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.durableSessionId)).toEqual([
+      "durable-shell-2",
+      "durable-shell-1",
+    ]);
+  });
+
+  it("assigns durable identities to legacy relaunch entries loaded from disk", () => {
+    const restored = RecentlyClosedStore.fromData([
+      {
+        sessionType: "shell",
+        label: "Shell",
+        claudeSessionId: null,
+        closedAt: Date.now(),
+        itemId: "item-1",
+        recoveryMode: "relaunch",
+        cwd: "/vault",
+        command: "/bin/zsh",
+      },
+      {
+        sessionType: "shell",
+        label: "Shell",
+        claudeSessionId: null,
+        closedAt: Date.now(),
+        itemId: "item-1",
+        recoveryMode: "relaunch",
+        cwd: "/vault",
+        command: "/bin/zsh",
+      },
+    ]);
+
+    expect(restored).toHaveLength(2);
+    expect(restored[0].durableSessionId).toEqual(expect.any(String));
+    expect(restored[1].durableSessionId).toEqual(expect.any(String));
+    expect(restored[0].durableSessionId).not.toBe(restored[1].durableSessionId);
   });
 
   it("filters entries with a custom activity predicate", () => {
