@@ -25,7 +25,7 @@ src/
     SettingsTab.ts         # Core + adapter namespaced settings
     DangerConfirm.ts       # Modal confirmation for destructive actions
     CustomSessionConfig.ts # Session-type defaults, labels, help text, resume semantics
-    CustomSessionModal.ts  # Spawn custom sessions or restore recent ones per item
+    CustomSessionModal.ts  # Spawn custom sessions or restore globally recent tabs onto their original item
 
   adapters/
     task-agent/   # Task-agent adapter (reference implementation)
@@ -45,17 +45,17 @@ src/
 
 ### Extension model
 
-The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, agent integration, session persistence, drag-drop, state detection, keyboard capture.
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, built-in agent session types, session persistence, drag-drop, state detection, and keyboard capture.
 
 To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`.
 
 ### Key design decisions
 
-- **Agent launchers stay in framework code** - launcher, state-detection, and session-rename plumbing live in framework/core code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **Agent launchers stay in framework code** - launcher, state-detection, and session-rename plumbing live in framework/core code. Adapters only provide a `WorkItemPromptBuilder` for contextual agent prompts.
 - **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
-- **Recovery stays in framework code** - hot-reload stash/restore, recent-session reopening, durable session persistence, and WebGL recovery are not adapter concerns.
+- **Recovery stays in framework code** - hot-reload stash/restore, recent-session reopening, durable Claude/Copilot session persistence, and WebGL recovery are not adapter concerns.
 
 ## Development workflow
 
@@ -75,9 +75,9 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 
 ## Runtime features
 
-- **Session types**: shell, Claude, Claude-with-context, Copilot, Copilot-with-context, Strands, and Strands-with-context. The custom session modal remembers per-item defaults.
-- **Recent-session restore**: the custom session modal can reopen up to 5 recently closed tabs per item flow, with a 30-minute recovery window.
-- **Durable recovery**: after a full close, resumable agent sessions restore from persisted metadata, while non-resumable sessions can relaunch when enough launch data is available.
+- **Session types**: shell, Claude, Claude-with-context, Copilot, Copilot-with-context, Strands, and Strands-with-context. The custom session modal remembers per-item defaults for new sessions.
+- **Recent-session restore**: the custom session modal shows up to 5 entries from a global recent-session list and always reopens the selected tab on its original item within a 30-minute recovery window.
+- **Durable recovery**: after a full close, only Claude/Copilot sessions with persisted metadata resume. Shell and Strands are not durably restored after restart, but can be relaunched from the recent-session flow while still inside that 30-minute window.
 - **Diagnostics**: command palette action "Copy Session Diagnostics" snapshots session/process state, renderer health, recovery status, and persisted metadata for issue reports.
 
 ## Development rules
@@ -114,5 +114,5 @@ Run `npm test` after changes to verify nothing is broken. Build with `npm run bu
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Shift+Enter, Option+Backspace, macOptionIsMeta.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
-- **Session persistence**: Three layers - window-global stash for hot-reload, recent closed-session tracking for short-term reopen flows, and disk persistence for full restart recovery (7-day retention for persisted metadata). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs; Strands sessions always relaunch fresh.
+- **Session persistence**: Three layers - window-global stash for hot-reload, recent closed-session tracking for short-term reopen flows, and disk persistence for full restart recovery of Claude/Copilot session metadata (7-day retention). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs; Strands sessions always relaunch fresh, and shell sessions are never durably persisted.
 - **WebGL recovery**: TerminalTab owns addon/context-loss cleanup so fresh tabs and restored tabs can recover from disposed or blank renderers without crashing on close.

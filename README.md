@@ -6,8 +6,8 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 
 - **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
 - **Tabbed terminals** per work item - Shell, Claude, Claude (ctx), Copilot, Copilot (ctx), Strands, Strands (ctx), and per-item custom sessions
-- **Agent integration** - Claude/Copilot/Strands command resolution, Claude and Copilot state detection, session rename detection, and headless enrichment hooks
-- **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen recently closed tabs, and durable recovery can resume or relaunch supported sessions after a full close
+- **Agent integration** - Claude/Copilot/Strands command resolution, Claude and Copilot state detection, Claude session rename detection, and headless enrichment hooks
+- **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen a global list of recently closed tabs onto their original work item, and durable restart recovery resumes Claude/Copilot sessions from persisted metadata. Shell and Strands can be relaunched from the recent-session flow, but are not durably restored after a full close
 - **Built-in diagnostics** - the command palette action "Copy Session Diagnostics" copies a JSON snapshot of session, renderer, recovery, and persistence state without reloading the plugin
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
@@ -116,7 +116,8 @@ export class MyAdapter extends BaseAdapter {
   }
 
   createPromptBuilder(): WorkItemPromptBuilder {
-    // Build context prompts for Claude sessions
+    // Build work-item prompts for contextual agent sessions such as
+    // Claude (ctx), Copilot (ctx), and Strands (ctx)
     // See task-agent/TaskPromptBuilder.ts for a full example
   }
 }
@@ -137,9 +138,9 @@ const adapter = new MyAdapter();
 
 Your adapter inherits all of this without writing any terminal code:
 
-- Shell + Claude + Claude-with-context terminal tabs per item
-- Session persistence (hot-reload + disk resume with 7-day retention)
-- Claude state detection (active/waiting/idle) with card indicators
+- Shell plus built-in Claude, Copilot, and Strands terminal tabs per item, including contextual `(ctx)` variants powered by your prompt builder
+- Hot-reload stash/restore, recent-session reopen flows, and 7-day persisted metadata for Claude/Copilot restart resume
+- Claude and Copilot state detection (active/waiting/idle) with card indicators
 - Claude session rename detection with adapter hook
 - Keyboard capture (Option+Arrow, Shift+Enter, macOptionIsMeta)
 - xterm.js rendering with PTY wrapper, resize protocol, scroll-to-bottom
