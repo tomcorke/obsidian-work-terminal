@@ -29,10 +29,6 @@ export class CustomSessionModal extends Modal {
   ) {
     super(app);
     this.draft = { ...initial };
-    // Default to restore tab if there are closed sessions to show
-    if (this.closedSessions.length > 0) {
-      this.activeTab = "restore";
-    }
   }
 
   onOpen(): void {
