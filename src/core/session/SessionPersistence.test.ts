@@ -26,6 +26,7 @@ function makePersisted(
     command: string;
     commandArgs: string[] | undefined;
     durableSessionId: string;
+    durableSessionIdGenerated: boolean;
   }> = {},
 ) {
   return {
@@ -40,6 +41,7 @@ function makePersisted(
     cwd: overrides.cwd ?? "/vault",
     command: overrides.command ?? "claude",
     commandArgs: overrides.commandArgs ?? ["claude", "--resume", "session-1"],
+    durableSessionIdGenerated: overrides.durableSessionIdGenerated,
   };
 }
 
@@ -306,6 +308,38 @@ describe("SessionPersistence", () => {
       expect(result[0].durableSessionId).toEqual(expect.any(String));
       expect(result[1].durableSessionId).toEqual(expect.any(String));
       expect(result[0].durableSessionId).not.toBe(result[1].durableSessionId);
+    });
+
+    it("preserves synthesized relaunch provenance across persist and reload", async () => {
+      const plugin = createMockPlugin({
+        persistedSessions: [
+          {
+            version: 2,
+            taskPath: "tasks/my-task.md",
+            claudeSessionId: null,
+            label: "Shell",
+            sessionType: "shell",
+            savedAt: new Date().toISOString(),
+            recoveryMode: "relaunch",
+            cwd: "/vault",
+            command: "/bin/zsh",
+          },
+        ],
+      });
+
+      const [loaded] = await SessionPersistence.loadFromDisk(plugin);
+      expect(loaded).toMatchObject({
+        durableSessionId: expect.any(String),
+        durableSessionIdGenerated: true,
+      });
+
+      SessionPersistence.setPersistedSessions(plugin._getData(), [loaded]);
+
+      const [reloaded] = await SessionPersistence.loadFromDisk(plugin);
+      expect(reloaded).toMatchObject({
+        durableSessionId: loaded.durableSessionId,
+        durableSessionIdGenerated: true,
+      });
     });
 
     it("drops entries with invalid disk session types", async () => {

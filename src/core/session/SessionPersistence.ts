@@ -100,6 +100,7 @@ export class SessionPersistence {
           : null;
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
+    const durableSessionIdGenerated = candidate.durableSessionIdGenerated === true;
     const recoveryMode =
       candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
         ? candidate.recoveryMode
@@ -133,7 +134,10 @@ export class SessionPersistence {
       claudeSessionId,
       durableSessionId:
         recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
-      durableSessionIdGenerated: generatedDurableSessionId ? true : undefined,
+      durableSessionIdGenerated:
+        recoveryMode === "relaunch" && (durableSessionIdGenerated || !!generatedDurableSessionId)
+          ? true
+          : undefined,
       label,
       sessionType,
       savedAt,
@@ -211,7 +215,7 @@ export class SessionPersistence {
   ): void {
     data.persistedSessions = persistedSessions.map((session) => ({
       ...session,
-      durableSessionIdGenerated: undefined,
+      durableSessionIdGenerated: session.durableSessionIdGenerated ? true : undefined,
       commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
     }));
   }

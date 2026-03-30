@@ -770,10 +770,14 @@ export class TerminalPanelView {
       ...session,
       commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
     }));
+    this.recalculatePendingPersistedSessions();
+    this.refreshDebugGlobal();
+  }
+
+  private recalculatePendingPersistedSessions(): void {
     this.pendingPersistedSessions = this.persistedSessions.filter(
       (session) => !this.isPersistedSessionActiveAcrossViews(session),
     );
-    this.refreshDebugGlobal();
   }
 
   private syncPersistedSessionState(persistedSessions: PersistedSession[]): void {
@@ -1186,6 +1190,7 @@ export class TerminalPanelView {
 
   async persistSessions(): Promise<void> {
     if (this.isDisposed) return;
+    this.recalculatePendingPersistedSessions();
     const persistedSessions = SessionPersistence.mergePersistedSessions(
       this.pendingPersistedSessions,
       this.getLiveSessionsAcrossViews(),

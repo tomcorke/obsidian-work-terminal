@@ -149,6 +149,7 @@ export class RecentlyClosedStore {
       typeof candidate.claudeSessionId === "string" ? candidate.claudeSessionId : null;
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
+    const durableSessionIdGenerated = candidate.durableSessionIdGenerated === true;
     const closedAt =
       typeof candidate.closedAt === "number"
         ? candidate.closedAt
@@ -189,7 +190,10 @@ export class RecentlyClosedStore {
       claudeSessionId,
       durableSessionId:
         recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
-      durableSessionIdGenerated: generatedDurableSessionId ? true : undefined,
+      durableSessionIdGenerated:
+        recoveryMode === "relaunch" && (durableSessionIdGenerated || !!generatedDurableSessionId)
+          ? true
+          : undefined,
       closedAt,
       recoveryMode,
       cwd,
@@ -231,7 +235,7 @@ export class RecentlyClosedStore {
   private static cloneEntry(entry: ClosedSessionEntry): ClosedSessionEntry {
     return {
       ...entry,
-      durableSessionIdGenerated: undefined,
+      durableSessionIdGenerated: entry.durableSessionIdGenerated ? true : undefined,
       commandArgs: entry.commandArgs ? [...entry.commandArgs] : undefined,
     };
   }

@@ -1028,6 +1028,106 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("keeps failed legacy relaunch recoveries hidden after another view reopens the same session", async () => {
+    const loadData = vi.fn(async () => ({
+      settings: {},
+      recentlyClosedSessions: [
+        {
+          sessionType: "shell",
+          label: "Shell",
+          claudeSessionId: null,
+          closedAt: Date.now(),
+          itemId: "Tasks/task-1.md",
+          recoveryMode: "relaunch",
+          cwd: "/vault",
+          command: "/bin/zsh",
+        },
+      ],
+    }));
+
+    const failedRestoreTab: { onProcessExit?: (code?: number, signal?: number) => void } = {};
+    const { view: firstView } = createView({}, { loadData });
+    const { view: secondView } = createView({}, { loadData });
+    await flushAsync();
+
+    const [legacyEntry] = (firstView as any).recentlyClosedStore.serialize();
+    expect(legacyEntry).toMatchObject({
+      durableSessionId: expect.any(String),
+      durableSessionIdGenerated: true,
+    });
+
+    (firstView as any).tabManager.createTabForItem = vi.fn(() => failedRestoreTab);
+    await (firstView as any).restoreClosedSession(legacyEntry);
+    failedRestoreTab.onProcessExit?.(1, 0);
+    await flushAsync();
+
+    const [readdedEntry] = (secondView as any).recentlyClosedStore.serialize();
+    expect(readdedEntry).toMatchObject({
+      durableSessionId: legacyEntry.durableSessionId,
+      durableSessionIdGenerated: true,
+    });
+
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.tabsByItem = new Map([
+      [
+        "Tasks/task-1.md",
+        [
+          {
+            id: "live-shell",
+            sessionType: "shell",
+            label: "Shell",
+            durableSessionId: "durable-manual-reopen",
+            launchShell: "/bin/zsh",
+            launchCwd: "/vault",
+            launchCommandArgs: undefined,
+          },
+        ],
+      ],
+    ]);
+
+    const hiddenEntries = (secondView as any).recentlyClosedStore.getEntries(
+      new Set(),
+      5,
+      (entry: any) => (secondView as any).isClosedSessionActiveAcrossViews(entry),
+    );
+    expect(hiddenEntries).toEqual([]);
+  });
+
+  it("drops stale migrated relaunch aliases before persisting a manual reopen", async () => {
+    const saveData = vi.fn(async () => {});
+    mockState.persistedSessions = [
+      makePersistedSession("shell", {
+        label: "Shell",
+        durableSessionId: "durable-from-migration",
+        durableSessionIdGenerated: true,
+      }),
+    ];
+
+    const { view } = createView({}, { saveData });
+    await flushAsync();
+
+    const liveShell = {
+      sessionType: "shell",
+      label: "Shell",
+      durableSessionId: "durable-manual-reopen",
+      launchShell: "/bin/zsh",
+      launchCwd: "/vault",
+      launchCommandArgs: undefined,
+    };
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.activeSessions = new Map([["Tasks/task-1.md", [liveShell]]]);
+    mockState.tabsByItem = new Map([["Tasks/task-1.md", [liveShell]]]);
+
+    await view.persistSessions();
+
+    const persistedSessions = saveData.mock.calls.at(-1)?.[0].persistedSessions;
+    expect(persistedSessions).toHaveLength(1);
+    expect(persistedSessions[0]).toMatchObject({
+      durableSessionId: "durable-manual-reopen",
+    });
+    expect(persistedSessions[0]).not.toHaveProperty("durableSessionIdGenerated");
+  });
+
   it("rekeys pending durable recovery entries when an item path changes", async () => {
     mockState.persistedSessions = [
       makePersistedSession("shell", {

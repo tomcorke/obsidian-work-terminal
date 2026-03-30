@@ -113,6 +113,7 @@ describe("RecentlyClosedStore", () => {
       sessionType: "shell",
       claudeSessionId: null,
       durableSessionId: "durable-shell",
+      durableSessionIdGenerated: true,
       label: "Shell",
       recoveryMode: "relaunch",
       command: "/bin/zsh",
