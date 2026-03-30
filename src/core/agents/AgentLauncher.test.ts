@@ -8,7 +8,7 @@ import {
 } from "./AgentLauncher";
 
 describe("AgentLauncher", () => {
-  it("parses backslash-newline continuations without keeping literal slash args", () => {
+  it("parses backslash-newline continuations without keeping continuation tokens", () => {
     expect(
       parseExtraArgs(`--dangerously-skip-permissions \\
         --plugin-dir /path/a \\
