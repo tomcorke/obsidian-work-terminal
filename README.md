@@ -2,6 +2,27 @@
 
 Obsidian plugin that turns your vault into a work item board with per-item tabbed terminals. Built for extensibility - swap in your own work item system while keeping the terminal infrastructure.
 
+## Installation
+
+Run these commands from the directory where you want to keep the plugin source:
+
+```bash
+git clone https://github.com/tomcorke/obsidian-work-terminal.git
+cd obsidian-work-terminal
+npm install
+npm run build
+```
+
+Then symlink the built plugin into your vault. Replace `"/path/to/your/vault"` with your vault path:
+
+```bash
+VAULT="/path/to/your/vault"
+mkdir -p "$VAULT/.obsidian/plugins"
+ln -s "$(pwd)" "$VAULT/.obsidian/plugins/work-terminal"
+```
+
+If `work-terminal` already exists in `.obsidian/plugins`, remove that directory or symlink first. Then enable **Work Terminal** in Obsidian's **Community plugins** settings.
+
 ## What you get
 
 - **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
@@ -13,8 +34,6 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 ## Development
 
 ```bash
-npm install
-npm run build        # production build
 npm run dev          # watch mode with CDP hot-reload
 npx vitest run       # 104 tests
 npm run obsidian:test:init
@@ -22,8 +41,6 @@ npm run obsidian:test:open
 ```
 
 Requires Obsidian with remote debugging: `open -a Obsidian --args --remote-debugging-port=9222`
-
-The vault's `.obsidian/plugins/work-terminal` should be a symlink to this repo directory.
 
 ## UI automation first slice
 
