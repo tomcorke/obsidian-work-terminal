@@ -48,10 +48,7 @@ import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/int
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildAgentContextPrompt, getAgentContextTemplate } from "./AgentContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
-import {
-  RecentlyClosedStore,
-  type ClosedSessionEntry,
-} from "../core/session/RecentlyClosedStore";
+import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import {
   getDefaultSessionLabel,
@@ -215,7 +212,21 @@ export class TerminalPanelView {
     panelEl.insertBefore(this.tabBarEl, terminalWrapperEl);
 
     // Initialize TabManager
-    this.tabManager = new TabManager(terminalWrapperEl);
+    const path = electronRequire("path") as typeof import("path");
+    const vaultAdapter = this.plugin.app.vault.adapter as any;
+    let vaultBasePath: string = vaultAdapter.basePath || vaultAdapter.getBasePath?.() || "";
+    const home = process.env.HOME || "";
+    if (vaultBasePath.startsWith("~/") || vaultBasePath === "~") {
+      vaultBasePath = expandTilde(vaultBasePath);
+    } else if (!path.isAbsolute(vaultBasePath) && home) {
+      vaultBasePath = path.join(home, vaultBasePath);
+    }
+    const manifestDir = this.plugin.manifest.dir || `.obsidian/plugins/${this.plugin.manifest.id}`;
+    const pluginDir = path.isAbsolute(manifestDir)
+      ? manifestDir
+      : path.join(vaultBasePath, manifestDir);
+
+    this.tabManager = new TabManager(terminalWrapperEl, pluginDir);
     this.tabManager.onSessionChange = () => {
       this.refreshDebugGlobal();
       this.renderTabBar();
@@ -828,9 +839,9 @@ export class TerminalPanelView {
   ): TerminalTab | null {
     const views = Array.from(liveTerminalViews).filter((view) => !view.isDisposed);
     for (const view of views) {
-      const matchingTab = view.tabManager.getTabs(session.taskPath).find(
-        (tab) => !claimedTabs.has(tab) && view.matchesRecoverySession(tab, candidate),
-      );
+      const matchingTab = view.tabManager
+        .getTabs(session.taskPath)
+        .find((tab) => !claimedTabs.has(tab) && view.matchesRecoverySession(tab, candidate));
       if (matchingTab) {
         return matchingTab;
       }
@@ -845,12 +856,14 @@ export class TerminalPanelView {
     if (session.recoveryMode === "relaunch" && session.durableSessionId) {
       const views = Array.from(liveTerminalViews).filter((view) => !view.isDisposed);
       for (const view of views) {
-        const matchingTab = view.tabManager.getTabs(session.taskPath).find(
-          (tab) =>
-            !claimedTabs.has(tab) &&
-            tab.sessionType === session.sessionType &&
-            tab.durableSessionId === session.durableSessionId,
-        );
+        const matchingTab = view.tabManager
+          .getTabs(session.taskPath)
+          .find(
+            (tab) =>
+              !claimedTabs.has(tab) &&
+              tab.sessionType === session.sessionType &&
+              tab.durableSessionId === session.durableSessionId,
+          );
         if (matchingTab) {
           return matchingTab;
         }
@@ -1193,8 +1206,7 @@ export class TerminalPanelView {
       options.extraArgs ||
       (isCopilot
         ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
-        : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "")
-      );
+        : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", ""));
     const parsedExtraArgs = Array.isArray(extraArgs) ? extraArgs : parseExtraArgs(extraArgs);
 
     if (parsedExtraArgs.length > 0) {
@@ -1501,7 +1513,9 @@ export class TerminalPanelView {
   }
 
   private getClosedSessionId(entry: ClosedSessionEntry): string | null {
-    return entry.agentSessionId || (entry as { claudeSessionId?: string | null }).claudeSessionId || null;
+    return (
+      entry.agentSessionId || (entry as { claudeSessionId?: string | null }).claudeSessionId || null
+    );
   }
 
   private buildSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
@@ -1517,16 +1531,15 @@ export class TerminalPanelView {
         );
       const missingPersistedMetadata = tab.isResumableAgent && !hasPersistedSession;
       const wouldBeLostOnFullClose = tab.process.status === "alive" && !tab.isResumableAgent;
-      const lifecycle =
-        tab.isDisposed
-          ? "disposed"
-          : tab.process.status === "alive"
-            ? "live"
-            : tab.isResumableAgent && hasPersistedSession
-              ? "resumable"
-              : missingPersistedMetadata
-                ? "resume-metadata-missing"
-                : "lost";
+      const lifecycle = tab.isDisposed
+        ? "disposed"
+        : tab.process.status === "alive"
+          ? "live"
+          : tab.isResumableAgent && hasPersistedSession
+            ? "resumable"
+            : missingPersistedMetadata
+              ? "resume-metadata-missing"
+              : "lost";
       return {
         ...tab,
         recovery: {
@@ -1551,11 +1564,13 @@ export class TerminalPanelView {
       sessionCounts: this.tabManager.getSessionCounts(itemId),
       tabs: activeTabs.filter((tab) => tab.itemId === itemId),
     }));
-    const recentlyClosedSessions = this.recentlyClosedStore.getEntries(activeSessionIds, 20).map((entry) => ({
-      ...entry,
-      recoveryAvailable:
-        isResumableSessionType(entry.sessionType) && !!this.getClosedSessionId(entry),
-    }));
+    const recentlyClosedSessions = this.recentlyClosedStore
+      .getEntries(activeSessionIds, 20)
+      .map((entry) => ({
+        ...entry,
+        recoveryAvailable:
+          isResumableSessionType(entry.sessionType) && !!this.getClosedSessionId(entry),
+      }));
     const summary: DiagnosticsSummary = {
       activeItemId: this.tabManager.getActiveItemId(),
       activeTabIndex: this.tabManager.getActiveTabIndex(),
@@ -1569,15 +1584,12 @@ export class TerminalPanelView {
         staleDisposedWebglOwnership: activeTabs.filter(
           (tab) => tab.derived.staleDisposedWebglOwnership,
         ).length,
-        missingPersistedMetadata: activeTabs.filter(
-          (tab) => tab.recovery.missingPersistedMetadata,
-        ).length,
-        liveNonResumableSessions: activeTabs.filter(
-          (tab) => tab.recovery.wouldBeLostOnFullClose,
-        ).length,
-        disposedTabStillSelected: activeTabs.filter(
-          (tab) => tab.derived.disposedTabStillSelected,
-        ).length,
+        missingPersistedMetadata: activeTabs.filter((tab) => tab.recovery.missingPersistedMetadata)
+          .length,
+        liveNonResumableSessions: activeTabs.filter((tab) => tab.recovery.wouldBeLostOnFullClose)
+          .length,
+        disposedTabStillSelected: activeTabs.filter((tab) => tab.derived.disposedTabStillSelected)
+          .length,
       },
     };
 
@@ -1678,11 +1690,10 @@ export class TerminalPanelView {
     ).open();
   }
 
-  private async restoreClosedSession(
-    entry: ClosedSessionEntry,
-  ): Promise<void> {
+  private async restoreClosedSession(entry: ClosedSessionEntry): Promise<void> {
     const claimedFromStore = this.recentlyClosedStore.take(entry);
-    const entryRecoveryMode = (entry as { recoveryMode?: ClosedSessionEntry["recoveryMode"] }).recoveryMode;
+    const entryRecoveryMode = (entry as { recoveryMode?: ClosedSessionEntry["recoveryMode"] })
+      .recoveryMode;
     const fallbackEntry =
       claimedFromStore ||
       entryRecoveryMode === "resume" ||
@@ -1690,8 +1701,7 @@ export class TerminalPanelView {
       !this.getClosedSessionId(entry)
         ? undefined
         : RecentlyClosedStore.fromData([entry])[0];
-    const claimedEntry =
-      claimedFromStore ?? fallbackEntry;
+    const claimedEntry = claimedFromStore ?? fallbackEntry;
     if (!claimedEntry) {
       return;
     }

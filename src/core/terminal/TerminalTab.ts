@@ -50,6 +50,27 @@ function shouldPreservePrintableOptionCombo(event: KeyboardEvent): boolean {
   return /^Digit\d$/.test(event.code);
 }
 
+export function resolvePtyWrapperPath(pluginDir?: string): string {
+  const path = electronRequire("path") as typeof import("path");
+  const fs = electronRequire("fs") as typeof import("fs");
+  const candidates = [
+    ...(pluginDir ? [path.join(pluginDir, "pty-wrapper.py")] : []),
+    path.join(__dirname, "pty-wrapper.py"),
+  ];
+
+  return (
+    candidates.find((candidate) => {
+      try {
+        return fs.existsSync(candidate);
+      } catch {
+        return false;
+      }
+    }) ||
+    candidates[0] ||
+    "pty-wrapper.py"
+  );
+}
+
 export class TerminalTab {
   id: string;
   label: string;
@@ -118,6 +139,7 @@ export class TerminalTab {
     private commandArgs?: string[],
     agentSessionId?: string | null,
     durableSessionId?: string | null,
+    private pluginDir?: string,
   ) {
     this.agentSessionId = agentSessionId || null;
     this.durableSessionId =
@@ -576,23 +598,7 @@ export class TerminalTab {
 
   private spawnPty(cols: number, rows: number, command?: string[]): ChildProcess {
     const cp = electronRequire("child_process") as typeof import("child_process");
-    const path = electronRequire("path") as typeof import("path");
-    const fs = electronRequire("fs") as typeof import("fs");
-    const home = process.env.HOME || "";
-
-    // Find pty-wrapper.py
-    const candidates = [
-      path.join(home, "working/obsidian-work-terminal/pty-wrapper.py"),
-      path.join(__dirname, "pty-wrapper.py"),
-    ];
-    const wrapperPath =
-      candidates.find((p: string) => {
-        try {
-          return fs.existsSync(p);
-        } catch {
-          return false;
-        }
-      }) || candidates[0];
+    const wrapperPath = resolvePtyWrapperPath(this.pluginDir);
 
     const cmd = command || [this.shell, "-i"];
     const args = [wrapperPath, String(cols), String(rows), "--", ...cmd];

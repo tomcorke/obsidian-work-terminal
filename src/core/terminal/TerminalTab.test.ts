@@ -38,6 +38,12 @@ const mocks = vi.hoisted(() => {
     attachBubbleCapture: vi.fn(),
     attachCapturePhase: vi.fn(() => vi.fn()),
     electronShell: { openExternal: vi.fn() },
+    fsModule: {
+      existsSync: vi.fn(() => false),
+    },
+    pathModule: {
+      join: (...parts: string[]) => parts.join("/").replace(/\/{2,}/g, "/"),
+    },
     MockWebglAddon,
   };
 });
@@ -61,6 +67,12 @@ vi.mock("../utils", () => ({
   electronRequire: (moduleName: string) => {
     if (moduleName === "electron") {
       return { shell: mocks.electronShell };
+    }
+    if (moduleName === "fs") {
+      return mocks.fsModule;
+    }
+    if (moduleName === "path") {
+      return mocks.pathModule;
     }
     return {};
   },
@@ -99,7 +111,7 @@ vi.mock("@xterm/addon-unicode11", () => ({
   Unicode11Addon: class {},
 }));
 
-import { TerminalTab } from "./TerminalTab";
+import { resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
 
 class FakeElement {
   appendChild = vi.fn();
@@ -644,6 +656,35 @@ describe("TerminalTab hot-reload addon handling", () => {
     });
     expect(querySelectorAll).toHaveBeenCalledTimes(1);
     expect(hasBlankRenderSurface).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolvePtyWrapperPath", () => {
+  beforeEach(() => {
+    mocks.fsModule.existsSync.mockReset();
+    mocks.fsModule.existsSync.mockReturnValue(false);
+  });
+
+  it("prefers the runtime plugin install directory when the wrapper exists there", () => {
+    const pluginDir = "/vault/.obsidian/plugins/work-terminal";
+    const expected = `${pluginDir}/pty-wrapper.py`;
+    mocks.fsModule.existsSync.mockImplementation((candidate: string) => candidate === expected);
+
+    expect(resolvePtyWrapperPath(pluginDir)).toBe(expected);
+    expect(mocks.fsModule.existsSync).toHaveBeenCalledWith(expected);
+  });
+
+  it("falls back to the bundled dirname path when the plugin directory copy is missing", () => {
+    const bundledPath = mocks.pathModule.join(__dirname, "pty-wrapper.py");
+    mocks.fsModule.existsSync.mockImplementation((candidate: string) => candidate === bundledPath);
+
+    expect(resolvePtyWrapperPath("/vault/.obsidian/plugins/work-terminal")).toBe(bundledPath);
+  });
+
+  it("returns the plugin directory candidate when no wrapper candidate exists", () => {
+    const pluginDir = "/vault/.obsidian/plugins/work-terminal";
+
+    expect(resolvePtyWrapperPath(pluginDir)).toBe(`${pluginDir}/pty-wrapper.py`);
   });
 });
 

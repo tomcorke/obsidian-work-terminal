@@ -5,10 +5,73 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionType } from "../session/types";
 
+const terminalTabMock = vi.hoisted(() => {
+  class MockTerminalTab {
+    static constructorArgs: any[][] = [];
+
+    id = "mock-tab";
+    label = "Shell";
+    agentState: AgentState = "inactive";
+    isResumableAgent = false;
+    sessionType: SessionType = "shell";
+    agentSessionId: string | null = null;
+    taskPath = "item-1";
+    isDisposed = false;
+    onStateChange?: (state: AgentState) => void;
+    onLabelChange?: () => void;
+    onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
+    dispose = vi.fn();
+    show = vi.fn();
+    hide = vi.fn();
+    clearWaiting = vi.fn();
+    getDiagnostics = vi.fn(() => ({
+      tabId: this.id,
+      label: this.label,
+      sessionId: this.agentSessionId,
+      sessionType: this.sessionType,
+      claudeState: this.agentState,
+      isResumableAgent: this.isResumableAgent,
+      isVisible: true,
+      isDisposed: this.isDisposed,
+      process: {
+        pid: null,
+        status: "alive",
+        killed: false,
+        exitCode: null,
+        signalCode: null,
+        spawnTime: null,
+        uptimeMs: null,
+      },
+      renderer: {
+        canvasCount: 1,
+        hasRenderableContent: true,
+        hasBlankRenderSurface: false,
+        trackedWebglAddonPresent: false,
+        trackedWebglAddonDisposed: false,
+        staleDisposedWebglOwnership: false,
+      },
+      buffer: {
+        screenLineCount: 0,
+        screenTail: [],
+      },
+      derived: {
+        blankButLiveRenderer: false,
+        staleDisposedWebglOwnership: false,
+      },
+    }));
+
+    constructor(...args: any[]) {
+      MockTerminalTab.constructorArgs.push(args);
+    }
+  }
+
+  return { MockTerminalTab };
+});
+
 // Mock TerminalTab before importing TabManager to prevent xterm.js loading
 // in a Node.js environment where `self` is not defined.
 vi.mock("./TerminalTab", () => ({
-  TerminalTab: class MockTerminalTab {},
+  TerminalTab: terminalTabMock.MockTerminalTab,
 }));
 
 // Prevent SessionStore from reading a browser `window` global.
@@ -211,6 +274,20 @@ describe("TabManager - closeTab", () => {
     mgr.closeTab(0);
 
     expect(sessionChangeOrder).toEqual(["session", "state"]);
+  });
+});
+
+describe("TabManager - createTab", () => {
+  it("forwards pluginDir to new TerminalTab instances", () => {
+    terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
+    const pluginDir = "/vault/.obsidian/plugins/work-terminal";
+    const mgr = new TabManager(null as any, pluginDir);
+
+    mgr.setActiveItem("item-1");
+    mgr.createTab("/bin/zsh", "~", "Shell", "shell");
+
+    expect(terminalTabMock.MockTerminalTab.constructorArgs).toHaveLength(1);
+    expect(terminalTabMock.MockTerminalTab.constructorArgs[0][10]).toBe(pluginDir);
   });
 });
 

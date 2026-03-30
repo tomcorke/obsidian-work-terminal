@@ -42,6 +42,10 @@ npm run obsidian:test:open
 
 Requires Obsidian with remote debugging: `open -a Obsidian --args --remote-debugging-port=9222`
 
+The vault's `.obsidian/plugins/work-terminal` should be a symlink to this repo directory.
+
+When packaging or distributing the plugin, keep `pty-wrapper.py` in the plugin directory alongside `main.js`, `manifest.json`, and `styles.css`.
+
 ## UI automation first slice
 
 The repo now includes a repo-local automation path for isolated manual or agent-driven checks:
