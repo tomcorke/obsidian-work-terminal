@@ -59,3 +59,15 @@ export function slugify(text: string): string {
   }
   return slug;
 }
+
+/**
+ * Convert Obsidian internal links to plain display text for UI rendering.
+ * [[Doc]] -> Doc
+ * [[Doc|Alias]] -> Alias
+ */
+export function normalizeObsidianDisplayText(text: string): string {
+  return text.replace(/\[\[([^[\]]+)\]\]/g, (_match, linkBody: string) => {
+    const [target, alias] = linkBody.split("|", 2);
+    return alias?.trim() || target.trim();
+  });
+}

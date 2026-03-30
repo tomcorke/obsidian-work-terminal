@@ -174,4 +174,53 @@ describe("TaskCard", () => {
       expect(el.style.getPropertyValue("--wt-task-color")).toBe("");
     });
   });
+
+  describe("goal badge rendering", () => {
+    it("strips Obsidian link brackets from goal badges", () => {
+      const item = makeItem({
+        metadata: {
+          goal: ["[[Ship Feature]]"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-goal") as HTMLElement;
+
+      expect(badge.textContent).toBe("Ship Feature");
+      expect(badge.title).toBe("Ship Feature");
+    });
+
+    it("uses Obsidian link alias text when present", () => {
+      const item = makeItem({
+        metadata: {
+          goal: ["[[Ship Feature|Readable Goal]]"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-goal") as HTMLElement;
+
+      expect(badge.textContent).toBe("Readable Goal");
+      expect(badge.title).toBe("Readable Goal");
+    });
+
+    it("still replaces hyphens after normalizing the goal text", () => {
+      const item = makeItem({
+        metadata: {
+          goal: ["[[ship-feature]]"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-goal") as HTMLElement;
+
+      expect(badge.textContent).toBe("ship feature");
+    });
+  });
 });

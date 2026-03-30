@@ -1,6 +1,7 @@
 import { Notice, type MenuItem } from "obsidian";
 import type { WorkItem, CardRenderer, CardActionContext } from "../../core/interfaces";
-import { KANBAN_COLUMNS, COLUMN_LABELS, SOURCE_LABELS, type KanbanColumn } from "./types";
+import { normalizeObsidianDisplayText } from "../../core/utils";
+import { KANBAN_COLUMNS, COLUMN_LABELS, SOURCE_LABELS } from "./types";
 
 export class TaskCard implements CardRenderer {
   render(item: WorkItem, ctx: CardActionContext): HTMLElement {
@@ -64,9 +65,10 @@ export class TaskCard implements CardRenderer {
 
     // Goal tags (max 2)
     for (const g of goal.slice(0, 2)) {
+      const displayGoal = normalizeObsidianDisplayText(g);
       const goalEl = metaRow.createSpan({ cls: "wt-card-goal" });
-      goalEl.textContent = g.replace(/-/g, " ");
-      goalEl.title = g;
+      goalEl.textContent = displayGoal.replace(/-/g, " ");
+      goalEl.title = displayGoal;
     }
 
     // Blocker indicator
@@ -76,7 +78,7 @@ export class TaskCard implements CardRenderer {
       blockerEl.style.background = "#e5484d";
       blockerEl.style.color = "white";
       if (priority["blocker-context"]) {
-        blockerEl.title = priority["blocker-context"];
+        blockerEl.title = normalizeObsidianDisplayText(priority["blocker-context"]);
       }
     }
 
@@ -104,7 +106,6 @@ export class TaskCard implements CardRenderer {
 
   getContextMenuItems(item: WorkItem, ctx: CardActionContext): MenuItem[] {
     const items: MenuItem[] = [];
-    const meta = (item.metadata || {}) as Record<string, any>;
 
     // Move to top
     (items as any[]).push({
