@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { WorkItem, WorkItemParser } from "../../core/interfaces";
+import { extractYamlFrontmatterString } from "../../core/frontmatter";
 import {
   type TaskFile,
   type TaskSource,
@@ -15,6 +16,8 @@ const JIRA_KEY_RE = /\b([A-Z][A-Z0-9]+-\d+)\b/i;
 export class TaskParser implements WorkItemParser {
   basePath: string;
   private static loggedFallbackPaths = new Set<string>();
+  private transientIdsByPath = new Map<string, string>();
+  private backfillPromisesByPath = new Map<string, Promise<WorkItem | null>>();
 
   constructor(
     private app: App,
@@ -35,9 +38,14 @@ export class TaskParser implements WorkItemParser {
   parseTaskFile(file: TFile): TaskFile | null {
     const cache = this.app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter;
+    const transientId = this.transientIdsByPath.get(file.path);
     const fallbackState = this.getStateFromPath(file.path);
     if (!fm) {
-      return this.createFallbackTaskFile(file, fallbackState);
+      return this.createFallbackTaskFile(file, fallbackState, transientId);
+    }
+
+    if (typeof fm.id === "string" && fm.id.trim()) {
+      this.transientIdsByPath.delete(file.path);
     }
 
     const state = this.normaliseState(fm.state, fallbackState);
@@ -48,7 +56,7 @@ export class TaskParser implements WorkItemParser {
     const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
 
     return {
-      id: fm.id || file.path,
+      id: this.resolveTaskId(fm.id, file.path, transientId),
       path: file.path,
       filename: file.name,
       state,
@@ -68,6 +76,18 @@ export class TaskParser implements WorkItemParser {
       created: fm.created || "",
       updated: fm.updated || "",
     };
+  }
+
+  private resolveTaskId(frontmatterId: unknown, filePath: string, transientId?: string): string {
+    if (typeof frontmatterId === "string" && frontmatterId.trim()) {
+      return frontmatterId;
+    }
+
+    if (transientId) {
+      return transientId;
+    }
+
+    return filePath;
   }
 
   private normaliseState(
@@ -225,7 +245,11 @@ export class TaskParser implements WorkItemParser {
     }
   }
 
-  private createFallbackTaskFile(file: TFile, state: TaskState | null): TaskFile | null {
+  private createFallbackTaskFile(
+    file: TFile,
+    state: TaskState | null,
+    transientId?: string,
+  ): TaskFile | null {
     if (!state) return null;
 
     if (!TaskParser.loggedFallbackPaths.has(file.path)) {
@@ -236,7 +260,7 @@ export class TaskParser implements WorkItemParser {
     }
 
     return {
-      id: file.path,
+      id: transientId || file.path,
       path: file.path,
       filename: file.name,
       state,
@@ -344,24 +368,84 @@ export class TaskParser implements WorkItemParser {
     return path.replace(/\/+$/, "");
   }
 
+  async backfillItemId(item: WorkItem): Promise<WorkItem | null> {
+    if (item.id !== item.path) {
+      return item;
+    }
+
+    const inFlight = this.backfillPromisesByPath.get(item.path);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const promise = this.performIdBackfill(item).finally(() => {
+      this.backfillPromisesByPath.delete(item.path);
+    });
+    this.backfillPromisesByPath.set(item.path, promise);
+    return promise;
+  }
+
+  private async performIdBackfill(item: WorkItem): Promise<WorkItem | null> {
+    const file = this.app.vault.getAbstractFileByPath(item.path) as TFile | null;
+    if (!file) {
+      return item;
+    }
+
+    try {
+      const content = await this.app.vault.read(file);
+      const existingId = this.extractFrontmatterId(content);
+      if (existingId) {
+        this.transientIdsByPath.set(item.path, existingId);
+        return { ...item, id: existingId };
+      }
+
+      const uuid = crypto.randomUUID();
+      const updated = this.insertFrontmatterId(content, uuid);
+      if (!updated) {
+        return item;
+      }
+
+      await this.app.vault.modify(file, updated);
+      this.transientIdsByPath.set(item.path, uuid);
+      return { ...item, id: uuid };
+    } catch (err) {
+      console.error(`[work-terminal] Failed to backfill ID for ${item.path}:`, err);
+      return item;
+    }
+  }
+
+  private extractFrontmatterId(content: string): string | null {
+    return extractYamlFrontmatterString(content, "id");
+  }
+
+  private insertFrontmatterId(content: string, id: string): string | null {
+    const match = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+    if (!match) {
+      return null;
+    }
+
+    const [, openingFence, frontmatter, closingFence] = match;
+    const newline = openingFence.endsWith("\r\n") ? "\r\n" : "\n";
+    const updatedFrontmatter = frontmatter.match(/^id:[ \t]*[^\r\n]*$/m)
+      ? frontmatter.replace(/^id:[ \t]*[^\r\n]*$/m, `id: ${id}`)
+      : frontmatter
+        ? `id: ${id}${newline}${frontmatter}`
+        : `id: ${id}${newline}`;
+
+    return content.replace(match[0], `${openingFence}${updatedFrontmatter}${closingFence}`);
+  }
+
   async backfillIds(): Promise<number> {
     let count = 0;
     const items = await this.loadAll();
     for (const item of items) {
-      if (item.id) continue;
-      const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
-      if (!file) continue;
+      if (item.id !== item.path) {
+        continue;
+      }
 
-      try {
-        const content = await this.app.vault.read(file);
-        const uuid = crypto.randomUUID();
-        const updated = content.replace(/^---\n/, `---\nid: ${uuid}\n`);
-        if (updated !== content) {
-          await this.app.vault.modify(file, updated);
-          count++;
-        }
-      } catch (err) {
-        console.error(`[work-terminal] Failed to backfill ID for ${item.path}:`, err);
+      const backfilled = await this.backfillItemId(item);
+      if (backfilled?.id && backfilled.id !== item.id) {
+        count++;
       }
     }
     return count;

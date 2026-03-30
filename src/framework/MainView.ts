@@ -20,6 +20,7 @@ import { PromptBox } from "./PromptBox";
 import { loadAllSettings } from "./SettingsTab";
 import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
+import { extractYamlFrontmatterString } from "../core/frontmatter";
 
 interface PendingRename {
   uuid: string | null;
@@ -44,6 +45,9 @@ export class MainView extends ItemView {
   private vaultEventRefs: EventRef[] = [];
   private refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingRenames: Map<string, PendingRename> = new Map();
+  private pendingSelectionBackfills: Map<string, Promise<void>> = new Map();
+  private pendingCustomOrderOverride: Record<string, string[]> | null = null;
+  private pendingCustomOrderWriteId = 0;
 
   // Cached settings for parser/mover creation in refreshList
   private settings: Record<string, unknown> = {};
@@ -335,12 +339,13 @@ export class MainView extends ItemView {
         if (item && typeof this.adapter.createDetailView === "function") {
           this.adapter.createDetailView(item, this.app, this.leaf);
         }
+        if (item) {
+          void this.ensureSelectedItemHasDurableId(item);
+        }
       },
       // onCustomOrderChange callback
       async (order: Record<string, string[]>) => {
-        await mergeAndSavePluginData(this.pluginRef, async (data) => {
-          data.customOrder = order;
-        });
+        await this.persistCustomOrder(order);
       },
     );
   }
@@ -399,8 +404,7 @@ export class MainView extends ItemView {
         if (!newUuid && file instanceof TFile) {
           try {
             const content = await this.app.vault.cachedRead(file);
-            const match = content.match(/^id:\s*(.+)$/m);
-            if (match) newUuid = match[1].trim();
+            newUuid = extractYamlFrontmatterString(content, "id");
           } catch {
             // File may not be readable yet; fall through to folder heuristic
           }
@@ -408,6 +412,9 @@ export class MainView extends ItemView {
         if (newUuid && newUuid === pending.uuid) {
           this.completeRename(oldPath, path);
           return;
+        }
+        if (newUuid) {
+          continue;
         }
       }
 
@@ -441,7 +448,9 @@ export class MainView extends ItemView {
   private handleRename(newPath: string, oldPath: string): void {
     // Obsidian's own rename event - update sessions directly
     this.terminalPanel?.rekeyItem(oldPath, newPath);
-    this.listPanel?.rekeyCustomOrder(oldPath, newPath);
+    if (this.listPanel?.rekeyCustomOrder(oldPath, newPath)) {
+      void this.persistCustomOrder();
+    }
     // Persist updated session paths to disk so they survive a full reload
     this.terminalPanel?.persistSessions();
   }
@@ -453,7 +462,9 @@ export class MainView extends ItemView {
       this.pendingRenames.delete(oldPath);
     }
     this.terminalPanel?.rekeyItem(oldPath, newPath);
-    this.listPanel?.rekeyCustomOrder(oldPath, newPath);
+    if (this.listPanel?.rekeyCustomOrder(oldPath, newPath)) {
+      void this.persistCustomOrder();
+    }
     this.adapter.rekeyDetailPath?.(oldPath, newPath);
     // Persist updated session paths to disk so they survive a full reload
     this.terminalPanel?.persistSessions();
@@ -472,12 +483,76 @@ export class MainView extends ItemView {
     this.parser = this.adapter.createParser(this.app, "", this.settings);
   }
 
+  private async ensureSelectedItemHasDurableId(item: WorkItem): Promise<void> {
+    if (!this.parser?.backfillItemId || item.id !== item.path) {
+      return;
+    }
+
+    const existing = this.pendingSelectionBackfills.get(item.path);
+    if (existing) {
+      return existing;
+    }
+
+    const task = this.performSelectionBackfill(item).finally(() => {
+      this.pendingSelectionBackfills.delete(item.path);
+    });
+    this.pendingSelectionBackfills.set(item.path, task);
+    return task;
+  }
+
+  private async performSelectionBackfill(item: WorkItem): Promise<void> {
+    const updatedItem = await this.parser?.backfillItemId?.(item);
+    if (!updatedItem || updatedItem.id === item.id) {
+      return;
+    }
+
+    const shouldReselect = this.terminalPanel?.getActiveItemId() === item.id;
+    this.terminalPanel?.rekeyItem(item.id, updatedItem.id);
+    if (this.listPanel?.rekeyCustomOrder(item.id, updatedItem.id)) {
+      await this.persistCustomOrder();
+    }
+    await this.refreshList();
+    await this.terminalPanel?.persistSessions();
+
+    if (!shouldReselect) {
+      return;
+    }
+
+    this.listPanel?.selectById(updatedItem.id);
+  }
+
+  private async persistCustomOrder(order?: Record<string, string[]>): Promise<void> {
+    const sourceOrder = order || this.listPanel?.getCustomOrder();
+    const customOrder = sourceOrder ? this.cloneCustomOrder(sourceOrder) : null;
+    if (!customOrder) {
+      return;
+    }
+
+    const writeId = ++this.pendingCustomOrderWriteId;
+    this.pendingCustomOrderOverride = customOrder;
+    try {
+      await mergeAndSavePluginData(this.pluginRef, async (data) => {
+        data.customOrder = customOrder;
+      });
+    } finally {
+      if (this.pendingCustomOrderWriteId === writeId) {
+        this.pendingCustomOrderOverride = null;
+      }
+    }
+  }
+
+  private cloneCustomOrder(order: Record<string, string[]>): Record<string, string[]> {
+    return Object.fromEntries(
+      Object.entries(order).map(([columnId, itemIds]) => [columnId, [...itemIds]]),
+    );
+  }
+
   private async refreshList(): Promise<void> {
     if (!this.listPanel || !this.parser) return;
     const items = await this.parser.loadAll();
     const groups = this.parser.groupByColumn(items);
     const data = (await this.pluginRef.loadData()) || {};
-    const customOrder = data.customOrder || {};
+    const customOrder = this.pendingCustomOrderOverride || data.customOrder || {};
     this.listPanel.render(groups, customOrder);
     this.terminalPanel?.setItems(items);
   }

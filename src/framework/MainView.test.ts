@@ -1,0 +1,276 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { JSDOM } from "jsdom";
+import { TFile } from "obsidian";
+import type { WorkItem } from "../core/interfaces";
+import { mergeAndSavePluginData } from "../core/PluginDataStore";
+
+vi.mock("obsidian", () => ({
+  ItemView: class {
+    app: unknown;
+    leaf: unknown;
+    contentEl: HTMLElement;
+
+    constructor(leaf: unknown) {
+      this.leaf = leaf;
+      this.app = {};
+      this.contentEl = document.createElement("div");
+    }
+  },
+  TFile: class {},
+  WorkspaceLeaf: class {},
+}));
+
+vi.mock("./ListPanel", () => ({
+  ListPanel: class {},
+}));
+
+vi.mock("./TerminalPanelView", () => ({
+  TerminalPanelView: class {},
+}));
+
+vi.mock("./PromptBox", () => ({
+  PromptBox: class {},
+}));
+
+vi.mock("./SettingsTab", () => ({
+  loadAllSettings: vi.fn(),
+}));
+
+vi.mock("./PluginBase", () => ({
+  VIEW_TYPE: "work-terminal-view",
+}));
+
+vi.mock("../core/session/SessionStore", () => ({
+  SessionStore: {
+    isReload: vi.fn(() => false),
+  },
+}));
+
+vi.mock("../core/PluginDataStore", () => ({
+  mergeAndSavePluginData: vi.fn(),
+}));
+
+import { MainView } from "./MainView";
+
+function makeItem(overrides: Partial<WorkItem> = {}): WorkItem {
+  return {
+    id: "2 - Areas/Tasks/active/task.md",
+    path: "2 - Areas/Tasks/active/task.md",
+    title: "Task",
+    state: "active",
+    metadata: {},
+    ...overrides,
+  };
+}
+
+describe("MainView selection ID backfill", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  it("rekeys the active selection after a missing ID is backfilled", async () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const item = makeItem();
+    const updatedItem = makeItem({ id: "uuid-123" });
+    const refreshSpy = vi.spyOn(view as any, "refreshList").mockResolvedValue(undefined);
+    const parser = {
+      backfillItemId: vi.fn().mockResolvedValue(updatedItem),
+    };
+    const listPanel = {
+      rekeyCustomOrder: vi.fn(() => true),
+      getCustomOrder: vi.fn(() => ({ active: [updatedItem.id] })),
+      selectById: vi.fn(),
+    };
+    const terminalPanel = {
+      getActiveItemId: vi.fn(() => item.id),
+      rekeyItem: vi.fn(),
+      persistSessions: vi.fn().mockResolvedValue(undefined),
+      setActiveItem: vi.fn(),
+      setTitle: vi.fn(),
+    };
+
+    (view as any).parser = parser;
+    (view as any).listPanel = listPanel;
+    (view as any).terminalPanel = terminalPanel;
+
+    await (view as any).ensureSelectedItemHasDurableId(item);
+
+    expect(parser.backfillItemId).toHaveBeenCalledWith(item);
+    expect(terminalPanel.rekeyItem).toHaveBeenCalledWith(item.id, updatedItem.id);
+    expect(listPanel.rekeyCustomOrder).toHaveBeenCalledWith(item.id, updatedItem.id);
+    expect(mergeAndSavePluginData).toHaveBeenCalledTimes(1);
+    expect(mergeAndSavePluginData).toHaveBeenCalledWith(expect.anything(), expect.any(Function));
+    expect(refreshSpy).toHaveBeenCalled();
+    expect(terminalPanel.persistSessions).toHaveBeenCalled();
+    expect(listPanel.selectById).toHaveBeenCalledWith(updatedItem.id);
+    expect(terminalPanel.setActiveItem).not.toHaveBeenCalled();
+    expect(terminalPanel.setTitle).not.toHaveBeenCalled();
+  });
+
+  it("does not steal selection back if another item becomes active first", async () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const item = makeItem();
+    const updatedItem = makeItem({ id: "uuid-123" });
+    const refreshSpy = vi.spyOn(view as any, "refreshList").mockResolvedValue(undefined);
+    const parser = {
+      backfillItemId: vi.fn().mockResolvedValue(updatedItem),
+    };
+    const listPanel = {
+      rekeyCustomOrder: vi.fn(() => false),
+      selectById: vi.fn(),
+    };
+    const terminalPanel = {
+      getActiveItemId: vi.fn(() => "different-item"),
+      rekeyItem: vi.fn(),
+      persistSessions: vi.fn().mockResolvedValue(undefined),
+      setActiveItem: vi.fn(),
+      setTitle: vi.fn(),
+    };
+
+    (view as any).parser = parser;
+    (view as any).listPanel = listPanel;
+    (view as any).terminalPanel = terminalPanel;
+
+    await (view as any).ensureSelectedItemHasDurableId(item);
+
+    expect(terminalPanel.rekeyItem).toHaveBeenCalledWith(item.id, updatedItem.id);
+    expect(listPanel.rekeyCustomOrder).toHaveBeenCalledWith(item.id, updatedItem.id);
+    expect(mergeAndSavePluginData).not.toHaveBeenCalled();
+    expect(refreshSpy).toHaveBeenCalled();
+    expect(terminalPanel.persistSessions).toHaveBeenCalled();
+    expect(listPanel.selectById).not.toHaveBeenCalled();
+    expect(terminalPanel.setActiveItem).not.toHaveBeenCalled();
+    expect(terminalPanel.setTitle).not.toHaveBeenCalled();
+  });
+
+  it("uses YAML-normalized ids when recovering rename matches from raw frontmatter", async () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const oldPath = "2 - Areas/Tasks/todo/task.md";
+    const newPath = "2 - Areas/Tasks/active/task.md";
+    const file = new TFile();
+    Object.assign(file, { path: newPath });
+
+    const listPanel = {
+      rekeyCustomOrder: vi.fn(() => true),
+      getCustomOrder: vi.fn(() => ({ active: ["uuid-123"] })),
+    };
+    const terminalPanel = {
+      rekeyItem: vi.fn(),
+      persistSessions: vi.fn(),
+    };
+
+    (view as any).listPanel = listPanel;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).pendingRenames.set(oldPath, {
+      uuid: "uuid-123",
+      path: oldPath,
+      timeout: setTimeout(() => {}, 1000),
+    });
+    (view as any).app = {
+      metadataCache: {
+        getCache: vi.fn(() => ({ frontmatter: { id: undefined } })),
+      },
+      vault: {
+        getAbstractFileByPath: vi.fn(() => file),
+        cachedRead: vi
+          .fn()
+          .mockResolvedValue('---\nid: "uuid-123" # comment\nstate: active\n---\nBody'),
+      },
+    };
+
+    await (view as any).handleCreate(newPath);
+
+    expect(terminalPanel.rekeyItem).toHaveBeenCalledWith(oldPath, newPath);
+    expect(listPanel.rekeyCustomOrder).toHaveBeenCalledWith(oldPath, newPath);
+    expect(mergeAndSavePluginData).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fall back to same-folder matching when a different durable ID is present", async () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const oldPath = "2 - Areas/Tasks/todo/task.md";
+    const newPath = "2 - Areas/Tasks/todo/other-task.md";
+    const file = new TFile();
+    Object.assign(file, { path: newPath });
+
+    const listPanel = {
+      rekeyCustomOrder: vi.fn(() => true),
+      getCustomOrder: vi.fn(() => ({ todo: ["uuid-123"] })),
+    };
+    const terminalPanel = {
+      rekeyItem: vi.fn(),
+      persistSessions: vi.fn(),
+    };
+
+    (view as any).listPanel = listPanel;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).pendingRenames.set(oldPath, {
+      uuid: "uuid-123",
+      path: oldPath,
+      timeout: setTimeout(() => {}, 1000),
+    });
+    (view as any).app = {
+      metadataCache: {
+        getCache: vi.fn(() => ({ frontmatter: { id: undefined } })),
+      },
+      vault: {
+        getAbstractFileByPath: vi.fn(() => file),
+        cachedRead: vi.fn().mockResolvedValue('---\nid: "different-uuid"\nstate: todo\n---\nBody'),
+      },
+    };
+
+    await (view as any).handleCreate(newPath);
+
+    expect(terminalPanel.rekeyItem).not.toHaveBeenCalled();
+    expect(listPanel.rekeyCustomOrder).not.toHaveBeenCalled();
+    expect(mergeAndSavePluginData).not.toHaveBeenCalled();
+  });
+
+  it("renders with the in-memory rekeyed custom order until rename persistence completes", async () => {
+    const view = new MainView(
+      {} as any,
+      {} as any,
+      {
+        loadData: vi.fn().mockResolvedValue({ customOrder: { todo: ["stale-path"] } }),
+      } as any,
+    );
+    const persistPromise = new Promise<void>(() => {});
+    vi.mocked(mergeAndSavePluginData).mockReturnValue(persistPromise);
+
+    const listPanel = {
+      getCustomOrder: vi.fn(() => ({ todo: ["uuid-123"] })),
+      rekeyCustomOrder: vi.fn(() => true),
+      render: vi.fn(),
+    };
+    const parser = {
+      loadAll: vi.fn().mockResolvedValue([]),
+      groupByColumn: vi.fn(() => ({ todo: [] })),
+    };
+    const terminalPanel = {
+      persistSessions: vi.fn(),
+      rekeyItem: vi.fn(),
+      setItems: vi.fn(),
+    };
+
+    (view as any).listPanel = listPanel;
+    (view as any).parser = parser;
+    (view as any).terminalPanel = terminalPanel;
+
+    (view as any).handleRename("2 - Areas/Tasks/todo/task-renamed.md", "stale-path");
+    await (view as any).refreshList();
+
+    expect(listPanel.render).toHaveBeenCalledWith({ todo: [] }, { todo: ["uuid-123"] });
+  });
+});

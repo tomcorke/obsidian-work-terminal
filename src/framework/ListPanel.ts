@@ -704,7 +704,9 @@ export class ListPanel {
 
     const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
     let resumeInProgress = false;
-    const resumableCount = persisted.filter((session) => session.recoveryMode !== "relaunch").length;
+    const resumableCount = persisted.filter(
+      (session) => session.recoveryMode !== "relaunch",
+    ).length;
     const relaunchCount = persisted.length - resumableCount;
     badge.textContent = "\u21bb"; // Clockwise arrow
     badge.setAttribute(
@@ -959,11 +961,97 @@ export class ListPanel {
     return this.listEl.querySelector(`[data-column="${defaultCol}"] .wt-section-cards`);
   }
 
-  rekeyCustomOrder(oldPath: string, newPath: string): void {
-    // Custom order uses UUIDs, not paths, so usually no action needed.
-    // But track for any path-based references.
-    void oldPath;
-    void newPath;
+  getCustomOrder(): Record<string, string[]> {
+    return Object.fromEntries(
+      Object.entries(this.customOrder).map(([columnId, itemIds]) => [columnId, [...itemIds]]),
+    );
+  }
+
+  rekeyCustomOrder(oldId: string, newId: string): boolean {
+    let changed = false;
+
+    for (const [columnId, order] of Object.entries(this.customOrder)) {
+      if (!order.includes(oldId)) {
+        continue;
+      }
+
+      const seen = new Set<string>();
+      const rekeyed = order
+        .map((itemId) => (itemId === oldId ? newId : itemId))
+        .filter((itemId) => {
+          if (seen.has(itemId)) {
+            return false;
+          }
+          seen.add(itemId);
+          return true;
+        });
+      this.customOrder[columnId] = rekeyed;
+      changed = true;
+    }
+
+    if (this.selectedId === oldId) {
+      this.selectedId = newId;
+      changed = true;
+    }
+
+    if (this.dragSourceId === oldId) {
+      this.dragSourceId = newId;
+      changed = true;
+    }
+
+    changed = this.rekeyMapEntry(this.agentStates, oldId, newId) || changed;
+    changed = this.rekeyMapEntry(this.idleSinceMap, oldId, newId) || changed;
+    changed = this.rekeySetEntry(this.ingestingIds, oldId, newId) || changed;
+    changed = this.rekeySuccessAnimation(oldId, newId) || changed;
+
+    for (const [placeholderPath, itemId] of this.pendingCreatedIdsByPlaceholder.entries()) {
+      if (itemId !== oldId) {
+        continue;
+      }
+
+      this.pendingCreatedIdsByPlaceholder.set(placeholderPath, newId);
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  private rekeyMapEntry<T>(map: Map<string, T>, oldId: string, newId: string): boolean {
+    if (!map.has(oldId)) {
+      return false;
+    }
+
+    const value = map.get(oldId) as T;
+    map.delete(oldId);
+    map.set(newId, value);
+    return true;
+  }
+
+  private rekeySetEntry(set: Set<string>, oldId: string, newId: string): boolean {
+    if (!set.has(oldId)) {
+      return false;
+    }
+
+    set.delete(oldId);
+    set.add(newId);
+    return true;
+  }
+
+  private rekeySuccessAnimation(oldId: string, newId: string): boolean {
+    const hadSuccessAnimation = this.activeSuccessIds.has(oldId) || this.successTimeouts.has(oldId);
+    if (!hadSuccessAnimation) {
+      return false;
+    }
+
+    const existingTimeout = this.successTimeouts.get(oldId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      this.successTimeouts.delete(oldId);
+    }
+
+    this.activeSuccessIds.delete(oldId);
+    this.applyNewSuccessAnimation(newId);
+    return true;
   }
 
   private findItemColumn(itemId: string): string | null {

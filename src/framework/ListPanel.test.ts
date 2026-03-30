@@ -495,4 +495,60 @@ describe("ListPanel", () => {
       ),
     ).toEqual(["task-1"]);
   });
+
+  it("rekeys stored order and ID-keyed UI state when a task gets a durable ID", () => {
+    const { panel } = createListPanel();
+    const oldId = "2 - Areas/Tasks/todo/task-1.md";
+    const newId = "uuid-123";
+    const item = {
+      ...makeItem(oldId, "Backfilled task"),
+      path: oldId,
+    };
+
+    panel.render({ todo: [item] }, { todo: [oldId, newId] });
+    (panel as any).selectedId = oldId;
+    (panel as any).dragSourceId = oldId;
+    panel.updateAgentState(oldId, "idle");
+
+    const changed = panel.rekeyCustomOrder(oldId, newId);
+
+    expect(changed).toBe(true);
+    expect(panel.getCustomOrder()).toEqual({ todo: [newId] });
+    expect((panel as any).selectedId).toBe(newId);
+    expect((panel as any).dragSourceId).toBe(newId);
+    expect((panel as any).agentStates.get(newId)).toBe("idle");
+    expect((panel as any).agentStates.has(oldId)).toBe(false);
+    expect((panel as any).idleSinceMap.has(newId)).toBe(true);
+    expect((panel as any).idleSinceMap.has(oldId)).toBe(false);
+  });
+
+  it("restarts active success animations under the new task ID", () => {
+    const { panel } = createListPanel();
+    const oldId = "2 - Areas/Tasks/todo/task-1.md";
+    const newId = "uuid-123";
+    const oldItem = {
+      ...makeItem(oldId, "Backfilled task"),
+      path: oldId,
+    };
+    const newItem = {
+      ...oldItem,
+      id: newId,
+    };
+
+    panel.render({ todo: [oldItem] }, { todo: [oldId] });
+    (panel as any).applyNewSuccessAnimation(oldId);
+
+    const changed = panel.rekeyCustomOrder(oldId, newId);
+    panel.render({ todo: [newItem] }, { todo: [newId] });
+
+    expect(changed).toBe(true);
+    const cardEl = document.querySelector(`[data-item-id="${newId}"]`) as HTMLElement | null;
+    expect(cardEl?.classList.contains("wt-card-new-success")).toBe(true);
+
+    vi.advanceTimersByTime(4500);
+
+    expect(cardEl?.classList.contains("wt-card-new-success")).toBe(false);
+    expect((panel as any).activeSuccessIds.has(newId)).toBe(false);
+    expect((panel as any).successTimeouts.has(newId)).toBe(false);
+  });
 });
