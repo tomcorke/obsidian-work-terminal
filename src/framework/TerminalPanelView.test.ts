@@ -35,6 +35,7 @@ const mockState = vi.hoisted(() => ({
     onPersistRequest?: () => void;
     onTabClosed?: (itemId: string, tab: unknown) => void;
   } | null,
+  latestTabManagerCtorArgs: null as unknown[] | null,
   stopPeriodicPersist: vi.fn(),
 }));
 
@@ -153,8 +154,9 @@ vi.mock("../core/terminal/TabManager", () => ({
     onPersistRequest?: () => void;
     onTabClosed?: (itemId: string, tab: unknown) => void;
 
-    constructor(_terminalWrapperEl: HTMLElement) {
+    constructor(...args: unknown[]) {
       mockState.latestTabManager = this;
+      mockState.latestTabManagerCtorArgs = args;
     }
 
     getSessions() {
@@ -210,9 +212,7 @@ vi.mock("../core/terminal/TabManager", () => ({
     }
 
     getActiveSessionIds() {
-      return new Set(
-        mockState.activeTabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])),
-      );
+      return new Set(mockState.activeTabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])));
     }
 
     getAgentState() {
@@ -279,7 +279,9 @@ vi.mock("../core/session/SessionPersistence", () => ({
           label: tab.label,
           sessionType: tab.sessionType,
           savedAt: "2026-03-28T20:00:00.000Z",
-          recoveryMode: tab.recoveryMode ?? ((tab.claudeSessionId ?? tab.agentSessionId) ? "resume" : "relaunch"),
+          recoveryMode:
+            tab.recoveryMode ??
+            ((tab.claudeSessionId ?? tab.agentSessionId) ? "resume" : "relaunch"),
           cwd: tab.launchCwd ?? "/vault",
           command: tab.launchCommandArgs?.[0] ?? tab.launchShell ?? "/bin/zsh",
           commandArgs: tab.launchCommandArgs,
@@ -299,7 +301,9 @@ vi.mock("../core/session/SessionPersistence", () => ({
           label: tab.label,
           sessionType: tab.sessionType,
           savedAt: "2026-03-28T20:00:00.000Z",
-          recoveryMode: tab.recoveryMode ?? ((tab.claudeSessionId ?? tab.agentSessionId) ? "resume" : "relaunch"),
+          recoveryMode:
+            tab.recoveryMode ??
+            ((tab.claudeSessionId ?? tab.agentSessionId) ? "resume" : "relaunch"),
           cwd: tab.launchCwd ?? "/vault",
           command: tab.launchCommandArgs?.[0] ?? tab.launchShell ?? "/bin/zsh",
           commandArgs: tab.launchCommandArgs,
@@ -327,12 +331,14 @@ vi.mock("../core/session/SessionPersistence", () => ({
         }),
       ];
     }),
-    setPersistedSessions: vi.fn((data: Record<string, unknown>, persistedSessions: PersistedSession[]) => {
-      data.persistedSessions = persistedSessions.map((session) => ({
-        ...session,
-        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-      }));
-    }),
+    setPersistedSessions: vi.fn(
+      (data: Record<string, unknown>, persistedSessions: PersistedSession[]) => {
+        data.persistedSessions = persistedSessions.map((session) => ({
+          ...session,
+          commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+        }));
+      },
+    ),
   },
 }));
 
@@ -512,6 +518,7 @@ describe("TerminalPanelView hook warning", () => {
     mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
+    mockState.latestTabManagerCtorArgs = null;
     mockState.stopPeriodicPersist.mockClear();
   });
 
@@ -1035,19 +1042,9 @@ describe("TerminalPanelView hook warning", () => {
         durableSessionIdGenerated: true,
       }),
     ];
-    mockState.activeSessions = new Map([
-      [
-        "Tasks/task-1.md",
-        [activeShell],
-      ],
-    ]);
+    mockState.activeSessions = new Map([["Tasks/task-1.md", [activeShell]]]);
     mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([
-      [
-        "Tasks/task-1.md",
-        [activeShell],
-      ],
-    ]);
+    mockState.tabsByItem = new Map([["Tasks/task-1.md", [activeShell]]]);
 
     const saveData = vi.fn(async () => {});
     const { view } = createView({}, { saveData });
@@ -1475,13 +1472,7 @@ describe("TerminalPanelView hook warning", () => {
       "Copilot",
       "copilot",
       undefined,
-      [
-        "copilot-saved",
-        "--saved-flag",
-        "value",
-        "--another=saved",
-        "--resume=saved-session",
-      ],
+      ["copilot-saved", "--saved-flag", "value", "--another=saved", "--resume=saved-session"],
       "saved-session",
     ]);
   });
@@ -2712,6 +2703,7 @@ describe("TerminalPanelView hook warning", () => {
   });
 
   it("keeps Windows absolute vault paths intact for Claude context prompts", async () => {
+    const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
     const { view } = createView(
       {
         "core.additionalAgentContext": "Path: $filePath",
@@ -2731,19 +2723,30 @@ describe("TerminalPanelView hook warning", () => {
       },
     );
     await flushAsync();
-    vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
+    vi.mocked(electronRequire).mockImplementation((moduleName: string) =>
+      moduleName === "path" ? path.win32 : defaultElectronRequire?.(moduleName),
+    );
 
-    const prompt = await (view as any).getAgentContextPrompt({
-      id: "task-1",
-      title: "Task One",
-      state: "doing",
-      path: "Tasks\\task-1.md",
-    });
+    try {
+      const prompt = await (view as any).getAgentContextPrompt({
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks\\task-1.md",
+      });
 
-    expect(prompt).toBe("Path: C:\\Users\\me\\Vault\\Tasks\\task-1.md");
+      expect(prompt).toBe("Path: C:\\Users\\me\\Vault\\Tasks\\task-1.md");
+    } finally {
+      if (defaultElectronRequire) {
+        vi.mocked(electronRequire).mockImplementation(defaultElectronRequire);
+      } else {
+        vi.mocked(electronRequire).mockReset();
+      }
+    }
   });
 
   it("keeps UNC vault paths intact for Claude context prompts", async () => {
+    const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
     const { view } = createView(
       {
         "core.additionalAgentContext": "Path: $filePath",
@@ -2763,16 +2766,81 @@ describe("TerminalPanelView hook warning", () => {
       },
     );
     await flushAsync();
-    vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
+    vi.mocked(electronRequire).mockImplementation((moduleName: string) =>
+      moduleName === "path" ? path.win32 : defaultElectronRequire?.(moduleName),
+    );
 
-    const prompt = await (view as any).getAgentContextPrompt({
-      id: "task-1",
-      title: "Task One",
-      state: "doing",
-      path: "Tasks\\task-1.md",
-    });
+    try {
+      const prompt = await (view as any).getAgentContextPrompt({
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks\\task-1.md",
+      });
 
-    expect(prompt).toBe("Path: \\\\server\\share\\Vault\\Tasks\\task-1.md");
+      expect(prompt).toBe("Path: \\\\server\\share\\Vault\\Tasks\\task-1.md");
+    } finally {
+      if (defaultElectronRequire) {
+        vi.mocked(electronRequire).mockImplementation(defaultElectronRequire);
+      } else {
+        vi.mocked(electronRequire).mockReset();
+      }
+    }
+  });
+
+  it("resolves pluginDir from a relative vault path using USERPROFILE semantics", async () => {
+    const originalHome = process.env.HOME;
+    const originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = "";
+    process.env.USERPROFILE = "C:\\Users\\me";
+
+    try {
+      const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
+      vi.mocked(electronRequire).mockImplementation((moduleName: string) =>
+        moduleName === "path" ? path.win32 : defaultElectronRequire?.(moduleName),
+      );
+      try {
+        createView(
+          {},
+          {
+            app: {
+              setting: {
+                open: vi.fn(),
+                openTabById: vi.fn(),
+              },
+              vault: {
+                adapter: {
+                  basePath: "Vault",
+                },
+              },
+            },
+          },
+        );
+        await flushAsync();
+
+        expect(mockState.latestTabManagerCtorArgs).not.toBeNull();
+        expect(mockState.latestTabManagerCtorArgs?.[1]).toBe(
+          "C:\\Users\\me\\Vault\\.obsidian\\plugins\\work-terminal",
+        );
+      } finally {
+        if (defaultElectronRequire) {
+          vi.mocked(electronRequire).mockImplementation(defaultElectronRequire);
+        } else {
+          vi.mocked(electronRequire).mockReset();
+        }
+      }
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
+      }
+    }
   });
 
   it("renders a Jira link badge ahead of the selected title and opens it externally", async () => {

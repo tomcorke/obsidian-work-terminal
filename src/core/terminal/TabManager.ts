@@ -33,7 +33,10 @@ export class TabManager {
   /** Called when a tab is closed, before disposal, with metadata for recently-closed tracking. */
   onTabClosed?: (itemId: string, tab: TerminalTab) => void;
 
-  constructor(private terminalWrapperEl: HTMLElement) {
+  constructor(
+    private terminalWrapperEl: HTMLElement,
+    private pluginDir = "",
+  ) {
     // Recover sessions from a previous reload
     const stored = SessionStore.retrieve();
     if (stored) {
@@ -186,6 +189,7 @@ export class TabManager {
       commandArgs,
       agentSessionId,
       durableSessionId,
+      this.pluginDir,
     );
 
     tab.onLabelChange = () => {
