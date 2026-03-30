@@ -7,6 +7,8 @@ const {
   resolveCommandInfoMock,
   splitConfiguredCommandMock,
   checkHookStatusMock,
+  resetGuidedTourStatusMock,
+  NoticeMock,
 } = vi.hoisted(() => ({
   isAbsoluteCommandPathMock: vi.fn(),
   isPathLikeCommandMock: vi.fn(),
@@ -16,6 +18,8 @@ const {
     scriptExists: false,
     hooksConfigured: false,
   })),
+  resetGuidedTourStatusMock: vi.fn(async () => {}),
+  NoticeMock: vi.fn(),
 }));
 
 vi.mock("obsidian", () => {
@@ -160,8 +164,12 @@ vi.mock("obsidian", () => {
     }
   }
 
-  return { App, PluginSettingTab, Setting };
+  return { App, Notice: NoticeMock, PluginSettingTab, Setting };
 });
+
+vi.mock("./GuidedTour", () => ({
+  resetGuidedTourStatus: resetGuidedTourStatusMock,
+}));
 
 vi.mock("../core/claude/ClaudeHookManager", () => ({
   checkHookStatus: checkHookStatusMock,
@@ -502,5 +510,30 @@ describe("WorkTerminalSettingsTab", () => {
       "Using configured path: \\\\server\\share\\copilot.cmd",
     );
     expect(tab.containerEl.textContent).toContain("Resolved from C:\\vault: C:\\vault\\agent.cmd");
+  });
+
+  it("renders a reset guided tour button that calls resetGuidedTourStatus and shows a Notice", async () => {
+    const plugin = makePlugin({});
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+
+    tab.display();
+    await flushAsyncWork();
+
+    const allButtons = Array.from(tab.containerEl.querySelectorAll("button"));
+    const resetButton = allButtons.find((btn) => btn.textContent === "Reset");
+    expect(resetButton).toBeDefined();
+
+    expect(tab.containerEl.textContent).toContain("Reset guided tour");
+
+    resetGuidedTourStatusMock.mockClear();
+    NoticeMock.mockClear();
+
+    resetButton!.click();
+    await flushAsyncWork();
+
+    expect(resetGuidedTourStatusMock).toHaveBeenCalledWith(plugin);
+    expect(NoticeMock).toHaveBeenCalledWith(
+      "Guided tour will start next time you open Work Terminal",
+    );
   });
 });

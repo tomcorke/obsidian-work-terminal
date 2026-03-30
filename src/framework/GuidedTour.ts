@@ -233,6 +233,16 @@ export async function saveGuidedTourStatus(
   });
 }
 
+export async function resetGuidedTourStatus(plugin: Plugin): Promise<void> {
+  await mergeAndSavePluginData(plugin, async (data: GuidedTourDataShape) => {
+    delete data.guidedTour;
+    data.guidedTourEligibility = {
+      eligible: true,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+}
+
 export class GuidedTourController {
   private static readonly BOARD_FOCUS_RESTORE_SELECTORS = [
     '[data-wt-tour="prompt-box"] .wt-prompt-toggle',

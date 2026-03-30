@@ -6,6 +6,7 @@ import {
   GuidedTourController,
   GUIDED_TOUR_VERSION,
   resetGuidedTourSingletonForTests,
+  resetGuidedTourStatus,
   saveGuidedTourStatus,
   shouldAutoStartGuidedTour,
 } from "./GuidedTour";
@@ -348,6 +349,25 @@ describe("GuidedTour", () => {
         updatedAt: expect.any(String),
       },
     });
+  });
+
+  it("resets guided tour status and re-enables auto-start", async () => {
+    const plugin = createMockPlugin({ settings: { "core.defaultShell": "/bin/zsh" } });
+    await saveGuidedTourStatus(plugin as never, "completed");
+    await expect(shouldAutoStartGuidedTour(plugin as never)).resolves.toBe(false);
+
+    await resetGuidedTourStatus(plugin as never);
+    const data = plugin.getData() as Record<string, unknown>;
+    expect(data).not.toHaveProperty("guidedTour");
+    expect(data).toHaveProperty("guidedTourEligibility", {
+      eligible: true,
+      updatedAt: expect.any(String),
+    });
+    expect(data).toHaveProperty("settings");
+
+    await expect(
+      shouldAutoStartGuidedTour(plugin as never, { hasExistingItems: false }),
+    ).resolves.toBe(true);
   });
 
   it("navigates between board and settings targets in both directions", async () => {
