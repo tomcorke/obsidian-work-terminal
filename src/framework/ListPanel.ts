@@ -198,17 +198,21 @@ export class ListPanel {
         this.renderResumeBadge(actionsEl, item);
         this.renderMoveToTop(actionsEl, item);
 
-        // Ingesting shine: card-level class drives the CSS animation
+        // Ingesting shine + badge: card-level class drives the CSS animation
         if (this.ingestingIds.has(item.id)) {
           cardEl.addClass("wt-card-is-ingesting");
+          this.ensureIngestingBadge(cardEl);
         }
 
         if (this.activeSuccessIds.has(item.id)) {
           cardEl.addClass("wt-card-new-success");
-          this.appendSuccessBar(cardEl);
         }
 
         cardsEl.appendChild(cardEl);
+
+        if (this.activeSuccessIds.has(item.id)) {
+          this.appendSuccessBar(cardEl);
+        }
       }
 
       // Re-insert any active placeholders for this column
@@ -305,6 +309,7 @@ export class ListPanel {
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
     if (cardEl) {
       cardEl.addClass("wt-card-is-ingesting");
+      this.ensureIngestingBadge(cardEl);
     }
   }
 
@@ -313,7 +318,19 @@ export class ListPanel {
     const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
     if (cardEl) {
       cardEl.removeClass("wt-card-is-ingesting");
+      cardEl.querySelector(".wt-card-ingesting-badge")?.remove();
     }
+  }
+
+  private ensureIngestingBadge(cardEl: Element): void {
+    if (cardEl.querySelector(".wt-card-ingesting-badge")) return;
+    const metaRow = cardEl.querySelector(".wt-card-meta");
+    if (!metaRow) return;
+    const badge = document.createElement("span");
+    badge.addClass("wt-card-ingesting-badge");
+    badge.textContent = "ingesting...";
+    // Insert as first child so it appears prominently
+    metaRow.insertBefore(badge, metaRow.firstChild);
   }
 
   prependToColumn(id: string, columnId: string, placeholderPath?: string): void {
@@ -873,7 +890,7 @@ export class ListPanel {
       const el = this.listEl.querySelector(`[data-item-id="${id}"]`);
       if (el) {
         el.removeClass("wt-card-new-success");
-        el.querySelector(".wt-success-bar")?.remove();
+        el.nextElementSibling?.classList.contains("wt-success-bar") && el.nextElementSibling.remove();
       }
       this.successTimeouts.delete(id);
     }, 4500);
@@ -881,11 +898,11 @@ export class ListPanel {
   }
 
   private appendSuccessBar(cardEl: Element): void {
-    if (cardEl.querySelector(".wt-success-bar")) return;
+    if (cardEl.nextElementSibling?.classList.contains("wt-success-bar")) return;
     const bar = document.createElement("div");
     bar.addClass("wt-success-bar");
     bar.textContent = `new ${this.adapter.config.itemName} created`;
-    cardEl.appendChild(bar);
+    cardEl.insertAdjacentElement("afterend", bar);
   }
 
   dispose(): void {

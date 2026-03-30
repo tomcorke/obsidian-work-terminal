@@ -1153,7 +1153,8 @@ button.wt-spawn-claude-ctx:hover svg {
 }
 
 /* Ingesting badge - purple gradient with pulse */
-.wt-card-ingesting {
+.wt-card-ingesting,
+.wt-card-ingesting-badge {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
@@ -1169,47 +1170,43 @@ button.wt-spawn-claude-ctx:hover svg {
 }
 
 /* =============================================================================
-   New task success animation - green border + bottom bar that slides up
+   New task success animation - green border + bar below card that slides up
    ============================================================================= */
 
 .wt-card-wrapper.wt-card-new-success {
   border-left-color: #38a169;
   box-shadow: inset 0 0 0 1px rgba(56, 161, 105, 0.45);
   animation: wt-success-border-fade 4s ease-out forwards;
-  overflow: hidden;
+  z-index: 1;
 }
 
-/* Green bottom panel with checkmark that slides up into the card */
-.wt-card-wrapper.wt-card-new-success .wt-success-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 50%;
-  background: linear-gradient(180deg, rgba(56, 161, 105, 0.25) 0%, rgba(104, 211, 145, 0.4) 100%);
-  border-radius: 0 0 4px 4px;
+/* Green bar rendered as a sibling below the card, slides up behind it */
+.wt-success-bar {
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 4px 10px;
+  margin: 0 0 3px 0;
+  border-radius: 0 0 4px 4px;
+  background: rgba(56, 161, 105, 0.25);
   font-size: 11px;
   color: #38a169;
   font-weight: 500;
   letter-spacing: 0.02em;
-  animation: wt-success-bar-rise 3s ease-in-out forwards;
   pointer-events: none;
+  animation: wt-success-bar-rise 3.5s ease-in-out forwards;
 }
 
-.wt-card-wrapper.wt-card-new-success .wt-success-bar::after {
+.wt-success-bar::after {
   content: "\2713";
   margin-left: 4px;
   font-size: 13px;
 }
 
 @keyframes wt-success-bar-rise {
-  0%   { transform: translateY(0);   opacity: 1; }
-  50%  { transform: translateY(0);   opacity: 1; }
-  80%  { transform: translateY(-8px); opacity: 0.6; }
-  100% { transform: translateY(-100%); opacity: 0; }
+  0%   { margin-top: 0;    opacity: 1; }
+  50%  { margin-top: 0;    opacity: 1; }
+  85%  { margin-top: -28px; opacity: 0.5; }
+  100% { margin-top: -28px; opacity: 0; }
 }
 
 @keyframes wt-success-border-fade {

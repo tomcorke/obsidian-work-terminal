@@ -220,13 +220,14 @@ describe("ListPanel", () => {
     panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
 
     const cardEl = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
-    const successBar = cardEl.querySelector(".wt-success-bar");
+    const successBar = cardEl.nextElementSibling;
+    expect(successBar?.classList.contains("wt-success-bar")).toBe(true);
     expect(successBar?.textContent).toBe("new ticket created");
 
     vi.advanceTimersByTime(4500);
 
     expect(cardEl.classList.contains("wt-card-new-success")).toBe(false);
-    expect(cardEl.querySelector(".wt-success-bar")).toBeNull();
+    expect(cardEl.nextElementSibling?.classList.contains("wt-success-bar")).toBeFalsy();
   });
 
   it("clears pending success animation timers on dispose", () => {
