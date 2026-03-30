@@ -4,7 +4,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 
 ## Installation
 
-Run these commands from the directory where you want to keep the plugin source:
+Use Node.js 20.19.0 or newer (`node -v` to check), then run these commands from the directory where you want to keep the plugin source:
 
 ```bash
 git clone https://github.com/tomcorke/obsidian-work-terminal.git
@@ -13,7 +13,7 @@ npm install
 npm run build
 ```
 
-Then symlink the built plugin into your vault. Replace `"/path/to/your/vault"` with your vault path:
+Then symlink this repo directory into your vault. Replace `"/path/to/your/vault"` with your vault path:
 
 ```bash
 VAULT="/path/to/your/vault"
@@ -21,7 +21,7 @@ mkdir -p "$VAULT/.obsidian/plugins"
 ln -s "$(pwd)" "$VAULT/.obsidian/plugins/work-terminal"
 ```
 
-If `work-terminal` already exists in `.obsidian/plugins`, remove that directory or symlink first. Then enable **Work Terminal** in Obsidian's **Community plugins** settings.
+If `work-terminal` already exists in `.obsidian/plugins`, remove that directory or symlink first. After pulling updates, run `npm run build` again before reopening Obsidian. Then enable **Work Terminal** in Obsidian's **Community plugins** settings.
 
 ## What you get
 
