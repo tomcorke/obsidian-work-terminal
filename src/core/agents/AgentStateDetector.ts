@@ -44,6 +44,13 @@ function looksLikeHiddenClaudePrompt(tail: string[], questionIndex: number): boo
     .filter((line) => line.length > 0);
   const promptIndex = normalizedAfterQuestion.findIndex((line) => line === "❯");
   if (promptIndex === -1) return false;
+  if (
+    normalizedAfterQuestion
+      .slice(0, promptIndex)
+      .some((line) => /^❯\s+\S/.test(line))
+  ) {
+    return false;
+  }
 
   return normalizedAfterQuestion
     .slice(promptIndex + 1)
