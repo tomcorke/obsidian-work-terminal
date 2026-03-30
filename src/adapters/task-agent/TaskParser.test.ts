@@ -516,6 +516,89 @@ describe("TaskParser", () => {
     });
   });
 
+  describe("backfillItemId", () => {
+    it("writes a missing frontmatter id and immediately uses it as the working ID", async () => {
+      const file = makeFile("2 - Areas/Tasks/active/task-without-id.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ id: undefined }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      const readMock = vi.mocked(app.vault.read as any);
+      const modifyMock = vi.mocked(app.vault.modify as any);
+      const uuidSpy = vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("uuid-123");
+
+      readMock.mockResolvedValue("---\nstate: active\n---\nBody");
+      modifyMock.mockResolvedValue(undefined);
+
+      const updatedItem = await parser.backfillItemId(item!);
+      const reparsed = parser.parse(file as unknown as TFile);
+
+      expect(updatedItem?.id).toBe("uuid-123");
+      expect(modifyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ path: file.path }),
+        "---\nid: uuid-123\nstate: active\n---\nBody",
+      );
+      expect(reparsed?.id).toBe("uuid-123");
+
+      uuidSpy.mockRestore();
+    });
+
+    it("reuses an already-written raw frontmatter id without modifying the file", async () => {
+      const file = makeFile("2 - Areas/Tasks/active/task-with-stale-cache.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ id: undefined }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      const readMock = vi.mocked(app.vault.read as any);
+      const modifyMock = vi.mocked(app.vault.modify as any);
+
+      readMock.mockResolvedValue("---\nid: raw-uuid\nstate: active\n---\nBody");
+
+      const updatedItem = await parser.backfillItemId(item!);
+      const reparsed = parser.parse(file as unknown as TFile);
+
+      expect(updatedItem?.id).toBe("raw-uuid");
+      expect(modifyMock).not.toHaveBeenCalled();
+      expect(reparsed?.id).toBe("raw-uuid");
+    });
+  });
+
+  describe("backfillIds", () => {
+    it("backfills only items still using the file.path fallback", async () => {
+      const missingId = makeFile("2 - Areas/Tasks/active/task-without-id.md");
+      const existingId = makeFile("2 - Areas/Tasks/todo/task-with-id.md");
+      const app = mockApp([missingId, existingId], {
+        [missingId.path]: makeFrontmatter({ id: undefined, state: "active" }),
+        [existingId.path]: makeFrontmatter({ id: "durable-uuid", state: "todo" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const readMock = vi.mocked(app.vault.read as any);
+      const modifyMock = vi.mocked(app.vault.modify as any);
+      const uuidSpy = vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("uuid-456");
+
+      readMock.mockImplementation(async (file: TFile) => {
+        if (file.path === missingId.path) {
+          return "---\nstate: active\n---\nBody";
+        }
+        return "---\nid: durable-uuid\nstate: todo\n---\nBody";
+      });
+      modifyMock.mockResolvedValue(undefined);
+
+      const count = await parser.backfillIds();
+      const reparsedMissing = parser.parse(missingId as unknown as TFile);
+      const reparsedExisting = parser.parse(existingId as unknown as TFile);
+
+      expect(count).toBe(1);
+      expect(modifyMock).toHaveBeenCalledTimes(1);
+      expect(reparsedMissing?.id).toBe("uuid-456");
+      expect(reparsedExisting?.id).toBe("durable-uuid");
+
+      uuidSpy.mockRestore();
+    });
+  });
+
   describe("isItemFile", () => {
     it("matches files under basePath", () => {
       const parser = new TaskParser({} as App, "", defaultSettings);

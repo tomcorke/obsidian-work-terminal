@@ -6,7 +6,7 @@ import type { TFile, App, MenuItem, WorkspaceLeaf } from "obsidian";
  * using only this interface.
  */
 export interface WorkItem {
-  /** Unique identifier (UUID from frontmatter). Used as session map key. */
+  /** Unique identifier used as the session map key. Usually a frontmatter UUID, with path fallback during ID backfill. */
   id: string;
   /** Vault-relative file path. */
   path: string;
@@ -86,6 +86,8 @@ export interface WorkItemParser {
   groupByColumn(items: WorkItem[]): Record<string, WorkItem[]>;
   /** Check if a vault path belongs to this adapter's item files. */
   isItemFile(path: string): boolean;
+  /** Backfill a durable item ID when the current ID is only a path fallback. */
+  backfillItemId?(item: WorkItem): Promise<WorkItem | null>;
 }
 
 /**

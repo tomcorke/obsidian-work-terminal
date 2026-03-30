@@ -1936,6 +1936,10 @@ export class TerminalPanelView {
     return this.tabManager.getRecoveredItemId();
   }
 
+  getActiveItemId(): string | null {
+    return this.tabManager.getActiveItemId();
+  }
+
   refitActive(): void {
     this.tabManager.refitActive();
   }

@@ -44,6 +44,7 @@ export class MainView extends ItemView {
   private vaultEventRefs: EventRef[] = [];
   private refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingRenames: Map<string, PendingRename> = new Map();
+  private pendingSelectionBackfills: Map<string, Promise<void>> = new Map();
 
   // Cached settings for parser/mover creation in refreshList
   private settings: Record<string, unknown> = {};
@@ -335,6 +336,9 @@ export class MainView extends ItemView {
         if (item && typeof this.adapter.createDetailView === "function") {
           this.adapter.createDetailView(item, this.app, this.leaf);
         }
+        if (item) {
+          void this.ensureSelectedItemHasDurableId(item);
+        }
       },
       // onCustomOrderChange callback
       async (order: Record<string, string[]>) => {
@@ -470,6 +474,41 @@ export class MainView extends ItemView {
 
   resetParser(): void {
     this.parser = this.adapter.createParser(this.app, "", this.settings);
+  }
+
+  private async ensureSelectedItemHasDurableId(item: WorkItem): Promise<void> {
+    if (!this.parser?.backfillItemId || item.id !== item.path) {
+      return;
+    }
+
+    const existing = this.pendingSelectionBackfills.get(item.path);
+    if (existing) {
+      return existing;
+    }
+
+    const task = this.performSelectionBackfill(item).finally(() => {
+      this.pendingSelectionBackfills.delete(item.path);
+    });
+    this.pendingSelectionBackfills.set(item.path, task);
+    return task;
+  }
+
+  private async performSelectionBackfill(item: WorkItem): Promise<void> {
+    const updatedItem = await this.parser?.backfillItemId?.(item);
+    if (!updatedItem || updatedItem.id === item.id) {
+      return;
+    }
+
+    const shouldReselect = this.terminalPanel?.getActiveItemId() === item.id;
+    this.terminalPanel?.rekeyItem(item.id, updatedItem.id);
+    await this.refreshList();
+    await this.terminalPanel?.persistSessions();
+
+    if (!shouldReselect) {
+      return;
+    }
+
+    this.listPanel?.selectById(updatedItem.id);
   }
 
   private async refreshList(): Promise<void> {
