@@ -1157,7 +1157,7 @@ button.wt-spawn-claude-ctx:hover svg {
   border-radius: 12px;
   box-shadow: 0 18px 50px rgba(15, 23, 42, 0.35);
   padding: 16px;
-  z-index: 10000;
+  z-index: 10001;
 }
 
 .wt-tour-counter {
@@ -1221,7 +1221,7 @@ button.wt-spawn-claude-ctx:hover svg {
 
 .wt-tour-target {
   position: relative;
-  z-index: 10001;
+  z-index: 10000;
 }
 
 /* =============================================================================

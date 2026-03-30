@@ -554,14 +554,15 @@ export class MainView extends ItemView {
     );
   }
 
-  private async refreshList(): Promise<void> {
-    if (!this.listPanel || !this.parser) return;
+  private async refreshList(): Promise<WorkItem[]> {
+    if (!this.listPanel || !this.parser) return [];
     const items = await this.parser.loadAll();
     const groups = this.parser.groupByColumn(items);
     const data = (await this.pluginRef.loadData()) || {};
     const customOrder = this.pendingCustomOrderOverride || data.customOrder || {};
     this.listPanel.render(groups, customOrder);
     this.terminalPanel?.setItems(items);
+    return items;
   }
 
   // ---------------------------------------------------------------------------
@@ -603,7 +604,7 @@ export class MainView extends ItemView {
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();
 
-    // Clean up vault event refs
+    // Clean up guided tour
     this.guidedTour?.dispose();
     this.guidedTour = null;
 

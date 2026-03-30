@@ -4,10 +4,16 @@ import { mergeAndSavePluginData } from "../core/PluginDataStore";
 export const GUIDED_TOUR_VERSION = 1;
 
 type GuidedTourStatus = "completed" | "dismissed";
+type GuidedTourSurface = "board" | "settings";
 
 interface GuidedTourRecord {
   version: number;
   status: GuidedTourStatus;
+  updatedAt: string;
+}
+
+interface GuidedTourEligibilityRecord {
+  eligible: boolean;
   updatedAt: string;
 }
 
@@ -16,11 +22,17 @@ interface GuidedTourStep {
   body: string;
   target: string;
   placement?: "top" | "bottom" | "left" | "right";
+  surface?: GuidedTourSurface;
   beforeShow?: () => void | Promise<void>;
 }
 
 interface GuidedTourDataShape {
   guidedTour?: GuidedTourRecord;
+  guidedTourEligibility?: GuidedTourEligibilityRecord;
+}
+
+interface GuidedTourAutoStartContext {
+  hasExistingItems?: boolean;
 }
 
 function createChild<K extends keyof HTMLElementTagNameMap>(
@@ -51,14 +63,47 @@ function readGuidedTourRecord(data: unknown): GuidedTourRecord | null {
   return { version, status, updatedAt };
 }
 
-export async function shouldAutoStartGuidedTour(plugin: Plugin): Promise<boolean> {
+function readGuidedTourEligibilityRecord(data: unknown): GuidedTourEligibilityRecord | null {
+  if (!isRecord(data) || !isRecord(data.guidedTourEligibility)) return null;
+  const eligible = data.guidedTourEligibility.eligible;
+  const updatedAt = data.guidedTourEligibility.updatedAt;
+  if (typeof eligible !== "boolean") return null;
+  if (typeof updatedAt !== "string") return null;
+  return { eligible, updatedAt };
+}
+
+function hasMeaningfulPluginData(data: unknown): boolean {
+  if (!isRecord(data)) return false;
+  return Object.keys(data).some((key) => key !== "guidedTour" && key !== "guidedTourEligibility");
+}
+
+async function saveGuidedTourEligibility(plugin: Plugin, eligible: boolean): Promise<void> {
+  await mergeAndSavePluginData(plugin, async (data: GuidedTourDataShape) => {
+    data.guidedTourEligibility = {
+      eligible,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+}
+
+export async function shouldAutoStartGuidedTour(
+  plugin: Plugin,
+  context: GuidedTourAutoStartContext = {},
+): Promise<boolean> {
   const rawData = await plugin.loadData();
-  if (rawData == null) return true;
   const record = readGuidedTourRecord(rawData);
   if (record) {
     return record.version !== GUIDED_TOUR_VERSION;
   }
-  return isRecord(rawData) ? Object.keys(rawData).length === 0 : false;
+
+  const eligibility = readGuidedTourEligibilityRecord(rawData);
+  if (eligibility) {
+    return eligibility.eligible;
+  }
+
+  const derivedEligibility = !context.hasExistingItems && !hasMeaningfulPluginData(rawData);
+  await saveGuidedTourEligibility(plugin, derivedEligibility);
+  return derivedEligibility;
 }
 
 export async function saveGuidedTourStatus(
@@ -66,6 +111,10 @@ export async function saveGuidedTourStatus(
   status: GuidedTourStatus,
 ): Promise<void> {
   await mergeAndSavePluginData(plugin, async (data: GuidedTourDataShape) => {
+    data.guidedTourEligibility = {
+      eligible: true,
+      updatedAt: new Date().toISOString(),
+    };
     data.guidedTour = {
       version: GUIDED_TOUR_VERSION,
       status,
@@ -87,8 +136,14 @@ export class GuidedTourController {
   private skipButtonEl: HTMLButtonElement | null = null;
   private activeTargetEl: HTMLElement | null = null;
   private activeIndex = 0;
-  private readonly handleResize = () => this.positionCurrentStep();
-  private readonly handleScroll = () => this.positionCurrentStep();
+  private positionFrameId: number | null = null;
+  private positionInFlight = false;
+  private pendingPosition = false;
+  private pendingScrollIntoView = false;
+  private latestPositionRequestId = 0;
+  private isDisposed = false;
+  private readonly handleResize = () => this.schedulePosition();
+  private readonly handleScroll = () => this.schedulePosition();
   private readonly handleKeydown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -115,13 +170,22 @@ export class GuidedTourController {
 
   async start(): Promise<void> {
     if (!this.steps.length || this.cardEl) return;
+    this.isDisposed = false;
     this.createChrome();
     this.registerEvents();
     await this.showStep(0);
   }
 
   dispose(): void {
+    this.isDisposed = true;
+    this.latestPositionRequestId += 1;
     this.unregisterEvents();
+    if (this.positionFrameId !== null) {
+      window.cancelAnimationFrame(this.positionFrameId);
+      this.positionFrameId = null;
+    }
+    this.pendingPosition = false;
+    this.pendingScrollIntoView = false;
     this.clearActiveTarget();
     this.backdropEl?.remove();
     this.highlightEl?.remove();
@@ -200,7 +264,10 @@ export class GuidedTourController {
     const step = this.steps[index];
     if (!step || !this.cardEl || !this.titleEl || !this.bodyEl || !this.counterEl) return;
     this.activeIndex = index;
+    await this.syncSurface(step.surface ?? "board");
+    if (this.isDisposed || !this.cardEl || !this.titleEl || !this.bodyEl || !this.counterEl) return;
     await step.beforeShow?.();
+    if (this.isDisposed || !this.cardEl || !this.titleEl || !this.bodyEl || !this.counterEl) return;
     this.titleEl.textContent = step.title;
     this.bodyEl.textContent = step.body;
     this.counterEl.textContent = `Step ${index + 1} of ${this.steps.length}`;
@@ -210,15 +277,59 @@ export class GuidedTourController {
     if (this.nextButtonEl) {
       this.nextButtonEl.textContent = index === this.steps.length - 1 ? "Finish" : "Next";
     }
-    await this.positionCurrentStep();
+    await this.runPositionCurrentStep({ scrollIntoView: true });
     this.cardEl.focus();
   }
 
-  private async positionCurrentStep(): Promise<void> {
+  private async syncSurface(surface: GuidedTourSurface): Promise<void> {
+    if (this.isDisposed) return;
+    const settings = (this.plugin.app as any).setting;
+    if (surface === "settings") {
+      settings?.open?.();
+      settings?.openTabById?.(this.plugin.manifest.id);
+    } else {
+      settings?.close?.();
+    }
+    await this.waitForNextFrame();
+  }
+
+  private schedulePosition(options: { scrollIntoView?: boolean } = {}): void {
+    this.pendingPosition = true;
+    this.pendingScrollIntoView ||= options.scrollIntoView === true;
+    if (this.positionFrameId !== null) return;
+    this.positionFrameId = window.requestAnimationFrame(() => {
+      this.positionFrameId = null;
+      void this.runPositionCurrentStep();
+    });
+  }
+
+  private async runPositionCurrentStep(options: { scrollIntoView?: boolean } = {}): Promise<void> {
+    this.pendingPosition = true;
+    this.pendingScrollIntoView ||= options.scrollIntoView === true;
+    if (this.positionInFlight) return;
+
+    while (this.pendingPosition || this.pendingScrollIntoView) {
+      const shouldScrollIntoView = this.pendingScrollIntoView;
+      this.pendingPosition = false;
+      this.pendingScrollIntoView = false;
+      this.positionInFlight = true;
+      const requestId = ++this.latestPositionRequestId;
+      try {
+        await this.positionCurrentStep(requestId, shouldScrollIntoView);
+      } finally {
+        this.positionInFlight = false;
+      }
+    }
+  }
+
+  private async positionCurrentStep(requestId: number, scrollIntoView: boolean): Promise<void> {
     const step = this.steps[this.activeIndex];
     if (!step || !this.cardEl || !this.highlightEl) return;
 
     const target = await this.waitForTarget(step.target);
+    if (this.isDisposed || requestId !== this.latestPositionRequestId) return;
+    if (!this.cardEl || !this.highlightEl) return;
+
     this.clearActiveTarget();
     if (!target) {
       this.highlightEl.style.display = "none";
@@ -230,7 +341,12 @@ export class GuidedTourController {
 
     this.activeTargetEl = target;
     this.activeTargetEl.classList.add("wt-tour-target");
-    this.activeTargetEl.scrollIntoView({ block: "center", inline: "nearest" });
+    if (scrollIntoView) {
+      this.activeTargetEl.scrollIntoView({ block: "center", inline: "nearest" });
+      await this.waitForNextFrame();
+      if (this.isDisposed || requestId !== this.latestPositionRequestId) return;
+      if (!this.cardEl || !this.highlightEl) return;
+    }
 
     const rect = target.getBoundingClientRect();
     this.highlightEl.style.display = "";
@@ -285,6 +401,12 @@ export class GuidedTourController {
     this.activeTargetEl = null;
   }
 
+  private async waitForNextFrame(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  }
+
   private async waitForTarget(selector: string): Promise<HTMLElement | null> {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const target = document.querySelector<HTMLElement>(selector);
@@ -296,11 +418,6 @@ export class GuidedTourController {
 }
 
 export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
-  const openPluginSettings = () => {
-    (plugin.app as any).setting.open();
-    (plugin.app as any).setting.openTabById(plugin.manifest.id);
-  };
-
   return [
     {
       title: "Welcome to Work Terminal",
@@ -308,6 +425,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "This view keeps your work list on the left and task-specific terminals on the right, so you can move from planning to execution in one place.",
       target: ".wt-main-view",
       placement: "bottom",
+      surface: "board",
     },
     {
       title: "Add a new task from here",
@@ -315,6 +433,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "Use the prompt box to create a new task without leaving the board. Pick the destination column, then press Enter or Create.",
       target: '[data-wt-tour="prompt-box"]',
       placement: "right",
+      surface: "board",
     },
     {
       title: "Select work from the board",
@@ -322,6 +441,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "Your tasks appear here. Click a task card once you have one to focus it, then keep an eye on the board for shell and agent activity badges.",
       target: '[data-wt-tour="list-panel"]',
       placement: "right",
+      surface: "board",
     },
     {
       title: "Launch Shell and Claude sessions",
@@ -329,6 +449,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "Once a task is selected, use these buttons to open a shell, start Claude, or launch Claude with saved extra context.",
       target: '[data-wt-tour="launch-buttons"]',
       placement: "left",
+      surface: "board",
     },
     {
       title: "Rename and rearrange tabs",
@@ -336,6 +457,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "Once you launch your first session, tabs appear here. Double-click a tab label to rename it, drag tabs to reorder them, and close tabs with the x button.",
       target: '[data-wt-tour="tab-bar"]',
       placement: "left",
+      surface: "board",
     },
     {
       title: "Find the custom session launcher",
@@ -343,6 +465,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "This menu opens the custom session dialog. Select a task first, then use it for Copilot, Strands, extra CLI arguments, or recent-session restore.",
       target: '[data-wt-tour="custom-session-button"]',
       placement: "left",
+      surface: "board",
     },
     {
       title: "Set default Claude arguments",
@@ -350,7 +473,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "These settings apply every time Claude launches. Use them for shared flags, model selection, or any standard CLI arguments you want on by default.",
       target: '[data-wt-tour="core.claudeExtraArgs"]',
       placement: "right",
-      beforeShow: openPluginSettings,
+      surface: "settings",
     },
     {
       title: "Save reusable task context",
@@ -358,7 +481,7 @@ export function createDefaultGuidedTourSteps(plugin: Plugin): GuidedTourStep[] {
         "This template feeds extra context into Claude (ctx) and contextual custom sessions. It is the best place for instructions like reading the task file first.",
       target: '[data-wt-tour="core.additionalAgentContext"]',
       placement: "right",
-      beforeShow: openPluginSettings,
+      surface: "settings",
     },
   ];
 }
