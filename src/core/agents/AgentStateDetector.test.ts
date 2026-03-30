@@ -176,6 +176,72 @@ describe("AgentStateDetector", () => {
       detector.stop();
     });
 
+    it("does not treat answered hidden Claude questions on screen as waiting", () => {
+      const terminal = mockTerminal([
+        "Want me to request a review from someone specific?",
+        "❯ no",
+        "⏺ OK. What do you need done on this PR?",
+        "❯ nothing for now",
+        "⏺ Got it. Standing by.",
+        "──────────────────────────────────────────────",
+        "❯",
+        "──────────────────────────────────────────────",
+        "➜  obsidian-work-terminal git:(main) Opus 4.6",
+        "⏵⏵ bypass permissions on (shift+tab to cycle)",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start(true);
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("does not treat answered hidden Claude questions in recent output as waiting", () => {
+      const detector = new AgentStateDetector(mockTerminal([]), () => false);
+      detector.trackOutput(
+        [
+          "Want me to request a review from someone specific?",
+          "❯ no",
+          "⏺ OK. What do you need done on this PR?",
+          "❯ nothing for now",
+          "⏺ Got it. Standing by.",
+          "──────────────────────────────────────────────",
+          "❯",
+          "──────────────────────────────────────────────",
+          "➜  obsidian-work-terminal git:(main) Opus 4.6",
+          "⏵⏵ bypass permissions on (shift+tab to cycle)",
+        ].join("\n"),
+      );
+      detector.start(true);
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("still treats a newer unanswered hidden Claude question as waiting", () => {
+      const terminal = mockTerminal([
+        "Want me to request a review from someone specific?",
+        "❯ no",
+        "⏺ OK. What do you need done on this PR?",
+        "❯ nothing for now",
+        "⏺ Got it. Standing by.",
+        "⏺ Need anything else before I stop here?",
+        "──────────────────────────────────────────────",
+        "❯",
+        "──────────────────────────────────────────────",
+        "➜  obsidian-work-terminal git:(main) Opus 4.6",
+        "⏵⏵ bypass permissions on (shift+tab to cycle)",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
+
     it("keeps a visible asking-user prompt in range even with a full recent-output tail", () => {
       const terminal = mockTerminal([
         "  ○ Asking user What kind of question would you like me to ask?",
