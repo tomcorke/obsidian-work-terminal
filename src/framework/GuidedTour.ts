@@ -54,10 +54,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isInteractiveShortcutTarget(
   target: EventTarget | null,
-  tourCard: HTMLElement | null,
 ): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (tourCard?.contains(target)) return false;
   if (target.isContentEditable) return true;
 
   const interactiveAncestor = target.closest(
@@ -169,7 +167,7 @@ export class GuidedTourController {
       return;
     }
 
-    if (isInteractiveShortcutTarget(event.target, this.cardEl)) {
+    if (isInteractiveShortcutTarget(event.target)) {
       return;
     }
 

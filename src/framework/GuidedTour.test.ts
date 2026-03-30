@@ -86,6 +86,21 @@ async function waitFor(assertion: () => boolean, attempts = 10): Promise<void> {
   throw new Error("Condition was not met in time");
 }
 
+async function pressEnterOnButton(button: HTMLButtonElement): Promise<boolean> {
+  button.focus();
+  const keydown = new KeyboardEvent("keydown", {
+    key: "Enter",
+    bubbles: true,
+    cancelable: true,
+  });
+  button.dispatchEvent(keydown);
+  if (!keydown.defaultPrevented) {
+    button.click();
+  }
+  await flushTourUpdates();
+  return !keydown.defaultPrevented;
+}
+
 describe("GuidedTour", () => {
   const scrollIntoViewMock = vi.fn();
 
@@ -396,6 +411,81 @@ describe("GuidedTour", () => {
     await flushTourUpdates();
 
     expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Prompt");
+  });
+
+  it("does not let global Enter shortcuts override focused tour buttons", async () => {
+    const plugin = createMockPlugin({});
+    const firstTarget = document.createElement("div");
+    firstTarget.className = "tour-target-first";
+    document.body.appendChild(firstTarget);
+
+    const secondTarget = document.createElement("div");
+    secondTarget.className = "tour-target-second";
+    document.body.appendChild(secondTarget);
+
+    const thirdTarget = document.createElement("div");
+    thirdTarget.className = "tour-target-third";
+    document.body.appendChild(thirdTarget);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "First",
+        body: "Start here",
+        target: ".tour-target-first",
+      },
+      {
+        title: "Second",
+        body: "Middle step",
+        target: ".tour-target-second",
+      },
+      {
+        title: "Third",
+        body: "Last step",
+        target: ".tour-target-third",
+      },
+    ]);
+
+    await controller.start();
+    (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
+    await flushTourUpdates();
+    await waitFor(
+      () => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled,
+    );
+    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Second");
+
+    const backButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Back",
+    ) as HTMLButtonElement;
+    expect(await pressEnterOnButton(backButton)).toBe(true);
+    await waitFor(() => document.querySelector(".wt-tour-card")?.textContent?.includes("First") ?? false);
+    await waitFor(
+      () => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled,
+    );
+
+    (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
+    await flushTourUpdates();
+    await waitFor(
+      () => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled,
+    );
+    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Second");
+
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    expect(await pressEnterOnButton(skipButton)).toBe(true);
+    await waitFor(() => document.querySelector(".wt-tour-card") === null);
+    expect(plugin.getData()).toEqual({
+      guidedTourEligibility: {
+        eligible: true,
+        updatedAt: expect.any(String),
+      },
+      guidedTour: {
+        version: GUIDED_TOUR_VERSION,
+        status: "dismissed",
+        updatedAt: expect.any(String),
+      },
+    });
+    expect(document.querySelector(".wt-tour-card")).toBeNull();
   });
 
   it("only scrolls targets into view when the step changes", async () => {
