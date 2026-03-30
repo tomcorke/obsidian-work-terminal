@@ -50,6 +50,25 @@ function setupDefaultTourBoardDom() {
   promptToggle.className = "wt-prompt-toggle";
   promptToggle.textContent = "New task";
   promptBox.appendChild(promptToggle);
+
+  const promptExpanded = document.createElement("div");
+  promptExpanded.className = "wt-prompt-expanded";
+  promptExpanded.style.display = "none";
+
+  const promptColumn = document.createElement("select");
+  promptColumn.className = "wt-prompt-column";
+  promptExpanded.appendChild(promptColumn);
+
+  const promptTextarea = document.createElement("textarea");
+  promptTextarea.className = "wt-prompt-input";
+  promptExpanded.appendChild(promptTextarea);
+
+  const promptCreateButton = document.createElement("button");
+  promptCreateButton.className = "wt-prompt-create";
+  promptCreateButton.textContent = "Create";
+  promptExpanded.appendChild(promptCreateButton);
+
+  promptBox.appendChild(promptExpanded);
   document.body.appendChild(promptBox);
 
   const listPanel = document.createElement("div");
@@ -72,7 +91,13 @@ function setupDefaultTourBoardDom() {
   customSessionButton.textContent = "Custom session";
   document.body.appendChild(customSessionButton);
 
-  return { promptToggle };
+  return {
+    promptToggle,
+    promptExpanded,
+    promptColumn,
+    promptTextarea,
+    promptCreateButton,
+  };
 }
 
 function createMockPlugin(initialData: Record<string, unknown> | null = null) {
@@ -654,6 +679,65 @@ describe("GuidedTour", () => {
     expect(await pressTab(boardTarget, { shiftKey: true })).toBe(true);
     expect(document.activeElement).toBe(nextButton);
     expect(document.activeElement).not.toBe(unrelatedButton);
+  });
+
+  it("excludes collapsed prompt-box descendants from the focus ring until expanded", async () => {
+    const plugin = createMockPlugin({});
+    const { promptToggle, promptExpanded, promptColumn, promptTextarea, promptCreateButton } =
+      setupDefaultTourBoardDom();
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Prompt box",
+        body: "Prompt target",
+        target: '[data-wt-tour="prompt-box"]',
+        surface: "board",
+        allowTargetFocus: true,
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    const skipButton = Array.from(document.querySelectorAll(".wt-tour-btn")).find(
+      (button) => button.textContent === "Skip",
+    ) as HTMLButtonElement;
+    const nextButton = document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement;
+
+    expect(await pressTab(card)).toBe(true);
+    expect(document.activeElement).toBe(promptToggle);
+
+    expect(await pressTab(promptToggle)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+    expect(document.activeElement).not.toBe(promptColumn);
+    expect(document.activeElement).not.toBe(promptTextarea);
+    expect(document.activeElement).not.toBe(promptCreateButton);
+
+    promptExpanded.style.display = "block";
+    await flushTourUpdates();
+
+    promptToggle.focus();
+    expect(await pressTab(promptToggle)).toBe(true);
+    expect(document.activeElement).toBe(promptColumn);
+
+    expect(await pressTab(promptColumn)).toBe(true);
+    expect(document.activeElement).toBe(promptTextarea);
+
+    expect(await pressTab(promptTextarea)).toBe(true);
+    expect(document.activeElement).toBe(promptCreateButton);
+
+    expect(await pressTab(promptCreateButton)).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton)).toBe(true);
+    expect(document.activeElement).toBe(nextButton);
+
+    expect(await pressTab(nextButton, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(skipButton);
+
+    expect(await pressTab(skipButton, { shiftKey: true })).toBe(true);
+    expect(document.activeElement).toBe(promptCreateButton);
+
+    controller.dispose();
   });
 
   it("keeps settings-hosted interactive steps inside the tour focus scope", async () => {

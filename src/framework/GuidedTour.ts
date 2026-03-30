@@ -115,8 +115,28 @@ function isTabbableElement(element: HTMLElement): boolean {
   const tabIndex = element.getAttribute("tabindex");
   if (tabIndex !== null && Number(tabIndex) < 0) return false;
 
-  const style = window.getComputedStyle(element);
-  return style.display !== "none" && style.visibility !== "hidden";
+  if (typeof element.checkVisibility === "function") {
+    return element.checkVisibility({
+      checkOpacity: false,
+      checkVisibilityCSS: true,
+    });
+  }
+
+  for (
+    let current: HTMLElement | null = element;
+    current;
+    current = current.parentElement
+  ) {
+    if (current.hidden) return false;
+    if (current.hasAttribute("inert")) return false;
+    if (current.getAttribute("aria-hidden") === "true") return false;
+
+    const style = window.getComputedStyle(current);
+    if (style.display === "none") return false;
+    if (style.visibility === "hidden" || style.visibility === "collapse") return false;
+  }
+
+  return true;
 }
 
 const TABBABLE_SELECTOR =
