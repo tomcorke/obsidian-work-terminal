@@ -20,6 +20,7 @@ function normalizeWaitingLine(line: string): string {
 
 const GENERIC_WAITING_QUESTION_WINDOW = 5;
 const HIDDEN_CLAUDE_QUESTION_WINDOW = 10;
+const HIDDEN_CLAUDE_PROMPT_CHROME_SCAN_LINES = 6;
 
 function looksLikeHiddenClaudePrompt(tail: string[], questionIndex: number): boolean {
   const normalizedQuestion = normalizeWaitingLine(tail[questionIndex]);
@@ -32,7 +33,13 @@ function looksLikeHiddenClaudePrompt(tail: string[], questionIndex: number): boo
   }
 
   const normalizedAfterQuestion = tail
-    .slice(questionIndex + 1, Math.min(tail.length, questionIndex + 7))
+    .slice(
+      questionIndex + 1,
+      Math.min(
+        tail.length,
+        questionIndex + 1 + HIDDEN_CLAUDE_PROMPT_CHROME_SCAN_LINES,
+      ),
+    )
     .map((line) => normalizeWaitingLine(line))
     .filter((line) => line.length > 0);
   const promptIndex = normalizedAfterQuestion.findIndex((line) => line === "❯");
