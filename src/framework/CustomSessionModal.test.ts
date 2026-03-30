@@ -220,7 +220,7 @@ const defaultConfig: CustomSessionConfig = {
 const closedSession: ClosedSessionEntry = {
   sessionType: "claude",
   label: "Pairing session",
-  claudeSessionId: "session-123",
+  agentSessionId: "session-123",
   closedAt: Date.now() - 60_000,
   itemId: "item-1",
 };

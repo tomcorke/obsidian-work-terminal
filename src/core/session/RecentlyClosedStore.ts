@@ -7,7 +7,7 @@ import type { SessionType } from "./types";
 export interface ClosedSessionEntry {
   sessionType: SessionType;
   label: string;
-  claudeSessionId: string | null;
+  agentSessionId: string | null;
   closedAt: number; // Date.now() timestamp
   itemId: string;
 }
@@ -34,7 +34,7 @@ export class RecentlyClosedStore {
     for (const entry of this.entries) {
       if (result.length >= limit) break;
       // Skip if the session is currently active (reopened by any means)
-      if (entry.claudeSessionId && activeSessionIds.has(entry.claudeSessionId)) {
+      if (entry.agentSessionId && activeSessionIds.has(entry.agentSessionId)) {
         continue;
       }
       result.push(entry);

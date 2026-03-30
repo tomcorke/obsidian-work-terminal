@@ -1,7 +1,7 @@
 /**
  * ListPanel - column-based work item list with collapsible sections,
  * drag-drop reordering, filtering, selection, session badges, and
- * Claude state indicators.
+ * agent state indicators.
  */
 import { Menu, Notice } from "obsidian";
 import type { Plugin, TFile } from "obsidian";
@@ -42,8 +42,8 @@ export class ListPanel {
   // Placeholders for enrichment
   private placeholders: Map<string, HTMLElement> = new Map();
 
-  // Claude state tracking
-  private claudeStates: Map<string, string> = new Map();
+  // Agent state tracking
+  private agentStates: Map<string, string> = new Map();
   private idleSinceMap: Map<string, number> = new Map();
 
   // Background enrichment tracking
@@ -188,8 +188,8 @@ export class ListPanel {
         // Drag source
         this.setupDragSource(cardEl, item, col.id);
 
-        // Claude state indicators (applied as class on card wrapper)
-        this.renderClaudeStateIndicator(cardEl, item);
+        // Agent state indicators (applied as class on card wrapper)
+        this.renderAgentStateIndicator(cardEl, item);
 
         // Actions container: session badge + resume badge + move-to-top (top-right)
         // Order: [session badge] [resume badge] [move-to-top (on hover)]
@@ -262,7 +262,7 @@ export class ListPanel {
       },
       onDelete: () => this.deleteItem(item),
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
-      getContextPrompt: () => this.terminalPanel.getClaudeContextPrompt(item),
+      getContextPrompt: () => this.terminalPanel.getAgentContextPrompt(item),
     };
   }
 
@@ -635,11 +635,10 @@ export class ListPanel {
     badgeEl.textContent = String(total);
   }
 
-  private renderClaudeStateIndicator(cardEl: HTMLElement, item: WorkItem): void {
-    const state = this.claudeStates.get(item.id);
+  private renderAgentStateIndicator(cardEl: HTMLElement, item: WorkItem): void {
+    const state = this.agentStates.get(item.id);
+    this.applyAgentStateClass(cardEl, state);
     if (!state || state === "inactive") return;
-
-    cardEl.addClass(`wt-claude-${state}`);
 
     if (state === "idle") {
       const idleSince = this.idleSinceMap.get(item.id) ?? this.terminalPanel.getIdleSince(item.id);
@@ -650,6 +649,22 @@ export class ListPanel {
         this.idleSinceMap.set(item.id, idleSince);
       }
     }
+  }
+
+  private applyAgentStateClass(cardEl: HTMLElement, state: string | undefined): void {
+    cardEl.removeClass(
+      "wt-agent-active",
+      "wt-agent-waiting",
+      "wt-agent-idle",
+      "wt-claude-active",
+      "wt-claude-waiting",
+      "wt-claude-idle",
+    );
+    if (!state || state === "inactive") {
+      cardEl.style.removeProperty("--idle-offset");
+      return;
+    }
+    cardEl.addClass(`wt-agent-${state}`);
   }
 
   private renderMoveToTop(containerEl: HTMLElement, item: WorkItem): void {
@@ -734,8 +749,8 @@ export class ListPanel {
   // Public API
   // ---------------------------------------------------------------------------
 
-  updateClaudeState(itemId: string, state: string): void {
-    this.claudeStates.set(itemId, state);
+  updateAgentState(itemId: string, state: string): void {
+    this.agentStates.set(itemId, state);
     if (state === "idle") {
       if (!this.idleSinceMap.has(itemId)) {
         // Use TabManager's pre-seeded timestamp (300s ago for recovered sessions)
@@ -749,16 +764,15 @@ export class ListPanel {
     // Update card classes without full re-render
     const cardEl = this.listEl.querySelector(`[data-item-id="${itemId}"]`) as HTMLElement;
     if (cardEl) {
-      cardEl.removeClass("wt-claude-active", "wt-claude-waiting", "wt-claude-idle");
-      if (state !== "inactive") {
-        cardEl.addClass(`wt-claude-${state}`);
-      }
+      this.applyAgentStateClass(cardEl, state);
       if (state === "idle") {
         const idleSince = this.idleSinceMap.get(itemId);
         if (idleSince) {
           const elapsed = (Date.now() - idleSince) / 1000;
           cardEl.style.setProperty("--idle-offset", `${-elapsed}s`);
         }
+      } else {
+        cardEl.style.removeProperty("--idle-offset");
       }
     }
   }

@@ -31,7 +31,7 @@ const mockState = vi.hoisted(() => ({
   openExternal: vi.fn(),
   latestTabManager: null as {
     onSessionChange?: () => void;
-    onClaudeStateChange?: (itemId: string, state: string) => void;
+    onAgentStateChange?: (itemId: string, state: string) => void;
     onPersistRequest?: () => void;
   } | null,
   stopPeriodicPersist: vi.fn(),
@@ -148,7 +148,7 @@ vi.mock("obsidian", () => ({
 vi.mock("../core/terminal/TabManager", () => ({
   TabManager: class {
     onSessionChange?: () => void;
-    onClaudeStateChange?: (itemId: string, state: string) => void;
+    onAgentStateChange?: (itemId: string, state: string) => void;
     onPersistRequest?: () => void;
 
     constructor(_terminalWrapperEl: HTMLElement) {
@@ -213,7 +213,7 @@ vi.mock("../core/terminal/TabManager", () => ({
       );
     }
 
-    getClaudeState() {
+    getAgentState() {
       return "inactive";
     }
 
@@ -257,11 +257,11 @@ vi.mock("../core/session/SessionPersistence", () => ({
       const persisted: PersistedSession[] = [];
       for (const [taskPath, tabs] of sessions) {
         for (const tab of tabs) {
-          if (tab.isResumableAgent && tab.claudeSessionId) {
+          if (tab.isResumableAgent && tab.agentSessionId) {
             persisted.push({
               version: 1,
               taskPath,
-              claudeSessionId: tab.claudeSessionId,
+              agentSessionId: tab.agentSessionId,
               label: tab.label,
               sessionType: tab.sessionType,
               savedAt: "2026-03-28T20:00:00.000Z",
@@ -396,7 +396,7 @@ function makePersistedSession(sessionType: PersistedSession["sessionType"]): Per
   return {
     version: 1,
     taskPath: "Tasks/task-1.md",
-    claudeSessionId: "session-1",
+    agentSessionId: "session-1",
     label: "Session",
     sessionType,
     savedAt: "2026-03-28T20:00:00.000Z",
@@ -774,7 +774,7 @@ describe("TerminalPanelView hook warning", () => {
           {
             label: "Automatic Issues",
             taskPath: "Tasks/task-1.md",
-            claudeSessionId: "copilot-123",
+            agentSessionId: "copilot-123",
             isResumableAgent: true,
             sessionType: "copilot",
           },
@@ -840,6 +840,99 @@ describe("TerminalPanelView hook warning", () => {
     const snapshot = view.getSessionDiagnosticsSnapshot();
 
     expect(snapshot.persistedSessions).toHaveLength(1);
+    expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
+      hasPersistedSession: true,
+      canResumeAfterRestart: true,
+      missingPersistedMetadata: false,
+    });
+  });
+
+  it("dedupes loaded legacy persisted sessions against fresh agent session ids", async () => {
+    mockState.persistedSessions = [
+      {
+        version: 1,
+        taskPath: "Tasks/task-1.md",
+        claudeSessionId: "copilot-123",
+        label: "Automatic Issues",
+        sessionType: "copilot",
+        savedAt: "2026-03-28T20:00:00.000Z",
+      } as PersistedSession,
+    ];
+    mockState.activeSessions = new Map([
+      [
+        "Tasks/task-1.md",
+        [
+          {
+            label: "Automatic Issues",
+            taskPath: "Tasks/task-1.md",
+            agentSessionId: "copilot-123",
+            isResumableAgent: true,
+            sessionType: "copilot",
+          },
+        ],
+      ],
+    ]) as any;
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.tabDiagnostics = [
+      {
+        tabId: "tab-1",
+        itemId: "Tasks/task-1.md",
+        tabIndex: 0,
+        label: "Automatic Issues",
+        sessionId: "copilot-123",
+        sessionType: "copilot",
+        claudeState: "idle",
+        isResumableAgent: true,
+        isVisible: true,
+        isDisposed: false,
+        isSelected: true,
+        process: {
+          pid: 100,
+          status: "alive",
+          killed: false,
+          exitCode: null,
+          signalCode: null,
+          spawnTime: 1000,
+          uptimeMs: 1000,
+        },
+        renderer: {
+          canvasCount: 1,
+          hasRenderableContent: true,
+          hasBlankRenderSurface: false,
+          trackedWebglAddonPresent: false,
+          trackedWebglAddonDisposed: false,
+          staleDisposedWebglOwnership: false,
+        },
+        buffer: {
+          screenLineCount: 1,
+          screenTail: ["[redacted:5 chars]"],
+        },
+        recovery: {
+          resumable: true,
+          relaunchable: false,
+          hasPersistedSession: false,
+          canResumeAfterRestart: false,
+          missingPersistedMetadata: true,
+          wouldBeLostOnFullClose: false,
+          lifecycle: "live",
+        },
+        derived: {
+          blankButLiveRenderer: false,
+          staleDisposedWebglOwnership: false,
+          disposedTabStillSelected: false,
+        },
+      },
+    ];
+
+    const { view } = createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+
+    await view.persistSessions();
+    const persisted = view.getPersistedSessions("Tasks/task-1.md");
+    const snapshot = view.getSessionDiagnosticsSnapshot();
+
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({ agentSessionId: "copilot-123" });
     expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
       hasPersistedSession: true,
       canResumeAfterRestart: true,
@@ -1042,7 +1135,7 @@ describe("TerminalPanelView hook warning", () => {
       {
         sessionType: "claude",
         label: "Claude",
-        claudeSessionId: "session-123",
+        agentSessionId: "session-123",
         launchShell: "/bin/echo",
         launchCwd: expandTilde("~/resume"),
         launchCommandArgs: [
@@ -1085,7 +1178,7 @@ describe("TerminalPanelView hook warning", () => {
         sessionType: "claude",
         label: "Claude",
         taskPath: "task-1",
-        claudeSessionId: "session-123",
+        agentSessionId: "session-123",
         launchShell: "/bin/echo",
         launchCwd: expandTilde("~/resume"),
         launchCommandArgs: [
@@ -1154,7 +1247,7 @@ describe("TerminalPanelView hook warning", () => {
       {
         sessionType: "claude-with-context",
         label: "Claude (ctx)",
-        claudeSessionId: null,
+        agentSessionId: null,
         launchShell: "/bin/echo",
         launchCwd: expandTilde("~/fresh"),
         launchCommandArgs: ["/bin/echo", "--session-id", "old-id", "Prompt for Task One"],
@@ -1186,7 +1279,7 @@ describe("TerminalPanelView hook warning", () => {
       {
         sessionType: "claude",
         label: "Recovered Claude",
-        claudeSessionId: "session-456",
+        agentSessionId: "session-456",
       },
       0,
       new dom.window.MouseEvent("contextmenu"),
@@ -1208,6 +1301,33 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("restores recently closed legacy entries using claudeSessionId fallback", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/fallback",
+    });
+    await flushAsync();
+
+    await (view as any).restoreClosedSession({
+      sessionType: "copilot",
+      label: "Recovered Copilot",
+      claudeSessionId: "session-legacy",
+      closedAt: Date.now(),
+      itemId: "task-1",
+    });
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "task-1",
+      "/bin/echo",
+      expandTilde("~/fallback"),
+      "Recovered Copilot",
+      "copilot",
+      undefined,
+      ["/bin/echo", "--resume=session-legacy"],
+      "session-legacy",
+    ]);
+  });
+
   it("keeps tab clicks working after rename mode is torn down by a task switch", async () => {
     mockState.tabsByItem = new Map([
       [
@@ -1217,7 +1337,7 @@ describe("TerminalPanelView hook warning", () => {
             label: "Shell",
             sessionType: "shell",
             isResumableAgent: false,
-            claudeState: "inactive",
+            agentState: "inactive",
           },
         ],
       ],
@@ -1228,7 +1348,7 @@ describe("TerminalPanelView hook warning", () => {
             label: "Claude",
             sessionType: "claude",
             isResumableAgent: true,
-            claudeState: "inactive",
+            agentState: "inactive",
           },
         ],
       ],
@@ -1264,7 +1384,7 @@ describe("TerminalPanelView hook warning", () => {
         sessionType: "claude",
         label: "Recovered Claude",
         taskPath: "task-1",
-        claudeSessionId: "session-456",
+        agentSessionId: "session-456",
       },
       0,
       new dom.window.MouseEvent("contextmenu"),
@@ -1665,7 +1785,7 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
     vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
 
-    const prompt = await (view as any).getClaudeContextPrompt({
+    const prompt = await (view as any).getAgentContextPrompt({
       id: "task-1",
       title: "Task One",
       state: "doing",
@@ -1697,7 +1817,7 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
     vi.mocked(electronRequire).mockImplementationOnce(() => path.win32);
 
-    const prompt = await (view as any).getClaudeContextPrompt({
+    const prompt = await (view as any).getAgentContextPrompt({
       id: "task-1",
       title: "Task One",
       state: "doing",

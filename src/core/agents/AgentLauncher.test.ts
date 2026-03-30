@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildClaudeArgs, buildCopilotArgs, buildStrandsArgs } from "./ClaudeLauncher";
+import { buildClaudeArgs, buildCopilotArgs, buildStrandsArgs } from "./AgentLauncher";
 
-describe("ClaudeLauncher", () => {
+describe("AgentLauncher", () => {
   it("builds Claude args with session id and prompt", () => {
     expect(
       buildClaudeArgs(

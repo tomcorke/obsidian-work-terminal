@@ -1,5 +1,5 @@
 /**
- * TabManager tests - covers state aggregation and Claude state notification
+ * TabManager tests - covers state aggregation and agent state notification
  * on tab lifecycle events.
  */
 import { describe, expect, it, vi } from "vitest";
@@ -20,7 +20,7 @@ vi.mock("../session/SessionStore", () => ({
 }));
 
 import { TabManager } from "./TabManager";
-import type { ClaudeState } from "./TerminalTab";
+import type { AgentState } from "./TerminalTab";
 
 // ---------------------------------------------------------------------------
 // Minimal TerminalTab stub
@@ -28,12 +28,12 @@ import type { ClaudeState } from "./TerminalTab";
 
 function makeStubTab(
   overrides: {
-    claudeState?: ClaudeState;
+    agentState?: AgentState;
     isResumableAgent?: boolean;
     sessionType?: SessionType;
     label?: string;
     id?: string;
-    claudeSessionId?: string | null;
+    agentSessionId?: string | null;
     taskPath?: string;
     isDisposed?: boolean;
     processStatus?: "alive" | "exited" | "killed" | "missing";
@@ -41,11 +41,11 @@ function makeStubTab(
 ): {
   id: string;
   label: string;
-  claudeState: ClaudeState;
+  agentState: AgentState;
   isResumableAgent: boolean;
   sessionType: SessionType;
-  claudeSessionId: string | null;
-  onStateChange?: (state: ClaudeState) => void;
+  agentSessionId: string | null;
+  onStateChange?: (state: AgentState) => void;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   dispose: ReturnType<typeof vi.fn>;
@@ -61,10 +61,10 @@ function makeStubTab(
   return {
     id: overrides.id ?? "tab-1",
     label: overrides.label ?? "Shell",
-    claudeState: overrides.claudeState ?? "inactive",
+    agentState: overrides.agentState ?? "inactive",
     isResumableAgent: overrides.isResumableAgent ?? false,
     sessionType: overrides.sessionType ?? "shell",
-    claudeSessionId: overrides.claudeSessionId ?? null,
+    agentSessionId: overrides.agentSessionId ?? null,
     dispose: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
@@ -74,9 +74,9 @@ function makeStubTab(
     getDiagnostics: vi.fn(() => ({
       tabId: overrides.id ?? "tab-1",
       label: overrides.label ?? "Shell",
-      sessionId: overrides.claudeSessionId ?? null,
+      sessionId: overrides.agentSessionId ?? null,
       sessionType: overrides.sessionType ?? "shell",
-      claudeState: overrides.claudeState ?? "inactive",
+      claudeState: overrides.agentState ?? "inactive",
       isResumableAgent: overrides.isResumableAgent ?? false,
       isVisible: true,
       isDisposed,
@@ -137,16 +137,16 @@ function makeTabManagerWithSessions(
 // ---------------------------------------------------------------------------
 
 describe("TabManager - closeTab", () => {
-  it("fires onClaudeStateChange with inactive when the only Claude tab (waiting) is closed", () => {
+  it("fires onAgentStateChange with inactive when the only Claude tab (waiting) is closed", () => {
     const tab = makeStubTab({
-      claudeState: "waiting",
+      agentState: "waiting",
       isResumableAgent: true,
       sessionType: "claude",
     });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
 
-    const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
-    mgr.onClaudeStateChange = (itemId, state) => stateChanges.push({ itemId, state });
+    const stateChanges: Array<{ itemId: string; state: AgentState }> = [];
+    mgr.onAgentStateChange = (itemId, state) => stateChanges.push({ itemId, state });
 
     mgr.closeTab(0);
 
@@ -154,17 +154,17 @@ describe("TabManager - closeTab", () => {
     expect(stateChanges[0]).toEqual({ itemId: "item-1", state: "inactive" });
   });
 
-  it("fires onClaudeStateChange with waiting when a non-waiting tab is closed but a waiting tab remains", () => {
+  it("fires onAgentStateChange with waiting when a non-waiting tab is closed but a waiting tab remains", () => {
     const waitingTab = makeStubTab({
-      claudeState: "waiting",
+      agentState: "waiting",
       isResumableAgent: true,
       sessionType: "copilot",
     });
-    const shellTab = makeStubTab({ claudeState: "inactive", isResumableAgent: false });
+    const shellTab = makeStubTab({ agentState: "inactive", isResumableAgent: false });
     const mgr = makeTabManagerWithSessions("item-1", [shellTab, waitingTab]);
 
-    const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
-    mgr.onClaudeStateChange = (itemId, state) => stateChanges.push({ itemId, state });
+    const stateChanges: Array<{ itemId: string; state: AgentState }> = [];
+    mgr.onAgentStateChange = (itemId, state) => stateChanges.push({ itemId, state });
 
     mgr.closeTab(0); // close shellTab
 
@@ -172,22 +172,22 @@ describe("TabManager - closeTab", () => {
     expect(stateChanges[0]).toEqual({ itemId: "item-1", state: "waiting" });
   });
 
-  it("fires onClaudeStateChange with active after closing a waiting tab when an active tab remains", () => {
+  it("fires onAgentStateChange with active after closing a waiting tab when an active tab remains", () => {
     const waitingTab = makeStubTab({
-      claudeState: "waiting",
+      agentState: "waiting",
       isResumableAgent: true,
       sessionType: "claude",
     });
     const activeTab = makeStubTab({
-      claudeState: "active",
+      agentState: "active",
       isResumableAgent: true,
       sessionType: "copilot",
     });
     const mgr = makeTabManagerWithSessions("item-1", [waitingTab, activeTab]);
     (mgr as any).activeTabIndex = 0;
 
-    const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
-    mgr.onClaudeStateChange = (itemId, state) => stateChanges.push({ itemId, state });
+    const stateChanges: Array<{ itemId: string; state: AgentState }> = [];
+    mgr.onAgentStateChange = (itemId, state) => stateChanges.push({ itemId, state });
 
     mgr.closeTab(0); // close waitingTab
 
@@ -196,9 +196,9 @@ describe("TabManager - closeTab", () => {
     expect(stateChanges[0]).toEqual({ itemId: "item-1", state: "active" });
   });
 
-  it("fires onSessionChange alongside onClaudeStateChange", () => {
+  it("fires onSessionChange alongside onAgentStateChange", () => {
     const tab = makeStubTab({
-      claudeState: "waiting",
+      agentState: "waiting",
       isResumableAgent: true,
       sessionType: "claude",
     });
@@ -206,7 +206,7 @@ describe("TabManager - closeTab", () => {
 
     const sessionChangeOrder: string[] = [];
     mgr.onSessionChange = () => sessionChangeOrder.push("session");
-    mgr.onClaudeStateChange = () => sessionChangeOrder.push("state");
+    mgr.onAgentStateChange = () => sessionChangeOrder.push("state");
 
     mgr.closeTab(0);
 
@@ -215,16 +215,16 @@ describe("TabManager - closeTab", () => {
 });
 
 describe("TabManager - closeAllSessions", () => {
-  it("fires onClaudeStateChange with inactive after closing all sessions for an item", () => {
+  it("fires onAgentStateChange with inactive after closing all sessions for an item", () => {
     const tab = makeStubTab({
-      claudeState: "waiting",
+      agentState: "waiting",
       isResumableAgent: true,
       sessionType: "copilot",
     });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
 
-    const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
-    mgr.onClaudeStateChange = (itemId, state) => stateChanges.push({ itemId, state });
+    const stateChanges: Array<{ itemId: string; state: AgentState }> = [];
+    mgr.onAgentStateChange = (itemId, state) => stateChanges.push({ itemId, state });
 
     mgr.closeAllSessions("item-1");
 
@@ -232,11 +232,11 @@ describe("TabManager - closeAllSessions", () => {
     expect(stateChanges[0]).toEqual({ itemId: "item-1", state: "inactive" });
   });
 
-  it("does not fire onClaudeStateChange when called for an item with no sessions", () => {
+  it("does not fire onAgentStateChange when called for an item with no sessions", () => {
     const mgr = new TabManager(null as any);
 
-    const stateChanges: Array<{ itemId: string; state: ClaudeState }> = [];
-    mgr.onClaudeStateChange = (itemId, state) => stateChanges.push({ itemId, state });
+    const stateChanges: Array<{ itemId: string; state: AgentState }> = [];
+    mgr.onAgentStateChange = (itemId, state) => stateChanges.push({ itemId, state });
 
     mgr.closeAllSessions("nonexistent-item");
 
@@ -384,7 +384,7 @@ describe("TabManager - active tab discovery", () => {
         label: "Automatic Issues",
         sessionType: "claude",
         isResumableAgent: true,
-        claudeSessionId: "session-1",
+        agentSessionId: "session-1",
         taskPath: "item-1",
       }),
       makeStubTab({
@@ -392,7 +392,7 @@ describe("TabManager - active tab discovery", () => {
         label: "Shell",
         sessionType: "shell",
         isResumableAgent: false,
-        claudeSessionId: null,
+        agentSessionId: null,
         taskPath: "item-1",
       }),
     ]);
@@ -402,7 +402,7 @@ describe("TabManager - active tab discovery", () => {
         label: "Automatic Issues",
         sessionType: "copilot",
         isResumableAgent: true,
-        claudeSessionId: "session-2",
+        agentSessionId: "session-2",
         taskPath: "item-2",
       }),
     ]);
@@ -443,14 +443,14 @@ describe("TabManager - active tab discovery", () => {
         label: "Automatic Issues",
         sessionType: "claude",
         isResumableAgent: true,
-        claudeSessionId: "session-1",
+        agentSessionId: "session-1",
       }),
       makeStubTab({
         id: "tab-copilot",
         label: " automatic issues ",
         sessionType: "copilot",
         isResumableAgent: true,
-        claudeSessionId: "session-2",
+        agentSessionId: "session-2",
       }),
       makeStubTab({
         id: "tab-shell",

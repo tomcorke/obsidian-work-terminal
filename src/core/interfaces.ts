@@ -196,7 +196,7 @@ export interface AdapterBundle {
     settings: Record<string, unknown>,
   ): Promise<{ path: string; id: string } | null>;
   /**
-   * Transform a detected Claude session rename label before applying it.
+   * Transform a detected agent session rename label before applying it.
    * Called when Claude outputs "Session renamed to: <name>".
    * Return the label to use (default: return detectedLabel unchanged).
    */

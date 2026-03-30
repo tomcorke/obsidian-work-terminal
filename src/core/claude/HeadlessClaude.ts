@@ -4,7 +4,7 @@
  * Used for background operations like generating summaries, extracting context,
  * or running one-shot prompts without a visible terminal.
  */
-import { resolveCommand, augmentPath } from "./ClaudeLauncher";
+import { resolveCommand, augmentPath } from "../agents/AgentLauncher";
 import { expandTilde, electronRequire } from "../utils";
 
 const TIMEOUT_MS = 120_000;
