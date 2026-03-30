@@ -18,7 +18,7 @@ import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
 import { type StoredSession, type SessionType, isResumableSessionType } from "../session/types";
 import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
-import { hasAgentActiveIndicator } from "../claude/ClaudeStateDetector";
+import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../claude/ClaudeStateDetector";
 
 export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
 
@@ -780,37 +780,7 @@ export class TerminalTab {
    * screen buffer and recent output lines.
    */
   private _looksLikeWaiting(screenLines?: string[]): boolean {
-    const sources = [...(screenLines || []), ...(this._recentCleanLines || []).slice(-15)];
-    if (sources.length === 0) return false;
-
-    const tail = sources.slice(-20);
-
-    for (let i = tail.length - 1; i >= Math.max(0, tail.length - 15); i--) {
-      const line = tail[i].trim();
-
-      // Interactive selection UI: "Enter to select", "up/down to navigate"
-      if (/Enter to select|to navigate/i.test(line)) return true;
-
-      // Permission prompt patterns
-      if (/\bAllow\b.*\?/i.test(line)) return true;
-      if (/\ballowOnce\b|\bdenyOnce\b|\ballowAlways\b/i.test(line)) return true;
-
-      // AskUserQuestion patterns: numbered options with ">" selector or "(N)"
-      if (/^\s*[>\u276f]\s*\d+\.\s+\S/.test(line)) return true;
-      if (/^\s*\(?\d+\)?\s+\S/.test(line) && i > 0) {
-        for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
-          if (tail[j].trim().endsWith("?")) return true;
-        }
-      }
-
-      // Generic question pattern near the bottom
-      if (i >= tail.length - 5 && line.endsWith("?") && line.length > 10) return true;
-
-      // "Yes" / "No" option pair
-      if (/^\s*(Yes|No)\s*$/i.test(line)) return true;
-    }
-
-    return false;
+    return hasAgentWaitingIndicator(screenLines || [], this._recentCleanLines || []);
   }
 
   /** Clear the waiting state (e.g. when the user activates this tab to respond). */
