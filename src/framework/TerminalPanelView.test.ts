@@ -2250,6 +2250,12 @@ describe("TerminalPanelView hook warning", () => {
         "task-2",
         [
           {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            agentState: "inactive",
+          },
+          {
             label: "Claude",
             sessionType: "claude",
             isResumableAgent: true,
@@ -2270,10 +2276,43 @@ describe("TerminalPanelView hook warning", () => {
     view.setActiveItem("task-2");
     expect(panelEl.querySelector(".wt-tab-rename-input")).toBeNull();
 
-    const secondTab = panelEl.querySelector(".wt-tab") as HTMLElement;
+    const secondTab = panelEl.querySelectorAll(".wt-tab")[1] as HTMLElement;
     secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
 
-    expect(mockState.tabManagerCalls).toContain("switchToTab:0");
+    expect(mockState.tabManagerCalls).toContain("switchToTab:1");
+  });
+
+  it("lets active tab double-click enter rename mode without replacing the label first", async () => {
+    mockState.tabsByItem = new Map([
+      [
+        "task-1",
+        [
+          {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            agentState: "inactive",
+          },
+        ],
+      ],
+    ]);
+
+    const { panelEl, view } = createView();
+    await flushAsync();
+
+    view.setActiveItem("task-1");
+    const activeTab = panelEl.querySelector(".wt-tab") as HTMLElement;
+    const labelEl = panelEl.querySelector(".wt-tab-label") as HTMLElement;
+
+    activeTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(panelEl.querySelector(".wt-tab-label")).toBe(labelEl);
+    expect(labelEl.isConnected).toBe(true);
+    expect(mockState.tabManagerCalls).not.toContain("switchToTab:0");
+
+    labelEl.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+
+    expect(panelEl.querySelector(".wt-tab-rename-input")).not.toBeNull();
   });
 
   it("restarts tabs against the tab item before falling back to the active item", async () => {
