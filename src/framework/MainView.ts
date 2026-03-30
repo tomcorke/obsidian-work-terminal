@@ -144,9 +144,9 @@ export class MainView extends ItemView {
       this.listPanel?.selectById(recoveredId);
     }
 
-    // Broadcast Claude states for any recovered sessions so ListPanel
+    // Broadcast agent states for any recovered sessions so ListPanel
     // picks up state indicators that were set before it existed.
-    this.terminalPanel?.broadcastClaudeStates();
+    this.terminalPanel?.broadcastAgentStates();
   }
 
   async copySessionDiagnostics(): Promise<boolean> {
@@ -307,9 +307,9 @@ export class MainView extends ItemView {
       this.adapter,
       settings,
       promptBuilder,
-      // onClaudeStateChange callback
+      // onAgentStateChange callback
       (itemId: string, state: string) => {
-        this.listPanel?.updateClaudeState(itemId, state);
+        this.listPanel?.updateAgentState(itemId, state);
       },
       // onSessionChange callback
       () => {

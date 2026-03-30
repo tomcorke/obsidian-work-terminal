@@ -24,13 +24,13 @@ function createClaudeLogo(size = 14): SVGSVGElement {
 }
 import type { Plugin } from "obsidian";
 import { TabManager } from "../core/terminal/TabManager";
-import type { TerminalTab, ClaudeState } from "../core/terminal/TerminalTab";
+import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
   resolveCommand,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
-} from "../core/claude/ClaudeLauncher";
+} from "../core/agents/AgentLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import { SessionStore } from "../core/session/SessionStore";
 import { isResumableSessionType } from "../core/session/types";
@@ -44,7 +44,7 @@ import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
-import { buildClaudeContextPrompt, getClaudeContextTemplate } from "./ClaudeContextPrompt";
+import { buildAgentContextPrompt, getAgentContextTemplate } from "./AgentContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
@@ -136,7 +136,7 @@ export class TerminalPanelView {
   private adapter: AdapterBundle;
   private settings: Record<string, any>;
   private promptBuilder: WorkItemPromptBuilder;
-  private onClaudeStateChange: (itemId: string, state: string) => void;
+  private onAgentStateChange: (itemId: string, state: string) => void;
   private onSessionChange: () => void;
 
   // DOM elements
@@ -184,7 +184,7 @@ export class TerminalPanelView {
     adapter: AdapterBundle,
     settings: Record<string, any>,
     promptBuilder: WorkItemPromptBuilder,
-    onClaudeStateChange: (itemId: string, state: string) => void,
+    onAgentStateChange: (itemId: string, state: string) => void,
     onSessionChange: () => void,
   ) {
     this.panelEl = panelEl;
@@ -193,7 +193,7 @@ export class TerminalPanelView {
     this.adapter = adapter;
     this.settings = settings;
     this.promptBuilder = promptBuilder;
-    this.onClaudeStateChange = onClaudeStateChange;
+    this.onAgentStateChange = onAgentStateChange;
     this.onSessionChange = onSessionChange;
     window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
 
@@ -214,8 +214,8 @@ export class TerminalPanelView {
       void this.checkHookWarning();
       this.onSessionChange();
     };
-    this.tabManager.onClaudeStateChange = (itemId: string, state: ClaudeState) => {
-      this.onClaudeStateChange(itemId, state);
+    this.tabManager.onAgentStateChange = (itemId: string, state: AgentState) => {
+      this.onAgentStateChange(itemId, state);
       this.updateTabStateClasses();
     };
     this.tabManager.onPersistRequest = () => {
@@ -225,7 +225,7 @@ export class TerminalPanelView {
       this.recentlyClosedStore.add({
         sessionType: tab.sessionType,
         label: tab.label,
-        claudeSessionId: tab.claudeSessionId,
+        agentSessionId: tab.agentSessionId,
         closedAt: Date.now(),
         itemId,
       });
@@ -374,7 +374,7 @@ export class TerminalPanelView {
         const tabEl = tabsContainer.createDiv({ cls: "wt-tab" });
         if (i === activeIdx) tabEl.addClass("wt-tab-active");
         if (tab.isResumableAgent) {
-          const state = tab.claudeState;
+          const state = tab.agentState;
           if (state !== "inactive") tabEl.addClass(`wt-tab-agent-${state}`);
         }
         tabEl.setAttribute("draggable", "true");
@@ -428,7 +428,7 @@ export class TerminalPanelView {
       this.launchAction("Claude", () => this.spawnClaude());
     });
 
-    if (getClaudeContextTemplate(this.settings)) {
+    if (getAgentContextTemplate(this.settings)) {
       const claudeCtxBtn = buttonsContainer.createEl("button", {
         cls: "wt-spawn-btn wt-spawn-claude-ctx",
       });
@@ -450,7 +450,7 @@ export class TerminalPanelView {
     });
   }
 
-  /** Update Claude state classes on existing tab elements without full re-render. */
+  /** Update agent state classes on existing tab elements without full re-render. */
   private updateTabStateClasses(): void {
     const activeItemId = this.tabManager.getActiveItemId();
     if (!activeItemId) return;
@@ -461,7 +461,7 @@ export class TerminalPanelView {
       const el = tabEls[i] as HTMLElement;
       for (const cls of stateClasses) el.removeClass(cls);
       if (tabs[i].isResumableAgent) {
-        const state = tabs[i].claudeState;
+        const state = tabs[i].agentState;
         if (state !== "inactive") el.addClass(`wt-tab-agent-${state}`);
       }
     }
@@ -652,8 +652,8 @@ export class TerminalPanelView {
     this.onSessionChange();
 
     // Notify both source and destination for badge updates
-    this.onClaudeStateChange(currentItemId, this.tabManager.getClaudeState(currentItemId));
-    this.onClaudeStateChange(targetItemId, this.tabManager.getClaudeState(targetItemId));
+    this.onAgentStateChange(currentItemId, this.tabManager.getAgentState(currentItemId));
+    this.onAgentStateChange(targetItemId, this.tabManager.getAgentState(targetItemId));
   }
 
   // ---------------------------------------------------------------------------
@@ -717,7 +717,7 @@ export class TerminalPanelView {
       targetItemId,
       sessionType: persisted.sessionType,
       label: persisted.label,
-      sessionId: persisted.claudeSessionId,
+      sessionId: this.getPersistedSessionId(persisted) || "",
       freshSettings: fresh,
     });
 
@@ -734,7 +734,7 @@ export class TerminalPanelView {
       } else {
         // Successful resume - remove from persisted list and sync to disk
         this.persistedSessions = this.persistedSessions.filter(
-          (s) => s.claudeSessionId !== persisted.claudeSessionId,
+          (s) => this.getPersistedSessionId(s) !== this.getPersistedSessionId(persisted),
         );
         this.persistSessions().catch(() => {});
       }
@@ -809,12 +809,12 @@ export class TerminalPanelView {
     const fresh = await this.loadFreshSettings();
     const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     let replacement: TerminalTab | null;
-    if (tab.claudeSessionId) {
+    if (tab.agentSessionId) {
       replacement = this.createResumedTab({
         targetItemId,
         sessionType: tab.sessionType,
         label: tab.label,
-        sessionId: tab.claudeSessionId,
+        sessionId: tab.agentSessionId,
         freshSettings: fresh,
         cwd: tab.launchCommandArgs?.length ? tab.launchCwd : fallbackCwd,
         resolvedCommand:
@@ -903,7 +903,7 @@ export class TerminalPanelView {
         !freshPersistedSessions.some(
           (fresh) =>
             fresh.taskPath === session.taskPath &&
-            fresh.claudeSessionId === session.claudeSessionId &&
+            this.getPersistedSessionId(fresh) === this.getPersistedSessionId(session) &&
             fresh.sessionType === session.sessionType,
         ),
     );
@@ -983,17 +983,17 @@ export class TerminalPanelView {
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
     const settings = freshSettings ?? (await this.loadFreshSettings());
-    return buildClaudeContextPrompt(item, settings, this.resolveWorkItemPath(item.path));
+    return buildAgentContextPrompt(item, settings, this.resolveWorkItemPath(item.path));
   }
 
-  private async getAgentContextPrompt(
+  async getAgentContextPrompt(
     item: WorkItem,
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
     const settings = freshSettings ?? (await this.loadFreshSettings());
     const resolvedPath = this.resolveWorkItemPath(item.path);
     const basePrompt = this.promptBuilder.buildPrompt(item, resolvedPath);
-    const templatePrompt = buildClaudeContextPrompt(item, settings, resolvedPath);
+    const templatePrompt = buildAgentContextPrompt(item, settings, resolvedPath);
 
     if (!basePrompt && !templatePrompt) {
       return null;
@@ -1037,6 +1037,14 @@ export class TerminalPanelView {
     return Array.from(this.tabManager.getActiveSessionIds());
   }
 
+  private getPersistedSessionId(session: PersistedSession): string | null {
+    return session.agentSessionId || session.claudeSessionId || null;
+  }
+
+  private getClosedSessionId(entry: ClosedSessionEntry): string | null {
+    return entry.agentSessionId || (entry as { claudeSessionId?: string | null }).claudeSessionId || null;
+  }
+
   private buildSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
     const activeSessionIds = this.tabManager.getActiveSessionIds();
     const activeTabs = this.tabManager.getTabDiagnostics().map((tab) => {
@@ -1045,7 +1053,7 @@ export class TerminalPanelView {
         this.durablePersistedSessions.some(
           (session) =>
             session.taskPath === tab.itemId &&
-            session.claudeSessionId === tab.sessionId &&
+            this.getPersistedSessionId(session) === tab.sessionId &&
             session.sessionType === tab.sessionType,
         );
       const missingPersistedMetadata = tab.isResumableAgent && !hasPersistedSession;
@@ -1079,14 +1087,15 @@ export class TerminalPanelView {
       isActiveItem: itemId === this.tabManager.getActiveItemId(),
       activeTabIndex:
         itemId === this.tabManager.getActiveItemId() ? this.tabManager.getActiveTabIndex() : 0,
-      aggregateState: this.tabManager.getClaudeState(itemId),
+      aggregateState: this.tabManager.getAgentState(itemId),
       idleSince: this.tabManager.getIdleSince(itemId) ?? null,
       sessionCounts: this.tabManager.getSessionCounts(itemId),
       tabs: activeTabs.filter((tab) => tab.itemId === itemId),
     }));
     const recentlyClosedSessions = this.recentlyClosedStore.getEntries(activeSessionIds, 20).map((entry) => ({
       ...entry,
-      recoveryAvailable: isResumableSessionType(entry.sessionType) && !!entry.claudeSessionId,
+      recoveryAvailable:
+        isResumableSessionType(entry.sessionType) && !!this.getClosedSessionId(entry),
     }));
     const summary: DiagnosticsSummary = {
       activeItemId: this.tabManager.getActiveItemId(),
@@ -1219,7 +1228,7 @@ export class TerminalPanelView {
 
     // For resumable agent sessions (Claude/Copilot) with a session ID, resume them
     if (
-      entry.claudeSessionId &&
+      this.getClosedSessionId(entry) &&
       entry.sessionType !== "shell" &&
       entry.sessionType !== "strands" &&
       entry.sessionType !== "strands-with-context"
@@ -1228,7 +1237,7 @@ export class TerminalPanelView {
         targetItemId: entry.itemId,
         sessionType: entry.sessionType,
         label: entry.label,
-        sessionId: entry.claudeSessionId,
+        sessionId: this.getClosedSessionId(entry) || "",
         freshSettings: fresh,
       });
       this.renderTabBar();
@@ -1490,15 +1499,19 @@ export class TerminalPanelView {
   }
 
   /**
-   * Broadcast current Claude state for all items with sessions.
+   * Broadcast current agent state for all items with sessions.
    * Call after initial list render to sync state indicators that may have been
    * set before the ListPanel existed (e.g. recovered from hot-reload).
    */
-  broadcastClaudeStates(): void {
+  broadcastAgentStates(): void {
     for (const itemId of this.tabManager.getSessionItemIds()) {
-      const state = this.tabManager.getClaudeState(itemId);
-      this.onClaudeStateChange(itemId, state);
+      const state = this.tabManager.getAgentState(itemId);
+      this.onAgentStateChange(itemId, state);
     }
+  }
+
+  broadcastClaudeStates(): void {
+    this.broadcastAgentStates();
   }
 
   rekeyItem(oldId: string, newId: string): void {
@@ -1531,8 +1544,12 @@ export class TerminalPanelView {
     this.refreshDebugGlobal();
   }
 
-  getClaudeState(itemId: string): ClaudeState {
-    return this.tabManager.getClaudeState(itemId);
+  getAgentState(itemId: string): AgentState {
+    return this.tabManager.getAgentState(itemId);
+  }
+
+  getClaudeState(itemId: string): AgentState {
+    return this.getAgentState(itemId);
   }
 
   private detachSettingsListener(): void {

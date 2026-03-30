@@ -8,7 +8,7 @@
 import { StringDecoder } from "string_decoder";
 import { stripAnsi } from "../utils";
 
-export class ClaudeSessionRename {
+export class AgentSessionRename {
   private decoder = new StringDecoder("utf8");
   private lineBuffer = "";
   private renamePattern = /^\s*[^\w]*Session renamed to:\s*(.+?)\s*$/;

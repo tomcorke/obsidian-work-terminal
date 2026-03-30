@@ -253,18 +253,18 @@
 .wt-badge-mixed { background: #8b5cf6; }
 
 /* =============================================================================
-   Claude state indicators on cards
+   Agent state indicators on cards
    ============================================================================= */
 
 /* Active: green arc spinner AROUND the badge (not spinning the text).
    Uses a pseudo-element with a conic-gradient that rotates. */
-.wt-claude-active .wt-session-badge {
+.wt-agent-active .wt-session-badge {
   position: relative;
   overflow: visible;
   isolation: isolate;
 }
 
-.wt-claude-active .wt-session-badge::before {
+.wt-agent-active .wt-session-badge::before {
   content: "";
   position: absolute;
   inset: -3px;
@@ -277,13 +277,13 @@
 }
 
 /* Waiting: amber gradient glow from right, smooth pulse via pseudo-element opacity */
-.wt-card-wrapper.wt-claude-waiting,
-.wt-card-wrapper.wt-claude-waiting:hover {
+.wt-card-wrapper.wt-agent-waiting,
+.wt-card-wrapper.wt-agent-waiting:hover {
   border-left-color: rgba(214, 158, 46, 0.8);
   position: relative;
 }
 
-.wt-card-wrapper.wt-claude-waiting::after {
+.wt-card-wrapper.wt-agent-waiting::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -295,7 +295,7 @@
 
 /* Idle: depleting arc + desaturation over 300s.
    Uses @property for animatable conic-gradient angle. */
-.wt-claude-idle .wt-session-badge {
+.wt-agent-idle .wt-session-badge {
   position: relative;
   overflow: visible;
   isolation: isolate;
@@ -303,7 +303,7 @@
   animation-delay: var(--idle-offset, 0s);
 }
 
-.wt-claude-idle .wt-session-badge::before {
+.wt-agent-idle .wt-session-badge::before {
   content: "";
   position: absolute;
   inset: -3px;

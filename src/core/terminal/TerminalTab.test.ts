@@ -66,8 +66,8 @@ vi.mock("../utils", () => ({
   },
 }));
 
-vi.mock("../claude/ClaudeSessionTracker", () => ({
-  ClaudeSessionTracker: class {
+vi.mock("../agents/AgentSessionTracker", () => ({
+  AgentSessionTracker: class {
     dispose(): void {}
   },
 }));
@@ -151,7 +151,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       id: "term-1",
       taskPath: "task.md",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude",
       terminal: {},
       fitAddon,
@@ -201,7 +201,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         id: "term-1",
         taskPath: "task.md",
         label: "Claude",
-        claudeSessionId: "session-1",
+        agentSessionId: "session-1",
         sessionType: "claude",
         terminal: terminal as any,
         fitAddon: fitAddon as any,
@@ -481,7 +481,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         id: "term-1",
         taskPath: "task.md",
         label: "Claude",
-        claudeSessionId: "session-1",
+        agentSessionId: "session-1",
         sessionType: "claude",
         terminal: {
           focus: vi.fn(),
@@ -561,7 +561,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
       id: "term-1",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude",
       process: {
         pid: 321,
@@ -580,7 +580,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         hasClass: vi.fn(() => false),
         querySelectorAll: vi.fn(() => []),
       },
-      _claudeState: "idle",
+      _agentState: "idle",
       _isResumableAgent: true,
       _isDisposed: false,
       _readTerminalScreen: vi.fn(() => ["line 1", "line 2"]),
@@ -651,7 +651,7 @@ describe("TerminalTab WebGL recovery", () => {
       id: "term-1",
       taskPath: "task.md",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude",
       terminal: {},
       fitAddon: {},
@@ -689,7 +689,7 @@ describe("TerminalTab WebGL recovery", () => {
       id: "term-1",
       taskPath: "task.md",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude",
       terminal: {
         focus: vi.fn(),
@@ -756,7 +756,7 @@ describe("TerminalTab WebGL recovery", () => {
       id: "term-1",
       taskPath: "task.md",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude" as const,
       terminal: {
         focus,
@@ -832,7 +832,7 @@ describe("TerminalTab WebGL recovery", () => {
       id: "term-1",
       taskPath: "task.md",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude" as const,
       terminal: {
         focus: vi.fn(),
@@ -869,7 +869,7 @@ describe("TerminalTab WebGL recovery", () => {
       id: "term-1",
       taskPath: "task.md",
       label: "Claude",
-      claudeSessionId: "session-1",
+      agentSessionId: "session-1",
       sessionType: "claude" as const,
       terminal: {
         focus: vi.fn(),

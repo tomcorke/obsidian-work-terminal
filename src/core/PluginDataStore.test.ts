@@ -26,14 +26,14 @@ describe("mergeAndSavePluginData", () => {
         data.customOrder = { todo: ["task-1"] };
       }),
       mergeAndSavePluginData(plugin, async (data) => {
-        data.persistedSessions = [{ claudeSessionId: "session-1" }];
+        data.persistedSessions = [{ agentSessionId: "session-1" }];
       }),
     ]);
 
     expect(plugin.getData()).toEqual({
       settings: { "core.defaultShell": "/bin/zsh" },
       customOrder: { todo: ["task-1"] },
-      persistedSessions: [{ claudeSessionId: "session-1" }],
+      persistedSessions: [{ agentSessionId: "session-1" }],
     });
   });
 

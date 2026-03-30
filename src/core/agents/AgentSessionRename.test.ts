@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { ClaudeSessionRename } from "./ClaudeSessionRename";
+import { AgentSessionRename } from "./AgentSessionRename";
 
-describe("ClaudeSessionRename", () => {
-  let monitor: ClaudeSessionRename;
+describe("AgentSessionRename", () => {
+  let monitor: AgentSessionRename;
 
   beforeEach(() => {
-    monitor = new ClaudeSessionRename();
+    monitor = new AgentSessionRename();
   });
 
   it("detects rename on complete line", () => {

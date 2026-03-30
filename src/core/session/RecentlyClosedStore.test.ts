@@ -5,7 +5,7 @@ function makeEntry(overrides: Partial<ClosedSessionEntry> = {}): ClosedSessionEn
   return {
     sessionType: "claude",
     label: "Claude",
-    claudeSessionId: `session-${Math.random().toString(36).slice(2)}`,
+    agentSessionId: `session-${Math.random().toString(36).slice(2)}`,
     closedAt: Date.now(),
     itemId: "item-1",
     ...overrides,
@@ -43,8 +43,8 @@ describe("RecentlyClosedStore", () => {
 
   it("filters out currently active session IDs", () => {
     const activeId = "active-session";
-    store.add(makeEntry({ claudeSessionId: activeId, label: "Active" }));
-    store.add(makeEntry({ claudeSessionId: "other", label: "Other" }));
+    store.add(makeEntry({ agentSessionId: activeId, label: "Active" }));
+    store.add(makeEntry({ agentSessionId: "other", label: "Other" }));
 
     const entries = store.getEntries(new Set([activeId]));
     expect(entries).toHaveLength(1);
@@ -66,8 +66,8 @@ describe("RecentlyClosedStore", () => {
     expect(store.getEntries(new Set())).toEqual([]);
   });
 
-  it("does not filter out shell sessions without claudeSessionId when applying active filter", () => {
-    store.add(makeEntry({ sessionType: "shell", claudeSessionId: null, label: "Shell" }));
+  it("does not filter out shell sessions without agentSessionId when applying active filter", () => {
+    store.add(makeEntry({ sessionType: "shell", agentSessionId: null, label: "Shell" }));
     // Even when filtering with active IDs, shell sessions (null ID) are not filtered
     const entries = store.getEntries(new Set(["some-id"]));
     expect(entries).toHaveLength(1);

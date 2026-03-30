@@ -17,7 +17,7 @@ function createMockPlugin(initialData: Record<string, any> = {}) {
 function makePersisted(
   overrides: Partial<{
     taskPath: string;
-    claudeSessionId: string;
+    agentSessionId: string;
     label: string;
     sessionType: string;
     savedAt: string;
@@ -26,7 +26,7 @@ function makePersisted(
   return {
     version: 1 as const,
     taskPath: overrides.taskPath ?? "tasks/my-task.md",
-    claudeSessionId: overrides.claudeSessionId ?? "session-1",
+    agentSessionId: overrides.agentSessionId ?? "session-1",
     label: overrides.label ?? "Claude",
     sessionType: (overrides.sessionType ?? "claude") as any,
     savedAt: overrides.savedAt ?? new Date().toISOString(),
@@ -41,28 +41,28 @@ describe("SessionPersistence", () => {
       sessions.set("task-1", [
         {
           isResumableAgent: true,
-          claudeSessionId: "s1",
+          agentSessionId: "s1",
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
         },
         {
           isResumableAgent: true,
-          claudeSessionId: "s2",
+          agentSessionId: "s2",
           label: "Copilot",
           taskPath: "task-1",
           sessionType: "copilot",
         },
         {
           isResumableAgent: false,
-          claudeSessionId: null,
+          agentSessionId: null,
           label: "Shell",
           taskPath: "task-1",
           sessionType: "shell",
         },
         {
           isResumableAgent: true,
-          claudeSessionId: null,
+          agentSessionId: null,
           label: "Claude2",
           taskPath: "task-1",
           sessionType: "claude",
@@ -73,8 +73,8 @@ describe("SessionPersistence", () => {
 
       const saved = plugin.saveData.mock.calls[0][0];
       expect(saved.persistedSessions).toHaveLength(2);
-      expect(saved.persistedSessions[0].claudeSessionId).toBe("s1");
-      expect(saved.persistedSessions[1].claudeSessionId).toBe("s2");
+      expect(saved.persistedSessions[0].agentSessionId).toBe("s1");
+      expect(saved.persistedSessions[1].agentSessionId).toBe("s2");
       expect(saved.persistedSessions[1].sessionType).toBe("copilot");
     });
 
@@ -95,7 +95,7 @@ describe("SessionPersistence", () => {
       sessions.set("task-1", [
         {
           isResumableAgent: true,
-          claudeSessionId: "s1",
+          agentSessionId: "s1",
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
@@ -113,7 +113,7 @@ describe("SessionPersistence", () => {
         settings: { foo: "bar" },
         persistedSessions: [
           expect.objectContaining({
-            claudeSessionId: "s1",
+            agentSessionId: "s1",
             sessionType: "claude",
           }),
         ],
@@ -127,14 +127,14 @@ describe("SessionPersistence", () => {
       const recent = new Date().toISOString();
       const plugin = createMockPlugin({
         persistedSessions: [
-          makePersisted({ claudeSessionId: "old", savedAt: old }),
-          makePersisted({ claudeSessionId: "new", savedAt: recent }),
+          makePersisted({ agentSessionId: "old", savedAt: old }),
+          makePersisted({ agentSessionId: "new", savedAt: recent }),
         ],
       });
 
       const result = await SessionPersistence.loadFromDisk(plugin);
       expect(result).toHaveLength(1);
-      expect(result[0].claudeSessionId).toBe("new");
+      expect(result[0].agentSessionId).toBe("new");
     });
 
     it("returns empty array when no persisted data", async () => {

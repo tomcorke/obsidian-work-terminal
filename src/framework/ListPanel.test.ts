@@ -133,7 +133,7 @@ function createListPanel(
 
   const terminalPanel = {
     closeAllSessions: vi.fn(),
-    getClaudeContextPrompt: vi.fn(),
+    getAgentContextPrompt: vi.fn(),
     getSessionCounts: vi.fn(() => ({ shells: 0, agents: 0 })),
     hasResumableAgentSessions: vi.fn(() => false),
     getPersistedSessions: vi.fn(() => []),
@@ -276,7 +276,7 @@ describe("ListPanel", () => {
       {
         version: 1,
         taskPath: "Tasks/task-1.md",
-        claudeSessionId: "session-1",
+        agentSessionId: "session-1",
         label: "Claude",
         sessionType: "claude",
         savedAt: new Date().toISOString(),

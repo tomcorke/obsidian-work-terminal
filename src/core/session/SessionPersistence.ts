@@ -15,7 +15,7 @@ import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore
 interface PersistableTab {
   label: string;
   taskPath: string | null;
-  claudeSessionId: string | null;
+  agentSessionId: string | null;
   isResumableAgent: boolean;
   sessionType: SessionType;
 }
@@ -31,11 +31,11 @@ export class SessionPersistence {
     const persisted: PersistedSession[] = [];
     for (const [taskPath, tabs] of sessions) {
       for (const tab of tabs) {
-        if (tab.isResumableAgent && tab.claudeSessionId) {
+        if (tab.isResumableAgent && tab.agentSessionId) {
           persisted.push({
             version: 1,
             taskPath,
-            claudeSessionId: tab.claudeSessionId,
+            agentSessionId: tab.agentSessionId,
             label: tab.label,
             sessionType: tab.sessionType,
             savedAt: new Date().toISOString(),
@@ -77,9 +77,16 @@ export class SessionPersistence {
    */
   static async loadFromDisk(plugin: PluginDataStore): Promise<PersistedSession[]> {
     const data = (await plugin.loadData()) || {};
-    const raw: PersistedSession[] = data.persistedSessions || [];
+    const raw = (data.persistedSessions || []) as Array<
+      PersistedSession & { claudeSessionId?: string }
+    >;
     const cutoff = Date.now() - SESSION_MAX_AGE_MS;
-    const valid = raw.filter((s) => new Date(s.savedAt).getTime() > cutoff);
+    const valid = raw
+      .map((session) => ({
+        ...session,
+        agentSessionId: session.agentSessionId || session.claudeSessionId || "",
+      }))
+      .filter((s) => s.agentSessionId && new Date(s.savedAt).getTime() > cutoff);
     if (valid.length !== raw.length) {
       console.log("[work-terminal] Pruned", raw.length - valid.length, "stale persisted sessions");
     }

@@ -5,10 +5,9 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 ## What you get
 
 - **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
-- **Tabbed terminals** per work item - Shell, Claude, Claude (ctx), Copilot, Copilot (ctx), Strands, Strands (ctx), and per-item custom sessions
-- **Agent integration** - Claude/Copilot/Strands command resolution, Claude and Copilot state detection, Claude session rename detection, and headless enrichment hooks
-- **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen up to 5 entries from a global recently closed list onto each tab's original work item within 30 minutes, and durable restart recovery resumes persisted Claude/Copilot sessions only. Shell and Strands are not part of durable restart recovery after a full close, but can still be relaunched from that separate recent-session flow while the window remains open
-- **Built-in diagnostics** - the command palette action "Copy Session Diagnostics" copies a JSON snapshot of session, renderer, recovery, and persistence state without reloading the plugin
+- **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom sessions (including GitHub Copilot CLI)
+- **Agent integration** - Claude/Copilot command resolution, agent state detection (active/waiting/idle), session rename detection, headless spawning
+- **Session persistence** - hot-reload preserves live terminals; disk persistence enables session resume after restart. Copilot uses native `--resume[=sessionId]`, while Claude hook setup is only needed if you use Claude's in-app `/resume`.
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
 ## Development
@@ -17,8 +16,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 npm install
 npm run build        # production build
 npm run dev          # watch mode with CDP hot-reload
-npm test             # run the vitest suite
-npm run lint
+npx vitest run       # 104 tests
 npm run obsidian:test:init
 npm run obsidian:test:open
 ```
@@ -45,17 +43,6 @@ The repo now includes a repo-local automation path for isolated manual or agent-
   - `node cdp.js screenshot output/work-terminal.png --selector '.wt-main-layout'`
 
 Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port. The launcher now fails fast if that debugger port is already occupied, and it also stops early with a clear singleton warning when another Obsidian app process is already running instead of timing out against an unusable second-instance launch.
-
-## Reporting issues
-
-Report bugs and feature requests in this repo's [GitHub Issues](https://github.com/tomcorke/obsidian-work-terminal/issues).
-
-Include:
-
-- Obsidian version, plugin version, and platform
-- steps to reproduce and the expected vs actual result
-- whether the problem happened after hot-reload, full restart, or restoring a recent session
-- relevant console errors, screenshots, or a "Copy Session Diagnostics" snapshot when available
 
 ## Creating Your Own Adapter
 
@@ -116,9 +103,7 @@ export class MyAdapter extends BaseAdapter {
   }
 
   createPromptBuilder(): WorkItemPromptBuilder {
-    // Build work-item prompts for contextual agent sessions.
-    // The shipped integrations currently use this for
-    // Claude (ctx), Copilot (ctx), and Strands (ctx).
+    // Build context prompts for agent sessions
     // See task-agent/TaskPromptBuilder.ts for a full example
   }
 }
@@ -139,10 +124,10 @@ const adapter = new MyAdapter();
 
 Your adapter inherits all of this without writing any terminal code:
 
-- Shell plus built-in agent terminal tabs per item, including contextual `(ctx)` variants powered by your prompt builder. The shipped session types are Claude, Copilot, and Strands
-- Hot-reload stash/restore, a global recent-session reopen flow that restores the selected tab on its original item, and 7-day persisted metadata for durable Claude/Copilot restart resume only
-- Claude and Copilot state detection (active/waiting/idle) with card indicators
-- Claude session rename detection with adapter hook
+- Shell + Claude + Claude-with-context terminal tabs per item
+- Session persistence (hot-reload + disk resume with 7-day retention)
+- Agent state detection (active/waiting/idle) with card indicators
+- Agent session rename detection with adapter hook
 - Keyboard capture (Option+Arrow, Shift+Enter, macOptionIsMeta)
 - xterm.js rendering with PTY wrapper, resize protocol, scroll-to-bottom
 - Drag-drop reordering (within-section and cross-section)
@@ -158,7 +143,7 @@ Override these in your adapter for extra functionality:
 - `createDetailView(item, app, ownerLeaf)` - Open a detail panel (e.g. MarkdownView) when an item is selected
 - `detachDetailView()` - Clean up the detail panel on close/reload
 - `onItemCreated(path, settings)` - Run post-creation logic (e.g. background AI enrichment)
-- `transformSessionLabel(oldLabel, detectedLabel)` - Transform Claude session rename labels
+- `transformSessionLabel(oldLabel, detectedLabel)` - Transform detected agent session labels
 
 ## Architecture
 

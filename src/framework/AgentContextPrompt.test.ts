@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { WorkItem } from "../core/interfaces";
-import { buildClaudeContextPrompt, getClaudeContextTemplate } from "./ClaudeContextPrompt";
+import {
+  buildAgentContextPrompt,
+  buildClaudeContextPrompt,
+  getAgentContextTemplate,
+  getClaudeContextTemplate,
+} from "./AgentContextPrompt";
 
 const item: WorkItem = {
   id: "task-123",
@@ -10,9 +15,9 @@ const item: WorkItem = {
   metadata: {},
 };
 
-describe("buildClaudeContextPrompt", () => {
+describe("buildAgentContextPrompt", () => {
   it("uses the fresh template when available", () => {
-    const prompt = buildClaudeContextPrompt(item, {
+    const prompt = buildAgentContextPrompt(item, {
       "core.additionalAgentContext": "Task: $title\nState: $state\nPath: $filePath\nId: $id",
     });
 
@@ -22,7 +27,7 @@ describe("buildClaudeContextPrompt", () => {
   });
 
   it("uses the resolved absolute path when provided", () => {
-    const prompt = buildClaudeContextPrompt(
+    const prompt = buildAgentContextPrompt(
       item,
       {
         "core.additionalAgentContext": "Path: $filePath",
@@ -34,7 +39,7 @@ describe("buildClaudeContextPrompt", () => {
   });
 
   it("treats an explicitly cleared template as unavailable", () => {
-    const prompt = buildClaudeContextPrompt(item, {
+    const prompt = buildAgentContextPrompt(item, {
       "core.additionalAgentContext": "",
     });
 
@@ -43,20 +48,25 @@ describe("buildClaudeContextPrompt", () => {
 
   it("treats whitespace-only templates as unavailable", () => {
     expect(
-      getClaudeContextTemplate({
+      getAgentContextTemplate({
         "core.additionalAgentContext": "  \n\t  ",
       }),
     ).toBeNull();
-
-    const prompt = buildClaudeContextPrompt(item, {
-      "core.additionalAgentContext": "  \n\t  ",
-    });
-
-    expect(prompt).toBeNull();
   });
 
-  it("returns null when no template is saved", () => {
-    const prompt = buildClaudeContextPrompt(item, {});
+  it("keeps Claude alias exports working", () => {
+    const prompt = buildClaudeContextPrompt(item, {
+      "core.additionalAgentContext": "Task: $title",
+    });
+
+    expect(getClaudeContextTemplate({ "core.additionalAgentContext": "Task: $title" })).toBe(
+      "Task: $title",
+    );
+    expect(prompt).toBe("Task: Fix prompt sync");
+  });
+
+  it("returns null when no template is configured", () => {
+    const prompt = buildAgentContextPrompt(item, {});
 
     expect(prompt).toBeNull();
   });

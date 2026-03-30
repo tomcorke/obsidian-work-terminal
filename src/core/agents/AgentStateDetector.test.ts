@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ClaudeStateDetector, aggregateState, type ClaudeState } from "./ClaudeStateDetector";
+import { AgentStateDetector, aggregateState, type AgentState } from "./AgentStateDetector";
 
 /**
  * Create a minimal mock Terminal with a buffer that returns the given lines.
@@ -25,7 +25,7 @@ function mockTerminal(lines: string[]) {
   } as any;
 }
 
-describe("ClaudeStateDetector", () => {
+describe("AgentStateDetector", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -42,7 +42,7 @@ describe("ClaudeStateDetector", () => {
         "    2. Second choice",
         "  Enter to select, up/down to navigate",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       // Advance past the initial "active" state by triggering the interval
@@ -57,7 +57,7 @@ describe("ClaudeStateDetector", () => {
         "  Allow this action?",
         "  allowOnce  denyOnce  allowAlways",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -72,7 +72,7 @@ describe("ClaudeStateDetector", () => {
         "  (2) src/utils.ts",
         "  (3) src/index.ts",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -82,7 +82,7 @@ describe("ClaudeStateDetector", () => {
 
     it("detects Yes/No as waiting", () => {
       const terminal = mockTerminal(["  Do you want to continue?", "  Yes", "  No"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -92,7 +92,7 @@ describe("ClaudeStateDetector", () => {
 
     it("suppresses waiting to idle when tab is visible", () => {
       const terminal = mockTerminal(["  Enter to select, up/down to navigate"]);
-      const detector = new ClaudeStateDetector(terminal, () => true);
+      const detector = new AgentStateDetector(terminal, () => true);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -104,7 +104,7 @@ describe("ClaudeStateDetector", () => {
       const terminal = mockTerminal([
         "  ○ Asking user What kind of question would you like me to ask?",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.trackOutput(
         [
           "╭────────────────────────────────────────────────────────────╮",
@@ -140,7 +140,7 @@ describe("ClaudeStateDetector", () => {
         "│ ↑↓ to select · Enter to confirm · Esc to cancel           │",
         "╰────────────────────────────────────────────────────────────╯",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -157,7 +157,7 @@ describe("ClaudeStateDetector", () => {
         "╰────────────────────────────────────────────────────────────╯",
         "○ Thinking (Esc to cancel)",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -167,7 +167,7 @@ describe("ClaudeStateDetector", () => {
 
     it("does not keep waiting from stale boxed recent output after the screen moves on", () => {
       const terminal = mockTerminal(["  ○ Thinking (Esc to cancel)"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.trackOutput(
         [
           "╭────────────────────────────────────────────────────────────╮",
@@ -187,7 +187,7 @@ describe("ClaudeStateDetector", () => {
 
     it("does not treat ordinary boxed output as waiting", () => {
       const terminal = mockTerminal(["  some previous output"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.trackOutput(
         [
           "╭────────────────────────────────────────────────────────────╮",
@@ -205,7 +205,7 @@ describe("ClaudeStateDetector", () => {
 
     it("falls back to recent boxed output only when the visible screen is empty", () => {
       const terminal = mockTerminal([]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.trackOutput(
         [
           "╭────────────────────────────────────────────────────────────╮",
@@ -227,7 +227,7 @@ describe("ClaudeStateDetector", () => {
   describe("active indicator detection", () => {
     it("detects spinner with ellipsis as active", () => {
       const terminal = mockTerminal(["  some previous output", "  \u2733 Reading files\u2026"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -237,7 +237,7 @@ describe("ClaudeStateDetector", () => {
 
     it("detects tool output with ellipsis as active", () => {
       const terminal = mockTerminal(["  some output", "  \u23bf  Running command\u2026"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -247,7 +247,7 @@ describe("ClaudeStateDetector", () => {
 
     it("detects Copilot thinking spinner as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25c9 Thinking (Esc to cancel)"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -260,7 +260,7 @@ describe("ClaudeStateDetector", () => {
         "  some output",
         "  \u25ce Reading repository (Esc to cancel)",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -270,7 +270,7 @@ describe("ClaudeStateDetector", () => {
 
     it("does not detect Copilot cancel hint without intent text as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25ce (Esc to cancel)"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -280,7 +280,7 @@ describe("ClaudeStateDetector", () => {
 
     it("detects Copilot executing status as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25cb Executing"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -290,7 +290,7 @@ describe("ClaudeStateDetector", () => {
 
     it("detects Copilot cancelling status as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25cf Cancelling"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -306,7 +306,7 @@ describe("ClaudeStateDetector", () => {
         "  \u2733 Readi", // spinner on first wrapped row
         "  ng files\u2026", // ellipsis on second wrapped row
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -316,7 +316,7 @@ describe("ClaudeStateDetector", () => {
 
     it("detects wrapped Copilot thinking indicator as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25c9 Thin", "  king (Esc to cancel)"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -330,7 +330,7 @@ describe("ClaudeStateDetector", () => {
         "  \u25ce Reading",
         "  repository (Esc to cancel \u00b7 1.2k)",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -344,7 +344,7 @@ describe("ClaudeStateDetector", () => {
         "  \u25ce Reading repository (Esc to",
         "  cancel \u00b7 1.2k)",
       ]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -354,7 +354,7 @@ describe("ClaudeStateDetector", () => {
 
     it("does not detect wrapped Copilot cancel hint without intent text as active", () => {
       const terminal = mockTerminal(["  some output", "  \u25ce", "  (Esc to cancel)"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -370,7 +370,7 @@ describe("ClaudeStateDetector", () => {
         lines.push("  normal output line " + i);
       }
       const terminal = mockTerminal(lines);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -383,7 +383,7 @@ describe("ClaudeStateDetector", () => {
   describe("active suppression during grace period", () => {
     it("treats active as idle during suppression", () => {
       const terminal = mockTerminal(["  \u2733 Reading files\u2026"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start(true); // suppressActive = true
 
       // First check fires at 2000ms. _suppressActiveUntil = start + 2000.
@@ -401,7 +401,7 @@ describe("ClaudeStateDetector", () => {
 
     it("allows active after suppression period expires", () => {
       const terminal = mockTerminal(["  \u2733 Reading files\u2026"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start(true);
 
       // Advance past the 2s suppression + enough intervals
@@ -414,7 +414,7 @@ describe("ClaudeStateDetector", () => {
   describe("clean screen -> idle", () => {
     it("returns idle when screen has no active indicators", () => {
       const terminal = mockTerminal(["  > some prompt", "  Ready for input"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -426,7 +426,7 @@ describe("ClaudeStateDetector", () => {
   describe("clearWaiting", () => {
     it("transitions from waiting to idle", () => {
       const terminal = mockTerminal(["  Enter to select"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
 
       vi.advanceTimersByTime(2100);
@@ -441,7 +441,7 @@ describe("ClaudeStateDetector", () => {
   describe("stop", () => {
     it("stops the timer without error", () => {
       const terminal = mockTerminal(["test"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
+      const detector = new AgentStateDetector(terminal, () => false);
       detector.start();
       detector.stop();
       // No error thrown, timer cleared
@@ -451,8 +451,8 @@ describe("ClaudeStateDetector", () => {
   describe("onChange callback", () => {
     it("fires on state transitions", () => {
       const terminal = mockTerminal(["  Enter to select"]);
-      const detector = new ClaudeStateDetector(terminal, () => false);
-      const changes: ClaudeState[] = [];
+      const detector = new AgentStateDetector(terminal, () => false);
+      const changes: AgentState[] = [];
       detector.onChange = (s) => changes.push(s);
       detector.start(); // starts as "active"
 

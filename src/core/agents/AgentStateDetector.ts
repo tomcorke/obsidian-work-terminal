@@ -1,14 +1,15 @@
 /**
- * Standalone Claude state detection from xterm.js terminal buffer.
+ * Standalone agent state detection from xterm.js terminal buffer.
  *
- * Reads the terminal screen buffer directly to determine Claude CLI state,
+ * Reads the terminal screen buffer directly to determine interactive agent state,
  * avoiding the fundamental problem of classifying raw stdout (status line
  * redraws produce continuous output even when idle).
  */
 import type { Terminal } from "@xterm/xterm";
 import { stripAnsi } from "../utils";
 
-export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
+export type AgentState = "inactive" | "active" | "idle" | "waiting";
+export type ClaudeState = AgentState;
 
 function normalizeWaitingLine(line: string): string {
   return line.replace(/[│┃║╭╮╰╯─═]+/g, " ").replace(/\s+/g, " ").trim();
@@ -60,19 +61,19 @@ export function hasAgentWaitingIndicator(
   return findLastWaitingLineIndex(recentCleanLines.slice(-15)) !== -1;
 }
 
-export class ClaudeStateDetector {
-  private _state: ClaudeState = "inactive";
+export class AgentStateDetector {
+  private _state: AgentState = "inactive";
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _suppressActiveUntil = 0;
   private _recentCleanLines: string[] = [];
-  onChange?: (state: ClaudeState) => void;
+  onChange?: (state: AgentState) => void;
 
   constructor(
     private terminal: Terminal,
     private isVisible: () => boolean,
   ) {}
 
-  get state(): ClaudeState {
+  get state(): AgentState {
     return this._state;
   }
 
@@ -133,7 +134,7 @@ export class ClaudeStateDetector {
   }
 
   private _check(): void {
-    // Read the terminal screen directly to determine Claude's state.
+    // Read the terminal screen directly to determine the agent state.
     const screenLines = this._readScreen();
 
     // Check for waiting patterns first (highest priority).
@@ -163,7 +164,7 @@ export class ClaudeStateDetector {
   }
 
   /**
-   * Check if Claude is waiting for user input by inspecting both the terminal
+   * Check if the agent is waiting for user input by inspecting both the terminal
    * screen buffer and recent output lines. The screen buffer is the primary
    * source since it shows the current rendered state.
    */
@@ -178,7 +179,7 @@ export class ClaudeStateDetector {
     }
   }
 
-  private _setState(s: ClaudeState): void {
+  private _setState(s: AgentState): void {
     if (this._state === s) return;
     this._state = s;
     this.onChange?.(s);
@@ -186,10 +187,10 @@ export class ClaudeStateDetector {
 }
 
 /**
- * Aggregate multiple Claude states into a single state.
+ * Aggregate multiple agent states into a single state.
  * Priority: waiting > active > idle > inactive.
  */
-export function aggregateState(states: ClaudeState[]): ClaudeState {
+export function aggregateState(states: AgentState[]): AgentState {
   for (const s of states) {
     if (s === "waiting") return "waiting";
   }
@@ -243,3 +244,5 @@ export function hasAgentActiveIndicator(screenLines: string[]): boolean {
         copilotCancelHintPattern.test(tailCompactJoined)));
   return hasClaudeActiveIndicator || hasCopilotActiveIndicator;
 }
+
+export { AgentStateDetector as ClaudeStateDetector };

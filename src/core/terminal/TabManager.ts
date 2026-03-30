@@ -2,14 +2,14 @@
  * TabManager - manages tab groups keyed by work item ID.
  *
  * Handles tab creation, closing, switching, drag-drop reordering,
- * active tab memory per work item, session recovery, and Claude state
+ * active tab memory per work item, session recovery, and agent state
  * aggregation across tabs.
  *
  * Ported from TerminalPanel's tab management logic with work-item-agnostic
  * interfaces for adapter extensibility.
  */
-import { TerminalTab, type ClaudeState } from "./TerminalTab";
-import { aggregateState } from "../claude/ClaudeStateDetector";
+import { TerminalTab, type AgentState } from "./TerminalTab";
+import { aggregateState } from "../agents/AgentStateDetector";
 import { SessionStore } from "../session/SessionStore";
 import type { ActiveTabInfo, StoredSession, SessionType, TabDiagnostics } from "../session/types";
 
@@ -26,8 +26,8 @@ export class TabManager {
 
   /** Called when session count changes (tab created/closed). */
   onSessionChange?: () => void;
-  /** Called when aggregate Claude state changes for an item. */
-  onClaudeStateChange?: (itemId: string, state: ClaudeState) => void;
+  /** Called when aggregate agent state changes for an item. */
+  onAgentStateChange?: (itemId: string, state: AgentState) => void;
   /** Called when sessions should be persisted to disk. */
   onPersistRequest?: () => void;
   /** Called when a tab is closed, before disposal, with metadata for recently-closed tracking. */
@@ -45,7 +45,7 @@ export class TabManager {
             if (this.activeItemId === itemId) this._notifyLabelChange();
           };
           tab.onStateChange = () => {
-            this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
+            this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
           };
           tab.hide();
           tabs.push(tab);
@@ -141,7 +141,7 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
-    claudeSessionId?: string | null,
+    agentSessionId?: string | null,
   ): TerminalTab | null {
     if (!this.activeItemId) return null;
 
@@ -153,7 +153,7 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
-      claudeSessionId,
+      agentSessionId,
     );
   }
 
@@ -165,7 +165,7 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
-    claudeSessionId?: string | null,
+    agentSessionId?: string | null,
   ): TerminalTab {
     const isActiveItem = this.activeItemId === itemId;
 
@@ -181,7 +181,7 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
-      claudeSessionId,
+      agentSessionId,
     );
 
     tab.onLabelChange = () => {
@@ -197,7 +197,7 @@ export class TabManager {
       this.closeTabForItem(itemId, idx);
     };
     tab.onStateChange = () => {
-      this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
+      this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
     };
 
     tabs.push(tab);
@@ -345,7 +345,7 @@ export class TabManager {
     }
 
     this.onSessionChange?.();
-    this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
+    this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
   }
 
   /** Close and dispose all terminal sessions for an item. */
@@ -364,7 +364,7 @@ export class TabManager {
     }
 
     this.onSessionChange?.();
-    this.onClaudeStateChange?.(itemId, this.getClaudeState(itemId));
+    this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
   }
 
   // ---------------------------------------------------------------------------
@@ -424,7 +424,7 @@ export class TabManager {
           tabId: tab.id,
           itemId: tab.taskPath ?? itemId,
           label: tab.label,
-          sessionId: tab.claudeSessionId,
+          sessionId: tab.agentSessionId,
           sessionType: tab.sessionType,
           isResumableAgent: tab.isResumableAgent,
         });
@@ -479,7 +479,7 @@ export class TabManager {
     );
   }
 
-  /** Return a set of all active claudeSessionIds across all items. */
+  /** Return a set of all active agentSessionIds across all items. */
   getActiveSessionIds(): Set<string> {
     const ids = new Set<string>();
     for (const tab of this.getAllActiveTabs()) {
@@ -498,19 +498,19 @@ export class TabManager {
   }
 
   // ---------------------------------------------------------------------------
-  // Claude state
+  // Agent state
   // ---------------------------------------------------------------------------
 
   /**
-   * Get the aggregate Claude state for an item.
+   * Get the aggregate agent state for an item.
    * Priority: waiting > active > idle > inactive.
    */
-  getClaudeState(itemId: string): ClaudeState {
+  getAgentState(itemId: string): AgentState {
     const tabs = this.sessions.get(itemId) || [];
-    const states: ClaudeState[] = [];
+    const states: AgentState[] = [];
     for (const tab of tabs) {
       if (tab.isResumableAgent) {
-        states.push(tab.claudeState);
+        states.push(tab.agentState);
       }
     }
     const result = aggregateState(states);
