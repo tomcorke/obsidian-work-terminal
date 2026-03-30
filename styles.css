@@ -751,7 +751,7 @@ button.wt-spawn-claude-ctx:hover svg {
 /* Tab bar inside custom session modal */
 .wt-custom-spawn-tabs {
   display: flex;
-  gap: 0;
+  gap: 8px;
   border-bottom: 1px solid var(--background-modifier-border);
   margin-bottom: 12px;
 }
