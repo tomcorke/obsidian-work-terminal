@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { expandTilde, stripAnsi, slugify } from "./utils";
+import { describe, it, expect, afterEach } from "vitest";
+import { expandTilde, normalizeObsidianDisplayText, stripAnsi, slugify } from "./utils";
 
 describe("expandTilde", () => {
   const originalHome = process.env.HOME;
@@ -103,5 +103,29 @@ describe("slugify", () => {
 
   it("collapses consecutive special characters", () => {
     expect(slugify("hello!!!...world")).toBe("hello-world");
+  });
+});
+
+describe("normalizeObsidianDisplayText", () => {
+  it("strips brackets from plain Obsidian links", () => {
+    expect(normalizeObsidianDisplayText("[[Some Doc]]")).toBe("Some Doc");
+  });
+
+  it("prefers alias text when the link defines one", () => {
+    expect(normalizeObsidianDisplayText("[[Some Doc|Readable Label]]")).toBe("Readable Label");
+  });
+
+  it("replaces embedded links inside longer text", () => {
+    expect(normalizeObsidianDisplayText("Blocked by [[Some Doc]] today")).toBe(
+      "Blocked by Some Doc today",
+    );
+  });
+
+  it("falls back to the target when alias text is empty", () => {
+    expect(normalizeObsidianDisplayText("[[Some Doc|]]")).toBe("Some Doc");
+  });
+
+  it("leaves plain text unchanged", () => {
+    expect(normalizeObsidianDisplayText("plain text")).toBe("plain text");
   });
 });
