@@ -72,6 +72,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "core.claudeExtraArgs",
       "Default Claude arguments",
       "Arguments passed to every Claude session (space-separated). Applied to both + Claude and + Claude (ctx).",
+      "core.claudeExtraArgs",
     );
     this.addCoreSetting(
       containerEl,
@@ -102,6 +103,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "core.additionalAgentContext",
       "Additional context template",
       "Optional template used as the initial prompt for Claude (ctx), and appended after the adapter prompt for contextual custom Copilot and Strands sessions. The Claude (ctx) button is hidden when this is empty. Placeholders: $title, $state, $filePath, $id.",
+      "core.additionalAgentContext",
     );
     this.addCoreSetting(
       containerEl,
@@ -231,12 +233,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     key: keyof CoreSettings,
     name: string,
     description: string,
+    tourId?: string,
   ): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
     const value = settings[key] ?? CORE_DEFAULTS[key];
 
-    new Setting(containerEl)
+    const setting = new Setting(containerEl)
       .setName(name)
       .setDesc(description)
       .addText((text) =>
@@ -246,6 +249,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           });
         }),
       );
+    if (tourId) {
+      setting.settingEl.setAttribute("data-wt-tour", tourId);
+    }
   }
 
   private async addCoreTextArea(
@@ -253,6 +259,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     key: keyof CoreSettings,
     name: string,
     description: string,
+    tourId?: string,
   ): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
@@ -273,6 +280,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Let the textarea span the full width below the label
     setting.settingEl.style.flexWrap = "wrap";
     setting.controlEl.style.width = "100%";
+    if (tourId) {
+      setting.settingEl.setAttribute("data-wt-tour", tourId);
+    }
   }
 
   private async addCoreToggle(
@@ -280,12 +290,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     key: keyof CoreSettings,
     name: string,
     description: string,
+    tourId?: string,
   ): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
     const value = settings[key] ?? CORE_DEFAULTS[key];
 
-    new Setting(containerEl)
+    const setting = new Setting(containerEl)
       .setName(name)
       .setDesc(description)
       .addToggle((toggle) =>
@@ -295,6 +306,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           });
         }),
       );
+    if (tourId) {
+      setting.settingEl.setAttribute("data-wt-tour", tourId);
+    }
   }
 
   private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {

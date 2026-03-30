@@ -209,7 +209,10 @@ export class TerminalPanelView {
     panelEl.insertBefore(this.titleEl, terminalWrapperEl);
 
     // Tab bar at top of panel
-    this.tabBarEl = panelEl.createDiv({ cls: "wt-tab-bar" });
+    this.tabBarEl = panelEl.createDiv({
+      cls: "wt-tab-bar",
+      attr: { "data-wt-tour": "tab-bar" },
+    });
     // Move tab bar before terminal wrapper
     panelEl.insertBefore(this.tabBarEl, terminalWrapperEl);
 
@@ -377,7 +380,10 @@ export class TerminalPanelView {
     this.tabBarEl.empty();
 
     const tabsContainer = this.tabBarEl.createDiv({ cls: "wt-tabs-container" });
-    const buttonsContainer = this.tabBarEl.createDiv({ cls: "wt-tab-buttons" });
+    const buttonsContainer = this.tabBarEl.createDiv({
+      cls: "wt-tab-buttons",
+      attr: { "data-wt-tour": "launch-buttons" },
+    });
 
     const activeItemId = this.tabManager.getActiveItemId();
     if (activeItemId) {
@@ -458,6 +464,7 @@ export class TerminalPanelView {
     const customBtn = buttonsContainer.createEl("button", {
       cls: "wt-spawn-btn wt-spawn-custom",
       text: "...",
+      attr: { "data-wt-tour": "custom-session-button" },
     });
     customBtn.setAttribute("aria-label", "Custom session");
     customBtn.setAttribute("title", "Custom session");

@@ -21,6 +21,7 @@ import { loadAllSettings } from "./SettingsTab";
 import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
+import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 
 interface PendingRename {
   uuid: string | null;
@@ -36,6 +37,7 @@ export class MainView extends ItemView {
   private listPanel: ListPanel | null = null;
   private terminalPanel: TerminalPanelView | null = null;
   private promptBox: PromptBox | null = null;
+  private guidedTour: GuidedTourController | null = null;
 
   // Layout elements
   private leftPanelEl: HTMLElement | null = null;
@@ -140,7 +142,7 @@ export class MainView extends ItemView {
     );
 
     // Initial data load
-    await this.refreshList();
+    const items = await this.refreshList();
 
     // Recover selection from hot-reload AFTER list is populated
     const recoveredId = this.terminalPanel?.getRecoveredItemId();
@@ -151,6 +153,11 @@ export class MainView extends ItemView {
     // Broadcast agent states for any recovered sessions so ListPanel
     // picks up state indicators that were set before it existed.
     this.terminalPanel?.broadcastAgentStates();
+
+    if (await shouldAutoStartGuidedTour(this.pluginRef, { hasExistingItems: items.length > 0 })) {
+      this.guidedTour = new GuidedTourController(this.pluginRef);
+      await this.guidedTour.start();
+    }
   }
 
   async copySessionDiagnostics(): Promise<boolean> {
@@ -595,6 +602,10 @@ export class MainView extends ItemView {
 
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();
+
+    // Clean up vault event refs
+    this.guidedTour?.dispose();
+    this.guidedTour = null;
 
     // Clean up vault event refs
     for (const ref of this.vaultEventRefs) {

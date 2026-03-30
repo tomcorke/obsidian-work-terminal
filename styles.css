@@ -1124,6 +1124,107 @@ button.wt-spawn-claude-ctx:hover svg {
 }
 
 /* =============================================================================
+   Guided tour
+   ============================================================================= */
+
+.wt-tour-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 9998;
+}
+
+.wt-tour-highlight {
+  position: fixed;
+  border: 2px solid var(--interactive-accent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+  z-index: 9999;
+  transition:
+    top 0.12s ease,
+    left 0.12s ease,
+    width 0.12s ease,
+    height 0.12s ease;
+}
+
+.wt-tour-card {
+  position: fixed;
+  width: min(340px, calc(100vw - 32px));
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.35);
+  padding: 16px;
+  z-index: 10000;
+}
+
+.wt-tour-counter {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.wt-tour-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.wt-tour-body {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.wt-tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.wt-tour-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.wt-tour-btn {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.wt-tour-btn:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+}
+
+.wt-tour-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.wt-tour-btn-primary {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent, white);
+}
+
+.wt-tour-btn-primary:hover:not(:disabled) {
+  background: var(--interactive-accent-hover);
+}
+
+.wt-tour-target {
+  position: relative;
+  z-index: 10001;
+}
+
+/* =============================================================================
    Ingesting state - repeating shine sweep across the whole card + badge
    ============================================================================= */
 

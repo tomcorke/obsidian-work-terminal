@@ -29,6 +29,7 @@ If `work-terminal` already exists in `.obsidian/plugins`, remove that directory 
 - **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom sessions (including GitHub Copilot CLI)
 - **Agent integration** - Claude/Copilot command resolution, agent state detection (active/waiting/idle), session rename detection, headless spawning
 - **Session persistence** - hot-reload preserves live terminals; disk persistence enables session resume after restart. Copilot uses native `--resume[=sessionId]`, while Claude hook setup is only needed if you use Claude's in-app `/resume`.
+- **First-run guided tour** - new users get a focused walkthrough for task creation, session launch controls, tab management, custom sessions, and the key Claude settings
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
 ## Development
