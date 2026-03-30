@@ -41,6 +41,19 @@ export function resolveCommand(cmd: string): string {
   return cmd; // fallback to bare command
 }
 
+export function normalizeExtraArgs(extraArgs = ""): string {
+  return extraArgs.replace(/\\\r?\n[ \t]*/g, " ").trim();
+}
+
+export function parseExtraArgs(extraArgs = ""): string[] {
+  const normalized = normalizeExtraArgs(extraArgs);
+  return normalized ? normalized.split(/\s+/).filter(Boolean) : [];
+}
+
+export function mergeExtraArgs(...extraArgs: Array<string | undefined>): string {
+  return extraArgs.flatMap((value) => parseExtraArgs(value)).join(" ");
+}
+
 /**
  * Build Claude CLI argument array from settings, session ID, and optional prompt.
  */
@@ -54,7 +67,7 @@ export function buildClaudeArgs(
 ): string[] {
   const args: string[] = [];
   if (settings.claudeExtraArgs) {
-    args.push(...settings.claudeExtraArgs.split(/\s+/).filter(Boolean));
+    args.push(...parseExtraArgs(settings.claudeExtraArgs));
   }
   args.push("--session-id", sessionId);
   if (prompt) {
@@ -80,7 +93,7 @@ export function buildCopilotArgs(
 ): string[] {
   const args: string[] = [];
   if (settings.copilotExtraArgs) {
-    args.push(...settings.copilotExtraArgs.split(/\s+/).filter(Boolean));
+    args.push(...parseExtraArgs(settings.copilotExtraArgs));
   }
   if (prompt) {
     args.push("-i", prompt);
@@ -102,7 +115,7 @@ export function buildStrandsArgs(
 ): string[] {
   const args: string[] = [];
   if (settings.strandsExtraArgs) {
-    args.push(...settings.strandsExtraArgs.split(/\s+/).filter(Boolean));
+    args.push(...parseExtraArgs(settings.strandsExtraArgs));
   }
   if (prompt) {
     args.push(prompt);

@@ -30,6 +30,8 @@ import {
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
+  mergeExtraArgs,
+  parseExtraArgs,
 } from "../core/agents/AgentLauncher";
 import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import { SessionStore } from "../core/session/SessionStore";
@@ -769,12 +771,11 @@ export class TerminalPanelView {
       (isCopilot
         ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
         : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "")
-      )
-        .split(/\s+/)
-        .filter(Boolean);
+      );
+    const parsedExtraArgs = Array.isArray(extraArgs) ? extraArgs : parseExtraArgs(extraArgs);
 
-    if (extraArgs) {
-      args.unshift(...extraArgs);
+    if (parsedExtraArgs.length > 0) {
+      args.unshift(...parsedExtraArgs);
     }
 
     const cwd =
@@ -1173,10 +1174,6 @@ export class TerminalPanelView {
     return this.allItems.find((item) => item.id === activeItemId) || null;
   }
 
-  private mergeExtraArgs(baseArgs: string, extraArgs: string): string {
-    return [baseArgs.trim(), extraArgs.trim()].filter(Boolean).join(" ");
-  }
-
   private async loadCustomSessionDefaults(
     itemId: string,
     freshSettings: Record<string, unknown>,
@@ -1371,7 +1368,7 @@ export class TerminalPanelView {
     const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const resolved = resolveCommand(claudeCmd);
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = this.mergeExtraArgs(
+    const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
       options.extraArgs || "",
     );
@@ -1408,7 +1405,7 @@ export class TerminalPanelView {
     const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
     const resolved = resolveCommand(copilotCmd);
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = this.mergeExtraArgs(
+    const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
       options.extraArgs || "",
     );
@@ -1444,7 +1441,7 @@ export class TerminalPanelView {
     const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
     const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
     const resolved = resolveCommand(cmdToken);
-    const mergedExtraArgs = this.mergeExtraArgs(
+    const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
       options.extraArgs || "",
     );
