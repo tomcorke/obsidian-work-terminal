@@ -8,7 +8,7 @@ Three-layer design. Each layer has clear responsibilities and boundaries:
 
 ```
 src/
-  core/           # Terminal infrastructure + Claude CLI integration
+  core/           # Terminal infrastructure + agent CLI integration
     utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
     interfaces.ts # All extension point interfaces + BaseAdapter
     terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
@@ -45,13 +45,13 @@ src/
 
 ### Extension model
 
-The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, Claude integration, session persistence, drag-drop, state detection, keyboard capture.
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, agent integration, session persistence, drag-drop, state detection, keyboard capture.
 
 To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`.
 
 ### Key design decisions
 
-- **Claude owned by framework, not adapter** - ClaudeLauncher, StateDetector, SessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **Agent launchers stay in framework code** - launcher, state-detection, and session-rename plumbing live in framework/core code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
 - **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
@@ -60,7 +60,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 ## Development workflow
 
 - **Build**: `npm run build` (production) or `npm run dev` (watch mode with CDP hot-reload)
-- **Test**: `npm test` (276 tests across terminal lifecycle, recovery/persistence, automation helpers, adapter parsing/moving, and launcher/state utilities)
+- **Test**: `npm test` (runs the vitest suite covering terminal lifecycle, recovery/persistence, automation helpers, adapter parsing/moving, and launcher/state utilities)
 - **Lint**: `npm run lint`
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
@@ -103,7 +103,7 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 - **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing
-Run `npx vitest run` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
+Run `npm test` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
 
 ## Known constraints
 

@@ -554,6 +554,76 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(addonManagerDispose).not.toHaveBeenCalled();
     expect(terminalDispose).toHaveBeenCalledTimes(1);
   });
+
+  it("reports renderer and process diagnostics for live tabs", () => {
+    const querySelectorAll = vi.fn(() => []);
+    const hasBlankRenderSurface = vi.fn(() => true);
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      id: "term-1",
+      label: "Claude",
+      claudeSessionId: "session-1",
+      sessionType: "claude",
+      process: {
+        pid: 321,
+        killed: false,
+        exitCode: null,
+        signalCode: null,
+      },
+      spawnTime: Date.now() - 2000,
+      webglAddon: { dispose: vi.fn() },
+      terminal: {
+        element: {
+          querySelectorAll,
+        },
+      },
+      containerEl: {
+        hasClass: vi.fn(() => false),
+        querySelectorAll: vi.fn(() => []),
+      },
+      _claudeState: "idle",
+      _isResumableAgent: true,
+      _isDisposed: false,
+      _readTerminalScreen: vi.fn(() => ["line 1", "line 2"]),
+      hasRenderableSessionContent: vi.fn(() => true),
+      hasBlankRenderSurface,
+      getTrackedWebglAddonEntry: vi.fn(() => ({ isDisposed: true })),
+    }) as TerminalTab;
+
+    const diagnostics = tab.getDiagnostics();
+
+    expect(diagnostics).toMatchObject({
+      tabId: "term-1",
+      label: "Claude",
+      sessionId: "session-1",
+      sessionType: "claude",
+      claudeState: "idle",
+      isResumableAgent: true,
+      isVisible: true,
+      isDisposed: false,
+      process: {
+        pid: 321,
+        status: "alive",
+      },
+      renderer: {
+        canvasCount: 0,
+        hasRenderableContent: true,
+        hasBlankRenderSurface: true,
+        trackedWebglAddonPresent: true,
+        trackedWebglAddonDisposed: true,
+        staleDisposedWebglOwnership: true,
+      },
+      buffer: {
+        screenLineCount: 2,
+        screenTail: ["[redacted:6 chars]", "[redacted:6 chars]"],
+      },
+      derived: {
+        blankButLiveRenderer: true,
+        staleDisposedWebglOwnership: true,
+      },
+    });
+    expect(querySelectorAll).toHaveBeenCalledTimes(1);
+    expect(hasBlankRenderSurface).not.toHaveBeenCalled();
+  });
 });
 
 describe("TerminalTab WebGL recovery", () => {

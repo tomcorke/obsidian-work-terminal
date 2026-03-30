@@ -16,11 +16,18 @@ import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
-import { type StoredSession, type SessionType, isResumableSessionType } from "../session/types";
+import {
+  type AgentRuntimeState,
+  type StoredSession,
+  type SessionType,
+  type TerminalTabDiagnostics,
+  type TabProcessDiagnostics,
+  isResumableSessionType,
+} from "../session/types";
 import { ClaudeSessionTracker } from "../claude/ClaudeSessionTracker";
 import { hasAgentActiveIndicator } from "../claude/ClaudeStateDetector";
 
-export type ClaudeState = "inactive" | "active" | "idle" | "waiting";
+export type ClaudeState = AgentRuntimeState;
 
 let sessionCounter = 0;
 
@@ -618,6 +625,10 @@ export class TerminalTab {
     return !this.containerEl.hasClass("hidden");
   }
 
+  get isDisposed(): boolean {
+    return this._isDisposed;
+  }
+
   get launchShell(): string {
     return this.shell;
   }
@@ -674,6 +685,83 @@ export class TerminalTab {
 
   get isResumableAgent(): boolean {
     return this._isResumableAgent;
+  }
+
+  private getProcessStatus(): TabProcessDiagnostics["status"] {
+    if (!this.process) return "missing";
+    if (this.process.exitCode !== null || this.process.signalCode !== null) {
+      return this.process.signalCode ? "killed" : "exited";
+    }
+    if (this.process.killed) return "killed";
+    return "alive";
+  }
+
+  private getRendererCanvasCount(): number {
+    const terminalElement = (
+      this.terminal as Terminal & { element?: ParentNode | null }
+    ).element as ParentNode | null | undefined;
+    const renderRoot =
+      terminalElement && typeof terminalElement.querySelectorAll === "function"
+        ? terminalElement
+        : ((this.containerEl as ParentNode | null | undefined) ?? null);
+    if (!renderRoot || typeof renderRoot.querySelectorAll !== "function") {
+      return 0;
+    }
+    return renderRoot.querySelectorAll(".xterm-screen canvas").length;
+  }
+
+  private redactDiagnosticLine(line: string): string {
+    const trimmed = line.trim();
+    if (!trimmed) return "";
+    return `[redacted:${trimmed.length} chars]`;
+  }
+
+  getDiagnostics(): TerminalTabDiagnostics {
+    const screenLines = this._readTerminalScreen();
+    const processStatus = this.getProcessStatus();
+    const trackedWebglAddonPresent = !!this.webglAddon;
+    const trackedWebglAddonDisposed = Boolean(
+      this.webglAddon && this.getTrackedWebglAddonEntry(this.webglAddon)?.isDisposed,
+    );
+    const canvasCount = this.getRendererCanvasCount();
+    const hasRenderableContent = this.hasRenderableSessionContent();
+    const hasBlankRenderSurface = canvasCount === 0;
+    const blankButLiveRenderer = processStatus === "alive" && hasRenderableContent && hasBlankRenderSurface;
+    return {
+      tabId: this.id,
+      label: this.label,
+      sessionId: this.claudeSessionId,
+      sessionType: this.sessionType,
+      claudeState: this.claudeState,
+      isResumableAgent: this.isResumableAgent,
+      isVisible: this.isVisible,
+      isDisposed: this.isDisposed,
+      process: {
+        pid: typeof this.process?.pid === "number" ? this.process.pid : null,
+        status: processStatus,
+        killed: this.process?.killed === true,
+        exitCode: this.process?.exitCode ?? null,
+        signalCode: this.process?.signalCode ?? null,
+        spawnTime: this.spawnTime > 0 ? this.spawnTime : null,
+        uptimeMs: this.spawnTime > 0 ? Math.max(0, Date.now() - this.spawnTime) : null,
+      },
+      renderer: {
+        canvasCount,
+        hasRenderableContent,
+        hasBlankRenderSurface,
+        trackedWebglAddonPresent,
+        trackedWebglAddonDisposed,
+        staleDisposedWebglOwnership: trackedWebglAddonPresent && trackedWebglAddonDisposed,
+      },
+      buffer: {
+        screenLineCount: screenLines.length,
+        screenTail: screenLines.slice(-6).map((line) => this.redactDiagnosticLine(line)),
+      },
+      derived: {
+        blankButLiveRenderer,
+        staleDisposedWebglOwnership: trackedWebglAddonPresent && trackedWebglAddonDisposed,
+      },
+    };
   }
 
   /** Start state tracking for Claude/Agent sessions. Call after label is known. */

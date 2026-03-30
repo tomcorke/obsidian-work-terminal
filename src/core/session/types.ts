@@ -18,6 +18,8 @@ export type SessionType =
   | "strands"
   | "strands-with-context";
 
+export type AgentRuntimeState = "inactive" | "active" | "idle" | "waiting";
+
 /**
  * State extracted from a TerminalTab that can survive a plugin hot-reload.
  * Stored on window.__workTerminalStore which persists across module re-evaluations.
@@ -65,6 +67,66 @@ export interface ActiveTabInfo {
   sessionId: string | null;
   sessionType: SessionType;
   isResumableAgent: boolean;
+}
+
+export interface TabProcessDiagnostics {
+  pid: number | null;
+  status: "missing" | "alive" | "exited" | "killed";
+  killed: boolean;
+  exitCode: number | null;
+  signalCode: string | null;
+  spawnTime: number | null;
+  uptimeMs: number | null;
+}
+
+export interface TabRendererDiagnostics {
+  canvasCount: number;
+  hasRenderableContent: boolean;
+  hasBlankRenderSurface: boolean;
+  trackedWebglAddonPresent: boolean;
+  trackedWebglAddonDisposed: boolean;
+  staleDisposedWebglOwnership: boolean;
+}
+
+export interface TabBufferDiagnostics {
+  screenLineCount: number;
+  screenTail: string[];
+}
+
+export interface TerminalTabDiagnostics {
+  tabId: string;
+  label: string;
+  sessionId: string | null;
+  sessionType: SessionType;
+  claudeState: AgentRuntimeState;
+  isResumableAgent: boolean;
+  isVisible: boolean;
+  isDisposed: boolean;
+  process: TabProcessDiagnostics;
+  renderer: TabRendererDiagnostics;
+  buffer: TabBufferDiagnostics;
+  derived: {
+    blankButLiveRenderer: boolean;
+    staleDisposedWebglOwnership: boolean;
+  };
+}
+
+export interface TabDiagnostics extends TerminalTabDiagnostics {
+  itemId: string;
+  tabIndex: number;
+  isSelected: boolean;
+  recovery: {
+    resumable: boolean;
+    relaunchable: boolean;
+    hasPersistedSession: boolean;
+    canResumeAfterRestart: boolean;
+    missingPersistedMetadata: boolean;
+    wouldBeLostOnFullClose: boolean;
+    lifecycle: "live" | "disposed" | "resumable" | "resume-metadata-missing" | "lost";
+  };
+  derived: TerminalTabDiagnostics["derived"] & {
+    disposedTabStillSelected: boolean;
+  };
 }
 
 export interface StoredState {

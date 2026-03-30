@@ -2,7 +2,7 @@
  * PluginBase - abstract Plugin subclass that wires an AdapterBundle to
  * the framework lifecycle: view registration, commands, settings, hot-reload.
  */
-import { Plugin } from "obsidian";
+import { Notice, Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
 import { SessionPersistence } from "../core/session/SessionPersistence";
 
@@ -11,6 +11,7 @@ export const VIEW_TYPE = "work-terminal-view";
 export abstract class PluginBase extends Plugin {
   protected adapter: AdapterBundle;
   private _isReloading = false;
+  private _lastWorkTerminalLeaf: unknown = null;
 
   constructor(app: any, manifest: any, adapter: AdapterBundle) {
     super(app, manifest);
@@ -36,6 +37,12 @@ export abstract class PluginBase extends Plugin {
       id: "reload-plugin",
       name: "Reload Plugin (preserve terminals)",
       callback: () => this.hotReload(),
+    });
+
+    this.addCommand({
+      id: "copy-session-diagnostics",
+      name: "Copy Session Diagnostics",
+      callback: async () => this.copySessionDiagnostics(),
     });
 
     this.addSettingTab(new WorkTerminalSettingsTab(this.app, this, this.adapter));
@@ -81,6 +88,35 @@ export abstract class PluginBase extends Plugin {
 
   get isReloading(): boolean {
     return this._isReloading;
+  }
+
+  rememberWorkTerminalLeaf(leaf: unknown): void {
+    this._lastWorkTerminalLeaf = leaf;
+  }
+
+  private async copySessionDiagnostics(): Promise<void> {
+    const openWorkTerminalLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+    const activeLeaf = (this.app.workspace as { activeLeaf?: unknown }).activeLeaf as
+      | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
+      | undefined;
+    const rememberedLeaf = this._lastWorkTerminalLeaf as
+      | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
+      | undefined;
+    const lastWorkTerminalLeaf = openWorkTerminalLeaves.find((leaf: unknown) => leaf === rememberedLeaf) as
+      | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
+      | undefined;
+    const workTerminalLeaf =
+      activeLeaf?.view?.getViewType?.() === VIEW_TYPE
+        ? activeLeaf
+        : lastWorkTerminalLeaf?.view?.getViewType?.() === VIEW_TYPE
+          ? lastWorkTerminalLeaf
+          : openWorkTerminalLeaves[0];
+    const copyDiagnostics = (workTerminalLeaf?.view as any)?.copySessionDiagnostics;
+    if (typeof copyDiagnostics !== "function") {
+      new Notice("Open Work Terminal first to copy session diagnostics");
+      return;
+    }
+    await copyDiagnostics.call(workTerminalLeaf?.view);
   }
 
   onunload(): void {

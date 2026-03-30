@@ -8,7 +8,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 - **Tabbed terminals** per work item - Shell, Claude, Claude (ctx), Copilot, Copilot (ctx), Strands, Strands (ctx), and per-item custom sessions
 - **Agent integration** - Claude/Copilot/Strands command resolution, Claude and Copilot state detection, session rename detection, and headless enrichment hooks
 - **Session recovery** - hot-reload preserves live terminals, the custom session modal can reopen recently closed tabs, and durable recovery can resume or relaunch supported sessions after a full close
-- **Built-in diagnostics** - the command palette action "Copy Session Diagnostics" captures a JSON snapshot of session, renderer, recovery, and persistence state without reloading the plugin
+- **Built-in diagnostics** - the command palette action "Copy Session Diagnostics" copies a JSON snapshot of session, renderer, recovery, and persistence state without reloading the plugin
 - **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 
 ## Development
@@ -17,7 +17,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 npm install
 npm run build        # production build
 npm run dev          # watch mode with CDP hot-reload
-npm test             # 276 tests
+npm test             # run the vitest suite
 npm run lint
 npm run obsidian:test:init
 npm run obsidian:test:open

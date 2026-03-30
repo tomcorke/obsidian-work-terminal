@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import * as path from "node:path";
-import type { ActiveTabInfo, PersistedSession } from "../core/session/types";
+import type { ActiveTabInfo, PersistedSession, TabDiagnostics } from "../core/session/types";
 import { SessionPersistence } from "../core/session/SessionPersistence";
 import type { WorkItemPromptBuilder } from "../core/interfaces";
 import { electronRequire, expandTilde } from "../core/utils";
@@ -16,9 +16,12 @@ const mockState = vi.hoisted(() => ({
   tabsByItem: new Map<string, any[]>(),
   activeTabIndex: 0,
   persistedSessions: [] as PersistedSession[],
+  tabDiagnostics: [] as TabDiagnostics[],
+  idleSinceByItem: new Map<string, number>(),
   menuTitles: [] as string[],
   menuActions: new Map<string, () => void>(),
   notices: [] as string[],
+  clipboardWriteText: vi.fn(),
   latestCreateTabArgs: null as unknown[] | null,
   tabManagerCalls: [] as string[],
   hookStatus: {
@@ -43,6 +46,9 @@ vi.mock("../core/utils", async () => {
         return {
           shell: {
             openExternal: mockState.openExternal,
+          },
+          clipboard: {
+            writeText: mockState.clipboardWriteText,
           },
         };
       }
@@ -182,11 +188,15 @@ vi.mock("../core/terminal/TabManager", () => ({
     }
 
     getSessionItemIds() {
-      return [];
+      return Array.from(new Set(mockState.tabDiagnostics.map((tab) => tab.itemId)));
     }
 
     getAllActiveTabs() {
       return mockState.activeTabs;
+    }
+
+    getTabDiagnostics() {
+      return mockState.tabDiagnostics;
     }
 
     findTabsByLabel(label: string) {
@@ -205,6 +215,18 @@ vi.mock("../core/terminal/TabManager", () => ({
 
     getClaudeState() {
       return "inactive";
+    }
+
+    getSessionCounts(itemId: string) {
+      const tabs = mockState.tabDiagnostics.filter((tab) => tab.itemId === itemId);
+      return {
+        shells: tabs.filter((tab) => tab.sessionType === "shell").length,
+        agents: tabs.filter((tab) => tab.sessionType !== "shell").length,
+      };
+    }
+
+    getIdleSince(itemId: string) {
+      return mockState.idleSinceByItem.get(itemId);
     }
 
     closeAllSessions(_itemId: string) {}
@@ -231,6 +253,24 @@ vi.mock("../core/session/SessionPersistence", () => ({
   SessionPersistence: {
     startPeriodicPersist: vi.fn(() => mockState.stopPeriodicPersist),
     loadFromDisk: vi.fn(async () => mockState.persistedSessions),
+    buildPersistedSessions: vi.fn((sessions: Map<string, any[]>) => {
+      const persisted: PersistedSession[] = [];
+      for (const [taskPath, tabs] of sessions) {
+        for (const tab of tabs) {
+          if (tab.isResumableAgent && tab.claudeSessionId) {
+            persisted.push({
+              version: 1,
+              taskPath,
+              claudeSessionId: tab.claudeSessionId,
+              label: tab.label,
+              sessionType: tab.sessionType,
+              savedAt: "2026-03-28T20:00:00.000Z",
+            });
+          }
+        }
+      }
+      return persisted;
+    }),
     setPersistedSessions: vi.fn(),
   },
 }));
@@ -387,9 +427,12 @@ describe("TerminalPanelView hook warning", () => {
     mockState.tabsByItem = new Map();
     mockState.activeTabIndex = 0;
     mockState.persistedSessions = [];
+    mockState.tabDiagnostics = [];
+    mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
     mockState.menuActions = new Map();
     mockState.notices = [];
+    mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
     mockState.tabManagerCalls = [];
     mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
@@ -721,6 +764,236 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual(mockState.persistedSessions);
     expect(window.__workTerminalDebug?.persistedSessions).toEqual(mockState.persistedSessions);
+  });
+
+  it("refreshes persisted diagnostics immediately after saving active sessions", async () => {
+    mockState.activeSessions = new Map([
+      [
+        "Tasks/task-1.md",
+        [
+          {
+            label: "Automatic Issues",
+            taskPath: "Tasks/task-1.md",
+            claudeSessionId: "copilot-123",
+            isResumableAgent: true,
+            sessionType: "copilot",
+          },
+        ],
+      ],
+    ]) as any;
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.tabDiagnostics = [
+      {
+        tabId: "tab-1",
+        itemId: "Tasks/task-1.md",
+        tabIndex: 0,
+        label: "Automatic Issues",
+        sessionId: "copilot-123",
+        sessionType: "copilot",
+        claudeState: "idle",
+        isResumableAgent: true,
+        isVisible: true,
+        isDisposed: false,
+        isSelected: true,
+        process: {
+          pid: 100,
+          status: "alive",
+          killed: false,
+          exitCode: null,
+          signalCode: null,
+          spawnTime: 1000,
+          uptimeMs: 1000,
+        },
+        renderer: {
+          canvasCount: 1,
+          hasRenderableContent: true,
+          hasBlankRenderSurface: false,
+          trackedWebglAddonPresent: false,
+          trackedWebglAddonDisposed: false,
+          staleDisposedWebglOwnership: false,
+        },
+        buffer: {
+          screenLineCount: 1,
+          screenTail: ["[redacted:5 chars]"],
+        },
+        recovery: {
+          resumable: true,
+          relaunchable: false,
+          hasPersistedSession: false,
+          canResumeAfterRestart: false,
+          missingPersistedMetadata: true,
+          wouldBeLostOnFullClose: false,
+          lifecycle: "live",
+        },
+        derived: {
+          blankButLiveRenderer: false,
+          staleDisposedWebglOwnership: false,
+          disposedTabStillSelected: false,
+        },
+      },
+    ];
+
+    const { view } = createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+
+    await view.persistSessions();
+    const snapshot = view.getSessionDiagnosticsSnapshot();
+
+    expect(snapshot.persistedSessions).toHaveLength(1);
+    expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
+      hasPersistedSession: true,
+      canResumeAfterRestart: true,
+      missingPersistedMetadata: false,
+    });
+  });
+
+  it("builds session diagnostics with renderer and recovery flags", async () => {
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.activeTabIndex = 0;
+    mockState.idleSinceByItem.set("Tasks/task-1.md", 1234);
+    mockState.tabDiagnostics = [
+      {
+        tabId: "tab-1",
+        itemId: "Tasks/task-1.md",
+        tabIndex: 0,
+        label: "Automatic Issues",
+        sessionId: "copilot-123",
+        sessionType: "copilot",
+        claudeState: "idle",
+        isResumableAgent: true,
+        isVisible: true,
+        isDisposed: false,
+        isSelected: true,
+        process: {
+          pid: 123,
+          status: "alive",
+          killed: false,
+          exitCode: null,
+          signalCode: null,
+          spawnTime: 1000,
+          uptimeMs: 5000,
+        },
+        renderer: {
+          canvasCount: 0,
+          hasRenderableContent: true,
+          hasBlankRenderSurface: true,
+          trackedWebglAddonPresent: true,
+          trackedWebglAddonDisposed: true,
+          staleDisposedWebglOwnership: true,
+        },
+        buffer: {
+          screenLineCount: 2,
+          screenTail: ["ready", "waiting"],
+        },
+        recovery: {
+          resumable: true,
+          relaunchable: false,
+          hasPersistedSession: false,
+          canResumeAfterRestart: false,
+          missingPersistedMetadata: false,
+          wouldBeLostOnFullClose: false,
+          lifecycle: "live",
+        },
+        derived: {
+          blankButLiveRenderer: true,
+          staleDisposedWebglOwnership: true,
+          disposedTabStillSelected: false,
+        },
+      },
+    ];
+
+    const { view } = createView({ "core.exposeDebugApi": true });
+    await flushAsync();
+
+    const snapshot = view.getSessionDiagnosticsSnapshot();
+    expect(snapshot.summary).toMatchObject({
+      activeItemId: "Tasks/task-1.md",
+      activeTabCount: 1,
+      activeItemCount: 1,
+      persistedSessionCount: 0,
+      derivedCounts: {
+        blankButLiveRenderer: 1,
+        staleDisposedWebglOwnership: 1,
+        missingPersistedMetadata: 1,
+        liveNonResumableSessions: 0,
+      },
+    });
+    expect(snapshot.items).toHaveLength(1);
+    expect(snapshot.items[0]).toMatchObject({
+      itemId: "Tasks/task-1.md",
+      activeTabIndex: 0,
+      idleSince: 1234,
+      sessionCounts: { shells: 0, agents: 1 },
+    });
+    expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
+      resumable: true,
+      hasPersistedSession: false,
+      missingPersistedMetadata: true,
+      lifecycle: "live",
+    });
+    expect(window.__workTerminalDebug?.getSessionDiagnostics().summary.activeTabCount).toBe(1);
+  });
+
+  it("copies session diagnostics to the clipboard", async () => {
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.tabDiagnostics = [
+      {
+        tabId: "tab-1",
+        itemId: "Tasks/task-1.md",
+        tabIndex: 0,
+        label: "Shell",
+        sessionId: null,
+        sessionType: "shell",
+        claudeState: "inactive",
+        isResumableAgent: false,
+        isVisible: true,
+        isDisposed: false,
+        isSelected: true,
+        process: {
+          pid: 50,
+          status: "alive",
+          killed: false,
+          exitCode: null,
+          signalCode: null,
+          spawnTime: 1000,
+          uptimeMs: 1000,
+        },
+        renderer: {
+          canvasCount: 1,
+          hasRenderableContent: true,
+          hasBlankRenderSurface: false,
+          trackedWebglAddonPresent: false,
+          trackedWebglAddonDisposed: false,
+          staleDisposedWebglOwnership: false,
+        },
+        buffer: {
+          screenLineCount: 1,
+          screenTail: ["$"],
+        },
+        recovery: {
+          resumable: false,
+          relaunchable: true,
+          hasPersistedSession: false,
+          canResumeAfterRestart: false,
+          missingPersistedMetadata: false,
+          wouldBeLostOnFullClose: true,
+          lifecycle: "live",
+        },
+        derived: {
+          blankButLiveRenderer: false,
+          staleDisposedWebglOwnership: false,
+          disposedTabStillSelected: false,
+        },
+      },
+    ];
+
+    const { view } = createView();
+    await flushAsync();
+
+    await expect(view.copySessionDiagnostics()).resolves.toBe(true);
+    expect(mockState.clipboardWriteText).toHaveBeenCalledTimes(1);
+    expect(mockState.clipboardWriteText.mock.calls[0][0]).toContain('"activeTabCount": 1');
+    expect(mockState.notices).toContain("Session diagnostics copied to clipboard");
   });
 
   it("keeps Copilot tabs out of the Claude-only restart menu action", async () => {
