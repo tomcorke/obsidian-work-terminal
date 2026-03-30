@@ -1369,6 +1369,37 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.notices).toContain("Could not build a contextual prompt for this item");
   });
 
+  it("refuses Claude-with-context launches when the template is whitespace only", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "  \n\t  ",
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnClaudeWithContext();
+
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain("Could not build a contextual prompt for this item");
+  });
+
   it("uses only the configured context template for Claude-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
@@ -1487,6 +1518,15 @@ describe("TerminalPanelView hook warning", () => {
   it("hides the Claude-with-context button when no template is configured", async () => {
     const { panelEl } = createView({
       "core.additionalAgentContext": "",
+    });
+    await flushAsync();
+
+    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
+  });
+
+  it("hides the Claude-with-context button when the template is whitespace only", async () => {
+    const { panelEl } = createView({
+      "core.additionalAgentContext": "  \n\t  ",
     });
     await flushAsync();
 
