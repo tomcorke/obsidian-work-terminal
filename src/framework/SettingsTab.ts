@@ -32,6 +32,7 @@ interface CoreSettings {
   "core.defaultShell": string;
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
+  "core.keepSessionsAlive": boolean;
   "core.acceptNoResumeHooks": boolean;
 }
 
@@ -59,6 +60,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.defaultShell": process.env.SHELL || "/bin/zsh",
   "core.defaultTerminalCwd": "~",
   "core.exposeDebugApi": false,
+  "core.keepSessionsAlive": true,
   "core.acceptNoResumeHooks": false,
 };
 
@@ -140,6 +142,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "core.defaultTerminalCwd",
       "Default terminal CWD",
       "Working directory for new terminals (supports ~)",
+    );
+    this.addCoreToggle(
+      containerEl,
+      "core.keepSessionsAlive",
+      "Keep sessions alive when tab is closed",
+      "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state. Sessions are also persisted to disk as a fallback.",
     );
     this.addCoreToggle(
       containerEl,
