@@ -54,17 +54,17 @@ export function attachCapturePhase(
   const handler = (e: KeyboardEvent) => {
     if (!textareaEl || document.activeElement !== textareaEl) return;
 
-    const normalizedKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-
     // Cmd+F: toggle search bar (intercept before Obsidian's find)
-    if (e.metaKey && normalizedKey === "f" && onSearch) {
+    if (e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyF" && onSearch) {
       e.stopImmediatePropagation();
       e.preventDefault();
       onSearch();
       return;
     }
 
+    const normalizedKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     let seq: string | null = null;
+    const isAltGraph = e.getModifierState?.("AltGraph") || (e.ctrlKey && e.altKey);
 
     if (e.key === "Enter" && e.shiftKey) {
       // Shift+Enter: CSI u encoding so Claude CLI sees it as distinct from Enter
@@ -78,14 +78,14 @@ export function attachCapturePhase(
     } else if (e.altKey && e.key === "Backspace") {
       // ESC DEL - delete word backward
       seq = "\x1b\x7f";
-    } else if (e.altKey && e.code === "KeyB") {
+    } else if (!isAltGraph && e.altKey && e.code === "KeyB") {
       // ESC b - word backward without enabling xterm macOptionIsMeta,
       // which blocks composed Option+digit characters on non-US layouts.
       seq = "\x1bb";
-    } else if (e.altKey && e.code === "KeyF") {
+    } else if (!isAltGraph && e.altKey && e.code === "KeyF") {
       // ESC f - word forward without hijacking printable Option combos.
       seq = "\x1bf";
-    } else if (e.altKey && e.code === "KeyD") {
+    } else if (!isAltGraph && e.altKey && e.code === "KeyD") {
       // ESC d - delete word forward
       seq = "\x1bd";
     } else if (e.metaKey && normalizedKey === "ArrowLeft") {

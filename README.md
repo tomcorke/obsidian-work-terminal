@@ -128,7 +128,7 @@ Your adapter inherits all of this without writing any terminal code:
 - Session persistence (hot-reload + disk resume with 7-day retention)
 - Agent state detection (active/waiting/idle) with card indicators
 - Agent session rename detection with adapter hook
-- Keyboard capture (Option+Arrow, Option+B/F, Shift+Enter, printable Option combos preserved)
+- Keyboard capture (Option+Arrow, Option+B/F/D, Shift+Enter, Option+digit printable chars preserved, other Option shortcuts keep terminal Meta behavior)
 - xterm.js rendering with PTY wrapper, resize protocol, scroll-to-bottom
 - Drag-drop reordering (within-section and cross-section)
 - Collapsible kanban sections with custom sort order

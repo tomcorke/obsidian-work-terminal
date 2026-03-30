@@ -5,9 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   class MockTerminal {
     static lastOptions: Record<string, unknown> | null = null;
+    static lastInstance: MockTerminal | null = null;
 
     cols = 80;
     rows = 24;
+    options: Record<string, unknown>;
+    customKeyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
     unicode = { activeVersion: "" };
     buffer = {
       active: {
@@ -19,8 +22,13 @@ const mocks = vi.hoisted(() => {
 
     constructor(options: Record<string, unknown>) {
       MockTerminal.lastOptions = options;
+      MockTerminal.lastInstance = this;
+      this.options = { ...options };
     }
 
+    attachCustomKeyEventHandler = vi.fn((handler: (event: KeyboardEvent) => boolean) => {
+      this.customKeyEventHandler = handler;
+    });
     loadAddon = vi.fn();
     open = vi.fn();
     focus = vi.fn();
@@ -133,13 +141,66 @@ describe("TerminalTab keyboard configuration", () => {
     vi.restoreAllMocks();
     document.body.innerHTML = "";
     mocks.MockTerminal.lastOptions = null;
+    mocks.MockTerminal.lastInstance = null;
   });
 
-  it("leaves macOS Option available for printable characters", () => {
+  it("defaults macOS Option to Meta and installs custom handling", () => {
     const parentEl = document.createElement("div");
 
     new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Shell", null, "shell");
 
-    expect(mocks.MockTerminal.lastOptions?.macOptionIsMeta).toBe(false);
+    expect(mocks.MockTerminal.lastOptions?.macOptionIsMeta).toBe(true);
+    expect(mocks.MockTerminal.lastInstance?.options.macOptionIsMeta).toBe(true);
+    expect(mocks.MockTerminal.lastInstance?.attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows printable Option+digit combinations without disabling other Meta shortcuts", () => {
+    const parentEl = document.createElement("div");
+
+    new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Shell", null, "shell");
+
+    const terminal = mocks.MockTerminal.lastInstance;
+    expect(terminal?.customKeyEventHandler).toBeTruthy();
+
+    terminal?.customKeyEventHandler?.(
+      new KeyboardEvent("keydown", {
+        key: "#",
+        code: "Digit3",
+        altKey: true,
+      }),
+    );
+    expect(terminal?.options.macOptionIsMeta).toBe(false);
+
+    terminal?.customKeyEventHandler?.(
+      new KeyboardEvent("keydown", {
+        key: "†",
+        code: "KeyT",
+        altKey: true,
+      }),
+    );
+    expect(terminal?.options.macOptionIsMeta).toBe(true);
+  });
+
+  it("re-applies the same Option handling to restored terminals", () => {
+    const parentEl = document.createElement("div");
+    const newParentEl = document.createElement("div");
+
+    const freshTab = new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Shell", null, "shell");
+    const restoredTerminal = freshTab.terminal as unknown as typeof mocks.MockTerminal.prototype;
+    vi.clearAllMocks();
+
+    TerminalTab.fromStored(freshTab.stash(), newParentEl);
+
+    expect(restoredTerminal.attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);
+    expect(restoredTerminal.options.macOptionIsMeta).toBe(true);
+
+    restoredTerminal.customKeyEventHandler?.(
+      new KeyboardEvent("keydown", {
+        key: "#",
+        code: "Digit3",
+        altKey: true,
+      }),
+    );
+    expect(restoredTerminal.options.macOptionIsMeta).toBe(false);
   });
 });
