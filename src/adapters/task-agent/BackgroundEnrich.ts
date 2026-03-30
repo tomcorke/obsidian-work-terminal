@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { Notice, type App } from "obsidian";
 import { spawnHeadlessClaude } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource } from "./TaskFileTemplate";
@@ -21,6 +21,10 @@ function resolveVaultPath(app: App): string {
 
 function resolveFullPath(app: App, vaultRelativePath: string): string {
   return `${resolveVaultPath(app)}/${vaultRelativePath}`;
+}
+
+function resolveClaudeLaunchCwd(settings: Record<string, any>): string {
+  return expandTilde(settings["core.defaultTerminalCwd"] || "~");
 }
 
 export interface ItemCreatedResult {
@@ -61,14 +65,18 @@ export async function handleItemCreated(
     `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
     RENAME_INSTRUCTION;
 
-  const home = process.env.HOME || "/";
   const enrichmentDone = spawnHeadlessClaude(
     enrichPrompt,
-    home,
+    resolveClaudeLaunchCwd(settings),
     claudeCommand,
     claudeExtraArgs,
   ).then(
     (result) => {
+      if (result.missingCli) {
+        new Notice(result.stderr);
+        console.warn("[work-terminal] Background enrich skipped:", result.stderr);
+        return;
+      }
       if (result.exitCode === 0) {
         console.log(`[work-terminal] Background enrich completed: ${filePath}`);
       } else {

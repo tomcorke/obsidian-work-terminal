@@ -1452,9 +1452,9 @@ describe("TerminalPanelView hook warning", () => {
       makePersistedSession("copilot", {
         label: "Copilot",
         cwd: "/saved-cwd",
-        command: "copilot-saved",
+        command: "/bin/echo",
         commandArgs: [
-          "copilot-saved",
+          "/bin/echo",
           "--saved-flag",
           "value",
           "--resume=old-session",
@@ -1467,14 +1467,119 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",
-      "copilot-saved",
+      "/bin/echo",
       "/saved-cwd",
       "Copilot",
       "copilot",
       undefined,
-      ["copilot-saved", "--saved-flag", "value", "--another=saved", "--resume=saved-session"],
+      ["/bin/echo", "--saved-flag", "value", "--another=saved", "--resume=saved-session"],
       "saved-session",
     ]);
+  });
+
+  it("falls back to the current configured command when a saved Copilot path is stale", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "/bin/echo",
+      "core.copilotExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("copilot", {
+        label: "Copilot",
+        cwd: "/saved-cwd",
+        command: "/definitely/not/here/copilot",
+        commandArgs: [
+          "/definitely/not/here/copilot",
+          "--saved-flag",
+          "value",
+          "--resume=old-session",
+        ],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "/bin/echo",
+      "/saved-cwd",
+      "Copilot",
+      "copilot",
+      undefined,
+      ["/bin/echo", "--saved-flag", "value", "--resume=saved-session"],
+      "saved-session",
+    ]);
+    expect(mockState.notices).toEqual([]);
+  });
+
+  it("falls back to the current configured command when a saved relative Copilot wrapper path is stale", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "/bin/echo",
+      "core.copilotExtraArgs": "--current-default",
+      "core.defaultTerminalCwd": "~/current-default",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("copilot", {
+        label: "Copilot",
+        cwd: "/saved-cwd",
+        command: "./missing/copilot-wrapper",
+        commandArgs: [
+          "./missing/copilot-wrapper",
+          "--saved-flag",
+          "value",
+          "--resume=old-session",
+        ],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "/bin/echo",
+      "/saved-cwd",
+      "Copilot",
+      "copilot",
+      undefined,
+      ["/bin/echo", "--saved-flag", "value", "--resume=saved-session"],
+      "saved-session",
+    ]);
+    expect(mockState.notices).toEqual([]);
+  });
+
+  it("resolves the current relative Copilot command against the current configured cwd after a stale saved wrapper path", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "./sh",
+      "core.defaultTerminalCwd": "/bin",
+    });
+    await flushAsync();
+
+    await view.resumeSession(
+      makePersistedSession("copilot", {
+        label: "Copilot",
+        cwd: "/saved-cwd",
+        command: "./missing/copilot-wrapper",
+        commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
+        claudeSessionId: "saved-session",
+      }),
+      "Tasks/task-1.md",
+    );
+
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "Tasks/task-1.md",
+      "/bin/sh",
+      "/saved-cwd",
+      "Copilot",
+      "copilot",
+      undefined,
+      ["/bin/sh", "--saved-flag", "value", "--resume=saved-session"],
+      "saved-session",
+    ]);
+    expect(mockState.notices).toEqual([]);
   });
 
   it("restores recently closed resumable sessions with their saved launch context", async () => {
@@ -1493,9 +1598,9 @@ describe("TerminalPanelView hook warning", () => {
       itemId: "Tasks/task-1.md",
       recoveryMode: "resume",
       cwd: "/saved-cwd",
-      command: "claude-saved",
+      command: "/bin/echo",
       commandArgs: [
-        "claude-saved",
+        "/bin/echo",
         "--saved-flag",
         "value",
         "--resume",
@@ -1509,12 +1614,12 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",
-      "claude-saved",
+      "/bin/echo",
       "/saved-cwd",
       "Claude",
       "claude",
       undefined,
-      ["claude-saved", "--saved-flag", "value", "--resume", "saved-session"],
+      ["/bin/echo", "--saved-flag", "value", "--resume", "saved-session"],
       "saved-session",
     ]);
   });
@@ -1531,9 +1636,9 @@ describe("TerminalPanelView hook warning", () => {
       makePersistedSession("claude-with-context", {
         label: "Claude (ctx)",
         cwd: "/saved-cwd",
-        command: "claude-saved",
+        command: "/bin/echo",
         commandArgs: [
-          "claude-saved",
+          "/bin/echo",
           "--model",
           "sonnet",
           "--session-id",
@@ -1547,12 +1652,12 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",
-      "claude-saved",
+      "/bin/echo",
       "/saved-cwd",
       "Claude (ctx)",
       "claude-with-context",
       undefined,
-      ["claude-saved", "--model", "sonnet", "--resume", "saved-session"],
+      ["/bin/echo", "--model", "sonnet", "--resume", "saved-session"],
       "saved-session",
     ]);
   });
@@ -1573,9 +1678,9 @@ describe("TerminalPanelView hook warning", () => {
       itemId: "Tasks/task-1.md",
       recoveryMode: "resume",
       cwd: "/saved-cwd",
-      command: "copilot-saved",
+      command: "/bin/echo",
       commandArgs: [
-        "copilot-saved",
+        "/bin/echo",
         "--resume=old-session",
         "--model",
         "gpt-5.4",
@@ -1589,12 +1694,12 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs).toEqual([
       "Tasks/task-1.md",
-      "copilot-saved",
+      "/bin/echo",
       "/saved-cwd",
       "Copilot (ctx)",
       "copilot-with-context",
       undefined,
-      ["copilot-saved", "--model", "gpt-5.4", "--resume=saved-session"],
+      ["/bin/echo", "--model", "gpt-5.4", "--resume=saved-session"],
       "saved-session",
     ]);
   });
@@ -2233,6 +2338,37 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("shows install guidance when restoring a Claude session without an available CLI", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "definitely-not-a-real-command-issue-158",
+      "core.defaultTerminalCwd": "~/fallback",
+    });
+    await flushAsync();
+
+    const entry = {
+      sessionType: "claude",
+      label: "Recovered Claude",
+      claudeSessionId: "session-456",
+      closedAt: Date.now(),
+      itemId: "task-1",
+      recoveryMode: "resume" as const,
+    };
+    (view as any).recentlyClosedStore.add(entry);
+
+    await (view as any).restoreClosedSession(entry);
+
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain(
+      `Claude Code CLI not found for "definitely-not-a-real-command-issue-158". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`,
+    );
+    expect((view as any).recentlyClosedStore.serialize()).toEqual([
+      expect.objectContaining({
+        label: "Recovered Claude",
+        itemId: "task-1",
+      }),
+    ]);
+  });
+
   it("keeps tab clicks working after rename mode is torn down by a task switch", async () => {
     mockState.tabsByItem = new Map([
       [
@@ -2340,6 +2476,33 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.latestCreateTabArgs?.[0]).toBe("task-1");
   });
 
+  it("shows install guidance when restarting a Claude tab without an available CLI", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "definitely-not-a-real-command-issue-158",
+      "core.defaultTerminalCwd": "~/fallback",
+    });
+    await flushAsync();
+
+    (view as any).showTabContextMenu(
+      {
+        sessionType: "claude",
+        label: "Recovered Claude",
+        taskPath: "task-1",
+        agentSessionId: "session-456",
+      },
+      0,
+      new dom.window.MouseEvent("contextmenu"),
+    );
+
+    mockState.menuActions.get("Restart")?.();
+    await flushAsync();
+
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain(
+      `Claude Code CLI not found for "definitely-not-a-real-command-issue-158". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`,
+    );
+  });
+
   it("shows a notice when a spawn button launch rejects", async () => {
     const { panelEl, view } = createView();
     await flushAsync();
@@ -2357,6 +2520,34 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.notices).toContain("Failed to launch shell: boom");
 
     errorSpy.mockRestore();
+  });
+
+  it("shows a notice instead of launching Claude when the CLI is unavailable", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "definitely-not-a-real-command-issue-158",
+    });
+    await flushAsync();
+
+    await (view as any).spawnClaudeSession({ sessionType: "claude" });
+
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain(
+      `Claude Code CLI not found for "definitely-not-a-real-command-issue-158". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`,
+    );
+  });
+
+  it("shows a notice instead of launching Copilot when the CLI is unavailable", async () => {
+    const { view } = createView({
+      "core.copilotCommand": "definitely-not-a-real-command-issue-158",
+    });
+    await flushAsync();
+
+    await (view as any).spawnCopilotSession({ sessionType: "copilot" });
+
+    expect(mockState.latestCreateTabArgs).toBeNull();
+    expect(mockState.notices).toContain(
+      `GitHub Copilot CLI not found for "definitely-not-a-real-command-issue-158". Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.`,
+    );
   });
 
   it("reuses one settings snapshot for contextual Claude launch", async () => {

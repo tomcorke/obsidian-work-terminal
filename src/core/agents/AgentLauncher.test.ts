@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMissingCliNotice,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
   mergeExtraArgs,
   parseExtraArgs,
+  resolveCommandInfo,
 } from "./AgentLauncher";
+import { expandTilde } from "../utils";
 
 describe("AgentLauncher", () => {
   it("parses backslash-newline continuations without keeping continuation tokens", () => {
@@ -109,5 +112,63 @@ describe("AgentLauncher", () => {
       "--session-id",
       "session-123",
     ]);
+  });
+
+  it("reports when a command cannot be resolved", () => {
+    expect(resolveCommandInfo("definitely-not-a-real-command-issue-158")).toEqual({
+      requested: "definitely-not-a-real-command-issue-158",
+      resolved: "definitely-not-a-real-command-issue-158",
+      found: false,
+    });
+  });
+
+  it("treats existing absolute paths as resolved commands", () => {
+    expect(resolveCommandInfo("/bin/sh")).toEqual({
+      requested: "/bin/sh",
+      resolved: "/bin/sh",
+      found: true,
+    });
+  });
+
+  it("treats slash-containing relative paths as unresolved when no launch cwd is known", () => {
+    expect(resolveCommandInfo("./bin/claude-wrapper")).toEqual({
+      requested: "./bin/claude-wrapper",
+      resolved: "./bin/claude-wrapper",
+      found: false,
+    });
+  });
+
+  it("resolves relative wrapper paths against the launch cwd", () => {
+    expect(resolveCommandInfo("./sh", "/bin")).toEqual({
+      requested: "./sh",
+      resolved: "/bin/sh",
+      found: true,
+    });
+  });
+
+  it("treats malformed absolute paths as unresolved instead of throwing", () => {
+    expect(resolveCommandInfo("/bin/\u0000bad-command")).toEqual({
+      requested: "/bin/\u0000bad-command",
+      resolved: "/bin/\u0000bad-command",
+      found: false,
+    });
+  });
+
+  it("treats missing relative wrapper paths as unresolved even when cwd is provided", () => {
+    expect(resolveCommandInfo("./missing-wrapper", expandTilde("~"))).toEqual({
+      requested: "./missing-wrapper",
+      resolved: `${expandTilde("~")}/missing-wrapper`,
+      found: false,
+    });
+  });
+
+  it("builds the Claude missing CLI notice", () => {
+    expect(buildMissingCliNotice("claude", "claude")).toContain(
+      "brew install --cask claude-code",
+    );
+  });
+
+  it("builds the Copilot missing CLI notice", () => {
+    expect(buildMissingCliNotice("copilot", "copilot")).toContain("brew install copilot-cli");
   });
 });
