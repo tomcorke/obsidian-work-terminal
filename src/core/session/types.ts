@@ -18,6 +18,8 @@ export type SessionType =
   | "strands"
   | "strands-with-context";
 
+export type DurableRecoveryMode = "resume" | "relaunch";
+
 /**
  * State extracted from a TerminalTab that can survive a plugin hot-reload.
  * Stored on window.__workTerminalStore which persists across module re-evaluations.
@@ -50,12 +52,16 @@ export interface StoredSession {
  * resumed after a full plugin close/restart (not just hot-reload).
  */
 export interface PersistedSession {
-  version: 1;
+  version: 1 | 2;
   taskPath: string;
-  claudeSessionId: string;
+  claudeSessionId?: string | null;
   label: string;
   sessionType: SessionType;
   savedAt: string; // ISO timestamp
+  recoveryMode?: DurableRecoveryMode;
+  cwd?: string;
+  command?: string;
+  commandArgs?: string[];
 }
 
 export interface ActiveTabInfo {

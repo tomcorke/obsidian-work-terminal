@@ -8,6 +8,10 @@ function makeEntry(overrides: Partial<ClosedSessionEntry> = {}): ClosedSessionEn
     claudeSessionId: `session-${Math.random().toString(36).slice(2)}`,
     closedAt: Date.now(),
     itemId: "item-1",
+    recoveryMode: "resume",
+    cwd: "/vault",
+    command: "claude",
+    commandArgs: ["claude"],
     ...overrides,
   };
 }
@@ -67,10 +71,56 @@ describe("RecentlyClosedStore", () => {
   });
 
   it("does not filter out shell sessions without claudeSessionId when applying active filter", () => {
-    store.add(makeEntry({ sessionType: "shell", claudeSessionId: null, label: "Shell" }));
+    store.add(
+      makeEntry({
+        sessionType: "shell",
+        claudeSessionId: null,
+        label: "Shell",
+        recoveryMode: "relaunch",
+        command: "/bin/zsh",
+      }),
+    );
     // Even when filtering with active IDs, shell sessions (null ID) are not filtered
     const entries = store.getEntries(new Set(["some-id"]));
     expect(entries).toHaveLength(1);
     expect(entries[0].label).toBe("Shell");
+  });
+
+  it("deduplicates repeated restore entries for the same resumable session", () => {
+    store.add(
+      makeEntry({
+        claudeSessionId: "same-session",
+        label: "Old label",
+        closedAt: Date.now() - 1000,
+      }),
+    );
+    store.add(makeEntry({ claudeSessionId: "same-session", label: "New label" }));
+
+    const entries = store.serialize();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].label).toBe("New label");
+  });
+
+  it("round-trips persisted relaunch entries", () => {
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+    });
+
+    const restored = RecentlyClosedStore.fromData([entry]);
+    expect(restored).toEqual([entry]);
+  });
+
+  it("filters entries with a custom activity predicate", () => {
+    store.add(makeEntry({ label: "Active shell", recoveryMode: "relaunch", claudeSessionId: null }));
+    store.add(makeEntry({ label: "Inactive shell", recoveryMode: "relaunch", claudeSessionId: null }));
+
+    const entries = store.getEntries(new Set(), 5, (entry) => entry.label === "Active shell");
+    expect(entries).toHaveLength(1);
+    expect(entries[0].label).toBe("Inactive shell");
   });
 });

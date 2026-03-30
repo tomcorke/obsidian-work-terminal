@@ -17,19 +17,27 @@ function createMockPlugin(initialData: Record<string, any> = {}) {
 function makePersisted(
   overrides: Partial<{
     taskPath: string;
-    claudeSessionId: string;
+    claudeSessionId: string | null;
     label: string;
     sessionType: string;
     savedAt: string;
+    recoveryMode: "resume" | "relaunch";
+    cwd: string;
+    command: string;
+    commandArgs: string[];
   }> = {},
 ) {
   return {
-    version: 1 as const,
+    version: 2 as const,
     taskPath: overrides.taskPath ?? "tasks/my-task.md",
     claudeSessionId: overrides.claudeSessionId ?? "session-1",
     label: overrides.label ?? "Claude",
     sessionType: (overrides.sessionType ?? "claude") as any,
     savedAt: overrides.savedAt ?? new Date().toISOString(),
+    recoveryMode: overrides.recoveryMode ?? "resume",
+    cwd: overrides.cwd ?? "/vault",
+    command: overrides.command ?? "claude",
+    commandArgs: overrides.commandArgs ?? ["claude", "--resume", "session-1"],
   };
 }
 
@@ -45,6 +53,9 @@ describe("SessionPersistence", () => {
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
+          launchShell: "claude",
+          launchCwd: "/vault",
+          launchCommandArgs: ["claude", "--resume", "s1"],
         },
         {
           isResumableAgent: true,
@@ -52,6 +63,9 @@ describe("SessionPersistence", () => {
           label: "Copilot",
           taskPath: "task-1",
           sessionType: "copilot",
+          launchShell: "copilot",
+          launchCwd: "/vault",
+          launchCommandArgs: ["copilot", "--resume=s2"],
         },
         {
           isResumableAgent: false,
@@ -59,6 +73,8 @@ describe("SessionPersistence", () => {
           label: "Shell",
           taskPath: "task-1",
           sessionType: "shell",
+          launchShell: "/bin/zsh",
+          launchCwd: "/vault",
         },
         {
           isResumableAgent: true,
@@ -66,16 +82,30 @@ describe("SessionPersistence", () => {
           label: "Claude2",
           taskPath: "task-1",
           sessionType: "claude",
+          launchShell: "claude",
+          launchCwd: "/vault",
+          launchCommandArgs: ["claude"],
         },
       ]);
 
       await SessionPersistence.saveToDisk(plugin, sessions);
 
       const saved = plugin.saveData.mock.calls[0][0];
-      expect(saved.persistedSessions).toHaveLength(2);
+      expect(saved.persistedSessions).toHaveLength(4);
       expect(saved.persistedSessions[0].claudeSessionId).toBe("s1");
       expect(saved.persistedSessions[1].claudeSessionId).toBe("s2");
       expect(saved.persistedSessions[1].sessionType).toBe("copilot");
+      expect(saved.persistedSessions[2]).toMatchObject({
+        sessionType: "shell",
+        recoveryMode: "relaunch",
+        command: "/bin/zsh",
+        cwd: "/vault",
+      });
+      expect(saved.persistedSessions[3]).toMatchObject({
+        sessionType: "claude",
+        recoveryMode: "relaunch",
+        command: "claude",
+      });
     });
 
     it("merges into existing plugin data without clobbering", async () => {
@@ -99,6 +129,9 @@ describe("SessionPersistence", () => {
           label: "Claude",
           taskPath: "task-1",
           sessionType: "claude",
+          launchShell: "claude",
+          launchCwd: "/vault",
+          launchCommandArgs: ["claude", "--resume", "s1"],
         },
       ]);
 
@@ -115,6 +148,7 @@ describe("SessionPersistence", () => {
           expect.objectContaining({
             claudeSessionId: "s1",
             sessionType: "claude",
+            recoveryMode: "resume",
           }),
         ],
       });
@@ -141,6 +175,29 @@ describe("SessionPersistence", () => {
       const plugin = createMockPlugin();
       const result = await SessionPersistence.loadFromDisk(plugin);
       expect(result).toEqual([]);
+    });
+
+    it("normalizes legacy resumable entries without a recovery mode", async () => {
+      const plugin = createMockPlugin({
+        persistedSessions: [
+          {
+            version: 1,
+            taskPath: "tasks/my-task.md",
+            claudeSessionId: "legacy-session",
+            label: "Claude",
+            sessionType: "claude",
+            savedAt: new Date().toISOString(),
+          },
+        ],
+      });
+
+      const result = await SessionPersistence.loadFromDisk(plugin);
+      expect(result).toEqual([
+        expect.objectContaining({
+          claudeSessionId: "legacy-session",
+          recoveryMode: "resume",
+        }),
+      ]);
     });
   });
 

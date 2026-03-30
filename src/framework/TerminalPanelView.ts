@@ -40,7 +40,10 @@ import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/int
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
 import { CustomSessionModal } from "./CustomSessionModal";
-import { RecentlyClosedStore } from "../core/session/RecentlyClosedStore";
+import {
+  RecentlyClosedStore,
+  type ClosedSessionEntry,
+} from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import {
   getDefaultSessionLabel,
@@ -173,17 +176,15 @@ export class TerminalPanelView {
       this.persistSessions();
     };
     this.tabManager.onTabClosed = (itemId, tab) => {
-      this.recentlyClosedStore.add({
-        sessionType: tab.sessionType,
-        label: tab.label,
-        claudeSessionId: tab.claudeSessionId,
-        closedAt: Date.now(),
-        itemId,
-      });
+      const entry = this.buildClosedSessionEntry(itemId, tab);
+      if (!entry) return;
+      this.recentlyClosedStore.add(entry);
+      void this.persistRecentlyClosedSessions();
     };
 
     // Load persisted sessions from disk
     this.loadPersistedSessions();
+    this.loadRecentlyClosedSessions();
 
     // Start periodic disk persist as safety net (every 30s)
     this.stopPeriodicPersist = SessionPersistence.startPeriodicPersist(
@@ -302,7 +303,14 @@ export class TerminalPanelView {
       }
     }
 
-    return this.persistedSessions.some((session) => isClaudeSession(session.sessionType));
+    return (
+      this.persistedSessions.some(
+        (session) => session.recoveryMode === "resume" && isClaudeSession(session.sessionType),
+      ) ||
+      this.recentlyClosedStore
+        .serialize()
+        .some((entry) => entry.recoveryMode === "resume" && isClaudeSession(entry.sessionType))
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -630,6 +638,122 @@ export class TerminalPanelView {
     });
   }
 
+  private buildClosedSessionEntry(itemId: string, tab: TerminalTab): ClosedSessionEntry | null {
+    if (tab.isResumableAgent && tab.claudeSessionId) {
+      return {
+        sessionType: tab.sessionType,
+        label: tab.label,
+        claudeSessionId: tab.claudeSessionId,
+        closedAt: Date.now(),
+        itemId,
+        recoveryMode: "resume",
+        cwd: tab.launchCwd,
+        command: tab.launchCommandArgs?.[0] || tab.launchShell,
+        commandArgs: tab.launchCommandArgs,
+      };
+    }
+
+    const command = tab.launchCommandArgs?.[0] || tab.launchShell;
+    if (!command || !tab.launchCwd) {
+      return null;
+    }
+
+    return {
+      sessionType: tab.sessionType,
+      label: tab.label,
+      claudeSessionId: null,
+      closedAt: Date.now(),
+      itemId,
+      recoveryMode: "relaunch",
+      cwd: tab.launchCwd,
+      command,
+      commandArgs: tab.launchCommandArgs,
+    };
+  }
+
+  private matchesRecoverySession(
+    tab: TerminalTab,
+    session: Pick<
+      PersistedSession | ClosedSessionEntry,
+      | "sessionType"
+      | "label"
+      | "claudeSessionId"
+      | "recoveryMode"
+      | "cwd"
+      | "command"
+      | "commandArgs"
+    >,
+  ): boolean {
+    if (tab.sessionType !== session.sessionType) {
+      return false;
+    }
+
+    if (session.recoveryMode === "resume") {
+      return !!session.claudeSessionId && tab.claudeSessionId === session.claudeSessionId;
+    }
+
+    const tabCommand = tab.launchCommandArgs?.[0] || tab.launchShell;
+    const tabArgs = tab.launchCommandArgs || [];
+    const sessionArgs = session.commandArgs || [];
+    return (
+      tab.launchCwd === session.cwd &&
+      tabCommand === session.command &&
+      tabArgs.length === sessionArgs.length &&
+      tabArgs.every((arg, index) => arg === sessionArgs[index])
+    );
+  }
+
+  private isPersistedSessionActive(session: PersistedSession): boolean {
+    return this.tabManager
+      .getTabs(session.taskPath)
+      .some((tab) => this.matchesRecoverySession(tab, session));
+  }
+
+  private isClosedSessionActive(entry: ClosedSessionEntry): boolean {
+    return this.tabManager
+      .getTabs(entry.itemId)
+      .some((tab) => this.matchesRecoverySession(tab, entry));
+  }
+
+  private removePersistedSession(session: PersistedSession): void {
+    this.persistedSessions = this.persistedSessions.filter((candidate) => {
+      if (candidate.recoveryMode !== session.recoveryMode) {
+        return true;
+      }
+
+      if (session.recoveryMode === "resume") {
+        return candidate.claudeSessionId !== session.claudeSessionId;
+      }
+
+      return !(
+        candidate.taskPath === session.taskPath &&
+        candidate.sessionType === session.sessionType &&
+        candidate.label === session.label &&
+        candidate.cwd === session.cwd &&
+        candidate.command === session.command &&
+        JSON.stringify(candidate.commandArgs || []) === JSON.stringify(session.commandArgs || [])
+      );
+    });
+  }
+
+  private trackRecoverySuccess(
+    tab: TerminalTab,
+    onRecovered: () => void,
+    onFailed?: () => void,
+  ): void {
+    const spawnTime = Date.now();
+    const origExit = tab.onProcessExit;
+    tab.onProcessExit = (code, signal) => {
+      const lived = Date.now() - spawnTime;
+      if (lived < 5000) {
+        onFailed?.();
+      } else {
+        onRecovered();
+      }
+      origExit?.(code, signal);
+    };
+  }
+
   private async spawnShell(): Promise<void> {
     const fresh = await this.loadFreshSettings();
     const shell = this.getStringSetting(
@@ -662,35 +786,58 @@ export class TerminalPanelView {
     const targetItemId = itemId || this.tabManager.getActiveItemId();
     if (!targetItemId) return;
     const fresh = await this.loadFreshSettings();
-    const tab = this.createResumedTab({
-      targetItemId,
-      sessionType: persisted.sessionType,
-      label: persisted.label,
-      sessionId: persisted.claudeSessionId,
-      freshSettings: fresh,
-    });
+    const tab =
+      persisted.recoveryMode === "relaunch"
+        ? this.createRelaunchedTab({
+            targetItemId,
+            sessionType: persisted.sessionType,
+            label: persisted.label,
+            command: persisted.command,
+            cwd: persisted.cwd,
+            commandArgs: persisted.commandArgs,
+          })
+        : persisted.claudeSessionId
+          ? this.createResumedTab({
+              targetItemId,
+              sessionType: persisted.sessionType,
+              label: persisted.label,
+              sessionId: persisted.claudeSessionId,
+              freshSettings: fresh,
+            })
+          : null;
 
     if (!tab) return;
 
-    // 5s grace period: if process exits quickly, keep persisted entry for retry
-    const spawnTime = Date.now();
-    const origExit = tab.onProcessExit;
-    tab.onProcessExit = (code, signal) => {
-      const lived = Date.now() - spawnTime;
-      if (lived < 5000) {
-        // Failed resume - don't remove persisted entry
-        console.log("[work-terminal] Resume failed (exited in", lived, "ms), keeping for retry");
-      } else {
-        // Successful resume - remove from persisted list and sync to disk
-        this.persistedSessions = this.persistedSessions.filter(
-          (s) => s.claudeSessionId !== persisted.claudeSessionId,
-        );
-        this.persistSessions().catch(() => {});
-      }
-      origExit?.(code, signal);
-    };
+    this.trackRecoverySuccess(tab, () => {
+      this.removePersistedSession(persisted);
+      this.persistSessions().catch(() => {});
+    });
 
     this.renderTabBar();
+  }
+
+  private createRelaunchedTab(options: {
+    targetItemId: string;
+    sessionType: PersistedSession["sessionType"];
+    label: string;
+    command?: string;
+    cwd?: string;
+    commandArgs?: string[];
+  }): TerminalTab | null {
+    if (!options.command || !options.cwd) {
+      return null;
+    }
+
+    return this.tabManager.createTabForItem(
+      options.targetItemId,
+      options.command,
+      options.cwd,
+      options.label,
+      options.sessionType,
+      undefined,
+      options.commandArgs,
+      null,
+    );
   }
 
   private createResumedTab(options: {
@@ -836,10 +983,35 @@ export class TerminalPanelView {
     await this.checkHookWarning();
   }
 
+  private async loadRecentlyClosedSessions(): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    if (this.isDisposed) return;
+    for (const entry of RecentlyClosedStore.fromData(data.recentlyClosedSessions || [])) {
+      this.recentlyClosedStore.add(entry);
+    }
+    await this.checkHookWarning();
+  }
+
   async persistSessions(): Promise<void> {
     if (this.isDisposed) return;
+    const persistedSessions = SessionPersistence.buildPersistedSessions(this.tabManager.getSessions());
     await mergeAndSavePluginData(this.plugin, async (data) => {
       SessionPersistence.setPersistedSessions(data, this.tabManager.getSessions());
+    });
+    if (this.isDisposed) return;
+    this.persistedSessions = persistedSessions;
+    this.refreshDebugGlobal();
+  }
+
+  private async persistRecentlyClosedSessions(): Promise<void> {
+    if (this.isDisposed) return;
+    const recentlyClosed = this.recentlyClosedStore.serialize();
+    await mergeAndSavePluginData(this.plugin, async (data) => {
+      if (recentlyClosed.length > 0) {
+        data.recentlyClosedSessions = recentlyClosed;
+      } else {
+        delete data.recentlyClosedSessions;
+      }
     });
     if (this.isDisposed) return;
     this.refreshDebugGlobal();
@@ -1003,7 +1175,9 @@ export class TerminalPanelView {
     const fresh = await this.loadFreshSettings();
     const initial = await this.loadCustomSessionDefaults(item.id, fresh);
     const activeIds = this.tabManager.getActiveSessionIds();
-    const closedSessions = this.recentlyClosedStore.getEntries(activeIds, 5);
+    const closedSessions = this.recentlyClosedStore.getEntries(activeIds, 5, (entry) =>
+      this.isClosedSessionActive(entry),
+    );
     new CustomSessionModal(
       this.plugin.app,
       initial,
@@ -1018,57 +1192,37 @@ export class TerminalPanelView {
   }
 
   private async restoreClosedSession(
-    entry: import("../core/session/RecentlyClosedStore").ClosedSessionEntry,
+    entry: ClosedSessionEntry,
   ): Promise<void> {
     const fresh = await this.loadFreshSettings();
+    const tab =
+      entry.recoveryMode === "relaunch"
+        ? this.createRelaunchedTab({
+            targetItemId: entry.itemId,
+            sessionType: entry.sessionType,
+            label: entry.label,
+            command: entry.command,
+            cwd: entry.cwd,
+            commandArgs: entry.commandArgs,
+          })
+        : entry.claudeSessionId
+          ? this.createResumedTab({
+              targetItemId: entry.itemId,
+              sessionType: entry.sessionType,
+              label: entry.label,
+              sessionId: entry.claudeSessionId,
+              freshSettings: fresh,
+            })
+          : null;
 
-    // For resumable agent sessions (Claude/Copilot) with a session ID, resume them
-    if (
-      entry.claudeSessionId &&
-      entry.sessionType !== "shell" &&
-      entry.sessionType !== "strands" &&
-      entry.sessionType !== "strands-with-context"
-    ) {
-      this.createResumedTab({
-        targetItemId: entry.itemId,
-        sessionType: entry.sessionType,
-        label: entry.label,
-        sessionId: entry.claudeSessionId,
-        freshSettings: fresh,
-      });
-      this.renderTabBar();
+    if (!tab) {
       return;
     }
 
-    // For shell sessions, spawn a fresh one with the same label into the original item
-    if (entry.sessionType === "shell") {
-      const shell = this.getStringSetting(
-        fresh,
-        "core.defaultShell",
-        process.env.SHELL || "/bin/zsh",
-      );
-      const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-      this.tabManager.createTabForItem(entry.itemId, shell, cwd, entry.label, "shell");
-      this.renderTabBar();
-      return;
-    }
-
-    // For strands, spawn fresh into the original item
-    const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
-    const [cmdToken, ...cmdArgs] = strandsCmd.trim().split(/\s+/);
-    const strandsResolved = resolveCommand(cmdToken);
-    const strandsMergedExtra = this.getStringSetting(fresh, "core.strandsExtraArgs", "");
-    const strandsArgs = buildStrandsArgs({ strandsExtraArgs: strandsMergedExtra });
-    const strandsCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-    this.tabManager.createTabForItem(
-      entry.itemId,
-      strandsResolved,
-      strandsCwd,
-      entry.label,
-      entry.sessionType as "strands" | "strands-with-context",
-      undefined,
-      [strandsResolved, ...cmdArgs, ...strandsArgs],
-    );
+    this.trackRecoverySuccess(tab, () => {
+      this.recentlyClosedStore.remove(entry);
+      this.persistRecentlyClosedSessions().catch(() => {});
+    });
     this.renderTabBar();
   }
 
@@ -1289,7 +1443,9 @@ export class TerminalPanelView {
   }
 
   getPersistedSessions(itemId: string): PersistedSession[] {
-    return this.persistedSessions.filter((s) => s.taskPath === itemId);
+    return this.persistedSessions.filter(
+      (session) => session.taskPath === itemId && !this.isPersistedSessionActive(session),
+    );
   }
 
   /**
@@ -1403,13 +1559,10 @@ export class TerminalPanelView {
   }
 
   private buildDebugApi(): OwnedWorkTerminalDebugApi {
-    const thisView = this;
     const getSnapshot = () =>
-      thisView.canExposeDebugApi()
-        ? thisView.buildDebugSnapshot()
-        : thisView.buildRevokedDebugSnapshot();
+      this.canExposeDebugApi() ? this.buildDebugSnapshot() : this.buildRevokedDebugSnapshot();
     return {
-      [DEBUG_API_OWNER]: thisView,
+      [DEBUG_API_OWNER]: this,
       get version() {
         return 1 as const;
       },
@@ -1434,10 +1587,10 @@ export class TerminalPanelView {
       getSnapshot,
       getAllActiveTabs: () => getSnapshot().activeTabs,
       findTabsByLabel: (label: string) =>
-        thisView.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
+        this.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
       getActiveSessionIds: () => getSnapshot().activeSessionIds,
       getPersistedSessions: (itemId?: string) =>
-        thisView.canExposeDebugApi()
+        this.canExposeDebugApi()
           ? itemId
             ? this.getPersistedSessions(itemId)
             : [...this.persistedSessions]

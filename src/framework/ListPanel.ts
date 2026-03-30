@@ -671,8 +671,13 @@ export class ListPanel {
 
     const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
     let resumeInProgress = false;
+    const resumableCount = persisted.filter((session) => session.recoveryMode !== "relaunch").length;
+    const relaunchCount = persisted.length - resumableCount;
     badge.textContent = "\u21bb"; // Clockwise arrow
-    badge.setAttribute("title", `${persisted.length} resumable session(s) - click to resume`);
+    badge.setAttribute(
+      "title",
+      `${persisted.length} recoverable session(s) - ${resumableCount} resume, ${relaunchCount} relaunch. Relaunched sessions start fresh.`,
+    );
     badge.addEventListener("click", async (e) => {
       e.stopPropagation();
       if (resumeInProgress) return;
