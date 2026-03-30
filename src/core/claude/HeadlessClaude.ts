@@ -4,21 +4,42 @@
  * Used for background operations like generating summaries, extracting context,
  * or running one-shot prompts without a visible terminal.
  */
-import { resolveCommand, augmentPath, parseExtraArgs } from "../agents/AgentLauncher";
+import {
+  augmentPath,
+  buildMissingCliNotice,
+  parseExtraArgs,
+  resolveCommandInfo,
+} from "../agents/AgentLauncher";
 import { expandTilde, electronRequire } from "../utils";
 
 const TIMEOUT_MS = 120_000;
+
+export interface HeadlessClaudeResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  missingCli?: boolean;
+}
 
 export function spawnHeadlessClaude(
   prompt: string,
   cwd: string,
   claudeCommand = "claude",
   extraArgs = "",
-): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+): Promise<HeadlessClaudeResult> {
   return new Promise((resolve) => {
     const cp = electronRequire("child_process") as typeof import("child_process");
-
-    const resolvedCmd = resolveCommand(claudeCommand);
+    const resolution = resolveCommandInfo(claudeCommand);
+    if (!resolution.found) {
+      resolve({
+        exitCode: -1,
+        stdout: "",
+        stderr: buildMissingCliNotice("claude", claudeCommand),
+        missingCli: true,
+      });
+      return;
+    }
+    const resolvedCmd = resolution.resolved;
     const resolvedCwd = expandTilde(cwd);
 
     const args: string[] = [];

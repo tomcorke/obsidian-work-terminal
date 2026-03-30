@@ -26,7 +26,9 @@ import type { Plugin } from "obsidian";
 import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
+  buildMissingCliNotice,
   resolveCommand,
+  resolveCommandInfo,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
@@ -1180,13 +1182,21 @@ export class TerminalPanelView {
   }): TerminalTab | null {
     const isCopilot =
       options.sessionType === "copilot" || options.sessionType === "copilot-with-context";
-    const command =
-      options.resolvedCommand ||
-      resolveCommand(
-        isCopilot
-          ? this.getStringSetting(options.freshSettings, "core.copilotCommand", "copilot")
-          : this.getStringSetting(options.freshSettings, "core.claudeCommand", "claude"),
-      );
+    const agent = isCopilot ? "copilot" : "claude";
+    const configuredCommand = this.getStringSetting(
+      options.freshSettings,
+      isCopilot ? "core.copilotCommand" : "core.claudeCommand",
+      isCopilot ? "copilot" : "claude",
+    );
+    const savedResolution = options.resolvedCommand
+      ? resolveCommandInfo(options.resolvedCommand)
+      : null;
+    const command = savedResolution?.found
+      ? savedResolution.resolved
+      : this.resolveAgentCommandOrNotice(agent, configuredCommand);
+    if (!command) {
+      return null;
+    }
     const args = isCopilot ? [`--resume=${options.sessionId}`] : ["--resume", options.sessionId];
     const extraArgs =
       options.extraArgs ||
@@ -1851,7 +1861,10 @@ export class TerminalPanelView {
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
-    const resolved = resolveCommand(claudeCmd);
+    const resolved = this.resolveAgentCommandOrNotice("claude", claudeCmd);
+    if (!resolved) {
+      return null;
+    }
     const sessionId = crypto.randomUUID();
     const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
@@ -1888,7 +1901,10 @@ export class TerminalPanelView {
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
-    const resolved = resolveCommand(copilotCmd);
+    const resolved = this.resolveAgentCommandOrNotice("copilot", copilotCmd);
+    if (!resolved) {
+      return;
+    }
     const sessionId = crypto.randomUUID();
     const mergedExtraArgs = mergeExtraArgs(
       this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
@@ -1941,6 +1957,18 @@ export class TerminalPanelView {
       ...args,
     ]);
     this.renderTabBar();
+  }
+
+  private resolveAgentCommandOrNotice(
+    agent: "claude" | "copilot",
+    command: string,
+  ): string | null {
+    const resolution = resolveCommandInfo(command);
+    if (resolution.found) {
+      return resolution.resolved;
+    }
+    new Notice(buildMissingCliNotice(agent, command));
+    return null;
   }
 
   getRecoveredItemId(): string | null {

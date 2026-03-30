@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMissingCliNotice,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
   mergeExtraArgs,
   parseExtraArgs,
+  resolveCommandInfo,
 } from "./AgentLauncher";
 
 describe("AgentLauncher", () => {
@@ -109,5 +111,39 @@ describe("AgentLauncher", () => {
       "--session-id",
       "session-123",
     ]);
+  });
+
+  it("reports when a command cannot be resolved", () => {
+    expect(resolveCommandInfo("definitely-not-a-real-command-issue-158")).toEqual({
+      requested: "definitely-not-a-real-command-issue-158",
+      resolved: "definitely-not-a-real-command-issue-158",
+      found: false,
+    });
+  });
+
+  it("treats existing absolute paths as resolved commands", () => {
+    expect(resolveCommandInfo("/bin/sh")).toEqual({
+      requested: "/bin/sh",
+      resolved: "/bin/sh",
+      found: true,
+    });
+  });
+
+  it("passes through relative command paths so wrapper scripts still work", () => {
+    expect(resolveCommandInfo("./bin/claude-wrapper")).toEqual({
+      requested: "./bin/claude-wrapper",
+      resolved: "./bin/claude-wrapper",
+      found: true,
+    });
+  });
+
+  it("builds the Claude missing CLI notice", () => {
+    expect(buildMissingCliNotice("claude", "claude")).toContain(
+      "brew install --cask claude-code",
+    );
+  });
+
+  it("builds the Copilot missing CLI notice", () => {
+    expect(buildMissingCliNotice("copilot", "copilot")).toContain("brew install copilot-cli");
   });
 });

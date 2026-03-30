@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { Notice, type App } from "obsidian";
 import { spawnHeadlessClaude } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource } from "./TaskFileTemplate";
@@ -69,6 +69,11 @@ export async function handleItemCreated(
     claudeExtraArgs,
   ).then(
     (result) => {
+      if (result.missingCli) {
+        new Notice(result.stderr);
+        console.warn("[work-terminal] Background enrich skipped:", result.stderr);
+        return;
+      }
       if (result.exitCode === 0) {
         console.log(`[work-terminal] Background enrich completed: ${filePath}`);
       } else {
