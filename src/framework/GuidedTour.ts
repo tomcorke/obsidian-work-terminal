@@ -125,6 +125,7 @@ export async function saveGuidedTourStatus(
 
 export class GuidedTourController {
   private readonly steps: GuidedTourStep[];
+  private layerEl: HTMLElement | null = null;
   private backdropEl: HTMLElement | null = null;
   private highlightEl: HTMLElement | null = null;
   private cardEl: HTMLElement | null = null;
@@ -135,12 +136,15 @@ export class GuidedTourController {
   private nextButtonEl: HTMLButtonElement | null = null;
   private skipButtonEl: HTMLButtonElement | null = null;
   private activeTargetEl: HTMLElement | null = null;
+  private chromeHostEl: HTMLElement | null = null;
+  private chromeHostOriginalPosition: string | null = null;
   private activeIndex = 0;
   private positionFrameId: number | null = null;
   private positionInFlight = false;
   private pendingPosition = false;
   private pendingScrollIntoView = false;
   private latestPositionRequestId = 0;
+  private isTransitioning = false;
   private isDisposed = false;
   private readonly handleResize = () => this.schedulePosition();
   private readonly handleScroll = () => this.schedulePosition();
@@ -186,10 +190,14 @@ export class GuidedTourController {
     }
     this.pendingPosition = false;
     this.pendingScrollIntoView = false;
+    this.isTransitioning = false;
     this.clearActiveTarget();
+    this.restoreChromeHost();
+    this.layerEl?.remove();
     this.backdropEl?.remove();
     this.highlightEl?.remove();
     this.cardEl?.remove();
+    this.layerEl = null;
     this.backdropEl = null;
     this.highlightEl = null;
     this.cardEl = null;
@@ -202,9 +210,11 @@ export class GuidedTourController {
   }
 
   private createChrome(): void {
-    this.backdropEl = createChild(document.body, "div", "wt-tour-backdrop");
-    this.highlightEl = createChild(document.body, "div", "wt-tour-highlight");
-    this.cardEl = createChild(document.body, "div", "wt-tour-card");
+    this.layerEl = createChild(document.body, "div", "wt-tour-layer");
+    this.chromeHostEl = document.body;
+    this.backdropEl = createChild(this.layerEl, "div", "wt-tour-backdrop");
+    this.highlightEl = createChild(this.layerEl, "div", "wt-tour-highlight");
+    this.cardEl = createChild(this.layerEl, "div", "wt-tour-card");
     this.cardEl.setAttribute("role", "dialog");
     this.cardEl.setAttribute("aria-modal", "true");
     this.cardEl.tabIndex = -1;
@@ -244,15 +254,19 @@ export class GuidedTourController {
 
   private async goBack(): Promise<void> {
     if (this.activeIndex <= 0) return;
-    await this.showStep(this.activeIndex - 1);
+    await this.runTransition(async () => {
+      await this.showStep(this.activeIndex - 1);
+    });
   }
 
   private async goNext(): Promise<void> {
-    if (this.activeIndex >= this.steps.length - 1) {
-      await this.finish("completed");
-      return;
-    }
-    await this.showStep(this.activeIndex + 1);
+    await this.runTransition(async () => {
+      if (this.activeIndex >= this.steps.length - 1) {
+        await this.finish("completed");
+        return;
+      }
+      await this.showStep(this.activeIndex + 1);
+    });
   }
 
   private async finish(status: GuidedTourStatus): Promise<void> {
@@ -272,13 +286,17 @@ export class GuidedTourController {
     this.bodyEl.textContent = step.body;
     this.counterEl.textContent = `Step ${index + 1} of ${this.steps.length}`;
     if (this.backButtonEl) {
-      this.backButtonEl.disabled = index === 0;
+      this.backButtonEl.disabled = index === 0 || this.isTransitioning;
     }
     if (this.nextButtonEl) {
       this.nextButtonEl.textContent = index === this.steps.length - 1 ? "Finish" : "Next";
+      this.nextButtonEl.disabled = this.isTransitioning;
+    }
+    if (this.skipButtonEl) {
+      this.skipButtonEl.disabled = this.isTransitioning;
     }
     await this.runPositionCurrentStep({ scrollIntoView: true });
-    this.cardEl.focus();
+    this.cardEl?.focus();
   }
 
   private async syncSurface(surface: GuidedTourSurface): Promise<void> {
@@ -326,15 +344,21 @@ export class GuidedTourController {
     const step = this.steps[this.activeIndex];
     if (!step || !this.cardEl || !this.highlightEl) return;
 
+    const chromeHost = this.resolveChromeHost(step.surface ?? "board");
+    this.attachChromeToHost(chromeHost);
+
     const target = await this.waitForTarget(step.target);
     if (this.isDisposed || requestId !== this.latestPositionRequestId) return;
-    if (!this.cardEl || !this.highlightEl) return;
+    if (!this.cardEl || !this.highlightEl || !this.backdropEl) return;
 
     this.clearActiveTarget();
     if (!target) {
+      const hostRect = this.getChromeHostRect();
+      this.backdropEl.style.clipPath = "";
+      this.backdropEl.style.display = "";
       this.highlightEl.style.display = "none";
-      this.cardEl.style.top = "50%";
-      this.cardEl.style.left = "50%";
+      this.cardEl.style.top = `${hostRect.height / 2}px`;
+      this.cardEl.style.left = `${hostRect.width / 2}px`;
       this.cardEl.style.transform = "translate(-50%, -50%)";
       return;
     }
@@ -348,7 +372,16 @@ export class GuidedTourController {
       if (!this.cardEl || !this.highlightEl) return;
     }
 
-    const rect = target.getBoundingClientRect();
+    const hostRect = this.getChromeHostRect();
+    const targetRect = target.getBoundingClientRect();
+    const rect = new DOMRect(
+      targetRect.left - hostRect.left,
+      targetRect.top - hostRect.top,
+      targetRect.width,
+      targetRect.height,
+    );
+    this.backdropEl.style.display = "";
+    this.backdropEl.style.clipPath = this.createBackdropClipPath(rect, hostRect);
     this.highlightEl.style.display = "";
     this.highlightEl.style.top = `${rect.top - 8}px`;
     this.highlightEl.style.left = `${rect.left - 8}px`;
@@ -368,11 +401,12 @@ export class GuidedTourController {
     cardWidth: number,
     cardHeight: number,
     placement: GuidedTourStep["placement"] = "bottom",
+    hostRect = this.getChromeHostRect(),
   ): { top: number; left: number } {
     const gap = 16;
     const margin = 16;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    const viewportWidth = hostRect.width;
+    const viewportHeight = hostRect.height;
 
     let top = rect.bottom + gap;
     let left = rect.left;
@@ -394,6 +428,86 @@ export class GuidedTourController {
     top = Math.min(Math.max(margin, top), viewportHeight - cardHeight - margin);
     left = Math.min(Math.max(margin, left), viewportWidth - cardWidth - margin);
     return { top, left };
+  }
+
+  private async runTransition(work: () => Promise<void>): Promise<void> {
+    if (this.isDisposed || this.isTransitioning) return;
+
+    this.isTransitioning = true;
+    this.updateNavigationState();
+    try {
+      await work();
+    } finally {
+      this.isTransitioning = false;
+      this.updateNavigationState();
+    }
+  }
+
+  private updateNavigationState(): void {
+    if (this.backButtonEl) {
+      this.backButtonEl.disabled = this.activeIndex === 0 || this.isTransitioning;
+    }
+    if (this.nextButtonEl) {
+      this.nextButtonEl.disabled = this.isTransitioning;
+    }
+    if (this.skipButtonEl) {
+      this.skipButtonEl.disabled = this.isTransitioning;
+    }
+  }
+
+  private resolveChromeHost(surface: GuidedTourSurface): HTMLElement {
+    if (surface !== "settings") {
+      return document.body;
+    }
+
+    const modal = Array.from(document.querySelectorAll<HTMLElement>(".modal")).at(-1);
+    if (modal) return modal;
+
+    const modalContainer = Array.from(document.querySelectorAll<HTMLElement>(".modal-container")).at(-1);
+    return modalContainer ?? document.body;
+  }
+
+  private attachChromeToHost(host: HTMLElement): void {
+    if (!this.layerEl || this.chromeHostEl === host) return;
+
+    this.restoreChromeHost();
+    if (host !== document.body && window.getComputedStyle(host).position === "static") {
+      this.chromeHostOriginalPosition = host.style.position;
+      host.style.position = "relative";
+    }
+
+    this.chromeHostEl = host;
+    this.layerEl.classList.toggle("wt-tour-layer-local", host !== document.body);
+    host.appendChild(this.layerEl);
+  }
+
+  private restoreChromeHost(): void {
+    if (!this.chromeHostEl || this.chromeHostEl === document.body) {
+      this.chromeHostEl = null;
+      this.chromeHostOriginalPosition = null;
+      return;
+    }
+
+    this.chromeHostEl.style.position = this.chromeHostOriginalPosition ?? "";
+    this.chromeHostEl = null;
+    this.chromeHostOriginalPosition = null;
+  }
+
+  private getChromeHostRect(): DOMRect {
+    if (!this.chromeHostEl || this.chromeHostEl === document.body) {
+      return new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    }
+
+    return this.chromeHostEl.getBoundingClientRect();
+  }
+
+  private createBackdropClipPath(rect: DOMRect, hostRect: DOMRect): string {
+    const left = Math.max(0, rect.left - 8);
+    const top = Math.max(0, rect.top - 8);
+    const right = Math.min(hostRect.width, rect.right + 8);
+    const bottom = Math.min(hostRect.height, rect.bottom + 8);
+
+    return `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${left}px ${top}px, ${left}px ${bottom}px, ${right}px ${bottom}px, ${right}px ${top}px, ${left}px ${top}px)`;
   }
 
   private clearActiveTarget(): void {

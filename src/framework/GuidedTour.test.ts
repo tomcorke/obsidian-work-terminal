@@ -15,8 +15,16 @@ interface MockSettingManager {
 }
 
 function setupSettingsDom() {
+  const modalContainer = document.createElement("div");
+  modalContainer.className = "modal-container";
+
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modalContainer.appendChild(modal);
+
   const settingsRoot = document.createElement("div");
   settingsRoot.className = "settings-root";
+  modal.appendChild(settingsRoot);
 
   const claudeArgs = document.createElement("div");
   claudeArgs.setAttribute("data-wt-tour", "core.claudeExtraArgs");
@@ -26,7 +34,7 @@ function setupSettingsDom() {
   additionalContext.setAttribute("data-wt-tour", "core.additionalAgentContext");
   settingsRoot.appendChild(additionalContext);
 
-  return settingsRoot;
+  return modalContainer;
 }
 
 function createMockPlugin(initialData: Record<string, unknown> | null = null) {
@@ -67,6 +75,15 @@ async function flushTourUpdates(): Promise<void> {
   await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
   await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
   await Promise.resolve();
+}
+
+async function waitFor(assertion: () => boolean, attempts = 10): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (assertion()) return;
+    await flushTourUpdates();
+  }
+
+  throw new Error("Condition was not met in time");
 }
 
 describe("GuidedTour", () => {
@@ -205,7 +222,12 @@ describe("GuidedTour", () => {
     expect(plugin.getSettingManager().openTabById).toHaveBeenCalledWith("work-terminal");
     expect(plugin.isSettingsOpen()).toBe(true);
     expect(document.querySelector('[data-wt-tour="core.claudeExtraArgs"]')?.classList.contains("wt-tour-target")).toBe(true);
+    expect(document.querySelector(".wt-tour-layer")?.parentElement?.className).toBe("modal");
+    expect((document.querySelector(".wt-tour-backdrop") as HTMLElement).style.clipPath).toContain(
+      "polygon(evenodd",
+    );
     expect(boardTarget.classList.contains("wt-tour-target")).toBe(false);
+    await waitFor(() => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled);
 
     (document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).click();
     await flushTourUpdates();
@@ -213,6 +235,112 @@ describe("GuidedTour", () => {
     expect(plugin.getSettingManager().close).toHaveBeenCalledTimes(2);
     expect(plugin.isSettingsOpen()).toBe(false);
     expect(boardTarget.classList.contains("wt-tour-target")).toBe(true);
+  });
+
+  it("ignores rapid next clicks while a board to settings transition is still in flight", async () => {
+    let releaseSettingsStep: (() => void) | null = null;
+    const settingsStepReady = new Promise<void>((resolve) => {
+      releaseSettingsStep = resolve;
+    });
+
+    const plugin = createMockPlugin({});
+    const boardTarget = document.createElement("div");
+    boardTarget.className = "board-target";
+    document.body.appendChild(boardTarget);
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Board",
+        body: "Board target",
+        target: ".board-target",
+        surface: "board",
+      },
+      {
+        title: "Settings",
+        body: "Settings target",
+        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        surface: "settings",
+        beforeShow: () => settingsStepReady,
+      },
+    ]);
+
+    await controller.start();
+
+    const nextButton = document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement;
+    nextButton.click();
+    nextButton.click();
+    await Promise.resolve();
+
+    expect(nextButton.disabled).toBe(true);
+    expect(document.querySelector(".wt-tour-card")?.textContent).not.toContain("Settings");
+    expect(plugin.getData()).toEqual({});
+
+    releaseSettingsStep?.();
+    await flushTourUpdates();
+
+    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Settings");
+    expect(plugin.getData()).toEqual({});
+    expect(document.querySelector(".wt-tour-btn-primary")).not.toBeNull();
+  });
+
+  it("clamps settings-step cards to the active modal bounds", async () => {
+    const plugin = createMockPlugin({});
+    plugin.getSettingManager().open();
+
+    const modal = document.querySelector(".modal") as HTMLElement;
+    const target = document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement;
+
+    vi.spyOn(modal, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(100, 40, 360, 300),
+    );
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(340, 140, 80, 32),
+    );
+
+    const controller = new GuidedTourController(plugin as never, [
+      {
+        title: "Settings",
+        body: "Stay in bounds",
+        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        placement: "right",
+        surface: "settings",
+      },
+    ]);
+
+    await controller.start();
+
+    const card = document.querySelector(".wt-tour-card") as HTMLElement;
+    expect(card.style.left).toBe("24px");
+    expect(card.style.top).toBe("64px");
+  });
+
+  it("keeps settings fallback chrome inside the active modal while waiting for a target", async () => {
+    vi.useFakeTimers();
+    try {
+      const plugin = createMockPlugin({});
+      plugin.getSettingManager().open();
+
+      const controller = new GuidedTourController(plugin as never, [
+        {
+          title: "Missing settings target",
+          body: "Still scoped to the modal",
+          target: ".missing-settings-target",
+          surface: "settings",
+        },
+      ]);
+
+      const startPromise = controller.start();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(20);
+
+      expect(document.querySelector(".wt-tour-layer")?.parentElement?.className).toBe("modal");
+
+      controller.dispose();
+      await vi.runAllTimersAsync();
+      await expect(startPromise).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("only scrolls targets into view when the step changes", async () => {
