@@ -223,4 +223,28 @@ describe("TaskCard", () => {
       expect(badge.textContent).toBe("ship feature");
     });
   });
+
+  describe("blocker badge rendering", () => {
+    it("normalizes Obsidian link aliases in blocker tooltips", () => {
+      const item = makeItem({
+        metadata: {
+          priority: {
+            "has-blocker": true,
+            "blocker-context": "[[Doc|Alias]]",
+          },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badges = Array.from(el.querySelectorAll(".wt-card-source")) as HTMLElement[];
+      const badge = badges.find((candidate) => candidate.textContent === "BLOCKED");
+
+      expect(badge).toBeDefined();
+      expect(badge?.title).toBe("Alias");
+      expect(badge?.title).not.toContain("[[");
+      expect(badge?.title).not.toContain("]]");
+    });
+  });
 });
