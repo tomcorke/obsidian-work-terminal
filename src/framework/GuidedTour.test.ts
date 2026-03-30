@@ -2,8 +2,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createDefaultGuidedTourSteps,
   GuidedTourController,
   GUIDED_TOUR_VERSION,
+  resetGuidedTourSingletonForTests,
   saveGuidedTourStatus,
   shouldAutoStartGuidedTour,
 } from "./GuidedTour";
@@ -167,6 +169,7 @@ describe("GuidedTour", () => {
 
   beforeEach(() => {
     document.body.innerHTML = "";
+    resetGuidedTourSingletonForTests();
     scrollIntoViewMock.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -175,6 +178,7 @@ describe("GuidedTour", () => {
   });
 
   afterEach(() => {
+    resetGuidedTourSingletonForTests();
     vi.restoreAllMocks();
   });
 
@@ -240,6 +244,55 @@ describe("GuidedTour", () => {
       },
     });
     await expect(shouldAutoStartGuidedTour(plugin as never)).resolves.toBe(true);
+  });
+
+  it("marks shipped interactive default steps as target-focus-enabled", () => {
+    const plugin = createMockPlugin({});
+    const steps = createDefaultGuidedTourSteps(plugin as never);
+    const interactiveTargets = [
+      '[data-wt-tour="prompt-box"]',
+      '[data-wt-tour="launch-buttons"]',
+      '[data-wt-tour="custom-session-button"]',
+      '[data-wt-tour="core.claudeExtraArgs"]',
+      '[data-wt-tour="core.additionalAgentContext"]',
+    ];
+
+    expect(
+      steps
+        .filter((step) => interactiveTargets.includes(step.target))
+        .map((step) => [step.target, step.allowTargetFocus]),
+    ).toEqual(interactiveTargets.map((target) => [target, true]));
+  });
+
+  it("only auto-starts one guided tour while another is already running", async () => {
+    const plugin = createMockPlugin({});
+    setupDefaultTourBoardDom();
+
+    await expect(
+      shouldAutoStartGuidedTour(plugin as never, { hasExistingItems: false }),
+    ).resolves.toBe(true);
+
+    const firstController = new GuidedTourController(plugin as never);
+    await firstController.start();
+    expect(document.querySelectorAll(".wt-tour-card")).toHaveLength(1);
+
+    await expect(
+      shouldAutoStartGuidedTour(plugin as never, { hasExistingItems: false }),
+    ).resolves.toBe(false);
+
+    const secondController = new GuidedTourController(plugin as never);
+    await secondController.start();
+    expect(document.querySelectorAll(".wt-tour-card")).toHaveLength(1);
+
+    firstController.dispose();
+    expect(document.querySelector(".wt-tour-card")).toBeNull();
+
+    await expect(
+      shouldAutoStartGuidedTour(plugin as never, { hasExistingItems: false }),
+    ).resolves.toBe(true);
+
+    await secondController.start();
+    expect(document.querySelectorAll(".wt-tour-card")).toHaveLength(1);
   });
 
   it("persists guided tour status without dropping unrelated data", async () => {

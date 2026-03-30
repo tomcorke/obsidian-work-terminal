@@ -36,6 +36,49 @@ interface GuidedTourAutoStartContext {
   hasExistingItems?: boolean;
 }
 
+interface GuidedTourRuntimeState {
+  activeController: object | null;
+}
+
+declare global {
+  interface Window {
+    __workTerminalGuidedTourState?: GuidedTourRuntimeState;
+  }
+}
+
+function getGuidedTourRuntimeState(): GuidedTourRuntimeState {
+  if (!window.__workTerminalGuidedTourState) {
+    window.__workTerminalGuidedTourState = {
+      activeController: null,
+    };
+  }
+  return window.__workTerminalGuidedTourState;
+}
+
+function isGuidedTourRunning(): boolean {
+  return getGuidedTourRuntimeState().activeController !== null;
+}
+
+function claimGuidedTourSingleton(controller: object): boolean {
+  const runtimeState = getGuidedTourRuntimeState();
+  if (runtimeState.activeController && runtimeState.activeController !== controller) {
+    return false;
+  }
+  runtimeState.activeController = controller;
+  return true;
+}
+
+function releaseGuidedTourSingleton(controller: object): void {
+  const runtimeState = getGuidedTourRuntimeState();
+  if (runtimeState.activeController === controller) {
+    runtimeState.activeController = null;
+  }
+}
+
+export function resetGuidedTourSingletonForTests(): void {
+  delete window.__workTerminalGuidedTourState;
+}
+
 function createChild<K extends keyof HTMLElementTagNameMap>(
   parent: HTMLElement,
   tagName: K,
@@ -127,6 +170,10 @@ export async function shouldAutoStartGuidedTour(
   plugin: Plugin,
   context: GuidedTourAutoStartContext = {},
 ): Promise<boolean> {
+  if (isGuidedTourRunning()) {
+    return false;
+  }
+
   const rawData = await plugin.loadData();
   const record = readGuidedTourRecord(rawData);
   if (record) {
@@ -237,10 +284,17 @@ export class GuidedTourController {
 
   async start(): Promise<void> {
     if (!this.steps.length || this.cardEl) return;
+    if (!claimGuidedTourSingleton(this)) return;
+
     this.isDisposed = false;
-    this.createChrome();
-    this.registerEvents();
-    await this.showStep(0);
+    try {
+      this.createChrome();
+      this.registerEvents();
+      await this.showStep(0);
+    } catch (error) {
+      this.dispose();
+      throw error;
+    }
   }
 
   dispose(): void {
@@ -270,6 +324,7 @@ export class GuidedTourController {
     this.backButtonEl = null;
     this.nextButtonEl = null;
     this.skipButtonEl = null;
+    releaseGuidedTourSingleton(this);
   }
 
   private createChrome(): void {
@@ -712,6 +767,7 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
       target: '[data-wt-tour="prompt-box"]',
       placement: "right",
       surface: "board",
+      allowTargetFocus: true,
     },
     {
       title: "Select work from the board",
@@ -728,6 +784,7 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
       target: '[data-wt-tour="launch-buttons"]',
       placement: "left",
       surface: "board",
+      allowTargetFocus: true,
     },
     {
       title: "Rename and rearrange tabs",
@@ -744,6 +801,7 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
       target: '[data-wt-tour="custom-session-button"]',
       placement: "left",
       surface: "board",
+      allowTargetFocus: true,
     },
     {
       title: "Set default Claude arguments",
@@ -752,6 +810,7 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
       target: '[data-wt-tour="core.claudeExtraArgs"]',
       placement: "right",
       surface: "settings",
+      allowTargetFocus: true,
     },
     {
       title: "Save reusable task context",
@@ -760,6 +819,7 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
       target: '[data-wt-tour="core.additionalAgentContext"]',
       placement: "right",
       surface: "settings",
+      allowTargetFocus: true,
     },
   ];
 }
