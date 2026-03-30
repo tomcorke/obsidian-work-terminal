@@ -1,12 +1,21 @@
 import type { WorkItem } from "../core/interfaces";
 
+export function getClaudeContextTemplate(settings: Record<string, unknown>): string | null {
+  const template = settings["core.additionalAgentContext"];
+  if (typeof template !== "string" || template.trim() === "") {
+    return null;
+  }
+
+  return template;
+}
+
 export function buildClaudeContextPrompt(
   item: WorkItem,
   settings: Record<string, unknown>,
   fullPath?: string,
 ): string | null {
-  const template = settings["core.additionalAgentContext"];
-  if (typeof template !== "string" || template === "") {
+  const template = getClaudeContextTemplate(settings);
+  if (!template) {
     return null;
   }
 

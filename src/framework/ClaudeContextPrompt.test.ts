@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkItem } from "../core/interfaces";
-import { buildClaudeContextPrompt } from "./ClaudeContextPrompt";
+import { buildClaudeContextPrompt, getClaudeContextTemplate } from "./ClaudeContextPrompt";
 
 const item: WorkItem = {
   id: "task-123",
@@ -36,6 +36,20 @@ describe("buildClaudeContextPrompt", () => {
   it("treats an explicitly cleared template as unavailable", () => {
     const prompt = buildClaudeContextPrompt(item, {
       "core.additionalAgentContext": "",
+    });
+
+    expect(prompt).toBeNull();
+  });
+
+  it("treats whitespace-only templates as unavailable", () => {
+    expect(
+      getClaudeContextTemplate({
+        "core.additionalAgentContext": "  \n\t  ",
+      }),
+    ).toBeNull();
+
+    const prompt = buildClaudeContextPrompt(item, {
+      "core.additionalAgentContext": "  \n\t  ",
     });
 
     expect(prompt).toBeNull();
