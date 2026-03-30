@@ -405,6 +405,7 @@ export class TerminalPanelView {
         // Click to switch
         tabEl.addEventListener("click", () => {
           if (this.isRenameActive()) return;
+          if (i === activeIdx) return;
           this.tabManager.switchToTab(i);
           this.renderTabBar();
         });
