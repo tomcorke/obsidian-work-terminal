@@ -33,7 +33,8 @@
 | TC-03 | Keyboard: Option+Arrow | Focus terminal, press Option+Right Arrow | Cursor moves forward one word (escape sequence sent, not Obsidian shortcut) | | |
 | TC-04 | Keyboard: Shift+Enter | Focus terminal, press Shift+Enter | Newline sent to terminal (not Obsidian's default behaviour) | | |
 | TC-05 | Keyboard: Option+Backspace | Focus terminal, type a word, press Option+Backspace | Deletes previous word (escape sequence sent) | | |
-| TC-06 | Keyboard: macOptionIsMeta | Focus terminal, press Option+B / Option+F | Word navigation works (meta key mode) | | |
+| TC-06 | Keyboard: Option+B / Option+F | Focus terminal, press Option+B / Option+F | Word navigation works via explicit escape-sequence handling, while printable Option combinations still insert their characters. | | |
+| TC-06a | Keyboard: Option+3 on macOS UK | Focus terminal, press Option+3 | `#` is inserted into the terminal input instead of being swallowed. | | |
 | TC-07 | Resize protocol | Drag the divider to resize the terminal panel | Terminal re-fits to new dimensions. No truncated lines. OSC `ESC]777;resize;COLS;ROWS BEL` sent to pty-wrapper.py (check pty-wrapper.py handles it). | | |
 | TC-08 | Double-rAF on tab show | Switch between tabs, observe terminal rendering | No blank/misrendered terminal. fitAddon measurements correct (double requestAnimationFrame ensures layout). | | |
 | TC-09 | Screen reading via cursor position | Run a command with short output (e.g. `echo hello`) in a tall terminal | State detector reads content at `baseY + cursorY`, not buffer bottom. Should find the prompt correctly. | | |

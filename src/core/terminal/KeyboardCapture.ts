@@ -54,8 +54,10 @@ export function attachCapturePhase(
   const handler = (e: KeyboardEvent) => {
     if (!textareaEl || document.activeElement !== textareaEl) return;
 
+    const normalizedKey = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
     // Cmd+F: toggle search bar (intercept before Obsidian's find)
-    if (e.metaKey && e.key === "f" && onSearch) {
+    if (e.metaKey && normalizedKey === "f" && onSearch) {
       e.stopImmediatePropagation();
       e.preventDefault();
       onSearch();
@@ -76,13 +78,20 @@ export function attachCapturePhase(
     } else if (e.altKey && e.key === "Backspace") {
       // ESC DEL - delete word backward
       seq = "\x1b\x7f";
-    } else if (e.altKey && e.key === "d") {
+    } else if (e.altKey && e.code === "KeyB") {
+      // ESC b - word backward without enabling xterm macOptionIsMeta,
+      // which blocks composed Option+digit characters on non-US layouts.
+      seq = "\x1bb";
+    } else if (e.altKey && e.code === "KeyF") {
+      // ESC f - word forward without hijacking printable Option combos.
+      seq = "\x1bf";
+    } else if (e.altKey && e.code === "KeyD") {
       // ESC d - delete word forward
       seq = "\x1bd";
-    } else if (e.metaKey && e.key === "ArrowLeft") {
+    } else if (e.metaKey && normalizedKey === "ArrowLeft") {
       // Cmd+Left: beginning of line (Ctrl-A)
       seq = "\x01";
-    } else if (e.metaKey && e.key === "ArrowRight") {
+    } else if (e.metaKey && normalizedKey === "ArrowRight") {
       // Cmd+Right: end of line (Ctrl-E)
       seq = "\x05";
     }

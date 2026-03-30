@@ -139,7 +139,7 @@ export class TerminalTab {
       cursorBlink: true,
       fontSize: 13,
       fontFamily: "Menlo, Monaco, 'Courier New', monospace",
-      macOptionIsMeta: true,
+      macOptionIsMeta: false,
       theme: {
         background: "#1e1e1e",
         foreground: "#d4d4d4",
