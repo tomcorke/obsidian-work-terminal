@@ -1232,12 +1232,11 @@ export class TerminalPanelView {
     const extraArgs = this.profileManager.resolveArguments(profile, fresh);
     const label = profile.button.label || profile.name;
 
-    // Expand placeholders in arguments
+    // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
     const item = this.getActiveItem();
     let expandedArgs = extraArgs;
     if (item) {
-      const sessionId = crypto.randomUUID();
-      expandedArgs = this.expandProfilePlaceholders(expandedArgs, item, sessionId);
+      expandedArgs = this.expandProfilePlaceholders(expandedArgs, item, "$sessionId");
     }
 
     if (profile.agentType === "shell") {
@@ -1254,7 +1253,8 @@ export class TerminalPanelView {
       if (contextTemplate) {
         // Build from adapter prompt + profile context template
         const adapterPrompt = this.promptBuilder.build(item);
-        const expandedContext = this.expandProfilePlaceholders(contextTemplate, item, "");
+        // Defer $sessionId in context template too
+        const expandedContext = this.expandProfilePlaceholders(contextTemplate, item, "$sessionId");
         prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
       } else {
         // Fall back to standard context prompt building
@@ -1269,12 +1269,16 @@ export class TerminalPanelView {
       }
     }
 
+    // Profile's resolveArguments() already includes global args, so skip the
+    // global merge inside spawn*Session to avoid doubling them.
     switch (profile.agentType) {
       case "claude":
         await this.spawnClaudeSession({
           sessionType: sessionType as "claude" | "claude-with-context",
+          command,
           cwd,
           extraArgs: expandedArgs,
+          skipGlobalArgs: true,
           label,
           prompt,
           freshSettings: fresh,
@@ -1283,8 +1287,10 @@ export class TerminalPanelView {
       case "copilot":
         await this.spawnCopilotSession({
           sessionType: sessionType as "copilot" | "copilot-with-context",
+          command,
           cwd,
           extraArgs: expandedArgs,
+          skipGlobalArgs: true,
           label,
           prompt,
           freshSettings: fresh,
@@ -1293,8 +1299,10 @@ export class TerminalPanelView {
       case "strands":
         await this.spawnStrandsSession({
           sessionType: sessionType as "strands" | "strands-with-context",
+          command,
           cwd,
           extraArgs: expandedArgs,
+          skipGlobalArgs: true,
           label,
           prompt,
           freshSettings: fresh,
@@ -2071,7 +2079,9 @@ export class TerminalPanelView {
   private async spawnClaudeSession(options: {
     sessionType: "claude" | "claude-with-context";
     cwd?: string;
+    command?: string;
     extraArgs?: string;
+    skipGlobalArgs?: boolean;
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
@@ -2093,7 +2103,8 @@ export class TerminalPanelView {
     }
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
+    const claudeCmd =
+      options.command || this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
@@ -2102,10 +2113,14 @@ export class TerminalPanelView {
       return null;
     }
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = mergeExtraArgs(
-      this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
-      options.extraArgs || "",
-    );
+    const rawExtraArgs = options.skipGlobalArgs
+      ? options.extraArgs || ""
+      : mergeExtraArgs(
+          this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
+          options.extraArgs || "",
+        );
+    // Replace deferred $sessionId placeholders with the real session ID
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
     const args = buildClaudeArgs({ claudeExtraArgs: mergedExtraArgs }, sessionId, prompt);
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     const tab = this.tabManager.createTab(
@@ -2127,13 +2142,16 @@ export class TerminalPanelView {
   private async spawnCopilotSession(options: {
     sessionType: "copilot" | "copilot-with-context";
     cwd?: string;
+    command?: string;
     extraArgs?: string;
+    skipGlobalArgs?: boolean;
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
+    const copilotCmd =
+      options.command || this.getStringSetting(fresh, "core.copilotCommand", "copilot");
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
@@ -2142,10 +2160,13 @@ export class TerminalPanelView {
       return;
     }
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = mergeExtraArgs(
-      this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
-      options.extraArgs || "",
-    );
+    const rawExtraArgs = options.skipGlobalArgs
+      ? options.extraArgs || ""
+      : mergeExtraArgs(
+          this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
+          options.extraArgs || "",
+        );
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
     const args = [
       `--resume=${sessionId}`,
       ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, options.prompt),
@@ -2166,13 +2187,17 @@ export class TerminalPanelView {
   private async spawnStrandsSession(options: {
     sessionType: "strands" | "strands-with-context";
     cwd?: string;
+    command?: string;
     extraArgs?: string;
+    skipGlobalArgs?: boolean;
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
+    const strandsCmd = expandTilde(
+      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands"),
+    );
     const [cmdToken, ...cmdArgs] = splitConfiguredCommand(strandsCmd);
     if (!cmdToken) {
       new Notice(
@@ -2181,10 +2206,14 @@ export class TerminalPanelView {
       return;
     }
     const resolved = resolveCommand(cmdToken);
-    const mergedExtraArgs = mergeExtraArgs(
-      this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
-      options.extraArgs || "",
-    );
+    const rawExtraArgs = options.skipGlobalArgs
+      ? options.extraArgs || ""
+      : mergeExtraArgs(
+          this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
+          options.extraArgs || "",
+        );
+    // Strands has no session ID - strip any deferred $sessionId placeholders
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, "");
     const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, options.prompt);
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
