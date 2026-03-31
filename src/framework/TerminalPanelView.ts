@@ -42,7 +42,9 @@ import { isResumableSessionType } from "../core/session/types";
 import type {
   ActiveTabInfo,
   AgentRuntimeState,
+  DurableRecoveryMode,
   PersistedSession,
+  SessionType,
   TabDiagnostics,
 } from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
@@ -238,6 +240,7 @@ export class TerminalPanelView {
       const entry = this.buildClosedSessionEntry(itemId, tab);
       if (!entry) return;
       this.recentlyClosedStore.add(entry);
+      this.removePersistedSessionForClosedEntry(entry);
       this.syncRecentlyClosedState();
       void this.persistRecentlyClosedSessions();
     };
@@ -1037,32 +1040,79 @@ export class TerminalPanelView {
     }
   }
 
-  private removePersistedSession(session: PersistedSession): void {
-    const matches = (candidate: PersistedSession): boolean => {
-      if (candidate.recoveryMode !== session.recoveryMode) {
-        return false;
-      }
+  /**
+   * Shared predicate: does `candidate` match the given entry fields?
+   * Used by both removePersistedSession and removePersistedSessionForClosedEntry
+   * to avoid duplicating the matching logic.
+   */
+  private matchesPersistedSessionForEntry(
+    candidate: PersistedSession,
+    entry: {
+      itemId: string;
+      recoveryMode?: DurableRecoveryMode;
+      claudeSessionId?: string | null;
+      durableSessionId?: string;
+      sessionType: SessionType;
+      label: string;
+      cwd?: string;
+      command?: string;
+      commandArgs?: string[];
+    },
+  ): boolean {
+    if (candidate.recoveryMode !== entry.recoveryMode) {
+      return false;
+    }
 
-      if (session.recoveryMode === "resume") {
-        return candidate.claudeSessionId === session.claudeSessionId;
-      }
+    if (entry.recoveryMode === "resume") {
+      return !!entry.claudeSessionId && candidate.claudeSessionId === entry.claudeSessionId;
+    }
 
-      if (session.durableSessionId && candidate.durableSessionId) {
-        return (
-          candidate.taskPath === session.taskPath &&
-          candidate.durableSessionId === session.durableSessionId
-        );
-      }
-
+    if (entry.durableSessionId && candidate.durableSessionId) {
       return (
-        candidate.taskPath === session.taskPath &&
-        candidate.sessionType === session.sessionType &&
-        candidate.label === session.label &&
-        candidate.cwd === session.cwd &&
-        candidate.command === session.command &&
-        JSON.stringify(candidate.commandArgs || []) === JSON.stringify(session.commandArgs || [])
+        candidate.taskPath === entry.itemId && candidate.durableSessionId === entry.durableSessionId
       );
+    }
+
+    return (
+      candidate.taskPath === entry.itemId &&
+      candidate.sessionType === entry.sessionType &&
+      candidate.label === entry.label &&
+      candidate.cwd === entry.cwd &&
+      candidate.command === entry.command &&
+      JSON.stringify(candidate.commandArgs || []) === JSON.stringify(entry.commandArgs || [])
+    );
+  }
+
+  private removePersistedSession(session: PersistedSession): void {
+    const entry = {
+      itemId: session.taskPath,
+      recoveryMode: session.recoveryMode,
+      claudeSessionId: session.claudeSessionId,
+      durableSessionId: session.durableSessionId,
+      sessionType: session.sessionType,
+      label: session.label,
+      cwd: session.cwd,
+      command: session.command,
+      commandArgs: session.commandArgs,
     };
+    const matches = (candidate: PersistedSession) =>
+      this.matchesPersistedSessionForEntry(candidate, entry);
+
+    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
+      (candidate) => !matches(candidate),
+    );
+    this.persistedSessions = this.persistedSessions.filter((candidate) => !matches(candidate));
+    this.syncPersistedSessionState(this.persistedSessions);
+  }
+
+  /**
+   * Remove a persisted session that corresponds to a tab the user explicitly closed.
+   * Prevents recently-closed sessions from leaking back into auto-restore via
+   * pendingPersistedSessions on the next periodic persist cycle.
+   */
+  private removePersistedSessionForClosedEntry(entry: ClosedSessionEntry): void {
+    const matches = (candidate: PersistedSession) =>
+      this.matchesPersistedSessionForEntry(candidate, entry);
 
     this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
       (candidate) => !matches(candidate),
@@ -1195,9 +1245,7 @@ export class TerminalPanelView {
     const configuredCwd = expandTilde(
       this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"),
     );
-    const cwd =
-      options.cwd ||
-      configuredCwd;
+    const cwd = options.cwd || configuredCwd;
     const configuredCommand = this.getStringSetting(
       options.freshSettings,
       isCopilot ? "core.copilotCommand" : "core.claudeCommand",
@@ -1954,7 +2002,9 @@ export class TerminalPanelView {
     const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
     const [cmdToken, ...cmdArgs] = splitConfiguredCommand(strandsCmd);
     if (!cmdToken) {
-      new Notice("Set a Strands command in Work Terminal settings before launching Strands sessions.");
+      new Notice(
+        "Set a Strands command in Work Terminal settings before launching Strands sessions.",
+      );
       return;
     }
     const resolved = resolveCommand(cmdToken);
