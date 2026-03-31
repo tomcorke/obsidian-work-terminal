@@ -12,10 +12,12 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { ChildProcess } from "child_process";
 import { StringDecoder } from "string_decoder";
+import { Notice } from "obsidian";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
+import { checkPython3Available, PYTHON3_MISSING_MESSAGE } from "./PythonCheck";
 import {
   type AgentRuntimeState,
   type StoredSession,
@@ -263,6 +265,12 @@ export class TerminalTab {
       const cols = this.terminal.cols || 80;
       const rows = this.terminal.rows || 24;
       try {
+        if (!checkPython3Available()) {
+          console.error("[work-terminal] python3 not found - cannot spawn PTY");
+          this.terminal.write(`\r\n[${PYTHON3_MISSING_MESSAGE}]\r\n`);
+          new Notice(PYTHON3_MISSING_MESSAGE, 10_000);
+          return;
+        }
         this.spawnTime = Date.now();
         const proc = this.spawnPty(cols, rows, command);
         console.log("[work-terminal] Spawned pid:", proc.pid, "cols:", cols, "rows:", rows);
