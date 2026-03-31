@@ -338,6 +338,36 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(terminal.options.linkHandler).toBe(existingHandler);
   });
 
+  it("backfills linkHandler on show() for live terminals missing the handler", () => {
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      terminal: {
+        options: {} as Record<string, unknown>,
+        refresh: vi.fn(),
+        scrollToBottom: vi.fn(),
+        focus: vi.fn(),
+        rows: 24,
+      },
+      containerEl: {
+        removeClass: vi.fn(),
+        hasClass: vi.fn(() => false),
+        querySelectorAll: vi.fn(() => []),
+      },
+      _isDisposed: false,
+      fitAddon: { fit: vi.fn() },
+    }) as TerminalTab;
+
+    tab.show();
+
+    const handler = (tab as any).terminal.options.linkHandler as {
+      activate: (e: MouseEvent, uri: string) => void;
+    };
+    expect(handler).toBeDefined();
+    expect(typeof handler.activate).toBe("function");
+
+    handler.activate({} as MouseEvent, "https://example.com");
+    expect(mocks.electronShell.openExternal).toHaveBeenCalledWith("https://example.com");
+  });
+
   it("disposes the custom link provider before terminal teardown", () => {
     const order: string[] = [];
     const tab = Object.assign(Object.create(TerminalTab.prototype), {

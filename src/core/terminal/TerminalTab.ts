@@ -697,6 +697,16 @@ export class TerminalTab {
   }
 
   show(): void {
+    // Backfill linkHandler for already-live terminals that were created before
+    // the Electron openExternal handler was added (pre-#156 fix). Without this,
+    // OSC 8 link clicks fall through to xterm's confirm() + window.open() no-op.
+    if (this.terminal.options && !this.terminal.options.linkHandler) {
+      this.terminal.options.linkHandler = {
+        activate: (_event: MouseEvent, uri: string) => {
+          openUrlViaElectron(uri);
+        },
+      };
+    }
     this.containerEl.removeClass("hidden");
     // Double-rAF: first frame makes the element visible and triggers layout,
     // second frame has correct dimensions for fitAddon to measure.
