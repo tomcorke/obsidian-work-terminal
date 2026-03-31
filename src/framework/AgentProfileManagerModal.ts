@@ -5,7 +5,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
-import { createDefaultProfile } from "../core/agents/AgentProfile";
 import { AgentProfileEditModal } from "./AgentProfileModal";
 import { electronRequire } from "../core/utils";
 
@@ -60,9 +59,9 @@ export class AgentProfileManagerModal extends Modal {
 
     const addBtn = actions.createEl("button", { text: "+ Add Profile", cls: "mod-cta" });
     addBtn.addEventListener("click", () => {
-      const maxOrder = profiles.reduce((max, p) => Math.max(max, p.sortOrder), -1);
-      const newProfile = createDefaultProfile({ sortOrder: maxOrder + 1 });
-      new AgentProfileEditModal(this.app, newProfile, async (saved) => {
+      new AgentProfileEditModal(this.app, null, async (saved) => {
+        const maxOrder = profiles.reduce((max, p) => Math.max(max, p.sortOrder), -1);
+        saved.sortOrder = maxOrder + 1;
         await this.manager.addProfile(saved);
         this.render();
       }).open();
