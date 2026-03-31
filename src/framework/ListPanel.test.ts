@@ -402,12 +402,14 @@ describe("ListPanel", () => {
     panel.prependToColumn("task-1", "todo", "placeholder-1");
 
     // Before the real card renders, placeholder should still be in the DOM
-    const cardsEl = document.querySelector('[data-column="todo"] .wt-section-cards') as HTMLElement;
+    let cardsEl = document.querySelector('[data-column="todo"] .wt-section-cards') as HTMLElement;
     expect(cardsEl.querySelector(".wt-card-placeholder")).not.toBeNull();
 
     // Render with the real card - placeholder should be auto-resolved
     panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
 
+    // Re-query after render() since it rebuilds the DOM
+    cardsEl = document.querySelector('[data-column="todo"] .wt-section-cards') as HTMLElement;
     expect(cardsEl.querySelector(".wt-card-placeholder")).toBeNull();
     expect(
       document.querySelector('[data-item-id="task-1"]')?.classList.contains("wt-card-new-success"),
