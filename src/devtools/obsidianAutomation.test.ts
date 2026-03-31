@@ -24,7 +24,10 @@ describe("obsidian automation helpers", () => {
 
   it("keeps bare expressions backward compatible", () => {
     expect(
-      automation.parseCdpArgs(["app.workspace.getLeavesOfType('work-terminal-view').length"], repoRoot),
+      automation.parseCdpArgs(
+        ["app.workspace.getLeavesOfType('work-terminal-view').length"],
+        repoRoot,
+      ),
     ).toMatchObject({
       command: "eval",
       expression: "app.workspace.getLeavesOfType('work-terminal-view').length",
@@ -86,32 +89,51 @@ describe("obsidian automation helpers", () => {
     ]);
   });
 
-  it("fails fast when another Obsidian singleton is already running", () => {
+  it("blocks launch when another Obsidian process uses the same debug port", () => {
+    expect(() =>
+      automation.assertIsolatedLaunchSupported({
+        port: 9222,
+        runningProcesses: [
+          {
+            pid: 101,
+            command:
+              "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222",
+            port: 9222,
+          },
+        ],
+      }),
+    ).toThrow("already using debug port 9222");
+  });
+
+  it("allows launch when existing Obsidian uses a different debug port", () => {
     expect(() =>
       automation.assertIsolatedLaunchSupported({
         port: 9333,
         runningProcesses: [
           {
             pid: 101,
-            command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222",
+            command:
+              "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9222",
             port: 9222,
           },
         ],
       }),
-    ).toThrow("cannot reliably start a second debuggable instance");
+    ).not.toThrow();
   });
 
-  it("detects Obsidian processes outside /Applications", () => {
-    const processes = automation.parseObsidianProcessList(`
-      404 /Users/tom/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9333
-    `);
-
+  it("allows launch alongside Obsidian processes without a debug port", () => {
     expect(() =>
       automation.assertIsolatedLaunchSupported({
-        port: 9222,
-        runningProcesses: processes,
+        port: 9333,
+        runningProcesses: [
+          {
+            pid: 101,
+            command: "/Applications/Obsidian.app/Contents/MacOS/Obsidian",
+            port: null,
+          },
+        ],
       }),
-    ).toThrow("Another Obsidian app process is already running");
+    ).not.toThrow();
   });
 
   it("allows launch when no Obsidian process is present", () => {
@@ -127,14 +149,14 @@ describe("obsidian automation helpers", () => {
     expect(() => automation.parseIsolatedInstanceArgs(["open", "--vault"], repoRoot)).toThrow(
       "--vault requires a value",
     );
-    expect(() => automation.parseIsolatedInstanceArgs(["open", "--vault", "--clean"], repoRoot)).toThrow(
-      "--vault requires a value",
-    );
+    expect(() =>
+      automation.parseIsolatedInstanceArgs(["open", "--vault", "--clean"], repoRoot),
+    ).toThrow("--vault requires a value");
     expect(() => automation.parseIsolatedInstanceArgs(["open", "--plugin-dir"], repoRoot)).toThrow(
       "--plugin-dir requires a value",
     );
-    expect(
-      () => automation.parseIsolatedInstanceArgs(["open", "--plugin-dir", "--no-open-view"], repoRoot),
+    expect(() =>
+      automation.parseIsolatedInstanceArgs(["open", "--plugin-dir", "--no-open-view"], repoRoot),
     ).toThrow("--plugin-dir requires a value");
   });
 
@@ -153,7 +175,9 @@ describe("obsidian automation helpers", () => {
     });
 
     expect(result.vaultDir).toBe(vaultDir);
-    const pluginLinkTarget = await fs.readlink(path.join(vaultDir, ".obsidian", "plugins", "work-terminal"));
+    const pluginLinkTarget = await fs.readlink(
+      path.join(vaultDir, ".obsidian", "plugins", "work-terminal"),
+    );
     expect(path.resolve(path.dirname(result.pluginLinkPath), pluginLinkTarget)).toBe(pluginDir);
 
     const communityPlugins = JSON.parse(
@@ -194,10 +218,15 @@ describe("obsidian automation helpers", () => {
       sampleData: false,
     });
 
-    const pluginLinkTarget = await fs.readlink(path.join(vaultDir, ".obsidian", "plugins", "work-terminal"));
-    expect(path.resolve(path.dirname(path.join(vaultDir, ".obsidian", "plugins", "work-terminal")), pluginLinkTarget)).toBe(
-      pluginDir,
+    const pluginLinkTarget = await fs.readlink(
+      path.join(vaultDir, ".obsidian", "plugins", "work-terminal"),
     );
+    expect(
+      path.resolve(
+        path.dirname(path.join(vaultDir, ".obsidian", "plugins", "work-terminal")),
+        pluginLinkTarget,
+      ),
+    ).toBe(pluginDir);
   });
 
   it("does not scaffold anything during status inspection", async () => {
@@ -247,8 +276,12 @@ describe("obsidian automation helpers", () => {
       }),
     ).rejects.toThrow("Refusing to modify existing unmarked vault");
 
-    await expect(fs.access(path.join(vaultDir, ".obsidian"))).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(fs.access(path.join(vaultDir, ".work-terminal-test-vault.json"))).rejects.toMatchObject({
+    await expect(fs.access(path.join(vaultDir, ".obsidian"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(
+      fs.access(path.join(vaultDir, ".work-terminal-test-vault.json")),
+    ).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
@@ -287,7 +320,11 @@ describe("obsidian automation helpers", () => {
     await fs.mkdir(pluginDir, { recursive: true });
     await fs.mkdir(otherPluginDir, { recursive: true });
     await fs.writeFile(path.join(pluginDir, "manifest.json"), '{"id":"work-terminal"}\n', "utf8");
-    await fs.writeFile(path.join(otherPluginDir, "manifest.json"), '{"id":"work-terminal"}\n', "utf8");
+    await fs.writeFile(
+      path.join(otherPluginDir, "manifest.json"),
+      '{"id":"work-terminal"}\n',
+      "utf8",
+    );
     await fs.mkdir(path.dirname(existingPluginLink), { recursive: true });
     await fs.writeFile(
       path.join(vaultDir, ".work-terminal-test-vault.json"),
@@ -372,25 +409,29 @@ describe("obsidian automation helpers", () => {
       requestCount += 1;
       res.writeHead(200, { "Content-Type": "application/json" });
       if (requestCount < 3) {
-        res.end(JSON.stringify([
-          {
-            id: "browser-only",
-            type: "browser",
-            title: "Obsidian",
-            webSocketDebuggerUrl: "ws://127.0.0.1/devtools/browser/browser-only",
-          },
-        ]));
+        res.end(
+          JSON.stringify([
+            {
+              id: "browser-only",
+              type: "browser",
+              title: "Obsidian",
+              webSocketDebuggerUrl: "ws://127.0.0.1/devtools/browser/browser-only",
+            },
+          ]),
+        );
         return;
       }
 
-      res.end(JSON.stringify([
-        {
-          id: "page-ready",
-          type: "page",
-          title: "Obsidian",
-          webSocketDebuggerUrl: "ws://127.0.0.1/devtools/page/page-ready",
-        },
-      ]));
+      res.end(
+        JSON.stringify([
+          {
+            id: "page-ready",
+            type: "page",
+            title: "Obsidian",
+            webSocketDebuggerUrl: "ws://127.0.0.1/devtools/page/page-ready",
+          },
+        ]),
+      );
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -448,7 +489,9 @@ describe("obsidian automation helpers", () => {
 
   it("retries vault verification when the page target is not ready yet", async () => {
     const close = vi.fn();
-    const evaluate = vi.fn().mockResolvedValue(path.join(repoRoot, ".claude", "testing", "obsidian-vault"));
+    const evaluate = vi
+      .fn()
+      .mockResolvedValue(path.join(repoRoot, ".claude", "testing", "obsidian-vault"));
     vi.spyOn(automation.CDPClient, "connect")
       .mockRejectedValueOnce(new Error("No Obsidian page target found on 127.0.0.1:9333"))
       .mockResolvedValueOnce({
@@ -470,10 +513,7 @@ describe("obsidian automation helpers", () => {
   });
 
   it("open-view succeeds only after the work terminal leaf is present", async () => {
-    const evaluate = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(1);
+    const evaluate = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(1);
     const close = vi.fn();
     vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
       evaluate,
@@ -490,19 +530,22 @@ describe("obsidian automation helpers", () => {
     ).resolves.toBe("Work Terminal view opened");
 
     expect(evaluate).toHaveBeenCalledTimes(2);
-    expect(evaluate.mock.calls[0][0]).toContain('const commandId = "work-terminal:open-work-terminal"');
-    expect(evaluate.mock.calls[0][0]).toContain("throw new Error(\"Obsidian command API is unavailable\")");
-    expect(evaluate.mock.calls[1][0]).toContain("globalThis.app?.workspace?.getLeavesOfType?.(viewType) ?? []");
+    expect(evaluate.mock.calls[0][0]).toContain(
+      'const commandId = "work-terminal:open-work-terminal"',
+    );
+    expect(evaluate.mock.calls[0][0]).toContain(
+      'throw new Error("Obsidian command API is unavailable")',
+    );
+    expect(evaluate.mock.calls[1][0]).toContain(
+      "globalThis.app?.workspace?.getLeavesOfType?.(viewType) ?? []",
+    );
     expect(evaluate.mock.calls[1][0]).toContain('const viewType = "work-terminal-view"');
     expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("open-view fails when the work terminal leaf never appears", async () => {
     const timeoutError = new Error("Timed out waiting for workspace leaf: work-terminal-view");
-    const evaluate = vi
-      .fn()
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(timeoutError);
+    const evaluate = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(timeoutError);
     const close = vi.fn();
     vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
       evaluate,
@@ -520,5 +563,143 @@ describe("obsidian automation helpers", () => {
 
     expect(evaluate).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("parses --no-hide flag in isolated-instance args", () => {
+    const parsed = automation.parseIsolatedInstanceArgs(["open", "--no-hide"], repoRoot);
+    expect(parsed.hide).toBe(false);
+  });
+
+  it("defaults hide to true in isolated-instance args", () => {
+    const parsed = automation.parseIsolatedInstanceArgs(["open"], repoRoot);
+    expect(parsed.hide).toBe(true);
+  });
+
+  it("parses stop command in isolated-instance args", () => {
+    const parsed = automation.parseIsolatedInstanceArgs(["stop"], repoRoot);
+    expect(parsed.command).toBe("stop");
+  });
+
+  it("findAvailablePort returns a port in the isolated range", async () => {
+    // Start a server on a known port to verify the function skips it
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("[]");
+    });
+
+    // Use port 0 to get a random free port for the mock, then test findAvailablePort
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+      server.once("error", reject);
+    });
+
+    try {
+      const port = await automation.findAvailablePort({ host: "127.0.0.1" });
+      expect(port).toBeGreaterThanOrEqual(automation.ISOLATED_PORT_BASE);
+      expect(port).toBeLessThan(automation.ISOLATED_PORT_BASE + automation.ISOLATED_PORT_RANGE);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err: Error | undefined) => (err ? reject(err) : resolve()));
+      });
+    }
+  });
+
+  it("hideObsidianWindow calls CDP evaluate with the hide expression", async () => {
+    const evaluate = vi.fn().mockResolvedValueOnce(undefined);
+    const close = vi.fn();
+    vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
+      evaluate,
+      close,
+    });
+
+    await automation.hideObsidianWindow({ host: "127.0.0.1", port: 9333 });
+
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(evaluate.mock.calls[0][0]).toContain("getCurrentWindow().hide()");
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("hideObsidianWindow closes the CDP client even on failure", async () => {
+    const evaluate = vi.fn().mockRejectedValueOnce(new Error("no electron"));
+    const close = vi.fn();
+    vi.spyOn(automation.CDPClient, "connect").mockResolvedValue({
+      evaluate,
+      close,
+    });
+
+    await expect(automation.hideObsidianWindow({ host: "127.0.0.1", port: 9333 })).rejects.toThrow(
+      "no electron",
+    );
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("killIsolatedInstance requires userDataDir", () => {
+    expect(() => automation.killIsolatedInstance({})).toThrow("userDataDir is required");
+  });
+
+  it("killIsolatedInstance matches processes by user-data-dir path", () => {
+    const killed: number[] = [];
+    vi.spyOn(process, "kill").mockImplementation(((pid: number) => {
+      killed.push(pid);
+    }) as typeof process.kill);
+
+    const runningProcesses = [
+      {
+        pid: 100,
+        command:
+          "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9300 --user-data-dir=/tmp/vault-a/.user-data",
+        port: 9300,
+      },
+      {
+        pid: 200,
+        command:
+          "/Applications/Obsidian.app/Contents/MacOS/Obsidian --remote-debugging-port=9301 --user-data-dir=/tmp/vault-b/.user-data",
+        port: 9301,
+      },
+    ];
+
+    const count = automation.killIsolatedInstance({
+      userDataDir: "/tmp/vault-a/.user-data",
+      runningProcesses,
+    });
+    expect(count).toBe(1);
+    expect(killed).toEqual([100]);
+  });
+
+  it("exports OBSIDIAN_BINARY constant", () => {
+    expect(automation.OBSIDIAN_BINARY).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
+  });
+
+  it("seedUserDataDir creates obsidian.json with vault config", async () => {
+    const userDataDir = path.join(fixturesRoot, "user-data");
+    const vaultDir = path.join(fixturesRoot, "vault");
+
+    await automation.seedUserDataDir({ userDataDir, vaultDir });
+
+    const obsidianJson = JSON.parse(
+      await fs.readFile(path.join(userDataDir, "obsidian.json"), "utf8"),
+    );
+    const vaultIds = Object.keys(obsidianJson.vaults);
+    expect(vaultIds).toHaveLength(1);
+    const vaultEntry = obsidianJson.vaults[vaultIds[0]];
+    expect(vaultEntry.path).toBe(path.resolve(vaultDir));
+    expect(vaultEntry.open).toBe(true);
+    expect(typeof vaultEntry.ts).toBe("number");
+  });
+
+  it("seedUserDataDir generates stable vault IDs for the same path", async () => {
+    const userDataDir = path.join(fixturesRoot, "user-data");
+    const vaultDir = path.join(fixturesRoot, "vault");
+
+    await automation.seedUserDataDir({ userDataDir, vaultDir });
+    const first = JSON.parse(await fs.readFile(path.join(userDataDir, "obsidian.json"), "utf8"));
+    const firstId = Object.keys(first.vaults)[0];
+
+    await automation.seedUserDataDir({ userDataDir, vaultDir });
+    const second = JSON.parse(await fs.readFile(path.join(userDataDir, "obsidian.json"), "utf8"));
+    const secondId = Object.keys(second.vaults)[0];
+
+    expect(firstId).toBe(secondId);
   });
 });
