@@ -12,7 +12,7 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 <td width="50%"><img src="docs/screenshots/agent-session.png" alt="Copilot CLI session running in a terminal tab with typed prompt" width="100%"><br><sub>GitHub Copilot session with activity detection</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/task-creation.png" alt="Task creation prompt box with text input and column selector" width="100%"><br><sub>Task creation with column selector</sub></td>
+<td width="50%"><img src="docs/screenshots/task-creation.png" alt="Task creation prompt box with text input and column selector" height="300px" align="center"><br><sub>Task creation with column selector</sub></td>
 <td width="50%"><img src="docs/screenshots/settings.png" alt="Plugin settings showing agent commands, binary validation, and resume hooks" width="100%"><br><sub>Plugin settings and agent configuration</sub></td>
 </tr>
 </table>
