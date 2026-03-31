@@ -38,14 +38,195 @@ Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger 
 
 ## Isolated test vault
 
-- `npm run obsidian:test:init` creates `.claude/testing/obsidian-vault/` with:
-  - `.obsidian/plugins/work-terminal` symlinked to this worktree
-  - Community plugin enablement files
-  - Seed task data under `2 - Areas/Tasks/`
-- `npm run obsidian:test:open` launches a fresh Obsidian app instance against that vault on CDP port `9222` and opens the Work Terminal view.
-- `node scripts/obsidian-isolated-instance.js status` inspects the configured vault without creating or modifying it.
+The isolated launcher creates a temporary vault with the plugin installed, launches a
+separate Obsidian instance (independent of your main one), and connects via CDP for
+automation and screenshots.
 
-The launcher fails fast if the debugger port is already occupied, and stops early with a singleton warning when another Obsidian app process is already running.
+**WARNING**: Launching briefly steals user focus (~2-3 seconds) while Obsidian starts
+up before the window is hidden. This must NOT be triggered automatically - only with
+explicit user consent for testing or bug replication.
+
+### Quick start
+
+Each isolated instance should use its own vault directory to avoid conflicts:
+
+```bash
+# 1. Create a dedicated vault and launch Obsidian
+npm run obsidian:test:open -- --vault .claude/testing/my-test --clean
+
+# 2. Interact via CDP using the port from the JSON output
+CDP_PORT=<port> node cdp.js screenshot output/test.png
+CDP_PORT=<port> node cdp.js click '.wt-task-card'
+
+# 3. Stop the isolated instance when done
+npm run obsidian:test:open -- --vault .claude/testing/my-test stop
+```
+
+Using `--vault` with a unique name per test scenario keeps instances isolated from
+each other. The default vault (`.claude/testing/obsidian-vault`) works for one-off
+debugging but should not be shared across concurrent instances.
+
+### Step by step
+
+#### 1. Create the vault
+
+`npm run obsidian:test:init` creates `.claude/testing/obsidian-vault/` with:
+- `.obsidian/plugins/work-terminal` symlinked to this repo
+- Community plugin enablement config
+- Two seed tasks under `2 - Areas/Tasks/` (one active, one todo)
+
+Use `--clean` to wipe and recreate, `--no-sample-data` to skip seed tasks.
+
+#### 2. Seed test content via the filesystem
+
+Create tasks directly as markdown files - do NOT use the "New task" UI or agent
+sessions unless explicitly testing those features:
+
+```bash
+VAULT=".claude/testing/my-test"  # match the --vault path used at launch
+
+# Create a priority task
+cat > "$VAULT/2 - Areas/Tasks/priority/TASK-test-priority.md" << 'EOF'
+---
+id: test-priority-001
+tags:
+  - task
+  - task/priority
+state: priority
+title: "Test priority task"
+source:
+  type: prompt
+  id: "test"
+  url: ""
+  captured: 2026-01-01T00:00:00Z
+priority:
+  score: 90
+  deadline: "2026-04-01"
+  impact: high
+  has-blocker: false
+  blocker-context: ""
+agent-actionable: false
+goal: []
+related: []
+created: 2026-01-01T00:00:00Z
+updated: 2026-01-01T00:00:00Z
+---
+# Test priority task
+
+Test content for isolated UI verification.
+EOF
+
+# Create an active task with a blocker
+cat > "$VAULT/2 - Areas/Tasks/active/TASK-test-blocked.md" << 'EOF'
+---
+id: test-blocked-001
+tags:
+  - task
+  - task/active
+state: active
+title: "Blocked test task"
+source:
+  type: prompt
+  id: "test"
+  url: ""
+  captured: 2026-01-01T00:00:00Z
+priority:
+  score: 40
+  deadline: ""
+  impact: medium
+  has-blocker: true
+  blocker-context: "Waiting on upstream API"
+agent-actionable: false
+goal: []
+related: []
+created: 2026-01-01T00:00:00Z
+updated: 2026-01-01T00:00:00Z
+---
+# Blocked test task
+
+Test content for blocker badge verification.
+EOF
+```
+
+After writing files, reload the plugin or wait for Obsidian's file watcher to pick
+them up. The kanban board updates automatically when vault files change.
+
+#### 3. Launch the isolated instance
+
+```bash
+# Use a unique vault name per test scenario
+npm run obsidian:test:open -- --vault .claude/testing/my-test --clean
+```
+
+This:
+1. Creates/resets the test vault with plugin symlink and seed tasks
+2. Pre-seeds the Electron user-data-dir so Obsidian opens the vault directly
+3. Launches Obsidian on a random free port (9300-9399) via direct binary
+4. Waits for CDP, dismisses the "Trust author" dialog on first run
+5. Hides the window via CDP
+6. Opens the Work Terminal view
+7. Prints JSON with `vaultDir`, `port`, `pid`, `userDataDir`
+
+Use `--no-hide` to keep the window visible for visual debugging. Use `--port 9350`
+to pin a specific port.
+
+#### 4. Interact via CDP
+
+```bash
+# Screenshot the full window
+CDP_PORT=<port> node cdp.js screenshot output/test.png
+
+# Click a task card
+CDP_PORT=<port> node cdp.js click '.wt-task-card'
+
+# Check plugin state
+CDP_PORT=<port> node cdp.js 'JSON.stringify(Object.keys(app.plugins.plugins))'
+
+# Wait for a selector to appear
+CDP_PORT=<port> node cdp.js wait-for '.wt-task-card[data-task-state="active"]'
+```
+
+#### 5. Modify tasks and verify UI changes
+
+```bash
+VAULT=".claude/testing/my-test"
+
+# Move a task from active to todo by changing frontmatter
+sed -i '' 's/state: active/state: todo/' "$VAULT/2 - Areas/Tasks/active/TASK-test-blocked.md"
+mv "$VAULT/2 - Areas/Tasks/active/TASK-test-blocked.md" "$VAULT/2 - Areas/Tasks/todo/"
+
+# Wait for UI to update, then screenshot
+sleep 1
+CDP_PORT=<port> node cdp.js screenshot output/after-move.png
+```
+
+#### 6. Stop the instance
+
+```bash
+npm run obsidian:test:open -- --vault .claude/testing/my-test stop
+```
+
+### Other commands
+
+```bash
+# Inspect vault status without modifying anything
+node scripts/obsidian-isolated-instance.js status
+
+# Init vault only (no launch)
+npm run obsidian:test:init
+```
+
+### Testing guidelines
+
+- **Use filesystem operations** for task creation and modification, not the "New task"
+  prompt box or agent sessions
+- **Agent sessions** (Claude, Copilot, Strands) must NOT be launched unless very
+  explicitly approved by the user - most things are testable with shell sessions and
+  direct filesystem task changes, then CDP interaction to verify UI state
+- **Shell sessions** are fine for testing terminal integration without the cost of
+  agent API calls
+- Prefer `CDP_PORT=<port> node cdp.js screenshot` for verification over visual
+  inspection of the hidden window
 
 ## Known constraints
 
