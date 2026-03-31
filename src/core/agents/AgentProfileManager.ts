@@ -36,7 +36,17 @@ export class AgentProfileManager {
     const data = (await this.plugin.loadData()) || {};
 
     if (data[PROFILES_KEY] && Array.isArray(data[PROFILES_KEY])) {
-      this.profiles = data[PROFILES_KEY] as AgentProfile[];
+      const result = AgentProfileArraySchema.safeParse(data[PROFILES_KEY]);
+      if (result.success) {
+        this.profiles = result.data as AgentProfile[];
+      } else {
+        console.warn(
+          "[work-terminal] Stored profiles failed validation, falling back to built-in defaults:",
+          result.error.issues,
+        );
+        this.profiles = getBuiltInProfiles();
+        await this.save();
+      }
     } else if (!data[MIGRATED_KEY]) {
       // First load - migrate from legacy settings or create defaults
       this.profiles = this.migrateFromLegacySettings(data);
