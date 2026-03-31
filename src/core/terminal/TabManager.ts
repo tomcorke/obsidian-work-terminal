@@ -195,13 +195,16 @@ export class TabManager {
     tab.onLabelChange = () => {
       if (this.activeItemId === itemId) this._notifyLabelChange();
     };
-    tab.onProcessExit = (_code, _signal) => {
+    tab.onProcessExit = (code, _signal) => {
       const idx = tabs.indexOf(tab);
       if (idx === -1) return;
-      // If the process exited within 3 seconds, it likely errored -
-      // keep the tab open so the user can see the error message.
       const lived = Date.now() - spawnTime;
-      if (lived < 3000) return;
+      // Short-lived processes (under 30s): always keep the tab open so the
+      // user can see startup errors or unexpected early exits.
+      if (lived < 30_000) return;
+      // Long-lived processes: only auto-close on a clean exit (code 0).
+      // Non-zero exit codes keep the tab open so the user can read the error.
+      if (code !== 0) return;
       this.closeTabForItem(itemId, idx);
     };
     tab.onStateChange = () => {

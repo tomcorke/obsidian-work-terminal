@@ -559,6 +559,64 @@ describe("TabManager - active tab discovery", () => {
   });
 });
 
+describe("TabManager - onProcessExit auto-close behaviour", () => {
+  it("keeps the tab open when the process exits quickly (under 30s)", () => {
+    terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
+    const mgr = new TabManager(null as any);
+    mgr.setActiveItem("item-1");
+    const tab = mgr.createTab("/bin/zsh", "~", "Shell", "shell")!;
+
+    // Simulate an immediate exit (within 30s of spawn)
+    const closeSpy = vi.fn();
+    mgr.onSessionChange = closeSpy;
+    tab.onProcessExit?.(1, null);
+
+    // Tab should still exist - no close triggered
+    expect(mgr.getTabs("item-1")).toHaveLength(1);
+  });
+
+  it("auto-closes the tab when a long-running process exits with code 0", () => {
+    terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
+    const baseTime = 1000000;
+    // First call (spawnTime) returns baseTime, subsequent calls return 31s later
+    const nowMock = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(baseTime) // spawnTime in createTabForItem
+      .mockReturnValue(baseTime + 31_000); // exit check in onProcessExit
+
+    const mgr = new TabManager(null as any);
+    mgr.setActiveItem("item-1");
+
+    const tab = mgr.createTab("/bin/zsh", "~", "Shell", "shell")!;
+    tab.onProcessExit?.(0, null);
+
+    // Tab should have been closed
+    expect(mgr.getTabs("item-1")).toHaveLength(0);
+
+    nowMock.mockRestore();
+  });
+
+  it("keeps the tab open when a long-running process exits with non-zero code", () => {
+    terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
+    const baseTime = 1000000;
+    const nowMock = vi
+      .spyOn(Date, "now")
+      .mockReturnValueOnce(baseTime)
+      .mockReturnValue(baseTime + 31_000);
+
+    const mgr = new TabManager(null as any);
+    mgr.setActiveItem("item-1");
+
+    const tab = mgr.createTab("/bin/zsh", "~", "Shell", "shell")!;
+    tab.onProcessExit?.(1, null);
+
+    // Tab should still exist - non-zero exit keeps it open
+    expect(mgr.getTabs("item-1")).toHaveLength(1);
+
+    nowMock.mockRestore();
+  });
+});
+
 describe("TabManager - diagnostics lifecycle", () => {
   it("marks exited and missing processes as lost instead of live", () => {
     const exitedTab = makeStubTab({
