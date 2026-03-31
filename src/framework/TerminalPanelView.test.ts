@@ -1295,6 +1295,70 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("removes a closed resume session from persisted sessions to prevent auto-restore", async () => {
+    mockState.persistedSessions = [
+      makePersistedSession("claude", { claudeSessionId: "agent-session-1" }),
+      makePersistedSession("shell", { durableSessionId: "durable-shell-1" }),
+    ];
+
+    const saveData = vi.fn(async () => {});
+    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
+    await flushAsync();
+
+    // Simulate user explicitly closing the Claude tab
+    mockState.latestTabManager?.onTabClosed?.("Tasks/task-1.md", {
+      sessionType: "claude",
+      label: "Session",
+      claudeSessionId: "agent-session-1",
+      agentSessionId: "agent-session-1",
+      launchShell: "agent",
+      launchCwd: "/vault",
+      launchCommandArgs: ["agent", "--resume", "agent-session-1"],
+      isResumableAgent: true,
+    } as any);
+    await flushAsync();
+
+    // The closed session should be removed from persisted sessions
+    const persisted = window.__workTerminalDebug?.persistedSessions ?? [];
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({
+      sessionType: "shell",
+      durableSessionId: "durable-shell-1",
+    });
+  });
+
+  it("removes a closed relaunch session from persisted sessions to prevent auto-restore", async () => {
+    mockState.persistedSessions = [
+      makePersistedSession("shell", { durableSessionId: "durable-shell-1" }),
+      makePersistedSession("claude", { claudeSessionId: "agent-session-1" }),
+    ];
+
+    const saveData = vi.fn(async () => {});
+    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
+    await flushAsync();
+
+    // Simulate user explicitly closing the shell tab
+    mockState.latestTabManager?.onTabClosed?.("Tasks/task-1.md", {
+      sessionType: "shell",
+      label: "Session",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      launchShell: "/bin/zsh",
+      launchCwd: "/vault",
+      launchCommandArgs: undefined,
+      isResumableAgent: false,
+    } as any);
+    await flushAsync();
+
+    // The closed session should be removed from persisted sessions
+    const persisted = window.__workTerminalDebug?.persistedSessions ?? [];
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({
+      sessionType: "claude",
+      claudeSessionId: "agent-session-1",
+    });
+  });
+
   it("restores relaunchable persisted sessions with their saved command metadata", async () => {
     const { view } = createView();
     await flushAsync();
