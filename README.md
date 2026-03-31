@@ -89,7 +89,7 @@ All terminal processes run inside `pty-wrapper.py`, a Python script that uses `p
 - **No shell interpretation** - arguments are constructed as arrays and passed to Node.js `child_process.spawn()`, which invokes executables directly without a shell. This prevents command injection.
 - **No network requests** - the plugin itself makes zero network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
 - **Vault access via Obsidian API** - vault file operations use `app.vault.create()` / `app.vault.modify()`, never direct filesystem writes to the vault.
-- **Limited direct filesystem writes** - the only direct filesystem writes are to `~/.work-terminal/` (hook scripts, event files) and `~/.claude/settings.local.json` (hook configuration), both triggered explicitly by the user through the settings UI.
+- **Limited direct filesystem writes** - the only direct filesystem writes are to `~/.work-terminal/` (hook scripts, event files) and `<cwd>/.claude/settings.local.json` (project-local hook configuration), both triggered explicitly by the user through the settings UI.
 - **Plugin data via Obsidian API** - settings and session state use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.
 
 ### Source locations
@@ -99,7 +99,7 @@ The spawning code lives in these files:
 - `src/core/terminal/TerminalTab.ts` - PTY wrapper spawn (`python3 pty-wrapper.py ... -- <command>`)
 - `src/core/agents/AgentLauncher.ts` - command resolution, PATH augmentation, argument builders for Claude/Copilot/Strands
 - `src/core/claude/HeadlessClaude.ts` - one-shot `claude -p` for background enrichment
-- `src/core/claude/ClaudeHookManager.ts` - hook script installation and `~/.claude/settings.local.json` management
+- `src/core/claude/ClaudeHookManager.ts` - hook script installation and project-local `.claude/settings.local.json` management
 - `pty-wrapper.py` - Python PTY bridge (uses `pty.fork()` and `os.execvp()`)
 
 ## Creating Your Own Adapter
