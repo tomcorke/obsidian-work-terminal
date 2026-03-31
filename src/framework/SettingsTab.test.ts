@@ -164,7 +164,20 @@ vi.mock("obsidian", () => {
     }
   }
 
-  return { App, Notice: NoticeMock, PluginSettingTab, Setting };
+  class Modal {
+    app: unknown;
+    contentEl: HTMLElement;
+    constructor(app: unknown) {
+      this.app = app;
+      this.contentEl = document.createElement("div");
+    }
+    open() {}
+    close() {}
+    onOpen() {}
+    onClose() {}
+  }
+
+  return { App, Modal, Notice: NoticeMock, PluginSettingTab, Setting };
 });
 
 vi.mock("./GuidedTour", () => ({
@@ -179,7 +192,10 @@ vi.mock("../core/claude/ClaudeHookManager", () => ({
 
 vi.mock("../core/PluginDataStore", () => ({
   mergeAndSavePluginData: async (
-    plugin: { loadData: () => Promise<Record<string, any> | null>; saveData: (data: Record<string, any>) => Promise<void> },
+    plugin: {
+      loadData: () => Promise<Record<string, any> | null>;
+      saveData: (data: Record<string, any>) => Promise<void>;
+    },
     update: (data: Record<string, any>) => void | Promise<void>,
   ) => {
     const data = (await plugin.loadData()) || {};

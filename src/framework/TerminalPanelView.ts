@@ -64,6 +64,11 @@ import {
   sanitizeCustomSessionConfig,
   type CustomSessionConfig,
 } from "./CustomSessionConfig";
+import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
+import type { AgentProfile } from "../core/agents/AgentProfile";
+import { agentTypeToSessionType } from "../core/agents/AgentProfile";
+import { createProfileIcon } from "../ui/ProfileIcons";
 
 interface WorkTerminalDebugSnapshot {
   version: 1;
@@ -183,10 +188,14 @@ export class TerminalPanelView {
   private hookWarningCheckInFlight = false;
   private hookWarningCheckQueued = false;
   private isDisposed = false;
+  private profileManager: AgentProfileManager | null = null;
   private readonly handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     this.renderTabBar();
     this.refreshDebugGlobal();
+  };
+  private readonly handleProfilesChanged = () => {
+    this.renderTabBar();
   };
 
   constructor(
@@ -198,6 +207,7 @@ export class TerminalPanelView {
     promptBuilder: WorkItemPromptBuilder,
     onAgentStateChange: (itemId: string, state: string) => void,
     onSessionChange: () => void,
+    profileManager?: AgentProfileManager,
   ) {
     this.panelEl = panelEl;
     this.terminalWrapperEl = terminalWrapperEl;
@@ -207,8 +217,10 @@ export class TerminalPanelView {
     this.promptBuilder = promptBuilder;
     this.onAgentStateChange = onAgentStateChange;
     this.onSessionChange = onSessionChange;
+    this.profileManager = profileManager ?? null;
     liveTerminalViews.add(this);
     window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
+    window.addEventListener(PROFILES_CHANGED_EVENT, this.handleProfilesChanged as EventListener);
 
     // Task title heading above tab bar
     this.titleEl = panelEl.createDiv({ cls: "wt-task-title" });
@@ -463,28 +475,73 @@ export class TerminalPanelView {
       }
     }
 
-    // Spawn buttons (always visible)
+    // Spawn buttons - profile-driven if profiles are available, else legacy
     const shellBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn", text: "+ Shell" });
     shellBtn.addEventListener("click", () => {
       this.launchAction("shell", () => this.spawnShell());
     });
 
-    const claudeBtn = buttonsContainer.createEl("button", { cls: "wt-spawn-btn wt-spawn-claude" });
-    claudeBtn.appendChild(createClaudeLogo());
-    claudeBtn.appendText("Claude");
-    claudeBtn.addEventListener("click", () => {
-      this.launchAction("Claude", () => this.spawnClaude());
-    });
+    const buttonProfiles = this.profileManager?.getButtonProfiles() ?? [];
+    if (buttonProfiles.length > 0) {
+      // Profile-driven buttons
+      for (const profile of buttonProfiles) {
+        const btn = buttonsContainer.createEl("button", {
+          cls: "wt-spawn-btn wt-spawn-profile",
+        });
 
-    if (getAgentContextTemplate(this.settings)) {
-      const claudeCtxBtn = buttonsContainer.createEl("button", {
-        cls: "wt-spawn-btn wt-spawn-claude-ctx",
+        // Apply button styling
+        if (profile.button.color) {
+          btn.style.borderColor = profile.button.color;
+          btn.style.color = profile.button.color;
+        }
+        if (profile.button.borderStyle) {
+          if (profile.button.borderStyle === "thick") {
+            btn.style.borderStyle = "solid";
+            btn.style.borderWidth = "2px";
+          } else {
+            btn.style.borderStyle = profile.button.borderStyle;
+          }
+        }
+
+        // Icon
+        const icon = createProfileIcon(profile.button.icon);
+        if (icon) {
+          if (profile.button.color) icon.style.color = profile.button.color;
+          btn.appendChild(icon);
+        }
+
+        // Label
+        const label = profile.button.label || profile.name;
+        btn.appendText(label);
+
+        btn.setAttribute("aria-label", `Launch ${profile.name}`);
+        btn.setAttribute("title", profile.name);
+
+        btn.addEventListener("click", () => {
+          this.launchAction(profile.name, () => this.spawnFromProfile(profile));
+        });
+      }
+    } else {
+      // Legacy hardcoded buttons (fallback when no profiles loaded yet)
+      const claudeBtn = buttonsContainer.createEl("button", {
+        cls: "wt-spawn-btn wt-spawn-claude",
       });
-      claudeCtxBtn.appendChild(createClaudeLogo());
-      claudeCtxBtn.appendText("Claude (ctx)");
-      claudeCtxBtn.addEventListener("click", () => {
-        this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
+      claudeBtn.appendChild(createClaudeLogo());
+      claudeBtn.appendText("Claude");
+      claudeBtn.addEventListener("click", () => {
+        this.launchAction("Claude", () => this.spawnClaude());
       });
+
+      if (getAgentContextTemplate(this.settings)) {
+        const claudeCtxBtn = buttonsContainer.createEl("button", {
+          cls: "wt-spawn-btn wt-spawn-claude-ctx",
+        });
+        claudeCtxBtn.appendChild(createClaudeLogo());
+        claudeCtxBtn.appendText("Claude (ctx)");
+        claudeCtxBtn.addEventListener("click", () => {
+          this.launchAction("Claude with context", () => this.spawnClaudeWithContext());
+        });
+      }
     }
 
     const customBtn = buttonsContainer.createEl("button", {
@@ -1159,6 +1216,108 @@ export class TerminalPanelView {
       }
       origExit?.(code, signal);
     };
+  }
+
+  /**
+   * Spawn a session from an agent profile.
+   * Resolves profile settings, builds the appropriate session type, and delegates
+   * to the existing spawn methods.
+   */
+  async spawnFromProfile(profile: AgentProfile): Promise<void> {
+    if (!this.profileManager) return;
+    const fresh = await this.loadFreshSettings();
+    const sessionType = agentTypeToSessionType(profile.agentType, profile.useContext);
+    const command = this.profileManager.resolveCommand(profile, fresh);
+    const cwd = this.profileManager.resolveCwd(profile, fresh);
+    const extraArgs = this.profileManager.resolveArguments(profile, fresh);
+    const label = profile.button.label || profile.name;
+
+    // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
+    const item = this.getActiveItem();
+    let expandedArgs = extraArgs;
+    if (item) {
+      expandedArgs = this.expandProfilePlaceholders(expandedArgs, item, "$sessionId");
+    }
+
+    if (profile.agentType === "shell") {
+      const expandedCwd = expandTilde(cwd);
+      this.tabManager.createTab(command, expandedCwd, label, "shell");
+      this.renderTabBar();
+      return;
+    }
+
+    // Build context prompt if the profile uses context
+    let prompt: string | undefined;
+    if (profile.useContext && item) {
+      const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
+      if (contextTemplate) {
+        // Build from adapter prompt + profile context template
+        const adapterPrompt = this.promptBuilder.build(item);
+        // Defer $sessionId in context template too
+        const expandedContext = this.expandProfilePlaceholders(contextTemplate, item, "$sessionId");
+        prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
+      } else {
+        // Fall back to standard context prompt building
+        prompt =
+          profile.agentType === "claude"
+            ? await this.getClaudeContextPrompt(item, fresh)
+            : await this.getAgentContextPrompt(item, fresh);
+      }
+      if (!prompt) {
+        new Notice("Could not build a contextual prompt for this item");
+        return;
+      }
+    }
+
+    // Profile's resolveArguments() already includes global args, so skip the
+    // global merge inside spawn*Session to avoid doubling them.
+    switch (profile.agentType) {
+      case "claude":
+        await this.spawnClaudeSession({
+          sessionType: sessionType as "claude" | "claude-with-context",
+          command,
+          cwd,
+          extraArgs: expandedArgs,
+          skipGlobalArgs: true,
+          label,
+          prompt,
+          freshSettings: fresh,
+        });
+        break;
+      case "copilot":
+        await this.spawnCopilotSession({
+          sessionType: sessionType as "copilot" | "copilot-with-context",
+          command,
+          cwd,
+          extraArgs: expandedArgs,
+          skipGlobalArgs: true,
+          label,
+          prompt,
+          freshSettings: fresh,
+        });
+        break;
+      case "strands":
+        await this.spawnStrandsSession({
+          sessionType: sessionType as "strands" | "strands-with-context",
+          command,
+          cwd,
+          extraArgs: expandedArgs,
+          skipGlobalArgs: true,
+          label,
+          prompt,
+          freshSettings: fresh,
+        });
+        break;
+    }
+  }
+
+  private expandProfilePlaceholders(template: string, item: WorkItem, sessionId: string): string {
+    return template
+      .replace(/\$title/g, item.title)
+      .replace(/\$state/g, item.state)
+      .replace(/\$filePath/g, item.path)
+      .replace(/\$id/g, item.id)
+      .replace(/\$sessionId/g, sessionId);
   }
 
   private async spawnShell(): Promise<void> {
@@ -1920,7 +2079,9 @@ export class TerminalPanelView {
   private async spawnClaudeSession(options: {
     sessionType: "claude" | "claude-with-context";
     cwd?: string;
+    command?: string;
     extraArgs?: string;
+    skipGlobalArgs?: boolean;
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
@@ -1942,7 +2103,8 @@ export class TerminalPanelView {
     }
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const claudeCmd = this.getStringSetting(fresh, "core.claudeCommand", "claude");
+    const claudeCmd =
+      options.command || this.getStringSetting(fresh, "core.claudeCommand", "claude");
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
@@ -1951,10 +2113,14 @@ export class TerminalPanelView {
       return null;
     }
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = mergeExtraArgs(
-      this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
-      options.extraArgs || "",
-    );
+    const rawExtraArgs = options.skipGlobalArgs
+      ? options.extraArgs || ""
+      : mergeExtraArgs(
+          this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
+          options.extraArgs || "",
+        );
+    // Replace deferred $sessionId placeholders with the real session ID
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
     const args = buildClaudeArgs({ claudeExtraArgs: mergedExtraArgs }, sessionId, prompt);
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     const tab = this.tabManager.createTab(
@@ -1976,13 +2142,16 @@ export class TerminalPanelView {
   private async spawnCopilotSession(options: {
     sessionType: "copilot" | "copilot-with-context";
     cwd?: string;
+    command?: string;
     extraArgs?: string;
+    skipGlobalArgs?: boolean;
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const copilotCmd = this.getStringSetting(fresh, "core.copilotCommand", "copilot");
+    const copilotCmd =
+      options.command || this.getStringSetting(fresh, "core.copilotCommand", "copilot");
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
@@ -1991,10 +2160,13 @@ export class TerminalPanelView {
       return;
     }
     const sessionId = crypto.randomUUID();
-    const mergedExtraArgs = mergeExtraArgs(
-      this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
-      options.extraArgs || "",
-    );
+    const rawExtraArgs = options.skipGlobalArgs
+      ? options.extraArgs || ""
+      : mergeExtraArgs(
+          this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
+          options.extraArgs || "",
+        );
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
     const args = [
       `--resume=${sessionId}`,
       ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, options.prompt),
@@ -2015,13 +2187,17 @@ export class TerminalPanelView {
   private async spawnStrandsSession(options: {
     sessionType: "strands" | "strands-with-context";
     cwd?: string;
+    command?: string;
     extraArgs?: string;
+    skipGlobalArgs?: boolean;
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<void> {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const strandsCmd = expandTilde(this.getStringSetting(fresh, "core.strandsCommand", "strands"));
+    const strandsCmd = expandTilde(
+      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands"),
+    );
     const [cmdToken, ...cmdArgs] = splitConfiguredCommand(strandsCmd);
     if (!cmdToken) {
       new Notice(
@@ -2030,10 +2206,14 @@ export class TerminalPanelView {
       return;
     }
     const resolved = resolveCommand(cmdToken);
-    const mergedExtraArgs = mergeExtraArgs(
-      this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
-      options.extraArgs || "",
-    );
+    const rawExtraArgs = options.skipGlobalArgs
+      ? options.extraArgs || ""
+      : mergeExtraArgs(
+          this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
+          options.extraArgs || "",
+        );
+    // Strands has no session ID - strip any deferred $sessionId placeholders
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, "");
     const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, options.prompt);
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
@@ -2181,6 +2361,7 @@ export class TerminalPanelView {
 
   private detachSettingsListener(): void {
     window.removeEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
+    window.removeEventListener(PROFILES_CHANGED_EVENT, this.handleProfilesChanged as EventListener);
   }
 
   private isDebugApiEnabled(): boolean {

@@ -1390,3 +1390,160 @@ button.wt-spawn-claude-ctx:hover svg {
     box-shadow: none;
   }
 }
+
+/* =============================================================================
+   Agent Profile Manager Modal
+   ============================================================================= */
+
+.wt-profile-manager-modal {
+  max-width: 600px;
+}
+
+.wt-profile-manager-help {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 12px;
+}
+
+.wt-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.wt-profile-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.wt-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.wt-profile-row:hover {
+  background: var(--background-secondary-alt);
+}
+
+.wt-profile-reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wt-profile-reorder-btn {
+  font-size: 10px;
+  padding: 1px 4px;
+  line-height: 1;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 2px;
+  color: var(--text-muted);
+}
+
+.wt-profile-reorder-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.wt-profile-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.wt-profile-name {
+  font-weight: var(--font-semibold);
+  font-size: var(--font-ui-small);
+}
+
+.wt-profile-meta {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.wt-profile-type-badge,
+.wt-profile-ctx-badge,
+.wt-profile-button-badge,
+.wt-profile-command-badge {
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.wt-profile-ctx-badge {
+  background: var(--color-accent);
+  color: var(--text-on-accent);
+}
+
+.wt-profile-button-badge {
+  background: var(--text-accent);
+  color: var(--text-on-accent);
+}
+
+.wt-profile-command-badge {
+  font-family: var(--font-monospace);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-profile-edit-btn {
+  flex-shrink: 0;
+}
+
+.wt-profile-manager-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wt-profile-manager-close {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* =============================================================================
+   Agent Profile Edit Modal
+   ============================================================================= */
+
+.wt-profile-edit-modal .setting-item-control {
+  min-width: 200px;
+}
+
+.wt-profile-input {
+  width: 100%;
+}
+
+.wt-profile-edit-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  align-items: center;
+}
+
+.wt-profile-edit-spacer {
+  flex: 1;
+}
+
+/* =============================================================================
+   Profile-driven spawn buttons
+   ============================================================================= */
+
+.wt-spawn-profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}

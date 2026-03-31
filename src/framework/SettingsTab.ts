@@ -20,6 +20,8 @@ import { checkHookStatus, installHooks, removeHooks } from "../core/claude/Claud
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
 import { expandTilde } from "../core/utils";
+import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -36,10 +38,7 @@ interface CoreSettings {
   "core.acceptNoResumeHooks": boolean;
 }
 
-type BinaryCommandKey =
-  | "core.claudeCommand"
-  | "core.copilotCommand"
-  | "core.strandsCommand";
+type BinaryCommandKey = "core.claudeCommand" | "core.copilotCommand" | "core.strandsCommand";
 
 type BinaryValidationState = {
   found: boolean;
@@ -67,6 +66,7 @@ const CORE_DEFAULTS: CoreSettings = {
 export class WorkTerminalSettingsTab extends PluginSettingTab {
   private adapter: AdapterBundle;
   private plugin: Plugin;
+  private profileManager: AgentProfileManager | null = null;
 
   private static readonly BINARY_COMMAND_KEYS: BinaryCommandKey[] = [
     "core.claudeCommand",
@@ -80,9 +80,33 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     this.adapter = adapter;
   }
 
+  setProfileManager(manager: AgentProfileManager): void {
+    this.profileManager = manager;
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+
+    // Agent Profiles section
+    containerEl.createEl("h2", { text: "Agent Profiles" });
+    new Setting(containerEl)
+      .setName("Manage agent profiles")
+      .setDesc(
+        "Configure reusable agent launch profiles with custom commands, arguments, and tab bar buttons.",
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Profile Manager")
+          .setCta()
+          .onClick(() => {
+            if (this.profileManager) {
+              new AgentProfileManagerModal(this.app, this.profileManager).open();
+            } else {
+              new Notice("Profile manager not initialized yet. Reopen the settings tab.");
+            }
+          }),
+      );
 
     // Core settings section
     containerEl.createEl("h2", { text: "Core" });
@@ -164,9 +188,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .addButton((btn) =>
         btn.setButtonText("Reset").onClick(async () => {
           await resetGuidedTourStatus(this.plugin);
-          new Notice(
-            "Guided tour will start next time you open Work Terminal",
-          );
+          new Notice("Guided tour will start next time you open Work Terminal");
         }),
       );
 

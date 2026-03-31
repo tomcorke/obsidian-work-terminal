@@ -22,6 +22,7 @@ import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
+import { AgentProfileManager } from "../core/agents/AgentProfileManager";
 
 interface PendingRename {
   uuid: string | null;
@@ -56,6 +57,9 @@ export class MainView extends ItemView {
 
   // Cached parser instance (created once in initPanels, reused in refreshList)
   private parser: WorkItemParser | null = null;
+
+  // Agent profile manager
+  private profileManager: AgentProfileManager | null = null;
 
   // Adapter-contributed style element
   private adapterStyleEl: HTMLStyleElement | null = null;
@@ -318,6 +322,12 @@ export class MainView extends ItemView {
       },
     );
 
+    // Initialize agent profile manager (async load/migration)
+    this.profileManager = new AgentProfileManager(this.pluginRef);
+    await this.profileManager.load();
+    // Wire profile manager to settings tab for the "Manage Profiles" button
+    (this.pluginRef as any).setProfileManagerOnSettingsTab?.(this.profileManager);
+
     // Terminal wrapper for TabManager
     const terminalWrapperEl = this.rightPanelEl.createDiv({ cls: "wt-terminal-wrapper" });
     terminalWrapperEl.style.cssText = "flex: 1; overflow: hidden; position: relative;";
@@ -340,6 +350,8 @@ export class MainView extends ItemView {
         // Persist sessions to disk
         this.terminalPanel?.persistSessions();
       },
+      // profileManager
+      this.profileManager,
     );
 
     // ListPanel
@@ -620,7 +632,10 @@ export class MainView extends ItemView {
     this.listPanel?.dispose();
 
     // Stop listening for settings changes
-    window.removeEventListener(SETTINGS_CHANGED_EVENT, this._handleSettingsChanged as EventListener);
+    window.removeEventListener(
+      SETTINGS_CHANGED_EVENT,
+      this._handleSettingsChanged as EventListener,
+    );
 
     // Detach adapter's detail leaf
     this.adapter.detachDetailView?.();

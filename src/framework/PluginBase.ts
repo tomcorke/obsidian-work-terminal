@@ -2,8 +2,10 @@
  * PluginBase - abstract Plugin subclass that wires an AdapterBundle to
  * the framework lifecycle: view registration, commands, settings, hot-reload.
  */
-import { Notice, Plugin } from "obsidian";
+import { type App, Notice, type PluginManifest, Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
+import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import type { WorkTerminalSettingsTab } from "./SettingsTab";
 import { SessionPersistence } from "../core/session/SessionPersistence";
 
 export const VIEW_TYPE = "work-terminal-view";
@@ -12,8 +14,9 @@ export abstract class PluginBase extends Plugin {
   protected adapter: AdapterBundle;
   private _isReloading = false;
   private _lastWorkTerminalLeaf: unknown = null;
+  private _settingsTab: WorkTerminalSettingsTab | null = null;
 
-  constructor(app: any, manifest: any, adapter: AdapterBundle) {
+  constructor(app: App, manifest: PluginManifest, adapter: AdapterBundle) {
     super(app, manifest);
     this.adapter = adapter;
   }
@@ -45,7 +48,13 @@ export abstract class PluginBase extends Plugin {
       callback: async () => this.copySessionDiagnostics(),
     });
 
-    this.addSettingTab(new WorkTerminalSettingsTab(this.app, this, this.adapter));
+    this._settingsTab = new WorkTerminalSettingsTab(this.app, this, this.adapter);
+    this.addSettingTab(this._settingsTab);
+  }
+
+  /** Allow MainView to pass the profile manager to the settings tab after init. */
+  setProfileManagerOnSettingsTab(manager: AgentProfileManager): void {
+    this._settingsTab?.setProfileManager(manager);
   }
 
   async activateView(): Promise<void> {
@@ -101,7 +110,9 @@ export abstract class PluginBase extends Plugin {
     const rememberedLeaf = this._lastWorkTerminalLeaf as
       | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
       | undefined;
-    const lastWorkTerminalLeaf = openWorkTerminalLeaves.find((leaf: unknown) => leaf === rememberedLeaf) as
+    const lastWorkTerminalLeaf = openWorkTerminalLeaves.find(
+      (leaf: unknown) => leaf === rememberedLeaf,
+    ) as
       | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
       | undefined;
     const workTerminalLeaf =
@@ -148,7 +159,9 @@ export abstract class PluginBase extends Plugin {
       }
       // Fire-and-forget: onunload is sync, so we can't await this,
       // but it gives us one more chance to persist before shutdown.
-      SessionPersistence.saveToDisk(this, shutdownSessions, shutdownPendingPersisted).catch(() => {});
+      SessionPersistence.saveToDisk(this, shutdownSessions, shutdownPendingPersisted).catch(
+        () => {},
+      );
     }
   }
 }
