@@ -2588,8 +2588,9 @@ describe("TerminalPanelView hook warning", () => {
     const secondTab = panelEl.querySelectorAll(".wt-tab")[1] as HTMLElement;
     const secondLabel = secondTab.querySelector(".wt-tab-label") as HTMLElement;
 
-    // Simulate browser behavior: click fires first, then dblclick
-    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    // Simulate real browser behavior: click, click, dblclick
+    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 1 }));
+    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 2 }));
     secondLabel.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
 
     // The delayed switch should have been cancelled

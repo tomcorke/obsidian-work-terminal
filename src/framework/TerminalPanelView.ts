@@ -412,9 +412,14 @@ export class TerminalPanelView {
         const labelEl = tabEl.createSpan({ cls: "wt-tab-label", text: tab.label });
 
         // Click to switch (delayed to allow double-click cancellation)
-        tabEl.addEventListener("click", () => {
+        tabEl.addEventListener("click", (event) => {
           if (this.isRenameActive()) return;
           if (i === activeIdx) return;
+          if ((event as MouseEvent).detail > 1) return;
+          if (this.tabClickTimer !== null) {
+            clearTimeout(this.tabClickTimer);
+            this.tabClickTimer = null;
+          }
           this.tabClickTimer = setTimeout(() => {
             this.tabClickTimer = null;
             this.tabManager.switchToTab(i);
@@ -430,7 +435,12 @@ export class TerminalPanelView {
             this.tabClickTimer = null;
           }
           // Switch to the target tab first without re-rendering
-          if (i !== activeIdx) this.tabManager.switchToTab(i);
+          if (i !== activeIdx) {
+            const currentActive = tabEl.parentElement?.querySelector(".wt-tab-active");
+            if (currentActive) currentActive.removeClass("wt-tab-active");
+            tabEl.addClass("wt-tab-active");
+            this.tabManager.switchToTab(i);
+          }
           this.startTabRename(tabEl, labelEl, tab, i);
         });
 
