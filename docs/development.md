@@ -59,7 +59,8 @@ CDP_PORT=<port> node cdp.js screenshot output/test.png
 CDP_PORT=<port> node cdp.js click '.wt-task-card'
 
 # 3. Stop the isolated instance when done
-npm run obsidian:test:open -- --vault .claude/testing/my-test stop
+npm run obsidian:test:stop -- --vault .claude/testing/my-test
+# Or kill by PID from the JSON output: kill <pid>
 ```
 
 Using `--vault` with a unique name per test scenario keeps instances isolated from
@@ -203,8 +204,13 @@ CDP_PORT=<port> node cdp.js screenshot output/after-move.png
 #### 6. Stop the instance
 
 ```bash
-npm run obsidian:test:open -- --vault .claude/testing/my-test stop
+npm run obsidian:test:stop -- --vault .claude/testing/my-test
+# Or kill by PID from the JSON output: kill <pid>
 ```
+
+**Important**: Do not use `npm run obsidian:test:open -- ... stop` - the `open` npm
+script hardcodes the `open` command, so `stop` is silently ignored. Always use the
+dedicated `obsidian:test:stop` script or `kill <pid>` from the launch output.
 
 ### Other commands
 

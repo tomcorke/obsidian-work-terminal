@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "prepare": "husky",
     "obsidian:test:init": "node scripts/obsidian-isolated-instance.js init",
-    "obsidian:test:open": "node scripts/obsidian-isolated-instance.js open"
+    "obsidian:test:open": "node scripts/obsidian-isolated-instance.js open",
+    "obsidian:test:stop": "node scripts/obsidian-isolated-instance.js stop"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

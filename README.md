@@ -6,13 +6,13 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 
 <!-- Screenshots captured from isolated test vault with sample data -->
 
-![Kanban board with terminal tabs - the main two-panel layout showing work item columns on the left and tabbed terminal sessions on the right](docs/screenshots/main-view.png)
+![Main two-panel layout with kanban columns on the left showing priority, active, and to-do tasks with Jira badges, and tabbed shell sessions on the right with a live terminal](docs/screenshots/main-view.png)
 
-![Agent integration - a Claude or Copilot session running with activity indicator visible](docs/screenshots/agent-session.png)
+![Task selected with multiple named shell tabs (component storybook, figma token sync, chart migration) and session spawn buttons for Shell and Claude](docs/screenshots/agent-session.png)
 
-![Task creation prompt box with column selector for choosing the target kanban column](docs/screenshots/task-creation.png)
+![Task creation prompt box expanded with text input, column selector set to Active, and Create button](docs/screenshots/task-creation.png)
 
-![Settings panel showing core plugin settings including agent commands, shell, and working directory](docs/screenshots/settings.png)
+![Plugin settings panel showing guided tour reset, Claude resume hooks info, agent command configuration with binary validation, and default arguments](docs/screenshots/settings.png)
 
 ## Features
 
