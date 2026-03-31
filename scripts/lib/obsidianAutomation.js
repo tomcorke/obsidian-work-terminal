@@ -11,7 +11,8 @@ const ISOLATED_PORT_BASE = 9300;
 const ISOLATED_PORT_RANGE = 100;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_TIMEOUT_MS = 10_000;
-const OBSIDIAN_BINARY = "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
+const OBSIDIAN_BINARY =
+  process.env.OBSIDIAN_BINARY || "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
 const DEFAULT_SELECTOR_PADDING = 12;
 const DEFAULT_VAULT_DIR = path.join(".claude", "testing", "obsidian-vault");
 const DEFAULT_SCREENSHOT_PATH = path.join("output", "obsidian-screenshot.png");
@@ -1114,7 +1115,7 @@ async function seedUserDataDir({ userDataDir, vaultDir }) {
 
   // Obsidian uses a hex hash as the vault ID. We generate a stable one from
   // the vault path so repeated runs reuse the same config entry.
-  const vaultId = crypto.createHash("md5").update(resolvedVaultDir).digest("hex").slice(0, 16);
+  const vaultId = crypto.createHash("sha256").update(resolvedVaultDir).digest("hex").slice(0, 16);
 
   await writeJsonFile(path.join(resolvedUserDataDir, "obsidian.json"), {
     vaults: {

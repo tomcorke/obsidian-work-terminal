@@ -581,15 +581,21 @@ describe("obsidian automation helpers", () => {
   });
 
   it("findAvailablePort returns a port in the isolated range", async () => {
-    // Start a server on a known port to verify the function skips it
+    const port = await automation.findAvailablePort({ host: "127.0.0.1" });
+    expect(port).toBeGreaterThanOrEqual(automation.ISOLATED_PORT_BASE);
+    expect(port).toBeLessThan(automation.ISOLATED_PORT_BASE + automation.ISOLATED_PORT_RANGE);
+  });
+
+  it("findAvailablePort skips an occupied port", async () => {
+    // Occupy a specific port in the isolated range
+    const occupiedPort = automation.ISOLATED_PORT_BASE;
     const server = http.createServer((_req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end("[]");
     });
 
-    // Use port 0 to get a random free port for the mock, then test findAvailablePort
     await new Promise<void>((resolve, reject) => {
-      server.listen(0, "127.0.0.1", () => resolve());
+      server.listen(occupiedPort, "127.0.0.1", () => resolve());
       server.once("error", reject);
     });
 
@@ -597,6 +603,7 @@ describe("obsidian automation helpers", () => {
       const port = await automation.findAvailablePort({ host: "127.0.0.1" });
       expect(port).toBeGreaterThanOrEqual(automation.ISOLATED_PORT_BASE);
       expect(port).toBeLessThan(automation.ISOLATED_PORT_BASE + automation.ISOLATED_PORT_RANGE);
+      expect(port).not.toBe(occupiedPort);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((err: Error | undefined) => (err ? reject(err) : resolve()));
