@@ -6,13 +6,16 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 
 <!-- Screenshots captured from isolated test vault with sample data -->
 
-![Main two-panel layout with kanban columns on the left showing priority, active, and to-do tasks with Jira badges, and tabbed shell sessions on the right with a live terminal](docs/screenshots/main-view.png)
-
-![Task selected with multiple named shell tabs (component storybook, figma token sync, chart migration) and session spawn buttons for Shell and Claude](docs/screenshots/agent-session.png)
-
-![Task creation prompt box expanded with text input, column selector set to Active, and Create button](docs/screenshots/task-creation.png)
-
-![Plugin settings panel showing guided tour reset, Claude resume hooks info, agent command configuration with binary validation, and default arguments](docs/screenshots/settings.png)
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/main-view.png" alt="Main layout with file explorer, kanban board, Claude session with typed input, and task detail panel" width="100%"><br><sub>Kanban board with tabbed terminals and detail view</sub></td>
+<td width="50%"><img src="docs/screenshots/agent-session.png" alt="Copilot CLI session running in a terminal tab with typed prompt" width="100%"><br><sub>GitHub Copilot session with activity detection</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/task-creation.png" alt="Task creation prompt box with text input and column selector" width="100%"><br><sub>Task creation with column selector</sub></td>
+<td width="50%"><img src="docs/screenshots/settings.png" alt="Plugin settings showing agent commands, binary validation, and resume hooks" width="100%"><br><sub>Plugin settings and agent configuration</sub></td>
+</tr>
+</table>
 
 ## Features
 
