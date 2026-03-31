@@ -119,6 +119,7 @@ export class PromptBox {
 
     try {
       // Adapter handles actual file creation
+      let hasCardMapping = false;
       if (this.adapter.onItemCreated) {
         const result = await this.adapter.onItemCreated(title, {
           ...this.settings,
@@ -127,9 +128,15 @@ export class PromptBox {
         });
         if (result && result.id) {
           this.onNewItemCreated(result.id, result.columnId, placeholderPath, result.enrichmentDone);
+          hasCardMapping = true;
         }
       }
-      this.onPlaceholderResolve(placeholderPath, true);
+      // If onNewItemCreated was called, ListPanel will auto-resolve the
+      // placeholder when the real card renders. Otherwise fall back to
+      // immediate resolution so the placeholder doesn't get stuck.
+      if (!hasCardMapping) {
+        this.onPlaceholderResolve(placeholderPath, true);
+      }
     } catch (err) {
       console.error("[work-terminal] Item creation failed:", err);
       this.onPlaceholderResolve(placeholderPath, false);

@@ -393,6 +393,44 @@ describe("ListPanel", () => {
     expect(cardEl.querySelector(".wt-card-ingesting-badge")).toBeNull();
   });
 
+  it("keeps placeholder visible until the real card renders", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [] }, {});
+
+    // Simulate: placeholder added, file created, prependToColumn called
+    panel.addPlaceholder("placeholder-1");
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+
+    // Before the real card renders, placeholder should still be in the DOM
+    let cardsEl = document.querySelector('[data-column="todo"] .wt-section-cards') as HTMLElement;
+    expect(cardsEl.querySelector(".wt-card-placeholder")).not.toBeNull();
+
+    // Render with the real card - placeholder should be auto-resolved
+    panel.render({ todo: [makeItem("task-1")] }, { todo: ["task-1"] });
+
+    // Re-query after render() since it rebuilds the DOM
+    cardsEl = document.querySelector('[data-column="todo"] .wt-section-cards') as HTMLElement;
+    expect(cardsEl.querySelector(".wt-card-placeholder")).toBeNull();
+    expect(
+      document.querySelector('[data-item-id="task-1"]')?.classList.contains("wt-card-new-success"),
+    ).toBe(true);
+  });
+
+  it("preserves placeholder across re-renders when card has not yet appeared", () => {
+    const { panel } = createListPanel();
+    panel.render({ todo: [] }, {});
+
+    panel.addPlaceholder("placeholder-1");
+    panel.prependToColumn("task-1", "todo", "placeholder-1");
+
+    // Re-render without the card (metadata cache hasn't updated yet)
+    panel.render({ todo: [] }, {});
+
+    const cardsEl = document.querySelector('[data-column="todo"] .wt-section-cards') as HTMLElement;
+    expect(cardsEl.querySelector(".wt-card-placeholder")).not.toBeNull();
+    expect(cardsEl.querySelector(".wt-card-placeholder")?.textContent).toBe("Ingesting...");
+  });
+
   it("keeps the resume badge visible when only non-resumable agent tabs are active", () => {
     const { panel, terminalPanel } = createListPanel();
     terminalPanel.getSessionCounts.mockReturnValue({ shells: 0, agents: 1 });

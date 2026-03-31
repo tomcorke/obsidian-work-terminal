@@ -218,8 +218,14 @@ export class ListPanel {
         }
       }
 
-      // Re-insert any active placeholders for this column
-      for (const [, placeholderEl] of this.placeholders) {
+      // Re-insert any active placeholders for this column, but only those
+      // whose real card has NOT yet appeared in this render cycle.
+      for (const [placeholderPath, placeholderEl] of this.placeholders) {
+        const cardId = this.pendingCreatedIdsByPlaceholder.get(placeholderPath);
+        // If the real card rendered, skip re-inserting the placeholder
+        if (cardId && this.listEl.querySelector(`[data-item-id="${cardId}"]`)) {
+          continue;
+        }
         // Simple heuristic: add placeholder to first visible column
         if (
           cardsEl.children.length === 0 ||
@@ -227,6 +233,19 @@ export class ListPanel {
         ) {
           cardsEl.appendChild(placeholderEl);
         }
+      }
+    }
+
+    // Auto-resolve placeholders whose real cards have now rendered
+    for (const [placeholderPath, cardId] of this.pendingCreatedIdsByPlaceholder) {
+      if (this.listEl.querySelector(`[data-item-id="${cardId}"]`)) {
+        const placeholderEl = this.placeholders.get(placeholderPath);
+        if (placeholderEl) {
+          placeholderEl.remove();
+          this.placeholders.delete(placeholderPath);
+        }
+        this.pendingCreatedIdsByPlaceholder.delete(placeholderPath);
+        this.applyNewSuccessAnimation(cardId);
       }
     }
 
