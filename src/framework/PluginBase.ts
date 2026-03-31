@@ -28,9 +28,11 @@ export abstract class PluginBase extends Plugin {
   }
 
   async onload(): Promise<void> {
-    // Initialize agent profile manager early so both views and settings can use it
-    this._profileManager = new AgentProfileManager(this);
-    await this._profileManager.load();
+    // Initialize agent profile manager early so both views and settings can use it.
+    // Use a local const so the non-null type is retained after the await.
+    const profileManager = new AgentProfileManager(this);
+    await profileManager.load();
+    this._profileManager = profileManager;
 
     // Defer view/settings registration to allow lazy imports
     const { MainView } = await import("./MainView");
@@ -62,7 +64,7 @@ export abstract class PluginBase extends Plugin {
       this.app,
       this,
       this.adapter,
-      this._profileManager,
+      profileManager,
     );
     this.addSettingTab(this._settingsTab);
   }
