@@ -181,6 +181,7 @@
 /* Card meta row */
 .wt-card-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   font-size: 11px;
@@ -198,6 +199,7 @@
   font-weight: 600;
   text-transform: uppercase;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* Jira source badge - uses task color if set, otherwise Jira blue */
@@ -1301,6 +1303,7 @@ button.wt-spawn-claude-ctx:hover svg {
   background: linear-gradient(90deg, #7c3aed, #a855f7);
   color: white;
   letter-spacing: 0.03em;
+  white-space: nowrap;
   animation: wt-ingesting-pulse 1.5s ease-in-out infinite;
 }
 
