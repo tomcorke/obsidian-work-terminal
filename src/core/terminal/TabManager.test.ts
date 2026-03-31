@@ -2,7 +2,7 @@
  * TabManager tests - covers state aggregation and agent state notification
  * on tab lifecycle events.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionType } from "../session/types";
 
 const terminalTabMock = vi.hoisted(() => {
@@ -560,6 +560,10 @@ describe("TabManager - active tab discovery", () => {
 });
 
 describe("TabManager - onProcessExit auto-close behaviour", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps the tab open when the process exits quickly (under 30s)", () => {
     terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
     const mgr = new TabManager(null as any);
@@ -592,8 +596,6 @@ describe("TabManager - onProcessExit auto-close behaviour", () => {
 
     // Tab should have been closed
     expect(mgr.getTabs("item-1")).toHaveLength(0);
-
-    nowMock.mockRestore();
   });
 
   it("keeps the tab open when a long-running process exits with non-zero code", () => {
@@ -612,8 +614,6 @@ describe("TabManager - onProcessExit auto-close behaviour", () => {
 
     // Tab should still exist - non-zero exit keeps it open
     expect(mgr.getTabs("item-1")).toHaveLength(1);
-
-    nowMock.mockRestore();
   });
 });
 
