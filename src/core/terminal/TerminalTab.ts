@@ -12,10 +12,17 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { ChildProcess } from "child_process";
 import { StringDecoder } from "string_decoder";
+import { Notice } from "obsidian";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
+import {
+  checkPython3Available,
+  hasPython3BeenNotified,
+  markPython3Notified,
+  PYTHON3_MISSING_MESSAGE,
+} from "./PythonCheck";
 import {
   type AgentRuntimeState,
   type StoredSession,
@@ -263,8 +270,18 @@ export class TerminalTab {
       const cols = this.terminal.cols || 80;
       const rows = this.terminal.rows || 24;
       try {
+        const python3Path = checkPython3Available();
+        if (!python3Path) {
+          console.error("[work-terminal] python3 not found - cannot spawn PTY");
+          this.terminal.write(`\r\n[${PYTHON3_MISSING_MESSAGE}]\r\n`);
+          if (!hasPython3BeenNotified()) {
+            new Notice(PYTHON3_MISSING_MESSAGE, 10_000);
+            markPython3Notified();
+          }
+          return;
+        }
         this.spawnTime = Date.now();
-        const proc = this.spawnPty(cols, rows, command);
+        const proc = this.spawnPty(cols, rows, command, python3Path);
         console.log("[work-terminal] Spawned pid:", proc.pid, "cols:", cols, "rows:", rows);
         this.process = proc;
         this.wireProcess(proc);
@@ -611,17 +628,22 @@ export class TerminalTab {
   // PTY spawn
   // ---------------------------------------------------------------------------
 
-  private spawnPty(cols: number, rows: number, command?: string[]): ChildProcess {
+  private spawnPty(
+    cols: number,
+    rows: number,
+    command?: string[],
+    python3Path = "python3",
+  ): ChildProcess {
     const cp = electronRequire("child_process") as typeof import("child_process");
     const wrapperPath = resolvePtyWrapperPath(this.pluginDir);
 
     const cmd = command || [this.shell, "-i"];
     const args = [wrapperPath, String(cols), String(rows), "--", ...cmd];
 
-    console.log("[work-terminal] Spawning via pty-wrapper:", args.join(" "));
+    console.log("[work-terminal] Spawning via pty-wrapper:", python3Path, args.join(" "));
     console.log("[work-terminal] cwd:", this.cwd);
 
-    const proc = cp.spawn("python3", args, {
+    const proc = cp.spawn(python3Path, args, {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: {

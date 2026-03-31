@@ -111,6 +111,18 @@ vi.mock("@xterm/addon-unicode11", () => ({
   Unicode11Addon: class {},
 }));
 
+vi.mock("obsidian", () => ({
+  Notice: vi.fn(),
+}));
+
+vi.mock("./PythonCheck", () => ({
+  checkPython3Available: vi.fn(() => "/usr/bin/python3"),
+  hasPython3BeenNotified: vi.fn(() => false),
+  markPython3Notified: vi.fn(),
+  PYTHON3_MISSING_MESSAGE:
+    "Python 3 is required for terminal tabs. Install Python 3.7+ and ensure `python3` is on your PATH.",
+}));
+
 import { resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
 
 class FakeElement {
