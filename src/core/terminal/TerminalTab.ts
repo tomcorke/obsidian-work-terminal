@@ -44,6 +44,23 @@ type TerminalWithAddonManager = Terminal & {
   };
 };
 
+/**
+ * Open a URL via Electron's shell.openExternal, with error handling.
+ * Used by the OSC 8 linkHandler and WebLinksAddon to route link clicks
+ * through the system browser instead of xterm's default window.open()
+ * which is a no-op in Electron/Obsidian.
+ */
+function openUrlViaElectron(uri: string): void {
+  try {
+    const shell = electronRequire("electron").shell;
+    void Promise.resolve(shell.openExternal(uri)).catch((err: unknown) => {
+      console.error("[work-terminal] shell.openExternal failed:", err);
+    });
+  } catch (err) {
+    console.error("[work-terminal] Failed to open URL:", err);
+  }
+}
+
 function shouldPreservePrintableOptionCombo(event: KeyboardEvent): boolean {
   if (!event.altKey || event.ctrlKey || event.metaKey) return false;
   if (event.getModifierState?.("AltGraph")) return false;
@@ -163,8 +180,6 @@ export class TerminalTab {
     this.containerEl.addClass("wt-terminal-instance");
     parentEl.appendChild(this.containerEl);
 
-    const electronShell = electronRequire("electron").shell;
-
     this.terminal = new Terminal({
       cursorBlink: true,
       fontSize: 13,
@@ -182,7 +197,7 @@ export class TerminalTab {
       // in Obsidian's Electron renderer.
       linkHandler: {
         activate: (_event: MouseEvent, uri: string) => {
-          electronShell.openExternal(uri);
+          openUrlViaElectron(uri);
         },
       },
     });
@@ -195,9 +210,9 @@ export class TerminalTab {
     this.searchAddon = new SearchAddon();
     this.terminal.loadAddon(this.searchAddon);
 
-    // Web links - Cmd+click to open URLs in browser
-    this.webLinksAddon = new WebLinksAddon((_, uri) => {
-      electronShell.openExternal(uri);
+    // Web links - Cmd+click to open URLs in browser via Electron shell
+    this.webLinksAddon = new WebLinksAddon((_event, uri) => {
+      openUrlViaElectron(uri);
     });
     this.terminal.loadAddon(this.webLinksAddon);
 
@@ -682,6 +697,16 @@ export class TerminalTab {
   }
 
   show(): void {
+    // Backfill linkHandler for already-live terminals that were created before
+    // the Electron openExternal handler was added (pre-#156 fix). Without this,
+    // OSC 8 link clicks fall through to xterm's confirm() + window.open() no-op.
+    if (this.terminal.options && !this.terminal.options.linkHandler) {
+      this.terminal.options.linkHandler = {
+        activate: (_event: MouseEvent, uri: string) => {
+          openUrlViaElectron(uri);
+        },
+      };
+    }
     this.containerEl.removeClass("hidden");
     // Double-rAF: first frame makes the element visible and triggers layout,
     // second frame has correct dimensions for fitAddon to measure.
@@ -999,6 +1024,17 @@ export class TerminalTab {
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
     tab.terminal = stored.terminal;
+    // Ensure linkHandler is set on restored terminals - older sessions or
+    // terminals from prior plugin versions may not have this option, causing
+    // OSC 8 hyperlink clicks to fall through to xterm's default confirm() +
+    // window.open() which is a no-op in Electron/Obsidian.
+    if (tab.terminal.options && !tab.terminal.options.linkHandler) {
+      tab.terminal.options.linkHandler = {
+        activate: (_event: MouseEvent, uri: string) => {
+          openUrlViaElectron(uri);
+        },
+      };
+    }
     tab.configureOptionKeyHandling();
     tab.fitAddon = stored.fitAddon;
     tab.searchAddon = stored.searchAddon;
