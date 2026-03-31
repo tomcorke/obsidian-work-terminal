@@ -1527,12 +1527,7 @@ describe("TerminalPanelView hook warning", () => {
         label: "Copilot",
         cwd: "/saved-cwd",
         command: "./missing/copilot-wrapper",
-        commandArgs: [
-          "./missing/copilot-wrapper",
-          "--saved-flag",
-          "value",
-          "--resume=old-session",
-        ],
+        commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
         claudeSessionId: "saved-session",
       }),
       "Tasks/task-1.md",
@@ -3142,15 +3137,15 @@ describe("TerminalPanelView hook warning", () => {
         color: "#005cc5",
         source: {
           type: "jira",
-          id: "castle-1234",
-          url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+          id: "proj-1234",
+          url: "https://example.atlassian.net/browse/PROJ-1234",
         },
       },
     });
 
     const jiraLink = panelEl.querySelector(".wt-task-jira-link") as HTMLAnchorElement | null;
     expect(jiraLink).not.toBeNull();
-    expect(jiraLink?.textContent).toContain("CASTLE-1234");
+    expect(jiraLink?.textContent).toContain("PROJ-1234");
     expect(jiraLink?.textContent).toContain("↗");
     expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Fix restart issue");
     expect(panelEl.querySelector(".wt-task-title")?.getAttribute("style")).toContain(
@@ -3159,7 +3154,7 @@ describe("TerminalPanelView hook warning", () => {
 
     jiraLink?.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
     expect(mockState.openExternal).toHaveBeenCalledWith(
-      "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+      "https://example.atlassian.net/browse/PROJ-1234",
     );
   });
 
@@ -3179,8 +3174,8 @@ describe("TerminalPanelView hook warning", () => {
       metadata: {
         source: {
           type: "jira",
-          id: "castle-1234",
-          url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+          id: "proj-1234",
+          url: "https://example.atlassian.net/browse/PROJ-1234",
         },
       },
     });
@@ -3193,7 +3188,7 @@ describe("TerminalPanelView hook warning", () => {
     ).not.toThrow();
 
     expect(errorSpy).toHaveBeenCalledWith(
-      "[work-terminal] Failed to open Jira link externally: https://skyscanner.atlassian.net/browse/CASTLE-1234",
+      "[work-terminal] Failed to open Jira link externally: https://example.atlassian.net/browse/PROJ-1234",
       expect.any(Error),
     );
 
@@ -3214,8 +3209,8 @@ describe("TerminalPanelView hook warning", () => {
       metadata: {
         source: {
           type: "jira",
-          id: "castle-1234",
-          url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
+          id: "proj-1234",
+          url: "https://example.atlassian.net/browse/PROJ-1234",
         },
       },
     });
@@ -3227,7 +3222,7 @@ describe("TerminalPanelView hook warning", () => {
     await flushAsync();
 
     expect(errorSpy).toHaveBeenCalledWith(
-      "[work-terminal] Failed to open Jira link externally: https://skyscanner.atlassian.net/browse/CASTLE-1234",
+      "[work-terminal] Failed to open Jira link externally: https://example.atlassian.net/browse/PROJ-1234",
       expect.any(Error),
     );
 

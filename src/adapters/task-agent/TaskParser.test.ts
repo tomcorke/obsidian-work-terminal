@@ -72,7 +72,10 @@ function makeFrontmatter(overrides: Record<string, any> = {}) {
 }
 
 describe("TaskParser", () => {
-  const defaultSettings = { "adapter.taskBasePath": "2 - Areas/Tasks" };
+  const defaultSettings = {
+    "adapter.taskBasePath": "2 - Areas/Tasks",
+    "adapter.jiraBaseUrl": "https://example.atlassian.net/browse",
+  };
 
   describe("parse", () => {
     it("extracts all fields from valid frontmatter", () => {
@@ -179,7 +182,7 @@ describe("TaskParser", () => {
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({
           source: undefined,
-          jira: "CASTLE-1234",
+          jira: "PROJ-1234",
         }),
       });
       const parser = new TaskParser(app, "", defaultSettings);
@@ -187,15 +190,15 @@ describe("TaskParser", () => {
 
       expect((item!.metadata as any).source).toMatchObject({
         type: "jira",
-        id: "CASTLE-1234",
-        url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
-        captured: "CASTLE-1234",
+        id: "PROJ-1234",
+        url: "https://example.atlassian.net/browse/PROJ-1234",
+        captured: "PROJ-1234",
       });
     });
 
     it("detects Jira source from a full Jira URL in a discrete jira frontmatter field", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
-      const jiraUrl = "https://skyscanner.atlassian.net/browse/CASTLE-1234";
+      const jiraUrl = "https://example.atlassian.net/browse/PROJ-1234";
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({
           source: undefined,
@@ -207,7 +210,7 @@ describe("TaskParser", () => {
 
       expect((item!.metadata as any).source).toMatchObject({
         type: "jira",
-        id: "CASTLE-1234",
+        id: "PROJ-1234",
         url: jiraUrl,
         captured: jiraUrl,
       });
@@ -218,7 +221,7 @@ describe("TaskParser", () => {
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({
           source: undefined,
-          tags: ["task", "jira/CASTLE-1234"],
+          tags: ["task", "jira/PROJ-1234"],
         }),
       });
       const parser = new TaskParser(app, "", defaultSettings);
@@ -226,15 +229,15 @@ describe("TaskParser", () => {
 
       expect((item!.metadata as any).source).toMatchObject({
         type: "jira",
-        id: "CASTLE-1234",
-        url: "https://skyscanner.atlassian.net/browse/CASTLE-1234",
-        captured: "jira/CASTLE-1234",
+        id: "PROJ-1234",
+        url: "https://example.atlassian.net/browse/PROJ-1234",
+        captured: "jira/PROJ-1234",
       });
     });
 
     it("fills in Jira source details when source metadata only contains a Jira URL", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
-      const jiraUrl = "https://skyscanner.atlassian.net/browse/CASTLE-9876";
+      const jiraUrl = "https://example.atlassian.net/browse/PROJ-9876";
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({
           source: { type: "other", id: "", url: jiraUrl, captured: "" },
@@ -245,21 +248,21 @@ describe("TaskParser", () => {
 
       expect((item!.metadata as any).source).toMatchObject({
         type: "jira",
-        id: "CASTLE-9876",
+        id: "PROJ-9876",
         url: jiraUrl,
       });
     });
 
     it("normalizes explicit Jira source ids to the detected Jira key", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
-      const jiraUrl = "https://skyscanner.atlassian.net/browse/CASTLE-1234";
+      const jiraUrl = "https://example.atlassian.net/browse/PROJ-1234";
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({
           source: {
             type: "jira",
-            id: "castle-1234",
+            id: "proj-1234",
             url: jiraUrl,
-            captured: "castle-1234",
+            captured: "proj-1234",
           },
         }),
       });
@@ -268,9 +271,9 @@ describe("TaskParser", () => {
 
       expect((item!.metadata as any).source).toMatchObject({
         type: "jira",
-        id: "CASTLE-1234",
+        id: "PROJ-1234",
         url: jiraUrl,
-        captured: "castle-1234",
+        captured: "proj-1234",
       });
     });
 
@@ -315,7 +318,7 @@ describe("TaskParser", () => {
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({
           source: undefined,
-          jira: "CASTLE-1234",
+          jira: "PROJ-1234",
         }),
       });
       const parser = new TaskParser(app, "", {
@@ -325,7 +328,7 @@ describe("TaskParser", () => {
       const item = parser.parse(file as unknown as TFile);
 
       expect((item!.metadata as any).source.url).toBe(
-        "https://example.atlassian.net/browse/CASTLE-1234",
+        "https://example.atlassian.net/browse/PROJ-1234",
       );
     });
 
@@ -642,9 +645,7 @@ describe("TaskParser", () => {
         .spyOn(globalThis.crypto, "randomUUID")
         .mockReturnValue("uuid-from-backfill");
 
-      readMock.mockResolvedValue(
-        "---\nsource:\n  id: jira-123\nbroken: [\n---\nBody",
-      );
+      readMock.mockResolvedValue("---\nsource:\n  id: jira-123\nbroken: [\n---\nBody");
       modifyMock.mockResolvedValue(undefined);
 
       const updatedItem = await parser.backfillItemId(item!);

@@ -23,14 +23,14 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       key: "jiraBaseUrl",
       name: "Jira base URL",
       description:
-        "Browse URL used to turn Jira keys like CASTLE-1234 into clickable external links",
+        "Browse URL used to turn Jira keys like PROJ-1234 into clickable external links (e.g. https://your-org.atlassian.net/browse)",
       type: "text",
-      default: "https://skyscanner.atlassian.net/browse",
+      default: "",
     },
   ],
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
-    jiraBaseUrl: "https://skyscanner.atlassian.net/browse",
+    jiraBaseUrl: "",
   },
   itemName: "task",
 };
