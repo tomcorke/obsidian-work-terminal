@@ -2,6 +2,18 @@
 
 Obsidian plugin that turns your vault into a work item board with per-item tabbed terminals. Built for extensibility - swap in your own work item system while keeping the terminal infrastructure.
 
+## Screenshots
+
+<!-- Screenshots captured from isolated test vault with sample data -->
+
+![Kanban board with terminal tabs - the main two-panel layout showing work item columns on the left and tabbed terminal sessions on the right](docs/screenshots/main-view.png)
+
+![Agent integration - a Claude or Copilot session running with activity indicator visible](docs/screenshots/agent-session.png)
+
+![Task creation prompt box with column selector for choosing the target kanban column](docs/screenshots/task-creation.png)
+
+![Settings panel showing core plugin settings including agent commands, shell, and working directory](docs/screenshots/settings.png)
+
 ## Installation
 
 Use Node.js 20.19.0 or newer (`node -v` to check), then run these commands from the directory where you want to keep the plugin source:
