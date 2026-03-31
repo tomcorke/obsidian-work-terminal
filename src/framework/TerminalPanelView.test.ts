@@ -453,10 +453,10 @@ function createView(
   return { panelEl, plugin, view };
 }
 
-async function flushAsync() {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
+async function flushAsync(ticks = 3) {
+  for (let i = 0; i < ticks; i++) {
+    await Promise.resolve();
+  }
 }
 
 function makePersistedSession(
@@ -1395,7 +1395,7 @@ describe("TerminalPanelView hook warning", () => {
 
     const { view: firstView } = createView({}, { loadData });
     const { view: secondView } = createView({}, { loadData });
-    await flushAsync();
+    await flushAsync(10);
     mockState.tabManagerCalls = [];
 
     await Promise.all([
@@ -1427,7 +1427,7 @@ describe("TerminalPanelView hook warning", () => {
 
     const { view: firstView } = createView({}, { loadData });
     const { view: secondView } = createView({}, { loadData });
-    await flushAsync();
+    await flushAsync(10);
     mockState.tabManagerCalls = [];
 
     await Promise.all([
