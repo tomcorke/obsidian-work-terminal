@@ -129,7 +129,8 @@ export class PromptBox {
           this.onNewItemCreated(result.id, result.columnId, placeholderPath, result.enrichmentDone);
         }
       }
-      this.onPlaceholderResolve(placeholderPath, true);
+      // Don't resolve the placeholder here - ListPanel will auto-resolve it
+      // when the real card renders, avoiding a gap where nothing is visible.
     } catch (err) {
       console.error("[work-terminal] Item creation failed:", err);
       this.onPlaceholderResolve(placeholderPath, false);
