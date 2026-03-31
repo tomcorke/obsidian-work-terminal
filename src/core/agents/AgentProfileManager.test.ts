@@ -241,5 +241,63 @@ describe("AgentProfileManager", () => {
       });
       expect(result).toBe("Global context");
     });
+
+    it("resolveArguments merges global args exactly once", () => {
+      const profile = createDefaultProfile({
+        arguments: "--profile-arg",
+        agentType: "claude",
+      });
+      const result = manager.resolveArguments(profile, {
+        "core.claudeExtraArgs": "--global-arg",
+      });
+      // Global args should appear exactly once
+      expect(result).toBe("--global-arg --profile-arg");
+      expect(result.match(/--global-arg/g)?.length).toBe(1);
+    });
+
+    it("resolves command for each agent type", () => {
+      for (const [agentType, settingKey, fallback] of [
+        ["claude", "core.claudeCommand", "claude"],
+        ["copilot", "core.copilotCommand", "copilot"],
+        ["strands", "core.strandsCommand", "strands"],
+      ] as const) {
+        // Profile command takes priority
+        const withCmd = createDefaultProfile({ command: "/custom/bin", agentType });
+        expect(manager.resolveCommand(withCmd, {})).toBe("/custom/bin");
+        // Falls back to global setting
+        const withoutCmd = createDefaultProfile({ command: "", agentType });
+        expect(manager.resolveCommand(withoutCmd, { [settingKey]: "global-cmd" })).toBe(
+          "global-cmd",
+        );
+      }
+    });
+  });
+
+  describe("load validation", () => {
+    it("falls back to built-in defaults when stored profiles are invalid", async () => {
+      plugin = createMockPlugin({
+        agentProfiles: [{ invalid: "data" }],
+      });
+      manager = new AgentProfileManager(plugin);
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await manager.load();
+      const profiles = manager.getProfiles();
+      // Should have fallen back to built-in defaults
+      expect(profiles.find((p) => p.name === "Claude")).toBeTruthy();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("failed validation"),
+        expect.anything(),
+      );
+      warnSpy.mockRestore();
+    });
+
+    it("accepts valid stored profiles", async () => {
+      const existing = [createDefaultProfile({ name: "Valid Profile", sortOrder: 0 })];
+      plugin = createMockPlugin({ agentProfiles: existing });
+      manager = new AgentProfileManager(plugin);
+      await manager.load();
+      expect(manager.getProfiles()).toHaveLength(1);
+      expect(manager.getProfiles()[0].name).toBe("Valid Profile");
+    });
   });
 });
