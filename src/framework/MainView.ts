@@ -22,7 +22,7 @@ import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
-import { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 
 interface PendingRename {
   uuid: string | null;
@@ -32,7 +32,7 @@ interface PendingRename {
 
 export class MainView extends ItemView {
   private adapter: AdapterBundle;
-  private pluginRef: Plugin & { isReloading: boolean };
+  private pluginRef: Plugin & { isReloading: boolean; profileManager: AgentProfileManager | null };
 
   // Panels
   private listPanel: ListPanel | null = null;
@@ -79,7 +79,7 @@ export class MainView extends ItemView {
   constructor(
     leaf: WorkspaceLeaf,
     adapter: AdapterBundle,
-    plugin: Plugin & { isReloading: boolean },
+    plugin: Plugin & { isReloading: boolean; profileManager: AgentProfileManager | null },
   ) {
     super(leaf);
     this.adapter = adapter;
@@ -322,11 +322,8 @@ export class MainView extends ItemView {
       },
     );
 
-    // Initialize agent profile manager (async load/migration)
-    this.profileManager = new AgentProfileManager(this.pluginRef);
-    await this.profileManager.load();
-    // Wire profile manager to settings tab for the "Manage Profiles" button
-    (this.pluginRef as any).setProfileManagerOnSettingsTab?.(this.profileManager);
+    // Use the profile manager created at plugin load time
+    this.profileManager = this.pluginRef.profileManager;
 
     // Terminal wrapper for TabManager
     const terminalWrapperEl = this.rightPanelEl.createDiv({ cls: "wt-terminal-wrapper" });

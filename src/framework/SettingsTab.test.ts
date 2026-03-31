@@ -257,6 +257,11 @@ const adapter = {
   },
 } as any;
 
+const mockProfileManager = {
+  getProfiles: vi.fn(() => []),
+  getButtonProfiles: vi.fn(() => []),
+} as any;
+
 async function flushAsyncWork() {
   await Promise.resolve();
   await Promise.resolve();
@@ -351,7 +356,7 @@ describe("WorkTerminalSettingsTab", () => {
       "core.strandsCommand": "./agent.sh",
       "core.defaultTerminalCwd": "~/vault",
     });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
@@ -374,7 +379,7 @@ describe("WorkTerminalSettingsTab", () => {
       "core.strandsCommand": "./agent.sh",
       "core.defaultTerminalCwd": "~/missing",
     });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
@@ -420,7 +425,7 @@ describe("WorkTerminalSettingsTab", () => {
       "core.strandsCommand": "uv run python agent.py",
       "core.defaultTerminalCwd": "~/vault",
     });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
@@ -465,7 +470,7 @@ describe("WorkTerminalSettingsTab", () => {
       "core.strandsCommand": `"C:\\Program Files\\Python\\python.exe" agent.py --profile local`,
       "core.defaultTerminalCwd": "C:\\vault",
     });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
@@ -516,7 +521,7 @@ describe("WorkTerminalSettingsTab", () => {
       "core.strandsCommand": ".\\agent.cmd",
       "core.defaultTerminalCwd": "C:\\vault",
     });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
@@ -530,7 +535,7 @@ describe("WorkTerminalSettingsTab", () => {
 
   it("renders a reset guided tour button that calls resetGuidedTourStatus and shows a Notice", async () => {
     const plugin = makePlugin({});
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter);
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
