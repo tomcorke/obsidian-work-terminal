@@ -268,6 +268,76 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(restored.agentSessionId).toBe("legacy-session-1");
   });
 
+  it("sets linkHandler on restored terminals that lack one (pre-fix sessions)", () => {
+    const terminal = {
+      options: {} as Record<string, unknown>,
+      focus: vi.fn(),
+      scrollToBottom: vi.fn(),
+      cols: 80,
+    };
+
+    TerminalTab.fromStored(
+      {
+        id: "term-1",
+        taskPath: "task.md",
+        label: "Shell",
+        sessionType: "shell",
+        terminal: terminal as any,
+        fitAddon: {} as any,
+        searchAddon: {} as any,
+        containerEl: { addEventListener: vi.fn(), hasClass: vi.fn(() => false) } as any,
+        process: null,
+        webglAddon: null,
+        webglContextLossListener: null,
+        documentListeners: [],
+        resizeObserver: { disconnect: vi.fn(), observe: vi.fn() } as any,
+      } as any,
+      { appendChild: vi.fn() } as any,
+    );
+
+    expect(terminal.options.linkHandler).toBeDefined();
+    const handler = terminal.options.linkHandler as {
+      activate: (e: MouseEvent, uri: string) => void;
+    };
+    expect(typeof handler.activate).toBe("function");
+
+    // Verify the handler calls openExternal
+    handler.activate({} as MouseEvent, "https://example.com");
+    expect(mocks.electronShell.openExternal).toHaveBeenCalledWith("https://example.com");
+  });
+
+  it("preserves existing linkHandler on restored terminals", () => {
+    const existingHandler = { activate: vi.fn() };
+    const terminal = {
+      options: { linkHandler: existingHandler } as Record<string, unknown>,
+      focus: vi.fn(),
+      scrollToBottom: vi.fn(),
+      cols: 80,
+    };
+
+    TerminalTab.fromStored(
+      {
+        id: "term-1",
+        taskPath: "task.md",
+        label: "Shell",
+        sessionType: "shell",
+        terminal: terminal as any,
+        fitAddon: {} as any,
+        searchAddon: {} as any,
+        containerEl: { addEventListener: vi.fn(), hasClass: vi.fn(() => false) } as any,
+        process: null,
+        webglAddon: null,
+        webglContextLossListener: null,
+        documentListeners: [],
+        resizeObserver: { disconnect: vi.fn(), observe: vi.fn() } as any,
+      } as any,
+      { appendChild: vi.fn() } as any,
+    );
+
+    // Should not overwrite the existing handler
+    expect(terminal.options.linkHandler).toBe(existingHandler);
+  });
+
   it("disposes the custom link provider before terminal teardown", () => {
     const order: string[] = [];
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
