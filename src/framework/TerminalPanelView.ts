@@ -164,6 +164,9 @@ export class TerminalPanelView {
   // Active inline rename input, if any
   private activeRenameInput: HTMLInputElement | null = null;
 
+  // Delayed click timer for tab switching (cancelled on double-click)
+  private tabClickTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Periodic persist stop function
   private stopPeriodicPersist: (() => void) | null = null;
 
@@ -408,18 +411,37 @@ export class TerminalPanelView {
         // Tab label
         const labelEl = tabEl.createSpan({ cls: "wt-tab-label", text: tab.label });
 
-        // Double-click to rename
-        labelEl.addEventListener("dblclick", (e) => {
-          e.stopPropagation();
-          this.startTabRename(tabEl, labelEl, tab, i);
-        });
-
-        // Click to switch
-        tabEl.addEventListener("click", () => {
+        // Click to switch (delayed to allow double-click cancellation)
+        tabEl.addEventListener("click", (event) => {
           if (this.isRenameActive()) return;
           if (i === activeIdx) return;
-          this.tabManager.switchToTab(i);
-          this.renderTabBar();
+          if ((event as MouseEvent).detail > 1) return;
+          if (this.tabClickTimer !== null) {
+            clearTimeout(this.tabClickTimer);
+            this.tabClickTimer = null;
+          }
+          this.tabClickTimer = setTimeout(() => {
+            this.tabClickTimer = null;
+            this.tabManager.switchToTab(i);
+            this.renderTabBar();
+          }, 250);
+        });
+
+        // Double-click to rename (cancels pending click)
+        labelEl.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          if (this.tabClickTimer !== null) {
+            clearTimeout(this.tabClickTimer);
+            this.tabClickTimer = null;
+          }
+          // Switch to the target tab first without re-rendering
+          if (i !== activeIdx) {
+            const currentActive = tabEl.parentElement?.querySelector(".wt-tab-active");
+            if (currentActive) currentActive.removeClass("wt-tab-active");
+            tabEl.addClass("wt-tab-active");
+            this.tabManager.switchToTab(i);
+          }
+          this.startTabRename(tabEl, labelEl, tab, i);
         });
 
         // Close button
@@ -2134,6 +2156,10 @@ export class TerminalPanelView {
     this.syncPersistedSessionState(persistedSessions);
     this.stopPeriodicPersist?.();
     this.stopPeriodicPersist = null;
+    if (this.tabClickTimer !== null) {
+      clearTimeout(this.tabClickTimer);
+      this.tabClickTimer = null;
+    }
     this.stopHookWarningPoller();
     this.detachSettingsListener();
     this.tabManager.disposeAll();

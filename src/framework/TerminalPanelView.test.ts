@@ -2477,10 +2477,15 @@ describe("TerminalPanelView hook warning", () => {
     view.setActiveItem("task-2");
     expect(panelEl.querySelector(".wt-tab-rename-input")).toBeNull();
 
+    vi.useFakeTimers();
     const secondTab = panelEl.querySelectorAll(".wt-tab")[1] as HTMLElement;
     secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
 
+    // Click is now delayed by 250ms to allow double-click cancellation
+    expect(mockState.tabManagerCalls).not.toContain("switchToTab:1");
+    vi.advanceTimersByTime(250);
     expect(mockState.tabManagerCalls).toContain("switchToTab:1");
+    vi.useRealTimers();
   });
 
   it("lets active tab double-click enter rename mode without replacing the label first", async () => {
@@ -2514,6 +2519,90 @@ describe("TerminalPanelView hook warning", () => {
     labelEl.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
 
     expect(panelEl.querySelector(".wt-tab-rename-input")).not.toBeNull();
+  });
+
+  it("single-clicks a non-active tab to switch after the debounce delay", async () => {
+    mockState.tabsByItem = new Map([
+      [
+        "task-1",
+        [
+          {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            agentState: "inactive",
+          },
+          {
+            label: "Claude",
+            sessionType: "claude",
+            isResumableAgent: true,
+            agentState: "inactive",
+          },
+        ],
+      ],
+    ]);
+
+    const { panelEl, view } = createView();
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    vi.useFakeTimers();
+    const secondTab = panelEl.querySelectorAll(".wt-tab")[1] as HTMLElement;
+    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    // Should not switch immediately
+    expect(mockState.tabManagerCalls).not.toContain("switchToTab:1");
+
+    // Should switch after the 250ms delay
+    vi.advanceTimersByTime(250);
+    expect(mockState.tabManagerCalls).toContain("switchToTab:1");
+    vi.useRealTimers();
+  });
+
+  it("double-clicking a non-active tab cancels the switch and enters rename mode", async () => {
+    mockState.tabsByItem = new Map([
+      [
+        "task-1",
+        [
+          {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            agentState: "inactive",
+          },
+          {
+            label: "Claude",
+            sessionType: "claude",
+            isResumableAgent: true,
+            agentState: "inactive",
+          },
+        ],
+      ],
+    ]);
+
+    const { panelEl, view } = createView();
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    vi.useFakeTimers();
+    const secondTab = panelEl.querySelectorAll(".wt-tab")[1] as HTMLElement;
+    const secondLabel = secondTab.querySelector(".wt-tab-label") as HTMLElement;
+
+    // Simulate real browser behavior: click, click, dblclick
+    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 1 }));
+    secondTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 2 }));
+    secondLabel.dispatchEvent(new dom.window.MouseEvent("dblclick", { bubbles: true }));
+
+    // The delayed switch should have been cancelled
+    vi.advanceTimersByTime(250);
+
+    // switchToTab should be called exactly once (from the dblclick handler), not twice
+    const switchCalls = mockState.tabManagerCalls.filter((c) => c.startsWith("switchToTab:"));
+    expect(switchCalls).toEqual(["switchToTab:1"]);
+
+    // Rename input should be present
+    expect(panelEl.querySelector(".wt-tab-rename-input")).not.toBeNull();
+    vi.useRealTimers();
   });
 
   it("restarts tabs against the tab item before falling back to the active item", async () => {
