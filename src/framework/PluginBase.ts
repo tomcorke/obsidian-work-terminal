@@ -12,6 +12,7 @@ export abstract class PluginBase extends Plugin {
   protected adapter: AdapterBundle;
   private _isReloading = false;
   private _lastWorkTerminalLeaf: unknown = null;
+  private _settingsTab: any = null;
 
   constructor(app: any, manifest: any, adapter: AdapterBundle) {
     super(app, manifest);
@@ -45,7 +46,15 @@ export abstract class PluginBase extends Plugin {
       callback: async () => this.copySessionDiagnostics(),
     });
 
-    this.addSettingTab(new WorkTerminalSettingsTab(this.app, this, this.adapter));
+    this._settingsTab = new WorkTerminalSettingsTab(this.app, this, this.adapter);
+    this.addSettingTab(this._settingsTab);
+  }
+
+  /** Allow MainView to pass the profile manager to the settings tab after init. */
+  setProfileManagerOnSettingsTab(manager: any): void {
+    if (this._settingsTab && typeof this._settingsTab.setProfileManager === "function") {
+      this._settingsTab.setProfileManager(manager);
+    }
   }
 
   async activateView(): Promise<void> {
@@ -101,7 +110,9 @@ export abstract class PluginBase extends Plugin {
     const rememberedLeaf = this._lastWorkTerminalLeaf as
       | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
       | undefined;
-    const lastWorkTerminalLeaf = openWorkTerminalLeaves.find((leaf: unknown) => leaf === rememberedLeaf) as
+    const lastWorkTerminalLeaf = openWorkTerminalLeaves.find(
+      (leaf: unknown) => leaf === rememberedLeaf,
+    ) as
       | { view?: { getViewType?: () => string; copySessionDiagnostics?: () => Promise<boolean> } }
       | undefined;
     const workTerminalLeaf =
@@ -148,7 +159,9 @@ export abstract class PluginBase extends Plugin {
       }
       // Fire-and-forget: onunload is sync, so we can't await this,
       // but it gives us one more chance to persist before shutdown.
-      SessionPersistence.saveToDisk(this, shutdownSessions, shutdownPendingPersisted).catch(() => {});
+      SessionPersistence.saveToDisk(this, shutdownSessions, shutdownPendingPersisted).catch(
+        () => {},
+      );
     }
   }
 }
