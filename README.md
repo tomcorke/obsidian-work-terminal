@@ -66,6 +66,42 @@ The repo now includes a repo-local automation path for isolated manual or agent-
 
 Use `--port` or `OBSIDIAN_REMOTE_DEBUG_PORT` if you need a non-default debugger port. The launcher now fails fast if that debugger port is already occupied, and it also stops early with a clear singleton warning when another Obsidian app process is already running instead of timing out against an unusable second-instance launch.
 
+## Process Spawning & Security
+
+This plugin spawns external processes to provide terminal and AI agent functionality. This section documents exactly what gets executed and how.
+
+### What gets spawned
+
+| Process | How it runs | Trigger |
+|---------|------------|---------|
+| **Shell** | `python3 pty-wrapper.py <cols> <rows> -- <shell>` where `<shell>` is `$SHELL` or `/bin/zsh` | User clicks "+ Shell" button |
+| **Claude CLI** | User-configured command (default: `claude`) with `--session-id <uuid>` and optional context prompt as positional arg | User clicks "Claude" or "Claude (ctx)" button |
+| **GitHub Copilot CLI** | User-configured command (default: `copilot`) with `--resume=<sessionId>` and optional `-i <prompt>` | User launches a Copilot session via custom session modal |
+| **AWS Strands** | User-configured command with optional positional prompt arg | User launches a Strands session via custom session modal |
+| **Headless Claude** | `claude -p <prompt> --output-format text` (one-shot, non-interactive) | User triggers "Enrich with Claude" action on a work item |
+| **Hook script** | `~/.work-terminal/hooks/session-change.sh` - reads Claude hook JSON from stdin, writes event files to `~/.work-terminal/events/` | Installed explicitly via plugin settings UI; invoked by Claude CLI on session start/end |
+
+All terminal processes run inside `pty-wrapper.py`, a Python script that uses `pty.fork()` to provide a real pseudo-terminal. Electron's sandbox blocks native PTY access, so this Python wrapper is the necessary bridge between xterm.js and the child process.
+
+### Security properties
+
+- **User-configured commands** - all external binaries (shell, Claude, Copilot, Strands) are set in plugin settings, not hardcoded. The plugin resolves them against `$PATH` via `resolveCommandInfo()` and validates they exist before spawning.
+- **No shell interpretation** - arguments are constructed as arrays and passed to Node.js `child_process.spawn()`, which invokes executables directly without a shell. This prevents command injection.
+- **No network requests** - the plugin itself makes zero network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
+- **Vault access via Obsidian API** - vault file operations use `app.vault.create()` / `app.vault.modify()`, never direct filesystem writes to the vault.
+- **Limited direct filesystem writes** - the only direct filesystem writes are to `~/.work-terminal/` (hook scripts, event files) and `<cwd>/.claude/settings.local.json` (project-local hook configuration), both triggered explicitly by the user through the settings UI.
+- **Plugin data via Obsidian API** - settings and session state use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.
+
+### Source locations
+
+The spawning code lives in these files:
+
+- `src/core/terminal/TerminalTab.ts` - PTY wrapper spawn (`python3 pty-wrapper.py ... -- <command>`)
+- `src/core/agents/AgentLauncher.ts` - command resolution, PATH augmentation, argument builders for Claude/Copilot/Strands
+- `src/core/claude/HeadlessClaude.ts` - one-shot `claude -p` for background enrichment
+- `src/core/claude/ClaudeHookManager.ts` - hook script installation and project-local `.claude/settings.local.json` management
+- `pty-wrapper.py` - Python PTY bridge (uses `pty.fork()` and `os.execvp()`)
+
 ## Creating Your Own Adapter
 
 The plugin is designed around a clean adapter interface. To build your own work item system (Jira tickets, GitHub issues, plain markdown notes, etc.):
