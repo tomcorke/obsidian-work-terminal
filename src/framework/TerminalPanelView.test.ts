@@ -5,6 +5,7 @@ import type { ActiveTabInfo, PersistedSession, TabDiagnostics } from "../core/se
 import { SessionPersistence } from "../core/session/SessionPersistence";
 import type { WorkItemPromptBuilder } from "../core/interfaces";
 import { electronRequire, expandTilde } from "../core/utils";
+import * as AgentLauncher from "../core/agents/AgentLauncher";
 import { TerminalPanelView } from "./TerminalPanelView";
 
 const createdViews: TerminalPanelView[] = [];
@@ -1409,6 +1410,10 @@ describe("TerminalPanelView hook warning", () => {
   });
 
   it("claims recently closed resumable entries once across concurrent live views", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ found: true, resolved: "claude" });
+
     const entry = {
       sessionType: "claude",
       label: "Claude",
@@ -1438,6 +1443,7 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.tabManagerCalls.filter((call) => call === "createTabForItem")).toHaveLength(1);
     expect((firstView as any).recentlyClosedStore.serialize()).toEqual([]);
     expect((secondView as any).recentlyClosedStore.serialize()).toEqual([]);
+    resolveStub.mockRestore();
   });
 
   it("restores persisted resumable sessions with their saved launch context", async () => {
