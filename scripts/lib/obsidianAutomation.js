@@ -7,8 +7,12 @@ const path = require("node:path");
 const { execFileSync, spawn } = require("node:child_process");
 
 const DEFAULT_DEBUG_PORT = 9222;
+const ISOLATED_PORT_BASE = 9300;
+const ISOLATED_PORT_RANGE = 100;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_TIMEOUT_MS = 10_000;
+const OBSIDIAN_BINARY =
+  process.env.OBSIDIAN_BINARY || "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
 const DEFAULT_SELECTOR_PADDING = 12;
 const DEFAULT_VAULT_DIR = path.join(".claude", "testing", "obsidian-vault");
 const DEFAULT_SCREENSHOT_PATH = path.join("output", "obsidian-screenshot.png");
@@ -64,6 +68,7 @@ function parseSharedFlags(argv, cwd) {
     force: false,
     openView: true,
     sampleData: true,
+    hide: true,
   };
   const positional = [];
 
@@ -112,6 +117,9 @@ function parseSharedFlags(argv, cwd) {
         break;
       case "--no-sample-data":
         options.sampleData = false;
+        break;
+      case "--no-hide":
+        options.hide = false;
         break;
       default:
         positional.push(arg);
@@ -177,7 +185,7 @@ function parseCdpArgs(argv, cwd = process.cwd()) {
 function parseIsolatedInstanceArgs(argv, cwd = process.cwd()) {
   const { options, positional } = parseSharedFlags(argv, cwd);
   const command = positional[0] || "open";
-  if (!["init", "open", "status"].includes(command)) {
+  if (!["init", "open", "status", "stop"].includes(command)) {
     throw new Error(`Unsupported isolated-instance command: ${command}`);
   }
   return { ...options, command };
@@ -568,17 +576,22 @@ function listRunningObsidianProcesses() {
   );
 }
 
+/**
+ * Check whether an isolated Obsidian launch is safe. With direct binary launch
+ * and --user-data-dir, multiple instances can coexist, so this only warns about
+ * port conflicts rather than blocking on any running Obsidian process.
+ */
 function assertIsolatedLaunchSupported({ port = getDefaultPort(), runningProcesses = listRunningObsidianProcesses() } = {}) {
   if (!runningProcesses || runningProcesses.length === 0) {
     return;
   }
 
-  const summary = runningProcesses
-    .map((processInfo) => `${processInfo.pid}${processInfo.port ? ` (port ${processInfo.port})` : ""}`)
-    .join(", ");
-  throw new Error(
-    `Another Obsidian app process is already running (${summary}). The isolated launcher cannot reliably start a second debuggable instance while Obsidian is open because macOS/Obsidian reuse the existing singleton. Quit the other Obsidian instance and retry.`,
-  );
+  const portConflict = runningProcesses.find((p) => p.port === port);
+  if (portConflict) {
+    throw new Error(
+      `Another Obsidian process (PID ${portConflict.pid}) is already using debug port ${port}. Choose a different --port or use automatic port selection.`,
+    );
+  }
 }
 
 function encodeClientFrame(payloadBuffer, opcode = 0x1) {
@@ -1048,20 +1061,169 @@ async function verifyObsidianVault({ host = DEFAULT_HOST, port = getDefaultPort(
   );
 }
 
-function launchObsidian({ vaultDir, port = getDefaultPort() }) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("open", ["-na", "Obsidian", "--args", `--remote-debugging-port=${port}`, vaultDir], {
-      stdio: "inherit",
-    });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`open exited with code ${code}`));
+/**
+ * Dismiss the "Do you trust the author of this vault?" dialog that appears on
+ * first launch of a vault with community plugins. Clicks the "Trust author and
+ * enable plugins" button if present, then waits briefly for plugins to load.
+ * No-op if the dialog is not showing.
+ */
+async function dismissTrustDialog({ host = DEFAULT_HOST, port, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  const startedAt = Date.now();
+  // Poll for the trust dialog - it may not be in the DOM immediately after vault load
+  while (Date.now() - startedAt < timeoutMs) {
+    const client = await CDPClient.connect({ host, port, timeoutMs: Math.max(2000, timeoutMs - (Date.now() - startedAt)) });
+    try {
+      const clicked = await client.evaluate(`(() => {
+        const buttons = document.querySelectorAll(".modal-button-container button");
+        for (const btn of buttons) {
+          if (btn.textContent.includes("Trust author")) {
+            btn.click();
+            return true;
+          }
+        }
+        return false;
+      })()`);
+      if (clicked) {
+        // Wait for plugins to load after trusting
+        await new Promise((r) => setTimeout(r, 2000));
+        return true;
       }
-    });
+      // Check if plugins are already loaded (no dialog needed)
+      const pluginsLoaded = await client.evaluate(
+        "Object.keys(globalThis.app?.plugins?.plugins || {}).length > 0",
+      );
+      if (pluginsLoaded) {
+        return false;
+      }
+    } finally {
+      client.close();
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
+}
+
+/**
+ * Pre-seed the Obsidian user-data-dir so the isolated instance opens the vault
+ * directly instead of showing the starter/vault-picker screen. Creates an
+ * obsidian.json with the vault registered and marked as open.
+ */
+async function seedUserDataDir({ userDataDir, vaultDir }) {
+  const resolvedUserDataDir = path.resolve(userDataDir);
+  const resolvedVaultDir = path.resolve(vaultDir);
+  await fsp.mkdir(resolvedUserDataDir, { recursive: true });
+
+  // Obsidian uses a hex hash as the vault ID. We generate a stable one from
+  // the vault path so repeated runs reuse the same config entry.
+  const vaultId = crypto.createHash("sha256").update(resolvedVaultDir).digest("hex").slice(0, 16);
+
+  await writeJsonFile(path.join(resolvedUserDataDir, "obsidian.json"), {
+    vaults: {
+      [vaultId]: {
+        path: resolvedVaultDir,
+        ts: Date.now(),
+        open: true,
+      },
+    },
   });
+}
+
+/**
+ * WARNING: Launching an isolated Obsidian instance briefly steals user focus
+ * (~2-3 seconds) before the window can be hidden via CDP. This MUST NOT be
+ * triggered automatically - only with explicit user consent for testing or
+ * bug replication.
+ *
+ * For automated testing, prefer filesystem-based task manipulation combined
+ * with CDP UI interaction over agent sessions. Agent sessions require VERY
+ * EXPLICIT user approval.
+ *
+ * Uses direct binary launch with --user-data-dir to bypass macOS singleton
+ * routing. The spawned process is detached so it outlives the launcher script.
+ */
+function launchObsidian({ vaultDir, port = getDefaultPort(), userDataDir }) {
+  const args = [`--remote-debugging-port=${port}`];
+  if (userDataDir) {
+    args.push(`--user-data-dir=${userDataDir}`);
+  }
+  args.push(vaultDir);
+
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(OBSIDIAN_BINARY, args, {
+        stdio: "ignore",
+        detached: true,
+      });
+    } catch (error) {
+      reject(new Error(`Failed to spawn Obsidian: ${error.message}`));
+      return;
+    }
+    child.unref();
+    child.on("error", (error) => reject(new Error(`Failed to spawn Obsidian: ${error.message}`)));
+    // Detached process exits the parent almost immediately; give the OS a moment
+    // to confirm the binary launched before resolving.
+    setTimeout(() => resolve({ pid: child.pid }), 300);
+  });
+}
+
+/**
+ * Find an available debug port in the isolated range (ISOLATED_PORT_BASE to
+ * ISOLATED_PORT_BASE + ISOLATED_PORT_RANGE - 1). Tries random ports, checking
+ * both TCP availability and conflict with running Obsidian processes.
+ */
+async function findAvailablePort({ host = DEFAULT_HOST, maxAttempts = 10 } = {}) {
+  const runningProcesses = listRunningObsidianProcesses();
+  const usedPorts = new Set(runningProcesses.filter((p) => p.port).map((p) => p.port));
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const port = ISOLATED_PORT_BASE + Math.floor(Math.random() * ISOLATED_PORT_RANGE);
+    if (usedPorts.has(port)) {
+      continue;
+    }
+    try {
+      await assertDebuggerPortAvailable({ host, port, timeoutMs: 2_000 });
+      return port;
+    } catch {
+      // Port occupied, try another
+    }
+  }
+  throw new Error(
+    `Could not find an available port in range ${ISOLATED_PORT_BASE}-${ISOLATED_PORT_BASE + ISOLATED_PORT_RANGE - 1} after ${maxAttempts} attempts`,
+  );
+}
+
+/**
+ * Hide the Obsidian window via CDP. Must be called after Obsidian has finished
+ * its startup sequence (otherwise it will re-show the window).
+ */
+async function hideObsidianWindow({ host = DEFAULT_HOST, port, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+  const client = await CDPClient.connect({ host, port, timeoutMs });
+  try {
+    await client.evaluate("window.electron.remote.getCurrentWindow().hide()");
+  } finally {
+    client.close();
+  }
+}
+
+/**
+ * Kill an isolated Obsidian instance identified by its --user-data-dir path.
+ * Returns the number of processes killed.
+ */
+function killIsolatedInstance({ userDataDir, runningProcesses = listRunningObsidianProcesses() }) {
+  if (!userDataDir) {
+    throw new Error("userDataDir is required to identify the isolated instance");
+  }
+  const resolvedDir = path.resolve(userDataDir);
+  const matches = runningProcesses.filter((p) => p.command.includes(`--user-data-dir=${resolvedDir}`));
+  for (const proc of matches) {
+    try {
+      process.kill(proc.pid, "SIGTERM");
+    } catch {
+      // Process may have already exited
+    }
+  }
+  return matches.length;
 }
 
 module.exports = {
@@ -1072,16 +1234,23 @@ module.exports = {
   DEFAULT_SELECTOR_PADDING,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_VAULT_DIR,
+  ISOLATED_PORT_BASE,
+  ISOLATED_PORT_RANGE,
+  OBSIDIAN_BINARY,
   WORK_TERMINAL_COMMAND_IDS,
   captureScreenshot,
   commandExpression,
   assertDebuggerPortAvailable,
   assertIsolatedLaunchSupported,
+  dismissTrustDialog,
   ensureIsolatedVault,
   ensureSymlink,
+  findAvailablePort,
   findObsidianPageTarget,
   getDefaultPort,
+  hideObsidianWindow,
   inspectIsolatedVault,
+  killIsolatedInstance,
   launchObsidian,
   listRunningObsidianProcesses,
   parseCdpArgs,
@@ -1090,6 +1259,7 @@ module.exports = {
   prepareVaultDirectory,
   readManagedVaultMarker,
   runCdpCommand,
+  seedUserDataDir,
   verifyObsidianVault,
   waitForDebugger,
 };

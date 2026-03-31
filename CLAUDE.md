@@ -62,7 +62,9 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
 - **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. Default: triggers hot-reload. It also supports `open-view`, `wait-for`, `click`, `type`, and `screenshot`.
-- **Isolated test vault**: `npm run obsidian:test:init` seeds `.claude/testing/obsidian-vault/` with a plugin symlink and sample tasks. `npm run obsidian:test:open` launches a fresh Obsidian instance against that vault and opens the Work Terminal view. `node scripts/obsidian-isolated-instance.js status` is inspect-only and does not scaffold the vault.
+- **Isolated test vault**: `npm run obsidian:test:open -- --vault .claude/testing/<name> --clean` creates a dedicated vault with plugin symlink and sample tasks, launches a separate Obsidian instance on a random port, hides the window, and opens the Work Terminal view. Each test scenario should use its own `--vault` path. Use `stop` to kill it. See `docs/development.md` for full instructions including how to seed test tasks via the filesystem.
+  - **IMPORTANT**: Launching briefly steals focus (~2-3s). Never trigger automatically - only with explicit user consent.
+  - **IMPORTANT**: Do NOT launch agent sessions (Claude/Copilot/Strands) in isolated instances unless very explicitly approved by the user. Test with filesystem task manipulation + CDP interaction instead.
 
 **IMPORTANT**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
 - `npm run dev` watch mode (preferred - auto-reloads on save)
