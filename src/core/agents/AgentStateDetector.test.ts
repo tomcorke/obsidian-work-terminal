@@ -25,6 +25,33 @@ function mockTerminal(lines: string[]) {
   } as any;
 }
 
+/**
+ * Create a mock terminal whose content can be updated between polls.
+ */
+function mutableMockTerminal(initialLines: string[]) {
+  let currentLines = initialLines;
+  const terminal = {
+    buffer: {
+      active: {
+        get baseY() {
+          return 0;
+        },
+        get cursorY() {
+          return Math.max(0, currentLines.length - 1);
+        },
+        getLine: (i: number) => {
+          const text = currentLines[i];
+          return text != null ? { translateToString: (_trim?: boolean) => text } : null;
+        },
+      },
+    },
+    setLines(lines: string[]) {
+      currentLines = lines;
+    },
+  } as any;
+  return terminal;
+}
+
 describe("AgentStateDetector", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -518,6 +545,89 @@ describe("AgentStateDetector", () => {
       vi.advanceTimersByTime(2100);
       // Should be idle since the active indicator is far from the bottom
       expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+  });
+
+  describe("screen-change-based active detection", () => {
+    it("detects active state when screen content changes between polls (text streaming)", () => {
+      const terminal = mutableMockTerminal(["  plain text line 1"]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      // First poll at 2000ms: sets the baseline fingerprint, no previous to compare
+      vi.advanceTimersByTime(2100);
+      // First poll after start has no previous fingerprint, falls through to idle
+      expect(detector.state).toBe("idle");
+
+      // Change the screen content (simulates Claude streaming text)
+      terminal.setLines(["  plain text line 1", "  plain text line 2"]);
+      // Second poll at 4000ms: detects screen changed
+      vi.advanceTimersByTime(2000);
+      expect(detector.state).toBe("active");
+      detector.stop();
+    });
+
+    it("returns to idle when screen content stops changing", () => {
+      const terminal = mutableMockTerminal(["  line 1"]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      // First poll: baseline
+      vi.advanceTimersByTime(2100);
+
+      // Change content
+      terminal.setLines(["  line 1", "  line 2"]);
+      vi.advanceTimersByTime(2000);
+      expect(detector.state).toBe("active");
+
+      // Content stops changing - next poll should go idle
+      vi.advanceTimersByTime(2000);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("does not treat the first poll as a screen change", () => {
+      const terminal = mutableMockTerminal(["  Ready for input"]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      // Should be idle, not active - first poll has no previous fingerprint
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("screen change detection respects suppression grace period", () => {
+      const terminal = mutableMockTerminal(["  line 1"]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start(true); // suppressActive
+
+      // First poll: baseline (within suppression)
+      vi.advanceTimersByTime(100);
+      expect(detector.state).toBe("idle");
+
+      // Still within suppression window - change content
+      terminal.setLines(["  line 1", "  line 2"]);
+      vi.advanceTimersByTime(1900); // now at 2000ms total, first interval fires
+      // Suppression ends at ~2000ms, so first check is right at boundary
+      // Either way it should not be active during suppression
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("waiting state takes priority over screen changes", () => {
+      const terminal = mutableMockTerminal(["  plain text"]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      // First poll: baseline
+      vi.advanceTimersByTime(2100);
+
+      // Change screen to show a waiting prompt
+      terminal.setLines(["  Allow this action?", "  allowOnce  denyOnce"]);
+      vi.advanceTimersByTime(2000);
+      expect(detector.state).toBe("waiting");
       detector.stop();
     });
   });
