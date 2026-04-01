@@ -1278,7 +1278,10 @@ export class TerminalPanelView {
       if (activeItemId) {
         const tabs = this.tabManager.getTabs(activeItemId);
         const lastTab = tabs[tabs.length - 1];
-        if (lastTab) lastTab.profileColor = profile.button.color;
+        if (lastTab) {
+          lastTab.profileColor = profile.button.color;
+          this.renderTabBar();
+        }
       }
     }
   }

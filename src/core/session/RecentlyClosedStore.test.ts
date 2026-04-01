@@ -198,12 +198,69 @@ describe("RecentlyClosedStore", () => {
   });
 
   it("filters entries with a custom activity predicate", () => {
-    store.add(makeEntry({ label: "Active shell", recoveryMode: "relaunch", claudeSessionId: null }));
-    store.add(makeEntry({ label: "Inactive shell", recoveryMode: "relaunch", claudeSessionId: null }));
+    store.add(
+      makeEntry({ label: "Active shell", recoveryMode: "relaunch", claudeSessionId: null }),
+    );
+    store.add(
+      makeEntry({ label: "Inactive shell", recoveryMode: "relaunch", claudeSessionId: null }),
+    );
 
     const entries = store.getEntries(new Set(), 5, (entry) => entry.label === "Active shell");
     expect(entries).toHaveLength(1);
     expect(entries[0].label).toBe("Inactive shell");
+  });
+
+  it("preserves profileColor through add and serialize", () => {
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+      profileColor: "#e67e22",
+    });
+    store.add(entry);
+
+    const serialized = store.serialize();
+    expect(serialized).toHaveLength(1);
+    expect(serialized[0].profileColor).toBe("#e67e22");
+  });
+
+  it("round-trips profileColor through serialize and fromData", () => {
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+      profileColor: "#3498db",
+    });
+    store.add(entry);
+
+    const serialized = store.serialize();
+    const restored = RecentlyClosedStore.fromData(serialized);
+    expect(restored).toHaveLength(1);
+    expect(restored[0].profileColor).toBe("#3498db");
+  });
+
+  it("does not include profileColor when not set", () => {
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+    });
+    store.add(entry);
+
+    const serialized = store.serialize();
+    expect(serialized[0].profileColor).toBeUndefined();
   });
 
   it("shares add and take operations across stores backed by the same state", () => {

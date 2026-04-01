@@ -27,6 +27,7 @@ function makePersisted(
     commandArgs: string[] | undefined;
     durableSessionId: string;
     durableSessionIdGenerated: boolean;
+    profileColor: string;
   }> = {},
 ) {
   return {
@@ -42,6 +43,7 @@ function makePersisted(
     command: overrides.command ?? "claude",
     commandArgs: overrides.commandArgs ?? ["claude", "--resume", "session-1"],
     durableSessionIdGenerated: overrides.durableSessionIdGenerated,
+    profileColor: overrides.profileColor,
   };
 }
 
@@ -112,6 +114,39 @@ describe("SessionPersistence", () => {
         durableSessionId: expect.any(String),
         command: "claude",
       });
+    });
+
+    it("saves profileColor when present on a tab", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: false,
+          agentSessionId: null,
+          label: "Shell",
+          taskPath: "task-1",
+          sessionType: "shell",
+          launchShell: "/bin/zsh",
+          launchCwd: "/vault",
+          profileColor: "#e67e22",
+        },
+        {
+          isResumableAgent: true,
+          agentSessionId: "s1",
+          label: "Claude",
+          taskPath: "task-1",
+          sessionType: "claude",
+          launchShell: "claude",
+          launchCwd: "/vault",
+          launchCommandArgs: ["claude", "--resume", "s1"],
+        },
+      ]);
+
+      await SessionPersistence.saveToDisk(plugin, sessions);
+
+      const saved = plugin.saveData.mock.calls[0][0];
+      expect(saved.persistedSessions[0].profileColor).toBe("#e67e22");
+      expect(saved.persistedSessions[1].profileColor).toBeUndefined();
     });
 
     it("merges into existing plugin data without clobbering", async () => {
@@ -340,6 +375,29 @@ describe("SessionPersistence", () => {
         durableSessionId: loaded.durableSessionId,
         durableSessionIdGenerated: true,
       });
+    });
+
+    it("round-trips profileColor through save and load", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: false,
+          agentSessionId: null,
+          label: "Shell",
+          taskPath: "task-1",
+          sessionType: "shell",
+          launchShell: "/bin/zsh",
+          launchCwd: "/vault",
+          profileColor: "#3498db",
+        },
+      ]);
+
+      await SessionPersistence.saveToDisk(plugin, sessions);
+      const result = await SessionPersistence.loadFromDisk(plugin);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].profileColor).toBe("#3498db");
     });
 
     it("drops entries with invalid disk session types", async () => {
