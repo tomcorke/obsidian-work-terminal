@@ -3,4 +3,5 @@ dist/
 main.js
 data.json
 coverage/
+package-lock.json
 .claude/testing/

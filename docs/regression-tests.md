@@ -8,7 +8,7 @@
 
 ## How to Use
 
-1. Build the plugin: `npm run build` in `~/working/obsidian-work-terminal/`
+1. Build the plugin: `pnpm run build` in `~/working/obsidian-work-terminal/`
 2. Enable "Work Terminal" in Obsidian Settings > Community Plugins
 3. Open the Work Terminal view via command palette
 4. Work through each test case, marking Status as PASS / FAIL / SKIP

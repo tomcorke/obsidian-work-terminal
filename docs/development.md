@@ -5,9 +5,9 @@
 ## Build and test
 
 ```bash
-npm run build          # production build
-npm run dev            # watch mode with CDP hot-reload
-npx vitest run         # run tests
+pnpm run build          # production build
+pnpm run dev            # watch mode with CDP hot-reload
+pnpm exec vitest run         # run tests
 ```
 
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
@@ -20,7 +20,7 @@ Requires Obsidian with remote debugging: `open -a Obsidian --args --remote-debug
 
 **Important**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
 
-- `npm run dev` watch mode (preferred - auto-reloads on save)
+- `pnpm run dev` watch mode (preferred - auto-reloads on save)
 - Command palette: "Work Terminal: Reload Plugin (preserve terminals)"
 - CDP: `node cdp.js`
 
@@ -52,14 +52,14 @@ Each isolated instance should use its own vault directory to avoid conflicts:
 
 ```bash
 # 1. Create a dedicated vault and launch Obsidian
-npm run obsidian:test:open -- --vault .claude/testing/my-test --clean
+pnpm run obsidian:test:open -- --vault .claude/testing/my-test --clean
 
 # 2. Interact via CDP using the port from the JSON output
 CDP_PORT=<port> node cdp.js screenshot output/test.png
 CDP_PORT=<port> node cdp.js click '.wt-task-card'
 
 # 3. Stop the isolated instance when done
-npm run obsidian:test:stop -- --vault .claude/testing/my-test
+pnpm run obsidian:test:stop -- --vault .claude/testing/my-test
 # Or kill by PID from the JSON output: kill <pid>
 ```
 
@@ -71,7 +71,7 @@ debugging but should not be shared across concurrent instances.
 
 #### 1. Create the vault
 
-`npm run obsidian:test:init` creates `.claude/testing/obsidian-vault/` with:
+`pnpm run obsidian:test:init` creates `.claude/testing/obsidian-vault/` with:
 - `.obsidian/plugins/work-terminal` symlinked to this repo
 - Community plugin enablement config
 - Two seed tasks under `2 - Areas/Tasks/` (one active, one todo)
@@ -156,7 +156,7 @@ them up. The kanban board updates automatically when vault files change.
 
 ```bash
 # Use a unique vault name per test scenario
-npm run obsidian:test:open -- --vault .claude/testing/my-test --clean
+pnpm run obsidian:test:open -- --vault .claude/testing/my-test --clean
 ```
 
 This:
@@ -204,11 +204,11 @@ CDP_PORT=<port> node cdp.js screenshot output/after-move.png
 #### 6. Stop the instance
 
 ```bash
-npm run obsidian:test:stop -- --vault .claude/testing/my-test
+pnpm run obsidian:test:stop -- --vault .claude/testing/my-test
 # Or kill by PID from the JSON output: kill <pid>
 ```
 
-**Important**: Do not use `npm run obsidian:test:open -- ... stop` - the `open` npm
+**Important**: Do not use `pnpm run obsidian:test:open -- ... stop` - the `open`
 script hardcodes the `open` command, so `stop` is silently ignored. Always use the
 dedicated `obsidian:test:stop` script or `kill <pid>` from the launch output.
 
@@ -219,7 +219,7 @@ dedicated `obsidian:test:stop` script or `kill <pid>` from the launch output.
 node scripts/obsidian-isolated-instance.js status
 
 # Init vault only (no launch)
-npm run obsidian:test:init
+pnpm run obsidian:test:init
 ```
 
 ### Testing guidelines

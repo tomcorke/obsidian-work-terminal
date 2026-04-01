@@ -56,18 +56,18 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 
 ## Development workflow
 
-- **Build**: `npm run build` (production) or `npm run dev` (watch mode with CDP hot-reload)
-- **Test**: `npx vitest run` (104 tests covering utils, state detection, session types, parser, mover, template, prompt builder, automation helpers)
+- **Build**: `pnpm run build` (production) or `pnpm run dev` (watch mode with CDP hot-reload)
+- **Test**: `pnpm exec vitest run` (104 tests covering utils, state detection, session types, parser, mover, template, prompt builder, automation helpers)
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
 - **CDP helper**: `node cdp.js '<expression>'` evaluates JS in Obsidian's renderer. Default: triggers hot-reload. It also supports `open-view`, `wait-for`, `click`, `type`, and `screenshot`.
-- **Isolated test vault**: `npm run obsidian:test:open -- --vault .claude/testing/<name> --clean` creates a dedicated vault with plugin symlink and sample tasks, launches a separate Obsidian instance on a random port, hides the window, and opens the Work Terminal view. Each test scenario should use its own `--vault` path. Use `npm run obsidian:test:stop -- --vault .claude/testing/<name>` or `kill <pid>` (from the launch JSON output) to stop it. See `docs/development.md` for full instructions including how to seed test tasks via the filesystem.
+- **Isolated test vault**: `pnpm run obsidian:test:open -- --vault .claude/testing/<name> --clean` creates a dedicated vault with plugin symlink and sample tasks, launches a separate Obsidian instance on a random port, hides the window, and opens the Work Terminal view. Each test scenario should use its own `--vault` path. Use `pnpm run obsidian:test:stop -- --vault .claude/testing/<name>` or `kill <pid>` (from the launch JSON output) to stop it. See `docs/development.md` for full instructions including how to seed test tasks via the filesystem.
   - **IMPORTANT**: Launching briefly steals focus (~2-3s). Never trigger automatically - only with explicit user consent.
   - **IMPORTANT**: Do NOT launch agent sessions (Claude/Copilot/Strands) in isolated instances unless very explicitly approved by the user. Test with filesystem task manipulation + CDP interaction instead.
 
 **IMPORTANT**: Never reload via raw `app.plugins.disablePlugin/enablePlugin` or Cmd+R - these destroy terminal sessions. Always use:
-- `npm run dev` watch mode (preferred - auto-reloads on save)
+- `pnpm run dev` watch mode (preferred - auto-reloads on save)
 - Command palette: "Work Terminal: Reload Plugin (preserve terminals)"
 - CDP: `node cdp.js`
 
@@ -94,7 +94,7 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 - **Concurrent debugging limitation**: The user may be actively using the plugin (e.g. running Claude sessions, testing UI) while you are developing. Plugin reloads and screen navigation can interrupt their testing. Coordinate with the user before reloading, and batch changes where possible to minimise reload frequency. Do not reload mid-test unless the user confirms it is safe.
 
 ### Testing
-Run `npx vitest run` after changes to verify nothing is broken. Build with `npm run build` to catch type/bundle errors.
+Run `pnpm exec vitest run` after changes to verify nothing is broken. Build with `pnpm run build` to catch type/bundle errors.
 
 ## Known constraints
 
