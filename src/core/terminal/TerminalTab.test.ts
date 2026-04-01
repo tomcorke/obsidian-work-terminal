@@ -1293,13 +1293,18 @@ describe("TerminalTab auto-scroll on write", () => {
     vi.unstubAllGlobals();
   });
 
-  function createTabWithMockTerminal() {
+  function createTabWithMockTerminal({ deferCallbacks = false } = {}) {
     const onDataHandlers: Array<(data: string) => void> = [];
-    const onWriteParsedHandlers: Array<() => void> = [];
     const scrollToBottom = vi.fn();
-    const write = vi.fn(() => {
-      // Simulate xterm calling onWriteParsed after processing a write
-      for (const handler of onWriteParsedHandlers) handler();
+    const pendingCallbacks: Array<() => void> = [];
+    const write = vi.fn((data: unknown, callback?: () => void) => {
+      if (callback) {
+        if (deferCallbacks) {
+          pendingCallbacks.push(callback);
+        } else {
+          callback();
+        }
+      }
     });
 
     const bufferActive = { viewportY: 100, baseY: 100 };
@@ -1307,9 +1312,6 @@ describe("TerminalTab auto-scroll on write", () => {
     const terminal = {
       onData: vi.fn((handler: (data: string) => void) => {
         onDataHandlers.push(handler);
-      }),
-      onWriteParsed: vi.fn((handler: () => void) => {
-        onWriteParsedHandlers.push(handler);
       }),
       scrollToBottom,
       write,
@@ -1332,7 +1334,14 @@ describe("TerminalTab auto-scroll on write", () => {
       _recentCleanLines: [],
     }) as TerminalTab;
 
-    return { tab, terminal, scrollToBottom, bufferActive };
+    /** Flush all deferred write callbacks in order */
+    const flushCallbacks = () => {
+      while (pendingCallbacks.length > 0) {
+        pendingCallbacks.shift()!();
+      }
+    };
+
+    return { tab, terminal, scrollToBottom, bufferActive, pendingCallbacks, flushCallbacks };
   }
 
   function createMockProcess() {
@@ -1409,6 +1418,35 @@ describe("TerminalTab auto-scroll on write", () => {
 
     // Second write: viewport is at bottom again - should auto-scroll
     proc.emitStdout(Buffer.from("world"));
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures per-write scroll snapshot even when callbacks are deferred", () => {
+    // Simulate real xterm async: multiple writes queue before any callback fires
+    const { tab, scrollToBottom, bufferActive, flushCallbacks } = createTabWithMockTerminal({
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
+
+    bufferActive.viewportY = 100;
+    bufferActive.baseY = 100;
+
+    (tab as any).wireProcess(proc);
+    scrollToBottom.mockClear();
+
+    // Write 1: user is at bottom
+    proc.emitStdout(Buffer.from("chunk-1"));
+
+    // Before callback fires, user scrolls up, then write 2 arrives
+    bufferActive.viewportY = 50;
+    proc.emitStdout(Buffer.from("chunk-2"));
+
+    // No callbacks have fired yet
+    expect(scrollToBottom).not.toHaveBeenCalled();
+
+    // Now flush: write-1's callback should scroll (was at bottom),
+    // write-2's callback should not (user had scrolled up)
+    flushCallbacks();
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
   });
 });
