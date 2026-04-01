@@ -61,6 +61,15 @@ export function slugify(text: string): string {
 }
 
 /**
+ * Check whether a string is a valid CSS color value.
+ * Returns false for empty, whitespace-only, or invalid values.
+ */
+export function isValidCssColor(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && CSS.supports("color", trimmed);
+}
+
+/**
  * Convert Obsidian internal links to plain display text for UI rendering.
  * [[Doc]] -> Doc
  * [[Doc|Alias]] -> Alias

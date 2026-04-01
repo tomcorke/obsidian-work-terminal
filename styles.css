@@ -1500,6 +1500,14 @@ button.wt-spawn-claude-ctx:hover svg {
   white-space: nowrap;
 }
 
+.wt-profile-color-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid var(--background-modifier-border);
+}
+
 .wt-profile-edit-btn {
   flex-shrink: 0;
 }
@@ -1525,6 +1533,21 @@ button.wt-spawn-claude-ctx:hover svg {
 
 .wt-profile-input {
   width: 100%;
+}
+
+.wt-color-preview {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.wt-color-preview-empty {
+  background: repeating-conic-gradient(
+    var(--background-modifier-border) 0% 25%,
+    transparent 0% 50%
+  ) 50% / 10px 10px;
 }
 
 .wt-profile-edit-buttons {

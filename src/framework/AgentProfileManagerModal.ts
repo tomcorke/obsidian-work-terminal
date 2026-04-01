@@ -6,7 +6,7 @@ import { App, Modal, Notice } from "obsidian";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import { AgentProfileEditModal } from "./AgentProfileModal";
-import { electronRequire } from "../core/utils";
+import { electronRequire, isValidCssColor } from "../core/utils";
 
 const AGENT_TYPE_LABELS: Record<string, string> = {
   claude: "Claude",
@@ -111,6 +111,12 @@ export class AgentProfileManagerModal extends Modal {
         this.render();
       }
     });
+
+    // Color swatch (only for valid CSS colors)
+    if (profile.button.color && isValidCssColor(profile.button.color)) {
+      const swatch = row.createDiv({ cls: "wt-profile-color-swatch" });
+      swatch.style.backgroundColor = profile.button.color.trim();
+    }
 
     // Profile info
     const infoEl = row.createDiv({ cls: "wt-profile-info" });
