@@ -17,6 +17,7 @@ export interface ClosedSessionEntry {
   cwd?: string;
   command?: string;
   commandArgs?: string[];
+  profileColor?: string;
 }
 
 export interface RecentlyClosedState {
@@ -173,6 +174,8 @@ export class RecentlyClosedStore {
     const commandArgs = Array.isArray(candidate.commandArgs)
       ? candidate.commandArgs.filter((value): value is string => typeof value === "string")
       : undefined;
+    const profileColor =
+      typeof candidate.profileColor === "string" ? candidate.profileColor : undefined;
 
     if (!itemId || !label || !sessionType || !Number.isFinite(closedAt) || !recoveryMode) {
       return null;
@@ -205,6 +208,7 @@ export class RecentlyClosedStore {
       cwd,
       command,
       commandArgs,
+      profileColor,
     };
   }
 

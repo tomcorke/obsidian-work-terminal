@@ -102,6 +102,7 @@ export class TerminalTab {
   agentSessionId: string | null = null;
   durableSessionId: string | null = null;
   sessionType: SessionType;
+  profileColor: string | undefined;
 
   terminal: Terminal;
   containerEl: HTMLElement;
@@ -1005,6 +1006,7 @@ export class TerminalTab {
       claudeSessionId: this.claudeSessionId,
       durableSessionId: this.durableSessionId,
       sessionType: this.sessionType,
+      profileColor: this.profileColor,
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
@@ -1042,6 +1044,7 @@ export class TerminalTab {
       stored.durableSessionId ||
       (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     tab.sessionType = stored.sessionType;
+    tab.profileColor = stored.profileColor;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;

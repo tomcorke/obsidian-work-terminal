@@ -37,6 +37,7 @@ export interface StoredSession {
   claudeSessionId?: string | null;
   durableSessionId?: string | null;
   sessionType: SessionType;
+  profileColor?: string;
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
@@ -72,6 +73,7 @@ export interface PersistedSession {
   cwd?: string;
   command?: string;
   commandArgs?: string[];
+  profileColor?: string;
 }
 
 export interface ActiveTabInfo {

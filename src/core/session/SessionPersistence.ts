@@ -28,6 +28,7 @@ interface PersistableTab {
   launchShell: string;
   launchCwd: string;
   launchCommandArgs?: string[];
+  profileColor?: string;
 }
 
 /** 7 days in milliseconds */
@@ -64,6 +65,7 @@ export class SessionPersistence {
       cwd: tab.launchCwd,
       command: tab.launchCommandArgs?.[0] || tab.launchShell,
       commandArgs: tab.launchCommandArgs ? [...tab.launchCommandArgs] : undefined,
+      profileColor: tab.profileColor,
     };
   }
 
@@ -105,6 +107,8 @@ export class SessionPersistence {
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
     const durableSessionIdGenerated = candidate.durableSessionIdGenerated === true;
+    const profileColor =
+      typeof candidate.profileColor === "string" ? candidate.profileColor : undefined;
     const recoveryMode =
       candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
         ? candidate.recoveryMode
@@ -149,6 +153,7 @@ export class SessionPersistence {
       cwd,
       command,
       commandArgs,
+      profileColor,
     };
   }
 
