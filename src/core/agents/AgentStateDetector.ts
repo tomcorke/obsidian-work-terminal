@@ -35,13 +35,20 @@ function looksLikeHiddenClaudePrompt(tail: string[], questionIndex: number): boo
   const normalizedAfterQuestion = tail
     .slice(
       questionIndex + 1,
-      Math.min(tail.length, questionIndex + 1 + HIDDEN_CLAUDE_PROMPT_CHROME_SCAN_LINES),
+      Math.min(
+        tail.length,
+        questionIndex + 1 + HIDDEN_CLAUDE_PROMPT_CHROME_SCAN_LINES,
+      ),
     )
     .map((line) => normalizeWaitingLine(line))
     .filter((line) => line.length > 0);
   const promptIndex = normalizedAfterQuestion.findIndex((line) => line === "❯");
   if (promptIndex === -1) return false;
-  if (normalizedAfterQuestion.slice(0, promptIndex).some((line) => /^❯\s+\S/.test(line))) {
+  if (
+    normalizedAfterQuestion
+      .slice(0, promptIndex)
+      .some((line) => /^❯\s+\S/.test(line))
+  ) {
     return false;
   }
 
@@ -107,8 +114,6 @@ export class AgentStateDetector {
   private _timer: ReturnType<typeof setInterval> | null = null;
   private _suppressActiveUntil = 0;
   private _recentCleanLines: string[] = [];
-  private _prevScreenFingerprint = "";
-  private _unchangedPolls = 0;
   onChange?: (state: AgentState) => void;
 
   constructor(
@@ -183,8 +188,6 @@ export class AgentStateDetector {
     // Check for waiting patterns first (highest priority).
     // Suppress waiting if the tab is currently visible - the user can already see it.
     if (this._looksLikeWaiting(screenLines)) {
-      this._prevScreenFingerprint = "";
-      this._unchangedPolls = 0;
       this._setState(this.isVisible() ? "idle" : "waiting");
       return;
     }
@@ -192,22 +195,9 @@ export class AgentStateDetector {
     // Need screen content for idle/active detection
     if (screenLines.length === 0) return;
 
-    // Track buffer content changes: if the visible screen changed since the
-    // last poll, the agent is producing output (text streaming, tool results)
-    // even when no spinner/ellipsis pattern is visible.
-    const fingerprint = screenLines.join("\n");
-    const screenChanged =
-      this._prevScreenFingerprint !== "" && fingerprint !== this._prevScreenFingerprint;
-    this._prevScreenFingerprint = fingerprint;
-    if (screenChanged) {
-      this._unchangedPolls = 0;
-    } else {
-      this._unchangedPolls++;
-    }
-
     const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
 
-    if (hasActiveIndicator || screenChanged) {
+    if (hasActiveIndicator) {
       // During post-reload grace period, treat "active" as "idle"
       if (Date.now() < this._suppressActiveUntil) {
         this._setState("idle");
