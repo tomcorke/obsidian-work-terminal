@@ -159,14 +159,33 @@ export function resolveLoginShellPath(): string | null {
 
     // Use -ilc to get a login-interactive shell that sources profile files,
     // then prints PATH. The printf avoids trailing newlines.
-    const result = cp.spawnSync(userShell, ["-ilc", 'printf "%s" "$PATH"'], {
-      encoding: "utf8",
-      timeout: 2000,
-      env: { HOME: process.env.HOME, USER: process.env.USER, SHELL: process.env.SHELL },
-    });
+    const PATH_START = "___PATH_START___";
+    const PATH_END = "___PATH_END___";
+    const result = cp.spawnSync(
+      userShell,
+      ["-ilc", `printf "${PATH_START}%s${PATH_END}" "$PATH"`],
+      {
+        encoding: "utf8",
+        timeout: 2000,
+        env: {
+          HOME: process.env.HOME,
+          USER: process.env.USER,
+          SHELL: process.env.SHELL,
+          TERM: "dumb",
+        },
+      },
+    );
 
     if (result.status === 0 && result.stdout) {
-      _loginShellPathCache = result.stdout;
+      // Extract PATH from between sentinels to ignore shell greeting/profile noise
+      const startIdx = result.stdout.indexOf(PATH_START);
+      const endIdx = result.stdout.indexOf(PATH_END);
+      if (startIdx !== -1 && endIdx !== -1) {
+        _loginShellPathCache = result.stdout.slice(startIdx + PATH_START.length, endIdx);
+      } else {
+        // Fallback: use raw stdout if sentinels are missing
+        _loginShellPathCache = result.stdout;
+      }
       console.log("[work-terminal] Resolved login shell PATH:", _loginShellPathCache.slice(0, 200));
       return _loginShellPathCache;
     }
