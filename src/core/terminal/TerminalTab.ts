@@ -149,6 +149,10 @@ export class TerminalTab {
   /** Suppress "active" detection until this timestamp (ms). Used after reload
    *  to prevent stale xterm buffer content from triggering false active state. */
   _suppressActiveUntil = 0;
+  /** Previous screen content fingerprint for change-based activity detection. */
+  private _prevScreenFingerprint = "";
+  /** How many consecutive polls the screen content has remained unchanged. */
+  private _unchangedPolls = 0;
 
   // Session tracking (/resume detection)
   private _sessionTracker: AgentSessionTracker | null = null;
@@ -947,6 +951,8 @@ export class TerminalTab {
     // Check for waiting patterns first (highest priority).
     // Suppress waiting if the tab is currently visible - the user can already see it.
     if (this._looksLikeWaiting(screenLines)) {
+      this._prevScreenFingerprint = "";
+      this._unchangedPolls = 0;
       this._setAgentState("waiting");
       return;
     }
@@ -954,9 +960,22 @@ export class TerminalTab {
     // Need screen content for idle/active detection
     if (screenLines.length === 0) return;
 
+    // Track buffer content changes: if the visible screen changed since the
+    // last poll, the agent is producing output (text streaming, tool results)
+    // even when no spinner/ellipsis pattern is visible.
+    const fingerprint = screenLines.join("\n");
+    const screenChanged =
+      this._prevScreenFingerprint !== "" && fingerprint !== this._prevScreenFingerprint;
+    this._prevScreenFingerprint = fingerprint;
+    if (screenChanged) {
+      this._unchangedPolls = 0;
+    } else {
+      this._unchangedPolls++;
+    }
+
     const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
 
-    if (hasActiveIndicator) {
+    if (hasActiveIndicator || screenChanged) {
       // During post-reload grace period, treat "active" as "idle"
       if (Date.now() < this._suppressActiveUntil) {
         this._setAgentState("idle");
