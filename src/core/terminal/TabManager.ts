@@ -214,13 +214,17 @@ export class TabManager {
       this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
     };
 
+    if (isActiveItem) {
+      // Hide existing tabs before pushing the new one, so only old tabs get
+      // their WebGL suspended. The new tab keeps its constructor-initialized
+      // WebGL context and avoids a wasteful suspend-then-resume cycle.
+      this.hideAllTerminals();
+    }
+
     tabs.push(tab);
     this.sessions.set(itemId, tabs);
 
     if (isActiveItem) {
-      // Hide others, show new
-      this.hideAllTerminals();
-      tab.resumeWebGl();
       tab.show();
       this.activeTabIndex = tabs.length - 1;
     } else {

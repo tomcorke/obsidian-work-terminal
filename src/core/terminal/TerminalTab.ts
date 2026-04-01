@@ -409,8 +409,8 @@ export class TerminalTab {
   suspendWebGl(): void {
     if (this._isDisposed || this._webglSuspended) return;
     if (!this.webglAddon) {
-      // Already on canvas (e.g. context loss fallback) - just mark suspended
-      // so resumeWebGl knows to re-init when the tab becomes visible.
+      // Mark suspended so resumeWebGl retries WebGL initialization when the tab
+      // becomes visible, even if the previous WebGL context was lost.
       this._webglSuspended = true;
       return;
     }
@@ -436,16 +436,21 @@ export class TerminalTab {
    */
   resumeWebGl(): void {
     if (this._isDisposed || !this._webglSuspended) return;
-    this._webglSuspended = false;
 
     this.loadWebglAddon();
 
-    // Repaint and re-fit after WebGL is loaded
-    requestAnimationFrame(() => {
-      if (this._isDisposed) return;
-      this.safeFit();
-      this.terminal.refresh(0, this.terminal.rows - 1);
-    });
+    // Only clear suspended if WebGL actually loaded; otherwise keep the flag
+    // so the next visibility transition retries.
+    this._webglSuspended = !this.webglAddon;
+
+    if (!this._webglSuspended) {
+      // Repaint and re-fit after WebGL is loaded
+      requestAnimationFrame(() => {
+        if (this._isDisposed) return;
+        this.safeFit();
+        this.terminal.refresh(0, this.terminal.rows - 1);
+      });
+    }
   }
 
   /** Whether WebGL is currently suspended for this tab. */
@@ -1259,6 +1264,7 @@ export class TerminalTab {
     if (restoredWebglAddon) {
       tab.trackWebglAddon(restoredWebglAddon);
     }
+    tab._webglSuspended = false;
     tab._documentCleanups = [];
     tab._agentState = "inactive" as AgentState;
     tab._recentCleanLines = [];
