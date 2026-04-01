@@ -513,6 +513,10 @@
   flex-direction: column-reverse;
 }
 
+.wt-tab-bar-expanded .wt-tabs-container {
+  align-self: flex-start;
+}
+
 .wt-tab-bar-expanded .wt-tab-buttons {
   align-self: flex-end;
   padding: 4px 6px 2px;
