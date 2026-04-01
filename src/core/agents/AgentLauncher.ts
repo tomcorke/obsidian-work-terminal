@@ -2,6 +2,7 @@
  * CLI launch helpers: PATH augmentation, command resolution, and agent argument builders.
  */
 import { expandTilde, electronRequire } from "../utils";
+import { type AgentType, getResumeConfig } from "./AgentProfile";
 
 const EXTRA_PATH_DIRS = [
   "~/.local/bin",
@@ -10,8 +11,7 @@ const EXTRA_PATH_DIRS = [
   "/opt/homebrew/bin",
 ];
 
-const DEFAULT_WINDOWS_PATHEXT =
-  ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
+const DEFAULT_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
 
 type FsModule = typeof import("fs");
 type PathModule = typeof import("path");
@@ -193,9 +193,7 @@ export function resolveCommandInfo(
     };
   }
   const delimiter = getPathDelimiter(pathModule, platform);
-  const pathDirs = augmentPath(env, pathModule, platform)
-    .split(delimiter)
-    .filter(Boolean);
+  const pathDirs = augmentPath(env, pathModule, platform).split(delimiter).filter(Boolean);
   for (const dir of pathDirs) {
     const pathVariant = getPathVariant(pathModule, dir, platform);
     const full = pathVariant.join(dir, expanded);
@@ -215,12 +213,10 @@ export function resolveCommand(cmd: string): string {
   return resolveCommandInfo(cmd).resolved;
 }
 
-export function buildMissingCliNotice(agent: "claude" | "copilot", command: string): string {
-  const normalized = command.trim() || (agent === "claude" ? "claude" : "copilot");
-  if (agent === "claude") {
-    return `Claude Code CLI not found for "${normalized}". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`;
-  }
-  return `GitHub Copilot CLI not found for "${normalized}". Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.`;
+export function buildMissingCliNotice(agent: AgentType, command: string): string {
+  const config = getResumeConfig(agent);
+  const normalized = command.trim() || config.defaultCommand || agent;
+  return `${config.cliDisplayName} not found for "${normalized}". ${config.installHint}`;
 }
 
 export function splitConfiguredCommand(command: string): string[] {
