@@ -259,15 +259,17 @@ export class TerminalTab {
     this.registerFilePathLinks();
 
     // Scroll-to-bottom button
-    attachScrollButton(this.containerEl, this.terminal, () => {
+    const scrollCleanup = attachScrollButton(this.containerEl, this.terminal, () => {
       this._userScrolledUp = false;
     });
+    this._documentCleanups.push(scrollCleanup);
 
     // User-initiated scroll detection
     this._wireUserScrollDetection();
 
     // Keyboard capture - two layers
-    attachBubbleCapture(this.containerEl);
+    const bubbleCleanup = attachBubbleCapture(this.containerEl);
+    this._documentCleanups.push(bubbleCleanup);
     const captureCleanup = attachCapturePhase(
       this.containerEl,
       () => this.process,
@@ -276,9 +278,13 @@ export class TerminalTab {
     this._documentCleanups.push(captureCleanup);
 
     // Ensure clicking the terminal area gives xterm focus
-    this.containerEl.addEventListener("click", () => {
+    const clickHandler = () => {
       if (this._isDisposed) return;
       this.terminal.focus();
+    };
+    this.containerEl.addEventListener("click", clickHandler);
+    this._documentCleanups.push(() => {
+      this.containerEl.removeEventListener("click", clickHandler);
     });
 
     // commandArgs takes precedence over preCommand (which is a single string)
@@ -1215,23 +1221,28 @@ export class TerminalTab {
     parentEl.appendChild(stored.containerEl);
 
     // Re-register keyboard interception
-    attachBubbleCapture(stored.containerEl);
+    const bubbleCleanup = attachBubbleCapture(stored.containerEl);
     const captureCleanup = attachCapturePhase(
       stored.containerEl,
       () => tab.process,
       () => tab.toggleSearchBar(),
     );
-    tab._documentCleanups = [captureCleanup];
+    tab._documentCleanups = [bubbleCleanup, captureCleanup];
 
     // Click-to-focus
-    stored.containerEl.addEventListener("click", () => {
+    const clickHandler = () => {
       stored.terminal.focus();
+    };
+    stored.containerEl.addEventListener("click", clickHandler);
+    tab._documentCleanups.push(() => {
+      stored.containerEl.removeEventListener("click", clickHandler);
     });
 
     // Scroll-to-bottom button
-    attachScrollButton(stored.containerEl, stored.terminal, () => {
+    const scrollCleanup = attachScrollButton(stored.containerEl, stored.terminal, () => {
       tab._userScrolledUp = false;
     });
+    tab._documentCleanups.push(scrollCleanup);
 
     // User-initiated scroll detection
     tab._wireUserScrollDetection();

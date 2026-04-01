@@ -10,7 +10,7 @@ export function attachScrollButton(
   containerEl: HTMLElement,
   terminal: Terminal,
   onScrollToBottom?: () => void,
-): void {
+): () => void {
   // Remove any existing button (e.g. from a previous reload)
   containerEl.querySelector(".wt-scroll-bottom")?.remove();
 
@@ -38,7 +38,7 @@ export function attachScrollButton(
     visibilityRaf = requestAnimationFrame(updateVisibility);
   };
 
-  terminal.onScroll(scheduleVisibilityUpdate);
+  const scrollDisposable = terminal.onScroll(scheduleVisibilityUpdate);
 
   // Also listen for native scroll on the viewport element, since xterm's
   // onScroll only fires for programmatic scrolls, not user trackpad/wheel.
@@ -56,4 +56,16 @@ export function attachScrollButton(
   });
 
   scheduleVisibilityUpdate();
+
+  return () => {
+    scrollDisposable.dispose();
+    if (viewport) {
+      viewport.removeEventListener("scroll", scheduleVisibilityUpdate);
+    }
+    if (visibilityRaf !== null) {
+      cancelAnimationFrame(visibilityRaf);
+      visibilityRaf = null;
+    }
+    scrollBtn.remove();
+  };
 }
