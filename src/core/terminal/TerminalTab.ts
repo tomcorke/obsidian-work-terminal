@@ -541,14 +541,14 @@ export class TerminalTab {
 
     // Also check on native scroll events to catch edge cases (e.g. trackpad
     // inertia scrolling back to the bottom).
-    viewport.addEventListener("scroll", () => requestAnimationFrame(checkIfAtBottom), {
-      passive: true,
-    });
+    const onScroll = () => requestAnimationFrame(checkIfAtBottom);
+    viewport.addEventListener("scroll", onScroll, { passive: true });
 
     this._documentCleanups.push(() => {
       viewport.removeEventListener("wheel", onUserScrollDeferred);
       viewport.removeEventListener("touchmove", onUserScrollDeferred);
       viewport.removeEventListener("keydown", onKeydown);
+      viewport.removeEventListener("scroll", onScroll);
     });
   }
 
