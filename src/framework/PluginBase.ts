@@ -4,7 +4,7 @@
  */
 import { type App, Notice, type PluginManifest, Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
-import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { WorkTerminalSettingsTab } from "./SettingsTab";
 import { SessionPersistence } from "../core/session/SessionPersistence";
 
@@ -15,13 +15,25 @@ export abstract class PluginBase extends Plugin {
   private _isReloading = false;
   private _lastWorkTerminalLeaf: unknown = null;
   private _settingsTab: WorkTerminalSettingsTab | null = null;
+  private _profileManager: AgentProfileManager | null = null;
 
   constructor(app: App, manifest: PluginManifest, adapter: AdapterBundle) {
     super(app, manifest);
     this.adapter = adapter;
   }
 
+  /** Profile manager instance, available after onload(). */
+  get profileManager(): AgentProfileManager | null {
+    return this._profileManager;
+  }
+
   async onload(): Promise<void> {
+    // Initialize agent profile manager early so both views and settings can use it.
+    // Use a local const so the non-null type is retained after the await.
+    const profileManager = new AgentProfileManager(this);
+    await profileManager.load();
+    this._profileManager = profileManager;
+
     // Defer view/settings registration to allow lazy imports
     const { MainView } = await import("./MainView");
     const { WorkTerminalSettingsTab } = await import("./SettingsTab");
@@ -48,13 +60,13 @@ export abstract class PluginBase extends Plugin {
       callback: async () => this.copySessionDiagnostics(),
     });
 
-    this._settingsTab = new WorkTerminalSettingsTab(this.app, this, this.adapter);
+    this._settingsTab = new WorkTerminalSettingsTab(
+      this.app,
+      this,
+      this.adapter,
+      profileManager,
+    );
     this.addSettingTab(this._settingsTab);
-  }
-
-  /** Allow MainView to pass the profile manager to the settings tab after init. */
-  setProfileManagerOnSettingsTab(manager: AgentProfileManager): void {
-    this._settingsTab?.setProfileManager(manager);
   }
 
   async activateView(): Promise<void> {

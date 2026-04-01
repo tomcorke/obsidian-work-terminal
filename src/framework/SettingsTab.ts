@@ -66,7 +66,7 @@ const CORE_DEFAULTS: CoreSettings = {
 export class WorkTerminalSettingsTab extends PluginSettingTab {
   private adapter: AdapterBundle;
   private plugin: Plugin;
-  private profileManager: AgentProfileManager | null = null;
+  private profileManager: AgentProfileManager;
 
   private static readonly BINARY_COMMAND_KEYS: BinaryCommandKey[] = [
     "core.claudeCommand",
@@ -74,14 +74,16 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     "core.strandsCommand",
   ];
 
-  constructor(app: App, plugin: Plugin, adapter: AdapterBundle) {
+  constructor(
+    app: App,
+    plugin: Plugin,
+    adapter: AdapterBundle,
+    profileManager: AgentProfileManager,
+  ) {
     super(app, plugin);
     this.plugin = plugin;
     this.adapter = adapter;
-  }
-
-  setProfileManager(manager: AgentProfileManager): void {
-    this.profileManager = manager;
+    this.profileManager = profileManager;
   }
 
   display(): void {
@@ -100,11 +102,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           .setButtonText("Open Profile Manager")
           .setCta()
           .onClick(() => {
-            if (this.profileManager) {
-              new AgentProfileManagerModal(this.app, this.profileManager).open();
-            } else {
-              new Notice("Profile manager not initialized yet. Reopen the settings tab.");
-            }
+            new AgentProfileManagerModal(this.app, this.profileManager).open();
           }),
       );
 
