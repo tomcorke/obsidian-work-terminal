@@ -133,6 +133,8 @@ export class TerminalTab {
   private _resizeDebounce: ReturnType<typeof setTimeout> | null = null;
   private _spawnTimeout: ReturnType<typeof setTimeout> | null = null;
   private _isDisposed = false;
+  /** True when WebGL was intentionally suspended for a background tab. */
+  private _webglSuspended = false;
 
   // Minimum container width for fitAddon.fit(). When the plugin view is
   // momentarily narrow (e.g. switching between plugins), skip the fit so the
@@ -398,6 +400,62 @@ export class TerminalTab {
         this.webglAddon = null;
       }
     }
+  }
+
+  /**
+   * Dispose the WebGL addon for a background tab, falling back to canvas.
+   * The terminal keeps running - only the GPU context is released.
+   */
+  suspendWebGl(): void {
+    if (this._isDisposed || this._webglSuspended) return;
+    if (!this.webglAddon) {
+      // Mark suspended so resumeWebGl retries WebGL initialization when the tab
+      // becomes visible, even if the previous WebGL context was lost.
+      this._webglSuspended = true;
+      return;
+    }
+
+    // Capture addon before detach clears the reference, then dispose it
+    // to release the GPU context. detachTrackedWebglAddon removes it from
+    // xterm's addon manager; dispose() releases the actual GL resources.
+    const addon = this.webglAddon;
+    this.detachTrackedWebglAddon(addon);
+    addon.dispose();
+    this._webglSuspended = true;
+
+    // Force canvas renderer to paint the buffer content
+    requestAnimationFrame(() => {
+      if (this._isDisposed) return;
+      this.terminal.refresh(0, this.terminal.rows - 1);
+    });
+  }
+
+  /**
+   * Re-initialize WebGL for a tab that was previously suspended.
+   * Called when the tab becomes the visible/active tab.
+   */
+  resumeWebGl(): void {
+    if (this._isDisposed || !this._webglSuspended) return;
+
+    this.loadWebglAddon();
+
+    // Only clear suspended if WebGL actually loaded; otherwise keep the flag
+    // so the next visibility transition retries.
+    this._webglSuspended = !this.webglAddon;
+
+    if (!this._webglSuspended) {
+      // Repaint and re-fit after WebGL is loaded
+      requestAnimationFrame(() => {
+        if (this._isDisposed) return;
+        this.safeFit();
+        this.terminal.refresh(0, this.terminal.rows - 1);
+      });
+    }
+  }
+
+  /** Whether WebGL is currently suspended for this tab. */
+  get webglSuspended(): boolean {
+    return this._webglSuspended;
   }
 
   private getTrackedWebglAddonEntry(addon: WebglAddon) {
@@ -948,6 +1006,7 @@ export class TerminalTab {
         hasBlankRenderSurface,
         trackedWebglAddonPresent,
         trackedWebglAddonDisposed,
+        webglSuspended: this._webglSuspended,
         staleDisposedWebglOwnership: trackedWebglAddonPresent && trackedWebglAddonDisposed,
       },
       buffer: {
@@ -1205,6 +1264,7 @@ export class TerminalTab {
     if (restoredWebglAddon) {
       tab.trackWebglAddon(restoredWebglAddon);
     }
+    tab._webglSuspended = false;
     tab._documentCleanups = [];
     tab._agentState = "inactive" as AgentState;
     tab._recentCleanLines = [];

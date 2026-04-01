@@ -764,6 +764,7 @@ export class TerminalPanelView {
     const targetTabs = this.tabManager.getTabs(targetItemId);
     targetTabs.push(tab);
     tab.hide();
+    tab.suspendWebGl();
 
     // Adjust active tab
     if (currentTabs.length > 0) {

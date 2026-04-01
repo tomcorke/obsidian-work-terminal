@@ -110,6 +110,7 @@ export interface TabRendererDiagnostics {
   hasBlankRenderSurface: boolean;
   trackedWebglAddonPresent: boolean;
   trackedWebglAddonDisposed: boolean;
+  webglSuspended: boolean;
   staleDisposedWebglOwnership: boolean;
 }
 
