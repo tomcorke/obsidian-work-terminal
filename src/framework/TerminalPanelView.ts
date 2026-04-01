@@ -1884,20 +1884,18 @@ export class TerminalPanelView {
   private async spawnFromProfileWithOverrides(overrides: ProfileLaunchOverrides): Promise<void> {
     const profile = overrides.profile;
 
-    // Apply overrides: create a shallow copy with cwd/label patched
     const effectiveProfile = {
       ...profile,
-      cwd: overrides.cwd || profile.cwd,
+      defaultCwd: overrides.cwd || profile.defaultCwd,
       button: {
         ...profile.button,
         label: overrides.label || profile.button.label,
       },
     };
 
-    // If extra args were provided, append them to the profile's args
     if (overrides.extraArgs) {
-      effectiveProfile.args = effectiveProfile.args
-        ? `${effectiveProfile.args} ${overrides.extraArgs}`
+      effectiveProfile.arguments = effectiveProfile.arguments
+        ? `${effectiveProfile.arguments} ${overrides.extraArgs}`
         : overrides.extraArgs;
     }
 

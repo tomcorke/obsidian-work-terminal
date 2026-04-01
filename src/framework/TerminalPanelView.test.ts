@@ -3291,3 +3291,189 @@ describe("TerminalPanelView hook warning", () => {
     expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Plain task");
   });
 });
+
+describe("profile launch", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    vi.stubGlobal("Element", dom.window.Element);
+    vi.stubGlobal("Node", dom.window.Node);
+    installDomHelpers({
+      window: dom.window,
+      document: dom.window.document,
+      HTMLElement: dom.window.HTMLElement,
+      Element: dom.window.Element,
+      Node: dom.window.Node,
+    });
+
+    mockState.activeSessions = new Map();
+    mockState.activeTabs = [];
+    mockState.activeItemId = null;
+    mockState.tabsByItem = new Map();
+    mockState.activeTabIndex = 0;
+    mockState.persistedSessions = [];
+    mockState.tabDiagnostics = [];
+    mockState.idleSinceByItem = new Map();
+    mockState.menuTitles = [];
+    mockState.menuActions = new Map();
+    mockState.notices = [];
+    mockState.clipboardWriteText.mockClear();
+    mockState.latestCreateTabArgs = null;
+    mockState.tabManagerCalls = [];
+    mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
+    mockState.openExternal.mockClear();
+    mockState.latestTabManager = null;
+    mockState.latestTabManagerCtorArgs = null;
+    mockState.stopPeriodicPersist.mockClear();
+  });
+
+  afterEach(() => {
+    while (createdViews.length > 0) {
+      createdViews.pop()?.disposeAll();
+    }
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function makeProfile(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "profile-1",
+      name: "Claude",
+      agentType: "claude",
+      command: "claude",
+      defaultCwd: "~/projects",
+      arguments: "--model opus",
+      contextPrompt: "",
+      useContext: false,
+      paramPassMode: "launch-only",
+      button: { enabled: true, label: "Claude", icon: "claude", borderStyle: "solid" },
+      sortOrder: 0,
+      ...overrides,
+    };
+  }
+
+  it("applies defaultCwd override in spawnFromProfileWithOverrides", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "~/override-dir",
+      extraArgs: "",
+      label: "",
+    });
+
+    expect(spawnSpy).toHaveBeenCalledOnce();
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.defaultCwd).toBe("~/override-dir");
+    expect(passedProfile.arguments).toBe("--model opus");
+  });
+
+  it("appends extra arguments in spawnFromProfileWithOverrides", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "--verbose",
+      label: "",
+    });
+
+    expect(spawnSpy).toHaveBeenCalledOnce();
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.arguments).toBe("--model opus --verbose");
+    expect(passedProfile.defaultCwd).toBe("~/projects");
+  });
+
+  it("sets extra arguments as-is when profile has no existing arguments", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile({ arguments: "" });
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "--fast",
+      label: "",
+    });
+
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.arguments).toBe("--fast");
+  });
+
+  it("applies label override to button.label", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "",
+      label: "My Custom Label",
+    });
+
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.button.label).toBe("My Custom Label");
+  });
+
+  it("preserves original profile values when overrides are empty", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "",
+      label: "",
+    });
+
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.defaultCwd).toBe("~/projects");
+    expect(passedProfile.arguments).toBe("--model opus");
+    expect(passedProfile.button.label).toBe("Claude");
+  });
+
+  it("shows a notice when openProfileLaunchModal is called without an active item", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = null;
+    await (view as any).openProfileLaunchModal();
+
+    expect(mockState.notices).toContain("Select a task first to launch a profile");
+  });
+
+  it("shows a notice when no profiles are configured", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [{ id: "task-1", title: "Task", state: "doing", path: "t.md" }];
+    (view as any).profileManager = { getProfiles: () => [] };
+
+    await (view as any).openProfileLaunchModal();
+
+    expect(mockState.notices).toContain(
+      "No agent profiles configured. Open Settings to create one.",
+    );
+  });
+});
