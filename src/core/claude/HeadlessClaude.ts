@@ -5,7 +5,7 @@
  * or running one-shot prompts without a visible terminal.
  */
 import {
-  augmentPath,
+  getFullPath,
   buildMissingCliNotice,
   parseExtraArgs,
   resolveCommandInfo,
@@ -56,7 +56,7 @@ export function spawnHeadlessClaude(
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        PATH: augmentPath(),
+        PATH: getFullPath(),
         TERM: "dumb",
       },
     });

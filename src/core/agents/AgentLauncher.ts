@@ -142,6 +142,96 @@ export function augmentPath(
   return [...new Set(all)].join(delimiter);
 }
 
+// ---------------------------------------------------------------------------
+// Login-shell PATH resolution
+// ---------------------------------------------------------------------------
+
+/** Cached result from resolveLoginShellPath(). */
+let _loginShellPathCache: string | null = null;
+let _loginShellPathResolved = false;
+
+/**
+ * Resolve the user's full PATH by spawning a login shell.
+ *
+ * Electron inherits a limited environment from the OS launcher (e.g. Finder on
+ * macOS), which typically lacks nvm/fnm/Homebrew paths. This function spawns the
+ * user's configured shell as a login-interactive shell and reads the PATH it
+ * produces. The result is cached for the process lifetime.
+ *
+ * Falls back to null if the shell fails or times out (2s).
+ */
+export function resolveLoginShellPath(): string | null {
+  if (_loginShellPathResolved) return _loginShellPathCache;
+  _loginShellPathResolved = true;
+
+  if (isWindowsPlatform(process.platform)) {
+    // Windows doesn't use login shells the same way; skip.
+    return null;
+  }
+
+  try {
+    const cp = electronRequire("child_process") as typeof import("child_process");
+    const userShell = process.env.SHELL || "/bin/zsh";
+
+    // Use -ilc to get a login-interactive shell that sources profile files,
+    // then prints PATH. The printf avoids trailing newlines.
+    const result = cp.spawnSync(userShell, ["-ilc", 'printf "%s" "$PATH"'], {
+      encoding: "utf8",
+      timeout: 2000,
+      env: { HOME: process.env.HOME, USER: process.env.USER, SHELL: process.env.SHELL },
+    });
+
+    if (result.status === 0 && result.stdout) {
+      _loginShellPathCache = result.stdout;
+      console.log("[work-terminal] Resolved login shell PATH:", _loginShellPathCache.slice(0, 200));
+      return _loginShellPathCache;
+    }
+
+    console.warn("[work-terminal] Login shell PATH resolution returned status:", result.status);
+    if (result.stderr) {
+      // Only log first 200 chars of stderr to avoid noise from shell greeting text
+      console.warn("[work-terminal] Login shell stderr:", result.stderr.slice(0, 200));
+    }
+  } catch (err) {
+    console.warn("[work-terminal] Failed to resolve login shell PATH:", err);
+  }
+
+  return null;
+}
+
+/**
+ * Build the full augmented PATH including the user's login-shell PATH.
+ *
+ * Merges (in priority order):
+ * 1. EXTRA_PATH_DIRS (common tool directories)
+ * 2. Login shell PATH (nvm, fnm, Homebrew, etc.)
+ * 3. Current process.env.PATH (Electron baseline)
+ *
+ * Deduplicates while preserving order.
+ */
+export function getFullPath(
+  env: NodeJS.ProcessEnv = process.env,
+  pathModule: PathModule = electronRequire("path") as PathModule,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const delimiter = getPathDelimiter(pathModule, platform);
+  const loginPath = resolveLoginShellPath();
+  const extraDirs = EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+  const loginDirs = loginPath ? loginPath.split(delimiter) : [];
+  const existingDirs = (
+    env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin")
+  ).split(delimiter);
+
+  const all = [...extraDirs, ...loginDirs, ...existingDirs].filter(Boolean);
+  return [...new Set(all)].join(delimiter);
+}
+
+/** Reset cached login-shell PATH (for testing). */
+export function _resetLoginShellPathCache(): void {
+  _loginShellPathCache = null;
+  _loginShellPathResolved = false;
+}
+
 /**
  * Resolve a command name to its absolute path by searching the augmented PATH.
  * Returns the original command as fallback if not found.
@@ -193,7 +283,7 @@ export function resolveCommandInfo(
     };
   }
   const delimiter = getPathDelimiter(pathModule, platform);
-  const pathDirs = augmentPath(env, pathModule, platform).split(delimiter).filter(Boolean);
+  const pathDirs = getFullPath(env, pathModule, platform).split(delimiter).filter(Boolean);
   for (const dir of pathDirs) {
     const pathVariant = getPathVariant(pathModule, dir, platform);
     const full = pathVariant.join(dir, expanded);

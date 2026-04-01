@@ -38,6 +38,7 @@ import {
   sessionTypeToAgentType,
   getResumeConfig,
 } from "../agents/AgentProfile";
+import { getFullPath } from "../agents/AgentLauncher";
 
 export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
@@ -743,7 +744,7 @@ export class TerminalTab {
         TERM: "xterm-256color",
         COLUMNS: String(cols),
         LINES: String(rows),
-        PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        PATH: getFullPath(),
       },
     });
 
