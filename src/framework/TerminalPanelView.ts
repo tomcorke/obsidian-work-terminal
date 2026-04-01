@@ -813,6 +813,7 @@ export class TerminalPanelView {
         cwd: tab.launchCwd,
         command: tab.launchCommandArgs?.[0] || tab.launchShell,
         commandArgs: tab.launchCommandArgs,
+        profileId: tab.profileId,
         profileColor: tab.profileColor,
       };
     }
@@ -833,6 +834,7 @@ export class TerminalPanelView {
       cwd: tab.launchCwd,
       command,
       commandArgs: tab.launchCommandArgs,
+      profileId: tab.profileId,
       profileColor: tab.profileColor,
     };
   }
@@ -1257,7 +1259,10 @@ export class TerminalPanelView {
     if (profile.agentType === "shell") {
       const expandedCwd = expandTilde(cwd);
       const tab = this.tabManager.createTab(command, expandedCwd, label, "shell");
-      if (tab && profile.button.color) tab.profileColor = profile.button.color;
+      if (tab) {
+        tab.profileId = profile.id;
+        if (profile.button.color) tab.profileColor = profile.button.color;
+      }
       this.renderTabBar();
       return;
     }
@@ -1329,16 +1334,15 @@ export class TerminalPanelView {
         break;
     }
 
-    // Apply profile color to the newly created tab
-    if (profile.button.color) {
-      const activeItemId = this.tabManager.getActiveItemId();
-      if (activeItemId) {
-        const tabs = this.tabManager.getTabs(activeItemId);
-        const lastTab = tabs[tabs.length - 1];
-        if (lastTab) {
-          lastTab.profileColor = profile.button.color;
-          this.renderTabBar();
-        }
+    // Apply profile metadata to the newly created tab
+    const activeItemId = this.tabManager.getActiveItemId();
+    if (activeItemId) {
+      const tabs = this.tabManager.getTabs(activeItemId);
+      const lastTab = tabs[tabs.length - 1];
+      if (lastTab) {
+        lastTab.profileId = profile.id;
+        if (profile.button.color) lastTab.profileColor = profile.button.color;
+        this.renderTabBar();
       }
     }
   }
@@ -1408,7 +1412,15 @@ export class TerminalPanelView {
 
     if (!tab) return;
 
-    if (persisted.profileColor) {
+    if (persisted.profileId) {
+      tab.profileId = persisted.profileId;
+      const profile = this.profileManager?.getProfile(persisted.profileId);
+      if (profile?.button.color) {
+        tab.profileColor = profile.button.color;
+      } else if (persisted.profileColor) {
+        tab.profileColor = persisted.profileColor;
+      }
+    } else if (persisted.profileColor) {
       tab.profileColor = persisted.profileColor;
     }
 
@@ -2038,7 +2050,15 @@ export class TerminalPanelView {
       return;
     }
 
-    if (claimedEntry.profileColor) {
+    if (claimedEntry.profileId) {
+      tab.profileId = claimedEntry.profileId;
+      const profile = this.profileManager?.getProfile(claimedEntry.profileId);
+      if (profile?.button.color) {
+        tab.profileColor = profile.button.color;
+      } else if (claimedEntry.profileColor) {
+        tab.profileColor = claimedEntry.profileColor;
+      }
+    } else if (claimedEntry.profileColor) {
       tab.profileColor = claimedEntry.profileColor;
     }
 

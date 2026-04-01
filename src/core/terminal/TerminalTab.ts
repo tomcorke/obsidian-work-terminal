@@ -102,7 +102,9 @@ export class TerminalTab {
   agentSessionId: string | null = null;
   durableSessionId: string | null = null;
   sessionType: SessionType;
+  profileId: string | undefined;
   profileColor: string | undefined;
+  paramPassMode: import("../agents/AgentProfile").ParamPassMode | undefined;
 
   terminal: Terminal;
   containerEl: HTMLElement;
@@ -1006,6 +1008,7 @@ export class TerminalTab {
       claudeSessionId: this.claudeSessionId,
       durableSessionId: this.durableSessionId,
       sessionType: this.sessionType,
+      profileId: this.profileId,
       profileColor: this.profileColor,
       shell: this.shell,
       cwd: this.cwd,
@@ -1044,6 +1047,7 @@ export class TerminalTab {
       stored.durableSessionId ||
       (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     tab.sessionType = stored.sessionType;
+    tab.profileId = stored.profileId;
     tab.profileColor = stored.profileColor;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";

@@ -27,6 +27,7 @@ function makePersisted(
     commandArgs: string[] | undefined;
     durableSessionId: string;
     durableSessionIdGenerated: boolean;
+    profileId: string;
     profileColor: string;
   }> = {},
 ) {
@@ -43,6 +44,7 @@ function makePersisted(
     command: overrides.command ?? "claude",
     commandArgs: overrides.commandArgs ?? ["claude", "--resume", "session-1"],
     durableSessionIdGenerated: overrides.durableSessionIdGenerated,
+    profileId: overrides.profileId,
     profileColor: overrides.profileColor,
   };
 }
@@ -398,6 +400,54 @@ describe("SessionPersistence", () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].profileColor).toBe("#3498db");
+    });
+
+    it("round-trips profileId through save and load", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: true,
+          agentSessionId: "s1",
+          label: "Claude",
+          taskPath: "task-1",
+          sessionType: "claude",
+          launchShell: "claude",
+          launchCwd: "/vault",
+          launchCommandArgs: ["claude", "--resume", "s1"],
+          profileId: "profile-abc",
+          profileColor: "#e67e22",
+        },
+      ]);
+
+      await SessionPersistence.saveToDisk(plugin, sessions);
+      const result = await SessionPersistence.loadFromDisk(plugin);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].profileId).toBe("profile-abc");
+      expect(result[0].profileColor).toBe("#e67e22");
+    });
+
+    it("omits profileId when not set on the tab", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: false,
+          agentSessionId: null,
+          label: "Shell",
+          taskPath: "task-1",
+          sessionType: "shell",
+          launchShell: "/bin/zsh",
+          launchCwd: "/vault",
+        },
+      ]);
+
+      await SessionPersistence.saveToDisk(plugin, sessions);
+      const result = await SessionPersistence.loadFromDisk(plugin);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].profileId).toBeUndefined();
     });
 
     it("drops entries with invalid disk session types", async () => {

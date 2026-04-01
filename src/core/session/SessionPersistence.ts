@@ -15,6 +15,7 @@ import {
   type SessionType,
 } from "./types";
 import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore";
+import { PARAM_PASS_MODES, type ParamPassMode } from "../agents/AgentProfile";
 
 /** Tab-like interface for extracting persistable data. */
 interface PersistableTab {
@@ -28,7 +29,9 @@ interface PersistableTab {
   launchShell: string;
   launchCwd: string;
   launchCommandArgs?: string[];
+  profileId?: string;
   profileColor?: string;
+  paramPassMode?: ParamPassMode;
 }
 
 /** 7 days in milliseconds */
@@ -65,7 +68,9 @@ export class SessionPersistence {
       cwd: tab.launchCwd,
       command: tab.launchCommandArgs?.[0] || tab.launchShell,
       commandArgs: tab.launchCommandArgs ? [...tab.launchCommandArgs] : undefined,
+      profileId: tab.profileId,
       profileColor: tab.profileColor,
+      paramPassMode: tab.paramPassMode,
     };
   }
 
@@ -107,8 +112,14 @@ export class SessionPersistence {
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
     const durableSessionIdGenerated = candidate.durableSessionIdGenerated === true;
+    const profileId = typeof candidate.profileId === "string" ? candidate.profileId : undefined;
     const profileColor =
       typeof candidate.profileColor === "string" ? candidate.profileColor : undefined;
+    const paramPassMode = (PARAM_PASS_MODES as readonly string[]).includes(
+      candidate.paramPassMode as string,
+    )
+      ? (candidate.paramPassMode as ParamPassMode)
+      : undefined;
     const recoveryMode =
       candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
         ? candidate.recoveryMode
@@ -153,7 +164,9 @@ export class SessionPersistence {
       cwd,
       command,
       commandArgs,
+      profileId,
       profileColor,
+      paramPassMode,
     };
   }
 
