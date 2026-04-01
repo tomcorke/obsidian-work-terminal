@@ -126,22 +126,6 @@ export function isPathLikeCommand(command: string): boolean {
   return command.includes("/") || isWindowsPathLike(command);
 }
 
-/**
- * Build an augmented PATH that includes common tool directories.
- * Deduplicates entries while preserving order (extra dirs first, then existing).
- */
-export function augmentPath(
-  env: NodeJS.ProcessEnv = process.env,
-  pathModule: PathModule = electronRequire("path") as PathModule,
-  platform: NodeJS.Platform = process.platform,
-): string {
-  const delimiter = getPathDelimiter(pathModule, platform);
-  const existing = env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin");
-  const dirs = EXTRA_PATH_DIRS.map((d) => expandTilde(d));
-  const all = [...dirs, ...existing.split(delimiter)].filter(Boolean);
-  return [...new Set(all)].join(delimiter);
-}
-
 // ---------------------------------------------------------------------------
 // Login-shell PATH resolution
 // ---------------------------------------------------------------------------
