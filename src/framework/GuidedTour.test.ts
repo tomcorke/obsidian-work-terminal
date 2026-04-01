@@ -29,13 +29,9 @@ function setupSettingsDom() {
   settingsRoot.className = "settings-root";
   modal.appendChild(settingsRoot);
 
-  const claudeArgs = document.createElement("div");
-  claudeArgs.setAttribute("data-wt-tour", "core.claudeExtraArgs");
-  settingsRoot.appendChild(claudeArgs);
-
-  const additionalContext = document.createElement("div");
-  additionalContext.setAttribute("data-wt-tour", "core.additionalAgentContext");
-  settingsRoot.appendChild(additionalContext);
+  const settingsTarget = document.createElement("div");
+  settingsTarget.setAttribute("data-wt-tour", "test-settings-target");
+  settingsRoot.appendChild(settingsTarget);
 
   return modalContainer;
 }
@@ -292,8 +288,6 @@ describe("GuidedTour", () => {
       '[data-wt-tour="prompt-box"]',
       '[data-wt-tour="launch-buttons"]',
       '[data-wt-tour="custom-session-button"]',
-      '[data-wt-tour="core.claudeExtraArgs"]',
-      '[data-wt-tour="core.additionalAgentContext"]',
     ];
 
     expect(
@@ -386,7 +380,7 @@ describe("GuidedTour", () => {
       {
         title: "Settings",
         body: "Settings target",
-        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        target: '[data-wt-tour="test-settings-target"]',
         surface: "settings",
       },
       {
@@ -410,7 +404,7 @@ describe("GuidedTour", () => {
     expect(plugin.isSettingsOpen()).toBe(true);
     expect(
       document
-        .querySelector('[data-wt-tour="core.claudeExtraArgs"]')
+        .querySelector('[data-wt-tour="test-settings-target"]')
         ?.classList.contains("wt-tour-target"),
     ).toBe(true);
     expect(document.querySelector(".wt-tour-layer")?.parentElement?.className).toBe("modal");
@@ -451,7 +445,7 @@ describe("GuidedTour", () => {
       {
         title: "Settings",
         body: "Settings target",
-        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        target: '[data-wt-tour="test-settings-target"]',
         surface: "settings",
         beforeShow: () => settingsStepReady,
       },
@@ -481,7 +475,7 @@ describe("GuidedTour", () => {
     plugin.getSettingManager().open();
 
     const modal = document.querySelector(".modal") as HTMLElement;
-    const target = document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement;
+    const target = document.querySelector('[data-wt-tour="test-settings-target"]') as HTMLElement;
 
     vi.spyOn(modal, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 40, 360, 300));
     vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(340, 140, 80, 32));
@@ -490,7 +484,7 @@ describe("GuidedTour", () => {
       {
         title: "Settings",
         body: "Stay in bounds",
-        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        target: '[data-wt-tour="test-settings-target"]',
         placement: "right",
         surface: "settings",
       },
@@ -629,7 +623,9 @@ describe("GuidedTour", () => {
       (button) => button.textContent === "Back",
     ) as HTMLButtonElement;
     expect(await pressEnterOnButton(backButton)).toBe(true);
-    await waitFor(() => document.querySelector(".wt-tour-card")?.textContent?.includes("First") ?? false);
+    await waitFor(
+      () => document.querySelector(".wt-tour-card")?.textContent?.includes("First") ?? false,
+    );
     await waitFor(
       () => !(document.querySelector(".wt-tour-btn-primary") as HTMLButtonElement).disabled,
     );
@@ -842,7 +838,7 @@ describe("GuidedTour", () => {
     settingsTarget.className = "settings-target";
     settingsTarget.type = "text";
     settingsTarget.setAttribute("data-wt-tour", "core.claudeExtraArgsInput");
-    (document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement).appendChild(
+    (document.querySelector('[data-wt-tour="test-settings-target"]') as HTMLElement).appendChild(
       settingsTarget,
     );
 
@@ -942,7 +938,9 @@ describe("GuidedTour", () => {
     const plugin = createMockPlugin({});
     plugin.getSettingManager().open();
 
-    const settingsTarget = document.querySelector('[data-wt-tour="core.claudeExtraArgs"]') as HTMLElement;
+    const settingsTarget = document.querySelector(
+      '[data-wt-tour="test-settings-target"]',
+    ) as HTMLElement;
     const settingsControl = document.createElement("button");
     settingsControl.className = "settings-target-control";
     settingsControl.textContent = "Settings control";
@@ -958,7 +956,7 @@ describe("GuidedTour", () => {
       {
         title: "Settings",
         body: "Settings target",
-        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        target: '[data-wt-tour="test-settings-target"]',
         surface: "settings",
       },
     ]);
@@ -1071,28 +1069,6 @@ describe("GuidedTour", () => {
     expect(document.querySelector(".wt-tour-card")).toBeNull();
   });
 
-  it("restores the board surface and focus when finishing the default tour from settings", async () => {
-    const plugin = createMockPlugin({});
-    const { promptToggle } = setupDefaultTourBoardDom();
-    const controller = new GuidedTourController(plugin as never);
-
-    await controller.start();
-
-    for (let index = 0; index < 7; index += 1) {
-      await clickPrimaryAndWait();
-    }
-
-    expect(document.querySelector(".wt-tour-card")?.textContent).toContain("Save reusable task context");
-    expect(plugin.isSettingsOpen()).toBe(true);
-
-    await clickPrimaryAndWait();
-    await waitFor(() => document.querySelector(".wt-tour-card") === null);
-
-    expect(plugin.isSettingsOpen()).toBe(false);
-    await waitFor(() => document.activeElement === promptToggle);
-    expect(document.activeElement).toBe(promptToggle);
-  });
-
   it("restores the board surface and focus when skipping from a settings step", async () => {
     const plugin = createMockPlugin({});
     const { promptToggle } = setupDefaultTourBoardDom();
@@ -1108,7 +1084,7 @@ describe("GuidedTour", () => {
       {
         title: "Settings",
         body: "Settings target",
-        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        target: '[data-wt-tour="test-settings-target"]',
         surface: "settings",
       },
     ]);
@@ -1145,7 +1121,7 @@ describe("GuidedTour", () => {
       {
         title: "Settings",
         body: "Settings target",
-        target: '[data-wt-tour="core.claudeExtraArgs"]',
+        target: '[data-wt-tour="test-settings-target"]',
         surface: "settings",
       },
     ]);

@@ -854,21 +854,5 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
       surface: "board",
       allowTargetFocus: true,
     },
-    {
-      title: "Set default Claude arguments",
-      body: "These settings apply every time Claude launches. Use them for shared flags, model selection, or any standard CLI arguments you want on by default.",
-      target: '[data-wt-tour="core.claudeExtraArgs"]',
-      placement: "right",
-      surface: "settings",
-      allowTargetFocus: true,
-    },
-    {
-      title: "Save reusable task context",
-      body: "This template feeds extra context into Claude (ctx) and contextual custom sessions. It is the best place for instructions like reading the task file first.",
-      target: '[data-wt-tour="core.additionalAgentContext"]',
-      placement: "right",
-      surface: "settings",
-      allowTargetFocus: true,
-    },
   ];
 }
