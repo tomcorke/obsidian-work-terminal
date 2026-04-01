@@ -34,8 +34,8 @@ const mocks = vi.hoisted(() => {
 
   return {
     injectXtermCss: vi.fn(),
-    attachScrollButton: vi.fn(),
-    attachBubbleCapture: vi.fn(),
+    attachScrollButton: vi.fn(() => vi.fn()),
+    attachBubbleCapture: vi.fn(() => vi.fn()),
     attachCapturePhase: vi.fn(() => vi.fn()),
     electronShell: { openExternal: vi.fn() },
     fsModule: {

@@ -16,21 +16,21 @@ import type { ChildProcess } from "child_process";
  * Prevents Obsidian from receiving keydown/keyup events that bubble up
  * from the terminal.
  */
-export function attachBubbleCapture(containerEl: HTMLElement): void {
-  containerEl.addEventListener(
-    "keydown",
-    (e: KeyboardEvent) => {
-      e.stopPropagation();
-    },
-    false,
-  );
-  containerEl.addEventListener(
-    "keyup",
-    (e: KeyboardEvent) => {
-      e.stopPropagation();
-    },
-    false,
-  );
+export function attachBubbleCapture(containerEl: HTMLElement): () => void {
+  const onKeydown = (e: KeyboardEvent) => {
+    e.stopPropagation();
+  };
+  const onKeyup = (e: KeyboardEvent) => {
+    e.stopPropagation();
+  };
+
+  containerEl.addEventListener("keydown", onKeydown, false);
+  containerEl.addEventListener("keyup", onKeyup, false);
+
+  return () => {
+    containerEl.removeEventListener("keydown", onKeydown, false);
+    containerEl.removeEventListener("keyup", onKeyup, false);
+  };
 }
 
 /**
