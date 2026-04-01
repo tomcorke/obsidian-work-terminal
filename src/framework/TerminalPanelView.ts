@@ -35,18 +35,10 @@ import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildAgentContextPrompt } from "./AgentContextPrompt";
-import { CustomSessionModal } from "./CustomSessionModal";
+import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
-import {
-  getDefaultSessionLabel,
-  isClaudeSession,
-  isContextSession,
-  isCopilotSession,
-  isStrandsSession,
-  sanitizeCustomSessionConfig,
-  type CustomSessionConfig,
-} from "./CustomSessionConfig";
+import { getDefaultSessionLabel, isClaudeSession } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
@@ -509,10 +501,10 @@ export class TerminalPanelView {
       text: "...",
       attr: { "data-wt-tour": "custom-session-button" },
     });
-    customBtn.setAttribute("aria-label", "Custom session");
-    customBtn.setAttribute("title", "Custom session");
+    customBtn.setAttribute("aria-label", "Launch profile");
+    customBtn.setAttribute("title", "Launch profile");
     customBtn.addEventListener("click", () => {
-      this.launchAction("custom session", () => this.openCustomSessionModal());
+      this.launchAction("profile launch", () => this.openProfileLaunchModal());
     });
   }
 
@@ -1856,50 +1848,60 @@ export class TerminalPanelView {
     return this.allItems.find((item) => item.id === activeItemId) || null;
   }
 
-  private async loadCustomSessionDefaults(
-    itemId: string,
-    freshSettings: Record<string, unknown>,
-  ): Promise<CustomSessionConfig> {
-    const data = (await this.plugin.loadData()) || {};
-    const saved = data.customSessionDefaults?.[itemId];
-    const defaultCwd = this.getStringSetting(freshSettings, "core.defaultTerminalCwd", "~");
-    return sanitizeCustomSessionConfig(saved, defaultCwd);
-  }
-
-  private async saveCustomSessionDefaults(
-    itemId: string,
-    config: CustomSessionConfig,
-  ): Promise<void> {
-    await mergeAndSavePluginData(this.plugin, async (data) => {
-      if (!data.customSessionDefaults) data.customSessionDefaults = {};
-      data.customSessionDefaults[itemId] = config;
-    });
-  }
-
-  private async openCustomSessionModal(): Promise<void> {
+  private async openProfileLaunchModal(): Promise<void> {
     const item = this.getActiveItem();
     if (!item) {
-      new Notice(`Select a ${this.adapter.config.itemName} first to launch a custom session`);
+      new Notice(`Select a ${this.adapter.config.itemName} first to launch a profile`);
+      return;
+    }
+
+    const profiles = this.profileManager?.getProfiles() ?? [];
+    if (profiles.length === 0) {
+      new Notice("No agent profiles configured. Open Settings to create one.");
       return;
     }
 
     const fresh = await this.loadFreshSettings();
-    const initial = await this.loadCustomSessionDefaults(item.id, fresh);
+    const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
     const activeIds = this.getActiveSessionIdsAcrossViews();
     const closedSessions = this.recentlyClosedStore.getEntries(activeIds, 5, (entry) =>
       this.isClosedSessionActiveAcrossViews(entry),
     );
-    new CustomSessionModal(
+    new ProfileLaunchModal(
       this.plugin.app,
-      initial,
-      (config) => {
-        this.launchAction("custom session", () => this.spawnCustomSession(item, config));
+      profiles,
+      defaultCwd,
+      (overrides) => {
+        this.launchAction("profile launch", () => this.spawnFromProfileWithOverrides(overrides));
       },
       closedSessions,
       (entry) => {
         this.launchAction("restore session", () => this.restoreClosedSession(entry));
       },
     ).open();
+  }
+
+  private async spawnFromProfileWithOverrides(overrides: ProfileLaunchOverrides): Promise<void> {
+    const profile = overrides.profile;
+
+    // Apply overrides: create a shallow copy with cwd/label patched
+    const effectiveProfile = {
+      ...profile,
+      cwd: overrides.cwd || profile.cwd,
+      button: {
+        ...profile.button,
+        label: overrides.label || profile.button.label,
+      },
+    };
+
+    // If extra args were provided, append them to the profile's args
+    if (overrides.extraArgs) {
+      effectiveProfile.args = effectiveProfile.args
+        ? `${effectiveProfile.args} ${overrides.extraArgs}`
+        : overrides.extraArgs;
+    }
+
+    await this.spawnFromProfile(effectiveProfile);
   }
 
   private async restoreClosedSession(entry: ClosedSessionEntry): Promise<void> {
@@ -1967,73 +1969,6 @@ export class TerminalPanelView {
       },
     );
     this.renderTabBar();
-  }
-
-  private async spawnCustomSession(item: WorkItem, rawConfig: CustomSessionConfig): Promise<void> {
-    const fresh = await this.loadFreshSettings();
-    const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
-    const config = sanitizeCustomSessionConfig(rawConfig, defaultCwd);
-    const prompt = isContextSession(config.sessionType)
-      ? config.sessionType === "claude-with-context"
-        ? await this.getClaudeContextPrompt(item, fresh)
-        : await this.getAgentContextPrompt(item, fresh)
-      : undefined;
-
-    if (isContextSession(config.sessionType) && !prompt) {
-      new Notice("Could not build a contextual prompt for this item");
-      return;
-    }
-
-    await this.saveCustomSessionDefaults(item.id, config);
-
-    if (config.sessionType === "shell") {
-      const shell = this.getStringSetting(
-        fresh,
-        "core.defaultShell",
-        process.env.SHELL || "/bin/zsh",
-      );
-      this.tabManager.createTab(
-        shell,
-        expandTilde(config.cwd),
-        config.label || getDefaultSessionLabel(config.sessionType),
-        "shell",
-      );
-      this.renderTabBar();
-      return;
-    }
-
-    if (isCopilotSession(config.sessionType)) {
-      await this.spawnCopilotSession({
-        sessionType: config.sessionType,
-        cwd: config.cwd,
-        extraArgs: config.extraArgs,
-        label: config.label || getDefaultSessionLabel(config.sessionType),
-        prompt,
-        freshSettings: fresh,
-      });
-      return;
-    }
-
-    if (isStrandsSession(config.sessionType)) {
-      await this.spawnStrandsSession({
-        sessionType: config.sessionType,
-        cwd: config.cwd,
-        extraArgs: config.extraArgs,
-        label: config.label || getDefaultSessionLabel(config.sessionType),
-        prompt,
-        freshSettings: fresh,
-      });
-      return;
-    }
-
-    await this.spawnClaudeSession({
-      sessionType: config.sessionType as "claude" | "claude-with-context",
-      cwd: config.cwd,
-      extraArgs: config.extraArgs,
-      label: config.label || getDefaultSessionLabel(config.sessionType),
-      prompt,
-      freshSettings: fresh,
-    });
   }
 
   private async spawnClaudeSession(options: {
