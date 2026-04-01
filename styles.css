@@ -675,7 +675,7 @@
   pointer-events: none;
 }
 
-.wt-tab-agent-active > * {
+.wt-tab-agent-active > *:not(.wt-tab-color-indicator) {
   position: relative;
   z-index: 1;
 }
