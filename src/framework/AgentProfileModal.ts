@@ -21,7 +21,7 @@ import {
   isPathLikeCommand,
   resolveCommandInfo,
 } from "../core/agents/AgentLauncher";
-import { expandTilde } from "../core/utils";
+import { expandTilde, isValidCssColor } from "../core/utils";
 
 const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   claude: "Claude",
@@ -73,6 +73,11 @@ export class AgentProfileEditModal extends Modal {
     super(app);
     this.isNew = !profile;
     this.draft = profile ? { ...profile, button: { ...profile.button } } : createDefaultProfile();
+    // Normalize imported whitespace-only color values
+    if (this.draft.button.color !== undefined) {
+      const trimmed = this.draft.button.color.trim();
+      this.draft.button.color = trimmed || undefined;
+    }
   }
 
   onOpen(): void {
@@ -250,7 +255,7 @@ export class AgentProfileEditModal extends Modal {
       .addText((text) => {
         text
           .setPlaceholder("(default)")
-          .setValue(this.draft.button.color || "")
+          .setValue((this.draft.button.color || "").trim())
           .onChange((value) => {
             this.draft.button.color = value.trim() || undefined;
             this.updateColorPreview(colorSetting.controlEl);
@@ -305,7 +310,7 @@ export class AgentProfileEditModal extends Modal {
     const preview = controlEl.querySelector<HTMLElement>(".wt-color-preview");
     if (!preview) return;
     const color = this.draft.button.color;
-    if (color) {
+    if (color && isValidCssColor(color)) {
       preview.style.backgroundColor = color;
       preview.classList.remove("wt-color-preview-empty");
     } else {
