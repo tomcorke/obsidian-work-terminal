@@ -128,7 +128,7 @@ export class ProfileLaunchModal extends Modal {
       .setDesc("Override the tab label (leave blank to use the profile default)")
       .addText((text) => {
         text
-          .setPlaceholder(this.selectedProfile?.name || "")
+          .setPlaceholder(this.getLabelPlaceholder())
           .setValue(this.labelOverride)
           .onChange((value) => {
             this.labelOverride = value;
@@ -171,13 +171,18 @@ export class ProfileLaunchModal extends Modal {
     return this.selectedProfile?.defaultCwd || this.defaultCwd || "Profile default";
   }
 
+  private getLabelPlaceholder(): string {
+    const profile = this.selectedProfile;
+    return profile?.button.label || profile?.name || "";
+  }
+
   private getArgsPlaceholder(): string {
     return this.selectedProfile?.arguments || "Optional extra arguments";
   }
 
   private updatePlaceholders(): void {
     if (this.cwdInput) this.cwdInput.placeholder = this.getCwdPlaceholder();
-    if (this.labelInput) this.labelInput.placeholder = this.selectedProfile?.name || "";
+    if (this.labelInput) this.labelInput.placeholder = this.getLabelPlaceholder();
     if (this.argsInput) this.argsInput.placeholder = this.getArgsPlaceholder();
   }
 
@@ -232,6 +237,9 @@ export class ProfileLaunchModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.cwdInput = null;
+    this.labelInput = null;
+    this.argsInput = null;
   }
 }
 

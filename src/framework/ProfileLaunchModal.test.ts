@@ -2,7 +2,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import { createDefaultClaudeProfile, createDefaultProfile } from "../core/agents/AgentProfile";
-import { renderProfileSummary } from "./ProfileLaunchModal";
+import { ProfileLaunchModal, renderProfileSummary } from "./ProfileLaunchModal";
 
 type CreateChildOptions = { cls?: string; text?: string };
 type ObsidianHTMLElementPrototype = typeof HTMLElement.prototype & {
@@ -15,24 +15,92 @@ type ObsidianHTMLElementPrototype = typeof HTMLElement.prototype & {
 
 vi.mock("obsidian", () => ({
   Modal: class {
+    app: unknown;
     contentEl = document.createElement("div");
-    close() {}
+    constructor(app: unknown) {
+      this.app = app;
+    }
+    open() {
+      (this as any).onOpen?.();
+    }
+    close() {
+      (this as any).onClose?.();
+    }
   },
   Setting: class {
-    constructor() {}
+    private el: HTMLElement;
+    constructor(containerEl: HTMLElement) {
+      this.el = containerEl.createDiv({ cls: "setting-item" }) as unknown as HTMLElement;
+    }
     setName() {
       return this;
     }
     setDesc() {
       return this;
     }
-    addDropdown() {
+    addDropdown(cb: (dropdown: any) => void) {
+      const select = document.createElement("select");
+      this.el.appendChild(select);
+      const dropdown = {
+        addOption(value: string, label: string) {
+          const opt = document.createElement("option");
+          opt.value = value;
+          opt.textContent = label;
+          select.appendChild(opt);
+          return dropdown;
+        },
+        setValue(value: string) {
+          select.value = value;
+          return dropdown;
+        },
+        onChange(cb: (value: string) => void) {
+          select.addEventListener("change", () => cb(select.value));
+          return dropdown;
+        },
+      };
+      cb(dropdown);
       return this;
     }
-    addText() {
+    addText(cb: (text: any) => void) {
+      const input = document.createElement("input");
+      this.el.appendChild(input);
+      const text = {
+        inputEl: input,
+        setPlaceholder(p: string) {
+          input.placeholder = p;
+          return text;
+        },
+        setValue(v: string) {
+          input.value = v;
+          return text;
+        },
+        onChange(cb: (v: string) => void) {
+          input.addEventListener("input", () => cb(input.value));
+          return text;
+        },
+      };
+      cb(text);
       return this;
     }
-    addTextArea() {
+    addTextArea(cb: (text: any) => void) {
+      const textarea = document.createElement("textarea");
+      this.el.appendChild(textarea);
+      const text = {
+        inputEl: textarea,
+        setPlaceholder(p: string) {
+          textarea.placeholder = p;
+          return text;
+        },
+        setValue(v: string) {
+          textarea.value = v;
+          return text;
+        },
+        onChange(cb: (v: string) => void) {
+          textarea.addEventListener("input", () => cb(textarea.value));
+          return text;
+        },
+      };
+      cb(text);
       return this;
     }
   },
@@ -182,5 +250,100 @@ describe("renderProfileSummary", () => {
     renderProfileSummary(container, null);
 
     expect(container.innerHTML).toBe("");
+  });
+});
+
+describe("ProfileLaunchModal placeholders", () => {
+  function createModal(profiles: AgentProfile[], defaultCwd = "/vault") {
+    const modal = new ProfileLaunchModal({} as any, profiles, defaultCwd, vi.fn());
+    modal.open();
+    return modal;
+  }
+
+  function getInputs(modal: ProfileLaunchModal) {
+    const el = (modal as any).contentEl as HTMLElement;
+    const inputs = el.querySelectorAll<HTMLInputElement>("input");
+    const textareas = el.querySelectorAll<HTMLTextAreaElement>("textarea");
+    return {
+      cwd: inputs[0],
+      label: inputs[1],
+      args: textareas[0],
+    };
+  }
+
+  it("shows profile defaultCwd as cwd placeholder", () => {
+    const modal = createModal([makeProfile({ defaultCwd: "/custom/path" })]);
+    const { cwd } = getInputs(modal);
+    expect(cwd.placeholder).toBe("/custom/path");
+  });
+
+  it("falls back to vault default cwd when profile has no defaultCwd", () => {
+    const modal = createModal([makeProfile()], "/vault/default");
+    const { cwd } = getInputs(modal);
+    expect(cwd.placeholder).toBe("/vault/default");
+  });
+
+  it("shows button.label as label placeholder when set", () => {
+    const modal = createModal([
+      makeProfile({ name: "Claude", button: { enabled: true, label: "My Claude" } }),
+    ]);
+    const { label } = getInputs(modal);
+    expect(label.placeholder).toBe("My Claude");
+  });
+
+  it("falls back to profile name when button.label is empty", () => {
+    const modal = createModal([makeProfile({ name: "Strands", button: { enabled: true } })]);
+    const { label } = getInputs(modal);
+    expect(label.placeholder).toBe("Strands");
+  });
+
+  it("shows profile arguments as args placeholder", () => {
+    const modal = createModal([makeProfile({ arguments: "--model opus" })]);
+    const { args } = getInputs(modal);
+    expect(args.placeholder).toBe("--model opus");
+  });
+
+  it("shows generic text when profile has no arguments", () => {
+    const modal = createModal([makeProfile()]);
+    const { args } = getInputs(modal);
+    expect(args.placeholder).toBe("Optional extra arguments");
+  });
+
+  it("updates placeholders when profile changes", () => {
+    const profiles = [
+      makeProfile({ id: "p1", name: "Claude", defaultCwd: "/claude", arguments: "--fast" }),
+      makeProfile({
+        id: "p2",
+        name: "Copilot",
+        defaultCwd: "/copilot",
+        arguments: "--model gpt-5",
+        button: { enabled: true, label: "GH Copilot" },
+      }),
+    ];
+    const modal = createModal(profiles);
+    const { cwd, label, args } = getInputs(modal);
+
+    // Initial state - first profile
+    expect(cwd.placeholder).toBe("/claude");
+    expect(label.placeholder).toBe("Claude");
+    expect(args.placeholder).toBe("--fast");
+
+    // Switch to second profile via dropdown
+    const select = (modal as any).contentEl.querySelector("select") as HTMLSelectElement;
+    select.value = "p2";
+    select.dispatchEvent(new Event("change"));
+
+    expect(cwd.placeholder).toBe("/copilot");
+    expect(label.placeholder).toBe("GH Copilot");
+    expect(args.placeholder).toBe("--model gpt-5");
+  });
+
+  it("nulls out DOM refs on close", () => {
+    const modal = createModal([makeProfile()]);
+    expect((modal as any).cwdInput).not.toBeNull();
+    modal.close();
+    expect((modal as any).cwdInput).toBeNull();
+    expect((modal as any).labelInput).toBeNull();
+    expect((modal as any).argsInput).toBeNull();
   });
 });
