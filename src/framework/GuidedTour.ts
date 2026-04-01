@@ -96,9 +96,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object";
 }
 
-function isInteractiveShortcutTarget(
-  target: EventTarget | null,
-): boolean {
+function isInteractiveShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
 
@@ -126,11 +124,7 @@ function isTabbableElement(element: HTMLElement): boolean {
     return false;
   }
 
-  for (
-    let current: HTMLElement | null = element;
-    current;
-    current = current.parentElement
-  ) {
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
     if (current.hidden) return false;
     if (current.hasAttribute("inert")) return false;
     if (current.getAttribute("aria-hidden") === "true") return false;
@@ -645,7 +639,9 @@ export class GuidedTourController {
     const modal = Array.from(document.querySelectorAll<HTMLElement>(".modal")).at(-1);
     if (modal) return modal;
 
-    const modalContainer = Array.from(document.querySelectorAll<HTMLElement>(".modal-container")).at(-1);
+    const modalContainer = Array.from(
+      document.querySelectorAll<HTMLElement>(".modal-container"),
+    ).at(-1);
     return modalContainer ?? document.body;
   }
 
@@ -815,16 +811,14 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
   return [
     {
       title: "Welcome to Work Terminal",
-      body:
-        "This view keeps your work list on the left and task-specific terminals on the right, so you can move from planning to execution in one place.",
+      body: "This view keeps your work list on the left and task-specific terminals on the right, so you can move from planning to execution in one place.",
       target: ".wt-main-view",
       placement: "bottom",
       surface: "board",
     },
     {
       title: "Add a new task from here",
-      body:
-        "Use the prompt box to create a new task without leaving the board. Pick the destination column, then press Enter or Create.",
+      body: "Use the prompt box to create a new task without leaving the board. Pick the destination column, then press Enter or Create.",
       target: '[data-wt-tour="prompt-box"]',
       placement: "right",
       surface: "board",
@@ -832,16 +826,14 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
     },
     {
       title: "Select work from the board",
-      body:
-        "Your tasks appear here. Click a task card once you have one to focus it, then keep an eye on the board for shell and agent activity badges.",
+      body: "Your tasks appear here. Click a task card once you have one to focus it, then keep an eye on the board for shell and agent activity badges.",
       target: '[data-wt-tour="list-panel"]',
       placement: "right",
       surface: "board",
     },
     {
       title: "Launch Shell and Claude sessions",
-      body:
-        "Once a task is selected, use these buttons to open a shell, start Claude, or launch Claude with saved extra context.",
+      body: "Once a task is selected, use these buttons to open a shell, start Claude, or launch Claude with saved extra context.",
       target: '[data-wt-tour="launch-buttons"]',
       placement: "left",
       surface: "board",
@@ -849,37 +841,17 @@ export function createDefaultGuidedTourSteps(_plugin: Plugin): GuidedTourStep[] 
     },
     {
       title: "Rename and rearrange tabs",
-      body:
-        "Once you launch your first session, tabs appear here. Double-click a tab label to rename it, drag tabs to reorder them, and close tabs with the x button.",
+      body: "Once you launch your first session, tabs appear here. Double-click a tab label to rename it, drag tabs to reorder them, and close tabs with the x button.",
       target: '[data-wt-tour="tab-bar"]',
       placement: "left",
       surface: "board",
     },
     {
-      title: "Find the custom session launcher",
-      body:
-        "This menu opens the custom session dialog. Select a task first, then use it for Copilot, Strands, extra CLI arguments, or recent-session restore.",
+      title: "Find the profile launcher",
+      body: "This menu opens the profile launcher. Select a task first, then pick a profile with optional overrides for working directory, label, and extra CLI arguments. You can also restore recently closed sessions.",
       target: '[data-wt-tour="custom-session-button"]',
       placement: "left",
       surface: "board",
-      allowTargetFocus: true,
-    },
-    {
-      title: "Set default Claude arguments",
-      body:
-        "These settings apply every time Claude launches. Use them for shared flags, model selection, or any standard CLI arguments you want on by default.",
-      target: '[data-wt-tour="core.claudeExtraArgs"]',
-      placement: "right",
-      surface: "settings",
-      allowTargetFocus: true,
-    },
-    {
-      title: "Save reusable task context",
-      body:
-        "This template feeds extra context into Claude (ctx) and contextual custom sessions. It is the best place for instructions like reading the task file first.",
-      target: '[data-wt-tour="core.additionalAgentContext"]',
-      placement: "right",
-      surface: "settings",
       allowTargetFocus: true,
     },
   ];

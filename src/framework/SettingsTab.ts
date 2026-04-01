@@ -2,20 +2,14 @@
  * WorkTerminalSettingsTab - single settings UI combining core framework
  * settings with adapter-provided settings via namespaced keys.
  *
- * Core settings: core.claudeCommand/core.copilotCommand/core.strandsCommand, their default args,
- *                core.additionalAgentContext (extra ctx template),
- *                core.defaultShell, core.defaultTerminalCwd
+ * Core settings: core.defaultShell, core.defaultTerminalCwd, toggles
+ * Agent settings: managed via Agent Profile Manager (profiles replace
+ *   the legacy per-agent command/args/context fields)
  * Adapter settings: adapter.* (from adapter.config.settingsSchema)
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
 import type { AdapterBundle, SettingField } from "../core/interfaces";
-import {
-  isAbsoluteCommandPath,
-  isPathLikeCommand,
-  resolveCommandInfo,
-  splitConfiguredCommand,
-} from "../core/agents/AgentLauncher";
 import { checkHookStatus, installHooks, removeHooks } from "../core/claude/ClaudeHookManager";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
@@ -38,14 +32,6 @@ interface CoreSettings {
   "core.acceptNoResumeHooks": boolean;
 }
 
-type BinaryCommandKey = "core.claudeCommand" | "core.copilotCommand" | "core.strandsCommand";
-
-type BinaryValidationState = {
-  found: boolean;
-  resolved: string;
-  message: string;
-};
-
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
 
 const CORE_DEFAULTS: CoreSettings = {
@@ -67,12 +53,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   private adapter: AdapterBundle;
   private plugin: Plugin;
   private profileManager: AgentProfileManager;
-
-  private static readonly BINARY_COMMAND_KEYS: BinaryCommandKey[] = [
-    "core.claudeCommand",
-    "core.copilotCommand",
-    "core.strandsCommand",
-  ];
 
   constructor(
     app: App,
@@ -109,50 +89,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Core settings section
     containerEl.createEl("h2", { text: "Core" });
 
-    this.addCoreBinarySetting(
-      containerEl,
-      "core.claudeCommand",
-      "Claude command",
-      "Path or name of the Claude CLI binary",
-    );
-    this.addCoreTextArea(
-      containerEl,
-      "core.claudeExtraArgs",
-      "Default Claude arguments",
-      "Arguments passed to every Claude session (space-separated). Applied to both + Claude and + Claude (ctx).",
-      "core.claudeExtraArgs",
-    );
-    this.addCoreBinarySetting(
-      containerEl,
-      "core.copilotCommand",
-      "Copilot command",
-      "Path or name of the GitHub Copilot CLI binary",
-    );
-    this.addCoreTextArea(
-      containerEl,
-      "core.copilotExtraArgs",
-      "Default Copilot arguments",
-      "Arguments passed to Copilot sessions launched from the custom session spawner.",
-    );
-    this.addCoreBinarySetting(
-      containerEl,
-      "core.strandsCommand",
-      "Strands command",
-      'Path or name of the AWS Strands agent entry-point. The Strands SDK has no universal binary - set this to your project\'s runner script or wrapper (e.g. ~/my-project/run-agent.sh or uv run python agent.py). Tilde (~) is expanded. Inline runner arguments are supported here for wrapper commands like "uv run python agent.py". Use "Default Strands arguments" below for extra arguments that should be appended to every Strands launch.',
-    );
-    this.addCoreTextArea(
-      containerEl,
-      "core.strandsExtraArgs",
-      "Default Strands arguments",
-      "Arguments passed to Strands sessions launched from the custom session spawner (space-separated).",
-    );
-    this.addCoreTextArea(
-      containerEl,
-      "core.additionalAgentContext",
-      "Additional context template",
-      "Optional template used as the initial prompt for Claude (ctx), and appended after the adapter prompt for contextual custom Copilot and Strands sessions. The Claude (ctx) button is hidden when this is empty. Placeholders: $title, $state, $filePath, $id.",
-      "core.additionalAgentContext",
-    );
     this.addCoreSetting(
       containerEl,
       "core.defaultShell",
@@ -311,85 +247,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .addText((text) => {
         text.inputEl.dataset.settingKey = key;
         text.setValue(String(value)).onChange(async (newValue) => {
-          if (key === "core.defaultTerminalCwd") {
-            this.refreshBinaryValidationState();
-          }
           await this.saveSettings((settings) => {
             settings[key] = newValue;
           });
         });
       });
-    if (tourId) {
-      setting.settingEl.setAttribute("data-wt-tour", tourId);
-    }
-    if (key === "core.defaultTerminalCwd") {
-      this.refreshBinaryValidationState();
-    }
-  }
-
-  private async addCoreBinarySetting(
-    containerEl: HTMLElement,
-    key: BinaryCommandKey,
-    name: string,
-    description: string,
-    tourId?: string,
-  ): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-    const value = settings[key] ?? CORE_DEFAULTS[key];
-
-    const setting = new Setting(containerEl)
-      .setName(name)
-      .setDesc(description)
-      .addText((text) => {
-        text.inputEl.dataset.settingKey = key;
-        text.setValue(String(value)).onChange(async (newValue) => {
-          this.refreshBinaryValidationState();
-          await this.saveSettings((currentSettings) => {
-            currentSettings[key] = newValue;
-          });
-        });
-      });
-
-    if (tourId) {
-      setting.settingEl.setAttribute("data-wt-tour", tourId);
-    }
-
-    const validationEl = setting.descEl.createDiv({
-      cls: "wt-command-validation",
-    });
-    validationEl.dataset.commandValidationKey = key;
-    validationEl.createSpan({ cls: "wt-command-status-badge" });
-    validationEl.createDiv({ cls: "wt-command-validation-note" });
-    this.updateBinaryValidationStateForKey(key);
-  }
-
-  private async addCoreTextArea(
-    containerEl: HTMLElement,
-    key: keyof CoreSettings,
-    name: string,
-    description: string,
-    tourId?: string,
-  ): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-    const value = settings[key] ?? CORE_DEFAULTS[key];
-
-    const setting = new Setting(containerEl)
-      .setName(name)
-      .setDesc(description)
-      .addTextArea((ta) => {
-        ta.setValue(String(value)).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
-          });
-        });
-        ta.inputEl.style.width = "100%";
-        ta.inputEl.style.minHeight = "80px";
-      });
-    // Let the textarea span the full width below the label
-    setting.settingEl.style.flexWrap = "wrap";
-    setting.controlEl.style.width = "100%";
     if (tourId) {
       setting.settingEl.setAttribute("data-wt-tour", tourId);
     }
@@ -419,80 +281,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (tourId) {
       setting.settingEl.setAttribute("data-wt-tour", tourId);
     }
-  }
-
-  private refreshBinaryValidationState(): void {
-    for (const key of WorkTerminalSettingsTab.BINARY_COMMAND_KEYS) {
-      this.updateBinaryValidationStateForKey(key);
-    }
-  }
-
-  private updateBinaryValidationStateForKey(key: BinaryCommandKey): void {
-    const container = this.containerEl.querySelector<HTMLElement>(
-      `[data-command-validation-key="${key}"]`,
-    );
-    if (!container) return;
-    const badgeEl = container.querySelector<HTMLElement>(".wt-command-status-badge");
-    const noteEl = container.querySelector<HTMLElement>(".wt-command-validation-note");
-    if (!badgeEl || !noteEl) return;
-    const command = this.getCoreInputValue(key);
-    const cwd = this.getCoreInputValue("core.defaultTerminalCwd");
-    const state = this.resolveBinaryValidationState(key, command, cwd);
-
-    badgeEl.textContent = state.found ? "Found" : "Not found";
-    badgeEl.className = "wt-command-status-badge";
-    badgeEl.classList.add(state.found ? "wt-command-status-ok" : "wt-command-status-missing");
-    noteEl.textContent = state.message;
-    noteEl.className = "wt-command-validation-note";
-    noteEl.classList.add(
-      state.found ? "wt-command-validation-note-found" : "wt-command-validation-note-missing",
-    );
-  }
-
-  private getCoreInputValue(key: keyof CoreSettings): string {
-    const input = this.containerEl.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-      `input[data-setting-key="${key}"], textarea[data-setting-key="${key}"]`,
-    );
-    if (input) {
-      return input.value;
-    }
-    return String(CORE_DEFAULTS[key] ?? "");
-  }
-
-  private resolveBinaryValidationState(
-    key: BinaryCommandKey,
-    command: string,
-    cwd: string,
-  ): BinaryValidationState {
-    const trimmedCommand = String(command ?? "").trim();
-    if (!trimmedCommand) {
-      return {
-        found: false,
-        resolved: "",
-        message: "Enter a binary name or path to validate it.",
-      };
-    }
-    const normalizedCwd = expandTilde(
-      String(cwd ?? "").trim() || CORE_DEFAULTS["core.defaultTerminalCwd"],
-    );
-    const commandTokens =
-      key === "core.strandsCommand" ? splitConfiguredCommand(trimmedCommand) : [trimmedCommand];
-    const executableToken = commandTokens[0] ?? trimmedCommand;
-    const inlineArgs = key === "core.strandsCommand" ? commandTokens.slice(1).join(" ") : "";
-    const resolution = resolveCommandInfo(executableToken, normalizedCwd);
-    const locationLabel = isAbsoluteCommandPath(executableToken)
-      ? "Using configured path"
-      : isPathLikeCommand(executableToken)
-        ? `Resolved from ${normalizedCwd}`
-        : "Searched PATH";
-    const inlineArgsLabel = inlineArgs ? ` Inline args: ${inlineArgs}` : "";
-    return {
-      found: resolution.found,
-      resolved: resolution.resolved,
-      message: resolution.found
-        ? `${locationLabel}: ${resolution.resolved}${inlineArgsLabel}`
-        : `${locationLabel}: ${resolution.resolved || executableToken}${inlineArgsLabel}`,
-    };
   }
 
   private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {

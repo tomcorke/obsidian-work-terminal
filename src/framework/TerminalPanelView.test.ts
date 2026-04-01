@@ -2967,125 +2967,6 @@ describe("TerminalPanelView hook warning", () => {
     expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
   });
 
-  it("hides the Claude-with-context button when the template is whitespace only", async () => {
-    const { panelEl } = createView({
-      "core.additionalAgentContext": "  \n\t  ",
-    });
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
-  });
-
-  it("rerenders the Claude-with-context button when the template setting changes", async () => {
-    const { panelEl } = createView({
-      "core.additionalAgentContext": "",
-    });
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
-
-    window.dispatchEvent(
-      new window.CustomEvent("work-terminal:settings-changed", {
-        detail: {
-          "core.additionalAgentContext": "Template for $title",
-          "core.defaultTerminalCwd": "~",
-        },
-      }),
-    );
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).not.toBeNull();
-  });
-
-  it("reuses one settings snapshot for custom contextual Claude sessions", async () => {
-    const loadData = vi.fn(async () => ({ settings: {} }));
-    const { view, plugin } = createView({}, { loadData });
-    await flushAsync();
-    (plugin.loadData as any).mockClear();
-    (plugin.loadData as any)
-      .mockResolvedValueOnce({
-        settings: {
-          "core.additionalAgentContext": "Prompt A for $title",
-          "core.claudeCommand": "/bin/echo",
-          "core.defaultTerminalCwd": "~/one",
-        },
-      })
-      .mockResolvedValueOnce({
-        settings: {
-          "core.additionalAgentContext": "Prompt B for $title",
-          "core.claudeCommand": "/bin/false",
-          "core.defaultTerminalCwd": "~/two",
-        },
-      });
-
-    await (view as any).spawnCustomSession(
-      {
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks/task-1.md",
-      },
-      {
-        sessionType: "claude-with-context",
-        cwd: "~/custom",
-        extraArgs: "",
-        label: "Custom Claude",
-      },
-    );
-
-    expect(plugin.loadData).toHaveBeenCalledTimes(2);
-    expect(mockState.latestCreateTabArgs).not.toBeNull();
-    expect(mockState.latestCreateTabArgs?.[0]).toBe("/bin/echo");
-    expect(mockState.latestCreateTabArgs?.[1]).toBe(expandTilde("~/custom"));
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual(
-      expect.arrayContaining([expect.stringContaining("Prompt A for Task One")]),
-    );
-    expect(mockState.latestCreateTabArgs?.[5]).not.toEqual(
-      expect.arrayContaining([expect.stringContaining("Prompt B for Task One")]),
-    );
-  });
-
-  it("passes one fresh settings snapshot through custom contextual Copilot launches", async () => {
-    const { view } = createView();
-    await flushAsync();
-    const fresh = {
-      "core.additionalAgentContext": "Prompt A for $title",
-      "core.copilotCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/one",
-    };
-    const item = {
-      id: "task-1",
-      title: "Task One",
-      state: "doing",
-      path: "Tasks/task-1.md",
-    };
-    const loadFreshSettings = vi.spyOn(view as any, "loadFreshSettings").mockResolvedValue(fresh);
-    const getAgentContextPrompt = vi
-      .spyOn(view as any, "getAgentContextPrompt")
-      .mockResolvedValue("Prompt A for Task One");
-    const spawnCopilotSession = vi
-      .spyOn(view as any, "spawnCopilotSession")
-      .mockResolvedValue(undefined);
-
-    await (view as any).spawnCustomSession(item, {
-      sessionType: "copilot-with-context",
-      cwd: "~/custom",
-      extraArgs: "--flag",
-      label: "Custom Copilot",
-    });
-
-    expect(loadFreshSettings).toHaveBeenCalledOnce();
-    expect(getAgentContextPrompt).toHaveBeenCalledWith(item, fresh);
-    expect(spawnCopilotSession).toHaveBeenCalledWith({
-      sessionType: "copilot-with-context",
-      cwd: "~/custom",
-      extraArgs: "--flag",
-      label: "Custom Copilot",
-      prompt: "Prompt A for Task One",
-      freshSettings: fresh,
-    });
-  });
-
   it("shows a notice instead of launching Strands when the configured command is blank", async () => {
     const { view } = createView({
       "core.strandsCommand": "   ",
@@ -3408,5 +3289,191 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(panelEl.querySelector(".wt-task-jira-link")).toBeNull();
     expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Plain task");
+  });
+});
+
+describe("profile launch", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    vi.stubGlobal("Element", dom.window.Element);
+    vi.stubGlobal("Node", dom.window.Node);
+    installDomHelpers({
+      window: dom.window,
+      document: dom.window.document,
+      HTMLElement: dom.window.HTMLElement,
+      Element: dom.window.Element,
+      Node: dom.window.Node,
+    });
+
+    mockState.activeSessions = new Map();
+    mockState.activeTabs = [];
+    mockState.activeItemId = null;
+    mockState.tabsByItem = new Map();
+    mockState.activeTabIndex = 0;
+    mockState.persistedSessions = [];
+    mockState.tabDiagnostics = [];
+    mockState.idleSinceByItem = new Map();
+    mockState.menuTitles = [];
+    mockState.menuActions = new Map();
+    mockState.notices = [];
+    mockState.clipboardWriteText.mockClear();
+    mockState.latestCreateTabArgs = null;
+    mockState.tabManagerCalls = [];
+    mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
+    mockState.openExternal.mockClear();
+    mockState.latestTabManager = null;
+    mockState.latestTabManagerCtorArgs = null;
+    mockState.stopPeriodicPersist.mockClear();
+  });
+
+  afterEach(() => {
+    while (createdViews.length > 0) {
+      createdViews.pop()?.disposeAll();
+    }
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function makeProfile(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "profile-1",
+      name: "Claude",
+      agentType: "claude",
+      command: "claude",
+      defaultCwd: "~/projects",
+      arguments: "--model opus",
+      contextPrompt: "",
+      useContext: false,
+      paramPassMode: "launch-only",
+      button: { enabled: true, label: "Claude", icon: "claude", borderStyle: "solid" },
+      sortOrder: 0,
+      ...overrides,
+    };
+  }
+
+  it("applies defaultCwd override in spawnFromProfileWithOverrides", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "~/override-dir",
+      extraArgs: "",
+      label: "",
+    });
+
+    expect(spawnSpy).toHaveBeenCalledOnce();
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.defaultCwd).toBe("~/override-dir");
+    expect(passedProfile.arguments).toBe("--model opus");
+  });
+
+  it("appends extra arguments in spawnFromProfileWithOverrides", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "--verbose",
+      label: "",
+    });
+
+    expect(spawnSpy).toHaveBeenCalledOnce();
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.arguments).toBe("--model opus --verbose");
+    expect(passedProfile.defaultCwd).toBe("~/projects");
+  });
+
+  it("sets extra arguments as-is when profile has no existing arguments", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile({ arguments: "" });
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "--fast",
+      label: "",
+    });
+
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.arguments).toBe("--fast");
+  });
+
+  it("applies label override to button.label", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "",
+      label: "My Custom Label",
+    });
+
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.button.label).toBe("My Custom Label");
+  });
+
+  it("preserves original profile values when overrides are empty", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    const spawnSpy = vi.spyOn(view as any, "spawnFromProfile").mockResolvedValue(undefined);
+    const profile = makeProfile();
+
+    await (view as any).spawnFromProfileWithOverrides({
+      profile,
+      cwd: "",
+      extraArgs: "",
+      label: "",
+    });
+
+    const passedProfile = spawnSpy.mock.calls[0][0];
+    expect(passedProfile.defaultCwd).toBe("~/projects");
+    expect(passedProfile.arguments).toBe("--model opus");
+    expect(passedProfile.button.label).toBe("Claude");
+  });
+
+  it("shows a notice when openProfileLaunchModal is called without an active item", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = null;
+    await (view as any).openProfileLaunchModal();
+
+    expect(mockState.notices).toContain("Select a task first to launch a profile");
+  });
+
+  it("shows a notice when no profiles are configured", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [{ id: "task-1", title: "Task", state: "doing", path: "t.md" }];
+    (view as any).profileManager = { getProfiles: () => [] };
+
+    await (view as any).openProfileLaunchModal();
+
+    expect(mockState.notices).toContain(
+      "No agent profiles configured. Open Settings to create one.",
+    );
   });
 });

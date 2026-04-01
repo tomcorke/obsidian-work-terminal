@@ -1,12 +1,7 @@
 import { App, Modal, Setting } from "obsidian";
-import type { CustomSessionConfig } from "./CustomSessionConfig";
+import type { AgentProfile } from "../core/agents/AgentProfile";
 import type { ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
-import {
-  CUSTOM_SESSION_TYPE_OPTIONS,
-  getDefaultSessionLabel,
-  getSessionTypeHelp,
-  supportsExtraArgs,
-} from "./CustomSessionConfig";
+import { getDefaultSessionLabel } from "./CustomSessionConfig";
 
 function formatTimeAgo(closedAt: number): string {
   const seconds = Math.floor((Date.now() - closedAt) / 1000);
@@ -16,19 +11,30 @@ function formatTimeAgo(closedAt: number): string {
   return `${minutes}m ago`;
 }
 
-export class CustomSessionModal extends Modal {
-  private draft: CustomSessionConfig;
+export interface ProfileLaunchOverrides {
+  profile: AgentProfile;
+  cwd: string;
+  extraArgs: string;
+  label: string;
+}
+
+export class ProfileLaunchModal extends Modal {
+  private selectedProfile: AgentProfile;
+  private cwdOverride = "";
+  private extraArgsOverride = "";
+  private labelOverride = "";
   private activeTab: "new" | "restore" = "new";
 
   constructor(
     app: App,
-    initial: CustomSessionConfig,
-    private onSubmit: (config: CustomSessionConfig) => void,
+    private profiles: AgentProfile[],
+    private defaultCwd: string,
+    private onSubmit: (overrides: ProfileLaunchOverrides) => void,
     private closedSessions: ClosedSessionEntry[] = [],
     private onRestore?: (entry: ClosedSessionEntry) => void,
   ) {
     super(app);
-    this.draft = { ...initial };
+    this.selectedProfile = profiles[0];
   }
 
   onOpen(): void {
@@ -42,12 +48,11 @@ export class CustomSessionModal extends Modal {
 
     const hasClosedSessions = this.closedSessions.length > 0;
 
-    // Tab bar (only show if there are closed sessions to restore)
     if (hasClosedSessions) {
       const tabBar = contentEl.createDiv({ cls: "wt-custom-spawn-tabs" });
 
       const newTab = tabBar.createEl("button", {
-        text: "New session",
+        text: "Launch profile",
         cls: `wt-custom-spawn-tab${this.activeTab === "new" ? " wt-custom-spawn-tab-active" : ""}`,
       });
       newTab.addEventListener("click", () => {
@@ -68,97 +73,82 @@ export class CustomSessionModal extends Modal {
     if (this.activeTab === "restore" && hasClosedSessions) {
       this.renderRestoreTab(contentEl);
     } else {
-      this.renderNewSessionTab(contentEl);
+      this.renderLaunchTab(contentEl);
     }
   }
 
-  private renderNewSessionTab(contentEl: HTMLElement): void {
-    contentEl.createEl("h3", { text: "Custom session" });
+  private renderLaunchTab(contentEl: HTMLElement): void {
+    contentEl.createEl("h3", { text: "Launch profile" });
     contentEl.createEl("p", {
-      text: "Choose a session type and overrides for this task. The last custom settings you use are remembered per task.",
+      text: "Pick a profile and optionally override settings for this launch.",
       cls: "wt-custom-spawn-help",
     });
-
-    const sessionTypeHelpEl = contentEl.createEl("p", {
-      text: getSessionTypeHelp(this.draft.sessionType),
-      cls: "wt-custom-spawn-help",
-    });
-
-    let extraArgsSetting: Setting | null = null;
-
-    const refreshVisibility = () => {
-      if (!extraArgsSetting) return;
-      extraArgsSetting.settingEl.style.display = supportsExtraArgs(this.draft.sessionType)
-        ? ""
-        : "none";
-      sessionTypeHelpEl.textContent = getSessionTypeHelp(this.draft.sessionType);
-    };
 
     new Setting(contentEl)
-      .setName("Session type")
-      .setDesc("What kind of tab to spawn")
+      .setName("Profile")
+      .setDesc("Agent profile to launch")
       .addDropdown((dropdown) => {
-        for (const option of CUSTOM_SESSION_TYPE_OPTIONS) {
-          dropdown.addOption(option.value, option.label);
+        for (const profile of this.profiles) {
+          dropdown.addOption(profile.id, profile.name);
         }
-        dropdown.setValue(this.draft.sessionType).onChange((value) => {
-          this.draft.sessionType = value as CustomSessionConfig["sessionType"];
-          refreshVisibility();
+        if (this.selectedProfile) {
+          dropdown.setValue(this.selectedProfile.id);
+        }
+        dropdown.onChange((value) => {
+          this.selectedProfile = this.profiles.find((p) => p.id === value) || this.profiles[0];
         });
       });
 
     new Setting(contentEl)
       .setName("Working directory")
-      .setDesc("Override the terminal working directory for this spawned tab")
+      .setDesc("Override the working directory (leave blank to use the profile default)")
       .addText((text) => {
         text
-          .setPlaceholder("~")
-          .setValue(this.draft.cwd)
+          .setPlaceholder(this.defaultCwd)
+          .setValue(this.cwdOverride)
           .onChange((value) => {
-            this.draft.cwd = value;
+            this.cwdOverride = value;
           });
         text.inputEl.addClass("wt-custom-spawn-input");
       });
 
     new Setting(contentEl)
       .setName("Tab label")
-      .setDesc("Optional tab label override; leave blank to use the default label")
+      .setDesc("Override the tab label (leave blank to use the profile default)")
       .addText((text) => {
         text
-          .setPlaceholder(getDefaultSessionLabel(this.draft.sessionType))
-          .setValue(this.draft.label)
+          .setPlaceholder(this.selectedProfile?.name || "")
+          .setValue(this.labelOverride)
           .onChange((value) => {
-            this.draft.label = value;
+            this.labelOverride = value;
           });
         text.inputEl.addClass("wt-custom-spawn-input");
       });
 
-    extraArgsSetting = new Setting(contentEl)
+    new Setting(contentEl)
       .setName("Extra arguments")
-      .setDesc("Additional CLI arguments for this tab only (space-separated)")
+      .setDesc("Additional CLI arguments appended to the profile arguments")
       .addTextArea((text) => {
         text
           .setPlaceholder("--model gpt-5.4")
-          .setValue(this.draft.extraArgs)
+          .setValue(this.extraArgsOverride)
           .onChange((value) => {
-            this.draft.extraArgs = value;
+            this.extraArgsOverride = value;
           });
         text.inputEl.addClass("wt-custom-spawn-textarea");
       });
-    extraArgsSetting.settingEl.addClass("wt-custom-spawn-setting");
-    refreshVisibility();
 
     const buttons = contentEl.createDiv({ cls: "wt-custom-spawn-buttons" });
     const cancelBtn = buttons.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.close());
 
-    const spawnBtn = buttons.createEl("button", { text: "Spawn", cls: "mod-cta" });
+    const spawnBtn = buttons.createEl("button", { text: "Launch", cls: "mod-cta" });
     spawnBtn.addEventListener("click", () => {
       this.onSubmit({
-        sessionType: this.draft.sessionType,
-        cwd: this.draft.cwd,
-        extraArgs: this.draft.extraArgs,
-        label: this.draft.label,
+        profile: this.selectedProfile,
+        cwd: this.cwdOverride.trim(),
+        extraArgs: this.extraArgsOverride.trim(),
+        label: this.labelOverride.trim(),
       });
       this.close();
     });
@@ -183,8 +173,7 @@ export class CustomSessionModal extends Modal {
         cls: "wt-recently-closed-type",
       });
       labelEl.createSpan({
-        text:
-          entry.recoveryMode === "resume" ? "Resume exact session" : "Relaunch fresh session",
+        text: entry.recoveryMode === "resume" ? "Resume exact session" : "Relaunch fresh session",
         cls: "wt-recently-closed-type",
       });
 
