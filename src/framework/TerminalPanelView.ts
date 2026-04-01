@@ -538,6 +538,13 @@ export class TerminalPanelView {
         return;
       }
 
+      // Temporarily remove expanded class so tabs return to natural inline size
+      // for accurate measurement (expanded mode sets max-width: none + column layout)
+      const wasExpanded = this.tabBarEl.classList.contains("wt-tab-bar-expanded");
+      if (wasExpanded) {
+        this.tabBarEl.removeClass("wt-tab-bar-expanded");
+      }
+
       // Measure total width of all tabs (natural size)
       let totalTabWidth = 0;
       for (const tab of Array.from(tabEls)) {
@@ -2296,6 +2303,8 @@ export class TerminalPanelView {
     this.stopPeriodicPersist = null;
     this.stopHookWarningPoller();
     this.detachSettingsListener();
+    this.tabBarResizeObserver?.disconnect();
+    this.tabBarResizeObserver = null;
     this.tabManager.stashAll();
     this.clearDebugGlobal();
   }
