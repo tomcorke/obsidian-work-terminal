@@ -388,6 +388,9 @@ function installDomHelpers(globals: DomGlobals) {
   HTMLElement.prototype.addClass = function (...classes: string[]) {
     this.classList.add(...classes);
   };
+  HTMLElement.prototype.toggleClass = function (cls: string, force: boolean) {
+    this.classList.toggle(cls, force);
+  };
   HTMLElement.prototype.removeClass = function (...classes: string[]) {
     this.classList.remove(...classes);
   };
@@ -494,6 +497,14 @@ describe("TerminalPanelView hook warning", () => {
     vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
     vi.stubGlobal("Element", dom.window.Element);
     vi.stubGlobal("Node", dom.window.Node);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     installDomHelpers({
       window: dom.window,
       document: dom.window.document,
@@ -3302,6 +3313,14 @@ describe("profile launch", () => {
     vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
     vi.stubGlobal("Element", dom.window.Element);
     vi.stubGlobal("Node", dom.window.Node);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     installDomHelpers({
       window: dom.window,
       document: dom.window.document,
