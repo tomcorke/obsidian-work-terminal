@@ -437,11 +437,31 @@ export class TerminalTab {
       }
     });
 
+    // Auto-scroll: track whether the viewport was at the bottom before each
+    // write. After xterm finishes parsing the write, scroll back to bottom if
+    // the user hadn't intentionally scrolled up. This is needed because agents
+    // like Claude Code use scroll regions and absolute cursor positioning for
+    // their status bar, which xterm.js doesn't treat as new scrollback content
+    // that should trigger auto-scroll.
+    let wasAtBottom = true;
+
+    const snapshotScrollPosition = () => {
+      const buf = this.terminal.buffer.active;
+      wasAtBottom = buf.viewportY >= buf.baseY;
+    };
+
+    this.terminal.onWriteParsed(() => {
+      if (wasAtBottom) {
+        this.terminal.scrollToBottom();
+      }
+    });
+
     proc.stdout?.on("data", (data: Buffer) => {
       if (this._isDisposed) return;
       this._checkRename(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
+      snapshotScrollPosition();
       this.terminal.write(data);
     });
 
@@ -450,17 +470,20 @@ export class TerminalTab {
       this._checkRename(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
+      snapshotScrollPosition();
       this.terminal.write(data);
     });
 
     proc.on("error", (err) => {
       if (this._isDisposed) return;
       console.error("[work-terminal] Process error:", err);
+      snapshotScrollPosition();
       this.terminal.write(`\r\n[Process error: ${err.message}]\r\n`);
     });
 
     proc.on("exit", (code, signal) => {
       if (this._isDisposed) return;
+      snapshotScrollPosition();
       this.terminal.write(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
     });

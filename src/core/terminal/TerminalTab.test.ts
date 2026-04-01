@@ -1264,3 +1264,151 @@ describe("TerminalTab WebGL recovery", () => {
     expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBe(staleAddon);
   });
 });
+
+describe("TerminalTab auto-scroll on write", () => {
+  beforeEach(() => {
+    mocks.MockWebglAddon.instances.length = 0;
+    vi.restoreAllMocks();
+    mocks.injectXtermCss.mockClear();
+    mocks.attachScrollButton.mockClear();
+    mocks.attachBubbleCapture.mockClear();
+    mocks.attachCapturePhase.mockClear();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    }) as typeof requestAnimationFrame);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function createTabWithMockTerminal() {
+    const onDataHandlers: Array<(data: string) => void> = [];
+    const onWriteParsedHandlers: Array<() => void> = [];
+    const scrollToBottom = vi.fn();
+    const write = vi.fn(() => {
+      // Simulate xterm calling onWriteParsed after processing a write
+      for (const handler of onWriteParsedHandlers) handler();
+    });
+
+    const bufferActive = { viewportY: 100, baseY: 100 };
+
+    const terminal = {
+      onData: vi.fn((handler: (data: string) => void) => {
+        onDataHandlers.push(handler);
+      }),
+      onWriteParsed: vi.fn((handler: () => void) => {
+        onWriteParsedHandlers.push(handler);
+      }),
+      scrollToBottom,
+      write,
+      buffer: { active: bufferActive },
+    };
+
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      id: "term-1",
+      taskPath: "task.md",
+      label: "Shell",
+      sessionType: "shell",
+      terminal,
+      containerEl: new FakeElement(),
+      process: null,
+      _isDisposed: false,
+      _sessionTracker: null,
+      _renameDecoder: { write: () => "", end: () => "" },
+      _renameLineBuffer: "",
+      _renamePattern: /^\s*[^\w]*Session renamed to:\s*(.+?)\s*$/,
+      _recentCleanLines: [],
+    }) as TerminalTab;
+
+    return { tab, terminal, scrollToBottom, bufferActive };
+  }
+
+  function createMockProcess() {
+    const stdoutHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+    const procHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+    return {
+      stdout: {
+        on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+          (stdoutHandlers[event] ??= []).push(handler);
+        }),
+      },
+      stderr: { on: vi.fn() },
+      stdin: { write: vi.fn(), destroyed: false },
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+        (procHandlers[event] ??= []).push(handler);
+      }),
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+      emitStdout(data: Buffer) {
+        for (const handler of stdoutHandlers["data"] ?? []) handler(data);
+      },
+    };
+  }
+
+  it("auto-scrolls to bottom on stdout data when viewport is at bottom", () => {
+    const { tab, scrollToBottom, bufferActive } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    // viewportY === baseY means at bottom
+    bufferActive.viewportY = 100;
+    bufferActive.baseY = 100;
+
+    (tab as any).wireProcess(proc);
+    scrollToBottom.mockClear(); // clear any setup calls
+
+    proc.emitStdout(Buffer.from("hello"));
+
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-scroll when user has scrolled up", () => {
+    const { tab, scrollToBottom, bufferActive } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    // viewportY < baseY means user scrolled up
+    bufferActive.viewportY = 50;
+    bufferActive.baseY = 100;
+
+    (tab as any).wireProcess(proc);
+    scrollToBottom.mockClear();
+
+    proc.emitStdout(Buffer.from("hello"));
+
+    expect(scrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it("resumes auto-scroll when user returns to bottom", () => {
+    const { tab, scrollToBottom, bufferActive } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    bufferActive.viewportY = 50;
+    bufferActive.baseY = 100;
+
+    (tab as any).wireProcess(proc);
+    scrollToBottom.mockClear();
+
+    // First write: user is scrolled up - no auto-scroll
+    proc.emitStdout(Buffer.from("hello"));
+    expect(scrollToBottom).not.toHaveBeenCalled();
+
+    // User scrolls back to bottom
+    bufferActive.viewportY = 100;
+
+    // Second write: viewport is at bottom again - should auto-scroll
+    proc.emitStdout(Buffer.from("world"));
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+  });
+});
