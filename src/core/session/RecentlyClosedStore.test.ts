@@ -247,6 +247,60 @@ describe("RecentlyClosedStore", () => {
     expect(restored[0].profileColor).toBe("#3498db");
   });
 
+  it("preserves profileId through add and serialize", () => {
+    const entry = makeEntry({
+      sessionType: "claude",
+      claudeSessionId: "session-1",
+      label: "Claude",
+      recoveryMode: "resume",
+      profileId: "profile-abc",
+      profileColor: "#e67e22",
+    });
+    store.add(entry);
+
+    const serialized = store.serialize();
+    expect(serialized).toHaveLength(1);
+    expect(serialized[0].profileId).toBe("profile-abc");
+    expect(serialized[0].profileColor).toBe("#e67e22");
+  });
+
+  it("round-trips profileId through serialize and fromData", () => {
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+      profileId: "profile-xyz",
+      profileColor: "#3498db",
+    });
+    store.add(entry);
+
+    const serialized = store.serialize();
+    const restored = RecentlyClosedStore.fromData(serialized);
+    expect(restored).toHaveLength(1);
+    expect(restored[0].profileId).toBe("profile-xyz");
+    expect(restored[0].profileColor).toBe("#3498db");
+  });
+
+  it("does not include profileId when not set", () => {
+    const entry = makeEntry({
+      sessionType: "shell",
+      claudeSessionId: null,
+      durableSessionId: "durable-shell-1",
+      label: "Shell",
+      recoveryMode: "relaunch",
+      command: "/bin/zsh",
+      commandArgs: undefined,
+    });
+    store.add(entry);
+
+    const serialized = store.serialize();
+    expect(serialized[0].profileId).toBeUndefined();
+  });
+
   it("does not include profileColor when not set", () => {
     const entry = makeEntry({
       sessionType: "shell",

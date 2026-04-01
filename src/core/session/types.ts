@@ -8,6 +8,7 @@ import type { WebLinksAddon } from "@xterm/addon-web-links";
 import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
+import type { ParamPassMode } from "../agents/AgentProfile";
 
 export const SESSION_TYPES = [
   "shell",
@@ -37,7 +38,9 @@ export interface StoredSession {
   claudeSessionId?: string | null;
   durableSessionId?: string | null;
   sessionType: SessionType;
+  profileId?: string;
   profileColor?: string;
+  paramPassMode?: ParamPassMode;
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
@@ -73,7 +76,9 @@ export interface PersistedSession {
   cwd?: string;
   command?: string;
   commandArgs?: string[];
+  profileId?: string;
   profileColor?: string;
+  paramPassMode?: ParamPassMode;
 }
 
 export interface ActiveTabInfo {

@@ -3,6 +3,7 @@
  * so users can restore them from the custom session spawner dialog.
  */
 import { isSessionType, type DurableRecoveryMode, type SessionType } from "./types";
+import { PARAM_PASS_MODES, type ParamPassMode } from "../agents/AgentProfile";
 
 export interface ClosedSessionEntry {
   sessionType: SessionType;
@@ -17,7 +18,9 @@ export interface ClosedSessionEntry {
   cwd?: string;
   command?: string;
   commandArgs?: string[];
+  profileId?: string;
   profileColor?: string;
+  paramPassMode?: ParamPassMode;
 }
 
 export interface RecentlyClosedState {
@@ -174,6 +177,7 @@ export class RecentlyClosedStore {
     const commandArgs = Array.isArray(candidate.commandArgs)
       ? candidate.commandArgs.filter((value): value is string => typeof value === "string")
       : undefined;
+    const profileId = typeof candidate.profileId === "string" ? candidate.profileId : undefined;
     const profileColor =
       typeof candidate.profileColor === "string" ? candidate.profileColor : undefined;
 
@@ -208,6 +212,7 @@ export class RecentlyClosedStore {
       cwd,
       command,
       commandArgs,
+      profileId,
       profileColor,
     };
   }
