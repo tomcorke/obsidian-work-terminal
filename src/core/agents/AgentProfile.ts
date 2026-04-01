@@ -28,18 +28,26 @@ export const PROFILE_ICONS = [
   "flask",
   "book",
   "puzzle",
+  "bee",
   // Branded
   "claude",
   "copilot",
   "aws",
   "skyscanner",
-  "bee",
 ] as const;
 
 export type ProfileIcon = (typeof PROFILE_ICONS)[number];
 
 export const BORDER_STYLES = ["solid", "dashed", "dotted", "thick"] as const;
 export type BorderStyle = (typeof BORDER_STYLES)[number];
+
+/** Default brand colors for branded icons. */
+export const BRAND_COLORS: Partial<Record<ProfileIcon, string>> = {
+  claude: "#D97757",
+  copilot: "#6E40C9",
+  aws: "#FF9900",
+  skyscanner: "#0770E3",
+};
 
 // ---------------------------------------------------------------------------
 // Agent types (maps to session type families)
@@ -195,6 +203,7 @@ export function createDefaultClaudeProfile(sortOrder = 0): AgentProfile {
       label: "Claude",
       icon: "claude",
       borderStyle: "solid",
+      color: BRAND_COLORS.claude,
     },
     sortOrder,
   };
@@ -216,6 +225,7 @@ export function createDefaultClaudeCtxProfile(sortOrder = 1): AgentProfile {
       label: "Claude (ctx)",
       icon: "claude",
       borderStyle: "dashed",
+      color: BRAND_COLORS.claude,
     },
     sortOrder,
   };
