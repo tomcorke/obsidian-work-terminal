@@ -13,6 +13,7 @@ import type {
 import {
   AGENT_TYPES,
   BORDER_STYLES,
+  BRAND_COLORS,
   PROFILE_ICONS,
   createDefaultProfile,
 } from "../core/agents/AgentProfile";
@@ -53,11 +54,11 @@ const ICON_LABELS: Record<ProfileIcon, string> = {
   flask: "Flask",
   book: "Book",
   puzzle: "Puzzle",
+  bee: "Bee",
   claude: "Claude (branded)",
   copilot: "Copilot (branded)",
   aws: "AWS (branded)",
   skyscanner: "Skyscanner (branded)",
-  bee: "Bee (branded)",
 };
 
 export class AgentProfileEditModal extends Modal {
@@ -224,6 +225,9 @@ export class AgentProfileEditModal extends Modal {
         text.inputEl.addClass("wt-profile-input");
       });
 
+    let colorInputEl: HTMLInputElement | null = null;
+    let colorSettingEl: HTMLElement | null = null;
+
     new Setting(contentEl)
       .setName("Button icon")
       .setDesc("Icon shown on the button")
@@ -234,6 +238,13 @@ export class AgentProfileEditModal extends Modal {
         }
         dropdown.setValue(this.draft.button.icon || "").onChange((value) => {
           this.draft.button.icon = (value || undefined) as ProfileIcon | undefined;
+          // Auto-populate brand color when selecting a branded icon with no color set
+          const brandColor = value ? BRAND_COLORS[value as ProfileIcon] : undefined;
+          if (brandColor && !this.draft.button.color) {
+            this.draft.button.color = brandColor;
+            if (colorInputEl) colorInputEl.value = brandColor;
+            if (colorSettingEl) this.updateColorPreview(colorSettingEl);
+          }
         });
       });
 
@@ -261,7 +272,9 @@ export class AgentProfileEditModal extends Modal {
             this.updateColorPreview(colorSetting.controlEl);
           });
         text.inputEl.addClass("wt-profile-input");
+        colorInputEl = text.inputEl;
       });
+    colorSettingEl = colorSetting.controlEl;
     this.addColorPreview(colorSetting.controlEl);
 
     // ---------------------------------------------------------------------------

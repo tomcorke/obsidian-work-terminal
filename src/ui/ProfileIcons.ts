@@ -71,44 +71,51 @@ function createClaudeIcon(size: number): SVGSVGElement {
 }
 
 function createCopilotIcon(size: number): SVGSVGElement {
+  // GitHub Copilot dual-lens visor mark
   const svg = makeSvg(size, "0 0 24 24");
-  // Simplified Copilot-style pilot visor icon
-  addStrokePath(svg, "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z");
-  addStrokePath(svg, "M7 13h10");
-  addStrokePath(svg, "M7 13c0-2.76 2.24-5 5-5s5 2.24 5 5");
-  addStrokePath(svg, "M9 16v1");
-  addStrokePath(svg, "M15 16v1");
-  return svg;
-}
-
-function createAwsIcon(size: number): SVGSVGElement {
-  const svg = makeSvg(size, "0 0 24 24");
-  // Simplified AWS cloud icon
-  addStrokePath(svg, "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z");
-  return svg;
-}
-
-function createSkyscannerIcon(size: number): SVGSVGElement {
-  const svg = makeSvg(size, "0 0 24 24");
-  // Airplane-style icon
-  addStrokePath(
+  addPath(
     svg,
-    "M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
+    "M12 1C5.9 1 1 5 1 10.2c0 3.4 2 6.4 5 8.1V22l3.5-2.3c.8.2 1.6.3 2.5.3 6.1 0 11-4 11-9.2S18.1 1 12 1zm-3 12.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4z",
   );
   return svg;
 }
 
-function createBeeIcon(size: number): SVGSVGElement {
+function createAwsIcon(size: number): SVGSVGElement {
+  // Simplified AWS "smile" arrow mark
   const svg = makeSvg(size, "0 0 24 24");
-  // Bee icon - hexagonal body with wings
-  addStrokePath(svg, "M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5z");
-  addStrokePath(svg, "M12 7V4");
-  addStrokePath(svg, "M10 5l2-1 2 1");
-  addStrokePath(svg, "M7 10l-3-2");
-  addStrokePath(svg, "M17 10l3-2");
-  addStrokePath(svg, "M9 12h6");
-  addStrokePath(svg, "M9 14.5h6");
-  addStrokePath(svg, "M12 17v2");
+  addStrokePath(svg, "M3 7l4 5-4 5");
+  addStrokePath(svg, "M10 7l4 5-4 5");
+  addStrokePath(svg, "M5 19c4 2 10 2 14-1", "currentColor", "2.5");
+  return svg;
+}
+
+function createSkyscannerIcon(size: number): SVGSVGElement {
+  // Simplified Skyscanner traveller mark - three overlapping circles
+  const svg = makeSvg(size, "0 0 24 24");
+  addCircle(svg, 12, 8, 4);
+  addCircle(svg, 7, 15, 4);
+  addCircle(svg, 17, 15, 4);
+  return svg;
+}
+
+function createBeeIcon(size: number): SVGSVGElement {
+  // Literal bee illustration
+  const svg = makeSvg(size, "0 0 24 24");
+  // Body (oval)
+  addStrokePath(svg, "M12 9c2.5 0 4.5 1.5 4.5 4s-2 5-4.5 5-4.5-2.5-4.5-5 2-4 4.5-4z");
+  // Stripes
+  addStrokePath(svg, "M9 13h6");
+  addStrokePath(svg, "M9 15.5h6");
+  // Head
+  addCircle(svg, 12, 7, 2);
+  // Antennae
+  addStrokePath(svg, "M10.5 5.5L9 3");
+  addStrokePath(svg, "M13.5 5.5L15 3");
+  // Wings
+  addStrokePath(svg, "M7.5 10c-2-1.5-3-3.5-1.5-4.5 1.5-1 3 .5 3.5 2");
+  addStrokePath(svg, "M16.5 10c2-1.5 3-3.5 1.5-4.5-1.5-1-3 .5-3.5 2");
+  // Stinger
+  addStrokePath(svg, "M12 18v1.5");
   return svg;
 }
 
@@ -277,11 +284,11 @@ const ICON_FACTORIES: Record<ProfileIcon, (size: number) => SVGSVGElement> = {
   flask: createFlaskIcon,
   book: createBookIcon,
   puzzle: createPuzzleIcon,
+  bee: createBeeIcon,
   claude: createClaudeIcon,
   copilot: createCopilotIcon,
   aws: createAwsIcon,
   skyscanner: createSkyscannerIcon,
-  bee: createBeeIcon,
 };
 
 /**
