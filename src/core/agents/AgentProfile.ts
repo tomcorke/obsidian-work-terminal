@@ -125,6 +125,94 @@ export const AgentProfileArraySchema = z.array(AgentProfileSchema);
 export { AgentProfileSchema };
 
 // ---------------------------------------------------------------------------
+// Resume configuration per agent type
+// ---------------------------------------------------------------------------
+
+export interface AgentResumeConfig {
+  /** Whether this agent type supports session resume. */
+  resumable: boolean;
+  /** Whether this agent type supports session ID tracking (watching for /resume). */
+  sessionTracking: boolean;
+  /** How the resume flag is formatted: "flag-space" = --resume ID, "flag-equals" = --resume=ID */
+  resumeFlagFormat: "flag-space" | "flag-equals";
+  /** The resume flag name (e.g. "--resume"). */
+  resumeFlag: string;
+  /** Global settings key for the command (e.g. "core.claudeCommand"). */
+  commandSettingKey: string;
+  /** Default command name when no setting is configured. */
+  defaultCommand: string;
+  /** Global settings key for extra args (e.g. "core.claudeExtraArgs"). */
+  extraArgsSettingKey: string;
+  /** Human-readable name for CLI-not-found notices. */
+  cliDisplayName: string;
+  /** Install hint for CLI-not-found notices. */
+  installHint: string;
+}
+
+const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
+  claude: {
+    resumable: true,
+    sessionTracking: true,
+    resumeFlagFormat: "flag-space",
+    resumeFlag: "--resume",
+    commandSettingKey: "core.claudeCommand",
+    defaultCommand: "claude",
+    extraArgsSettingKey: "core.claudeExtraArgs",
+    cliDisplayName: "Claude Code CLI",
+    installHint:
+      "Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.",
+  },
+  copilot: {
+    resumable: true,
+    sessionTracking: false,
+    resumeFlagFormat: "flag-equals",
+    resumeFlag: "--resume",
+    commandSettingKey: "core.copilotCommand",
+    defaultCommand: "copilot",
+    extraArgsSettingKey: "core.copilotExtraArgs",
+    cliDisplayName: "GitHub Copilot CLI",
+    installHint:
+      "Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.",
+  },
+  strands: {
+    resumable: false,
+    sessionTracking: false,
+    resumeFlagFormat: "flag-space",
+    resumeFlag: "--resume",
+    commandSettingKey: "core.strandsCommand",
+    defaultCommand: "strands",
+    extraArgsSettingKey: "core.strandsExtraArgs",
+    cliDisplayName: "Strands agent",
+    installHint: "Configure the Strands command in Work Terminal settings.",
+  },
+  shell: {
+    resumable: false,
+    sessionTracking: false,
+    resumeFlagFormat: "flag-space",
+    resumeFlag: "",
+    commandSettingKey: "core.defaultShell",
+    defaultCommand: "",
+    extraArgsSettingKey: "",
+    cliDisplayName: "Shell",
+    installHint: "",
+  },
+};
+
+/**
+ * Get resume configuration for an agent type.
+ */
+export function getResumeConfig(agentType: AgentType): AgentResumeConfig {
+  return AGENT_RESUME_CONFIGS[agentType];
+}
+
+/**
+ * Check whether an agent type supports session resume.
+ */
+export function isResumableAgentType(agentType: AgentType): boolean {
+  return AGENT_RESUME_CONFIGS[agentType].resumable;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

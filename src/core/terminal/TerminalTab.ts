@@ -33,7 +33,11 @@ import {
 } from "../session/types";
 import { AgentSessionTracker } from "../agents/AgentSessionTracker";
 import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
-import type { ParamPassMode } from "../agents/AgentProfile";
+import {
+  type ParamPassMode,
+  sessionTypeToAgentType,
+  getResumeConfig,
+} from "../agents/AgentProfile";
 
 export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
@@ -881,18 +885,18 @@ export class TerminalTab {
     this._stateTimer = setInterval(() => this._checkState(), 2000);
   }
 
-  /** Initialize session tracker for Claude sessions with a known session ID. */
+  /** Initialize session tracker for agent sessions that support session tracking. */
   private _initSessionTracker(): void {
-    if (
-      (this.sessionType === "claude" || this.sessionType === "claude-with-context") &&
-      this.agentSessionId
-    ) {
-      this._sessionTracker = new AgentSessionTracker(this.cwd, this.agentSessionId);
-      this._sessionTracker.onSessionChange = (newId) => {
-        this.agentSessionId = newId;
-        console.log("[work-terminal] Session ID updated via /resume:", newId);
-      };
-    }
+    if (!this.agentSessionId) return;
+    const { agentType } = sessionTypeToAgentType(this.sessionType);
+    const resumeConfig = getResumeConfig(agentType);
+    if (!resumeConfig.sessionTracking) return;
+
+    this._sessionTracker = new AgentSessionTracker(this.cwd, this.agentSessionId);
+    this._sessionTracker.onSessionChange = (newId) => {
+      this.agentSessionId = newId;
+      console.log("[work-terminal] Session ID updated via /resume:", newId);
+    };
   }
 
   private _detectResumableAgent(): boolean {

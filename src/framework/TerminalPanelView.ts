@@ -41,8 +41,12 @@ import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import { getDefaultSessionLabel, isClaudeSession } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
-import type { AgentProfile, ParamPassMode } from "../core/agents/AgentProfile";
-import { agentTypeToSessionType } from "../core/agents/AgentProfile";
+import type { AgentProfile, AgentType, ParamPassMode } from "../core/agents/AgentProfile";
+import {
+  agentTypeToSessionType,
+  sessionTypeToAgentType,
+  getResumeConfig,
+} from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
 
 interface WorkTerminalDebugSnapshot {
@@ -704,10 +708,10 @@ export class TerminalPanelView {
       });
     });
 
-    if (isClaudeSession(tab.sessionType)) {
+    if (isResumableSessionType(tab.sessionType)) {
       menu.addItem((item) => {
         item.setTitle("Restart").onClick(() => {
-          this.launchAction("Claude restart", () => this.restartClaudeTab(tab, index));
+          this.launchAction("Agent restart", () => this.restartAgentTab(tab, index));
         });
       });
     }
@@ -1416,6 +1420,7 @@ export class TerminalPanelView {
               sessionId: this.getPersistedSessionId(persisted) || "",
               freshSettings: fresh,
               paramPassMode: persisted.paramPassMode,
+              profileId: persisted.profileId,
               ...this.getSavedResumeLaunchContext(persisted),
             })
           : null;
@@ -1481,41 +1486,51 @@ export class TerminalPanelView {
     resolvedCommand?: string;
     extraArgs?: string[];
     paramPassMode?: ParamPassMode;
+    profileId?: string;
   }): TerminalTab | null {
-    const isCopilot =
-      options.sessionType === "copilot" || options.sessionType === "copilot-with-context";
-    const agent = isCopilot ? "copilot" : "claude";
+    const { agentType } = sessionTypeToAgentType(options.sessionType);
+    const resumeConfig = getResumeConfig(agentType);
+
+    // Look up originating profile if available
+    const profile = options.profileId
+      ? this.profileManager?.getProfile(options.profileId)
+      : undefined;
+
     const configuredCwd = expandTilde(
       this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"),
     );
     const cwd = options.cwd || configuredCwd;
-    const configuredCommand = this.getStringSetting(
-      options.freshSettings,
-      isCopilot ? "core.copilotCommand" : "core.claudeCommand",
-      isCopilot ? "copilot" : "claude",
-    );
+    const configuredCommand =
+      profile?.command?.trim() ||
+      this.getStringSetting(
+        options.freshSettings,
+        resumeConfig.commandSettingKey,
+        resumeConfig.defaultCommand,
+      );
     const savedResolution = options.resolvedCommand
       ? resolveCommandInfo(options.resolvedCommand, cwd)
       : null;
     const command = savedResolution?.found
       ? savedResolution.resolved
-      : this.resolveAgentCommandOrNotice(agent, configuredCommand, configuredCwd);
+      : this.resolveAgentCommandOrNotice(agentType, configuredCommand, configuredCwd);
     if (!command) {
       return null;
     }
-    const args = isCopilot ? [`--resume=${options.sessionId}`] : ["--resume", options.sessionId];
+
+    // Build resume flag based on agent type's format
+    const args =
+      resumeConfig.resumeFlagFormat === "flag-equals"
+        ? [`${resumeConfig.resumeFlag}=${options.sessionId}`]
+        : [resumeConfig.resumeFlag, options.sessionId];
+
     // When paramPassMode is "launch-only", skip stored profile args on resume
     // and fall through to global defaults only
     const passParamsOnResume =
       options.paramPassMode === "resume-only" || options.paramPassMode === "both";
-    const extraArgs = passParamsOnResume
-      ? options.extraArgs ||
-        (isCopilot
-          ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
-          : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", ""))
-      : isCopilot
-        ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
-        : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "");
+    const globalExtraArgs = resumeConfig.extraArgsSettingKey
+      ? this.getStringSetting(options.freshSettings, resumeConfig.extraArgsSettingKey, "")
+      : "";
+    const extraArgs = passParamsOnResume ? options.extraArgs || globalExtraArgs : globalExtraArgs;
     const parsedExtraArgs = Array.isArray(extraArgs) ? extraArgs : parseExtraArgs(extraArgs);
 
     if (parsedExtraArgs.length > 0) {
@@ -1540,7 +1555,7 @@ export class TerminalPanelView {
     return tab;
   }
 
-  private async restartClaudeTab(tab: TerminalTab, _index: number): Promise<void> {
+  private async restartAgentTab(tab: TerminalTab, _index: number): Promise<void> {
     const targetItemId = tab.taskPath ?? this.tabManager.getActiveItemId();
     if (!targetItemId) return;
 
@@ -1550,8 +1565,13 @@ export class TerminalPanelView {
 
     const fresh = await this.loadFreshSettings();
     const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    const { agentType } = sessionTypeToAgentType(tab.sessionType);
+    const resumeConfig = getResumeConfig(agentType);
     let replacement: TerminalTab | null;
     if (tab.agentSessionId) {
+      const fallbackCommand = tab.profileId
+        ? this.profileManager?.getProfile(tab.profileId)?.command?.trim()
+        : undefined;
       replacement = this.createResumedTab({
         targetItemId,
         sessionType: tab.sessionType,
@@ -1561,9 +1581,17 @@ export class TerminalPanelView {
         cwd: tab.launchCommandArgs?.length ? tab.launchCwd : fallbackCwd,
         resolvedCommand:
           tab.launchCommandArgs?.[0] ||
-          resolveCommand(this.getStringSetting(fresh, "core.claudeCommand", "claude")),
+          resolveCommand(
+            fallbackCommand ||
+              this.getStringSetting(
+                fresh,
+                resumeConfig.commandSettingKey,
+                resumeConfig.defaultCommand,
+              ),
+          ),
         extraArgs: this.extractResumeExtraArgs(tab.sessionType, tab.launchCommandArgs),
         paramPassMode: tab.paramPassMode,
+        profileId: tab.profileId,
       });
     } else if (tab.launchCommandArgs?.length) {
       replacement = this.tabManager.createTabForItem(
@@ -1577,6 +1605,17 @@ export class TerminalPanelView {
         null,
         tab.durableSessionId,
       );
+    } else if (agentType === "copilot") {
+      replacement = null;
+      await this.spawnCopilotSession({
+        sessionType: tab.sessionType as "copilot" | "copilot-with-context",
+        cwd: fallbackCwd,
+        label: tab.label,
+        freshSettings: fresh,
+      });
+      // spawnCopilotSession doesn't return the tab, get it from the tab manager
+      const tabs = this.tabManager.getTabs(targetItemId);
+      replacement = tabs[tabs.length - 1] ?? null;
     } else {
       replacement = await this.spawnClaudeSession({
         sessionType: tab.sessionType === "claude-with-context" ? "claude-with-context" : "claude",
@@ -2062,6 +2101,7 @@ export class TerminalPanelView {
               sessionId,
               freshSettings: fresh,
               paramPassMode: claimedEntry.paramPassMode,
+              profileId: claimedEntry.profileId,
               ...this.getSavedResumeLaunchContext(claimedEntry),
             })
           : null;
@@ -2255,7 +2295,7 @@ export class TerminalPanelView {
   }
 
   private resolveAgentCommandOrNotice(
-    agent: "claude" | "copilot",
+    agent: AgentType,
     command: string,
     cwd?: string,
   ): string | null {

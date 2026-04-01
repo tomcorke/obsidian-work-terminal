@@ -10,6 +10,8 @@ import {
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
+  getResumeConfig,
+  isResumableAgentType,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -157,6 +159,52 @@ describe("BRAND_COLORS", () => {
   it("does not define colors for non-branded icons", () => {
     expect(BRAND_COLORS.terminal).toBeUndefined();
     expect(BRAND_COLORS.bee).toBeUndefined();
+  });
+});
+
+describe("getResumeConfig", () => {
+  it("returns resumable config for claude", () => {
+    const config = getResumeConfig("claude");
+    expect(config.resumable).toBe(true);
+    expect(config.sessionTracking).toBe(true);
+    expect(config.resumeFlagFormat).toBe("flag-space");
+    expect(config.resumeFlag).toBe("--resume");
+    expect(config.commandSettingKey).toBe("core.claudeCommand");
+    expect(config.defaultCommand).toBe("claude");
+    expect(config.extraArgsSettingKey).toBe("core.claudeExtraArgs");
+  });
+
+  it("returns resumable config for copilot with equals format", () => {
+    const config = getResumeConfig("copilot");
+    expect(config.resumable).toBe(true);
+    expect(config.sessionTracking).toBe(false);
+    expect(config.resumeFlagFormat).toBe("flag-equals");
+    expect(config.resumeFlag).toBe("--resume");
+    expect(config.commandSettingKey).toBe("core.copilotCommand");
+    expect(config.defaultCommand).toBe("copilot");
+  });
+
+  it("returns non-resumable config for strands", () => {
+    const config = getResumeConfig("strands");
+    expect(config.resumable).toBe(false);
+    expect(config.sessionTracking).toBe(false);
+  });
+
+  it("returns non-resumable config for shell", () => {
+    const config = getResumeConfig("shell");
+    expect(config.resumable).toBe(false);
+  });
+});
+
+describe("isResumableAgentType", () => {
+  it("returns true for claude and copilot", () => {
+    expect(isResumableAgentType("claude")).toBe(true);
+    expect(isResumableAgentType("copilot")).toBe(true);
+  });
+
+  it("returns false for strands and shell", () => {
+    expect(isResumableAgentType("strands")).toBe(false);
+    expect(isResumableAgentType("shell")).toBe(false);
   });
 });
 

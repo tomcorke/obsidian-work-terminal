@@ -2110,7 +2110,7 @@ describe("TerminalPanelView hook warning", () => {
     expect(mockState.notices).toContain("Session diagnostics copied to clipboard");
   });
 
-  it("keeps Copilot tabs out of the Claude-only restart menu action", async () => {
+  it("shows restart menu action for all resumable agent tabs including Copilot", async () => {
     const { view } = createView();
     await flushAsync();
 
@@ -2124,7 +2124,7 @@ describe("TerminalPanelView hook warning", () => {
     );
 
     expect(mockState.menuTitles).toContain("Rename");
-    expect(mockState.menuTitles).not.toContain("Restart");
+    expect(mockState.menuTitles).toContain("Restart");
   });
 
   it("keeps the restart menu action available for Claude tabs", async () => {

@@ -8,7 +8,11 @@ import type { WebLinksAddon } from "@xterm/addon-web-links";
 import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
-import type { ParamPassMode } from "../agents/AgentProfile";
+import {
+  type ParamPassMode,
+  sessionTypeToAgentType,
+  isResumableAgentType,
+} from "../agents/AgentProfile";
 
 export const SESSION_TYPES = [
   "shell",
@@ -161,10 +165,6 @@ export function isSessionType(value: unknown): value is SessionType {
 }
 
 export function isResumableSessionType(sessionType: SessionType): boolean {
-  return (
-    sessionType === "claude" ||
-    sessionType === "claude-with-context" ||
-    sessionType === "copilot" ||
-    sessionType === "copilot-with-context"
-  );
+  const { agentType } = sessionTypeToAgentType(sessionType);
+  return isResumableAgentType(agentType);
 }
