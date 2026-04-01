@@ -40,18 +40,18 @@ describe("attachScrollButton", () => {
     expect(onScroll).toHaveBeenCalledTimes(1);
     expect(onWriteParsed).not.toHaveBeenCalled();
     expect(containerEl.querySelector(".wt-scroll-bottom")).not.toBeNull();
-    expect((containerEl.querySelector(".wt-scroll-bottom") as HTMLButtonElement).style.display).toBe(
-      "flex",
-    );
+    expect(
+      (containerEl.querySelector(".wt-scroll-bottom") as HTMLButtonElement).style.display,
+    ).toBe("flex");
 
     terminal.buffer.active.viewportY = 5;
     const scrollHandler = onScroll.mock.calls[0][0] as () => void;
     scrollHandler();
     rafQueue.shift()?.(0);
 
-    expect((containerEl.querySelector(".wt-scroll-bottom") as HTMLButtonElement).style.display).toBe(
-      "none",
-    );
+    expect(
+      (containerEl.querySelector(".wt-scroll-bottom") as HTMLButtonElement).style.display,
+    ).toBe("none");
   });
 
   it("scrolls to bottom and focuses when clicked", () => {
@@ -82,5 +82,30 @@ describe("attachScrollButton", () => {
 
     expect(terminal.scrollToBottom).toHaveBeenCalledTimes(1);
     expect(terminal.focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onScrollToBottom callback when button is clicked", () => {
+    const containerEl = document.createElement("div");
+    const viewport = document.createElement("div");
+    viewport.className = "xterm-viewport";
+    containerEl.appendChild(viewport);
+
+    const onScrollToBottom = vi.fn();
+    const terminal = {
+      buffer: { active: { viewportY: 0, baseY: 5 } },
+      onScroll: vi.fn(),
+      scrollToBottom: vi.fn(),
+      focus: vi.fn(),
+    };
+
+    attachScrollButton(containerEl, terminal as any, onScrollToBottom);
+    rafQueue.shift()?.(0);
+    const button = containerEl.querySelector(".wt-scroll-bottom") as HTMLButtonElement;
+
+    button.click();
+    rafQueue.shift()?.(0);
+
+    expect(onScrollToBottom).toHaveBeenCalledTimes(1);
+    expect(terminal.scrollToBottom).toHaveBeenCalledTimes(1);
   });
 });

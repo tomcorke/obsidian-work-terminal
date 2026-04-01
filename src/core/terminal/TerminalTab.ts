@@ -154,6 +154,12 @@ export class TerminalTab {
   /** How many consecutive polls the screen content has remained unchanged. */
   private _unchangedPolls = 0;
 
+  // User-initiated scroll tracking: true when the user has explicitly scrolled
+  // up via wheel/touchmove/keyboard. Auto-scroll is suppressed while this flag
+  // is set. Reset when the user scrolls back to the bottom or clicks the
+  // scroll-to-bottom button.
+  _userScrolledUp = false;
+
   // Session tracking (/resume detection)
   private _sessionTracker: AgentSessionTracker | null = null;
 
@@ -253,7 +259,12 @@ export class TerminalTab {
     this.registerFilePathLinks();
 
     // Scroll-to-bottom button
-    attachScrollButton(this.containerEl, this.terminal);
+    attachScrollButton(this.containerEl, this.terminal, () => {
+      this._userScrolledUp = false;
+    });
+
+    // User-initiated scroll detection
+    this._wireUserScrollDetection();
 
     // Keyboard capture - two layers
     attachBubbleCapture(this.containerEl);
@@ -437,16 +448,13 @@ export class TerminalTab {
       }
     });
 
-    // Auto-scroll: snapshot whether the viewport is at the bottom before each
-    // write, then use terminal.write(data, callback) so the callback fires
-    // after that specific write is parsed. This avoids a race condition where
-    // a shared mutable flag could be overwritten by a later write before an
-    // earlier write's callback fires (which happened with onWriteParsed).
+    // Auto-scroll: always scroll to bottom after each write UNLESS the user
+    // has explicitly scrolled up (tracked via wheel/touchmove/keydown events).
+    // This replaces the per-write wasAtBottom snapshot approach which was
+    // defeated by DOM scroll events firing during screen clear/redraw cycles.
     const writeWithAutoScroll = (data: string | Uint8Array) => {
-      const buf = this.terminal.buffer.active;
-      const wasAtBottom = buf.viewportY >= buf.baseY;
       this.terminal.write(data, () => {
-        if (wasAtBottom) {
+        if (!this._userScrolledUp) {
           this.terminal.scrollToBottom();
         }
       });
@@ -478,6 +486,63 @@ export class TerminalTab {
       if (this._isDisposed) return;
       writeWithAutoScroll(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
+    });
+  }
+
+  /**
+   * Attach event listeners to detect user-initiated scrolls (wheel, touchmove,
+   * keyboard Page Up/Down/Home/End). Sets `_userScrolledUp = true` when the
+   * user scrolls away from the bottom, and resets it when they return.
+   */
+  _wireUserScrollDetection(): void {
+    const viewport = this.containerEl.querySelector(".xterm-viewport");
+    if (!viewport) return;
+
+    const SCROLL_UP_KEYS = new Set(["PageUp", "PageDown", "Home", "End"]);
+
+    const checkIfAtBottom = () => {
+      const buf = this.terminal.buffer.active;
+      if (buf.viewportY >= buf.baseY) {
+        this._userScrolledUp = false;
+      }
+    };
+
+    const onUserScroll = () => {
+      const buf = this.terminal.buffer.active;
+      if (buf.viewportY < buf.baseY) {
+        this._userScrolledUp = true;
+      } else {
+        this._userScrolledUp = false;
+      }
+    };
+
+    // Use requestAnimationFrame to read scroll position after the browser
+    // has applied the scroll delta from wheel/touch events.
+    const onUserScrollDeferred = () => {
+      requestAnimationFrame(onUserScroll);
+    };
+
+    viewport.addEventListener("wheel", onUserScrollDeferred, { passive: true });
+    viewport.addEventListener("touchmove", onUserScrollDeferred, { passive: true });
+
+    const onKeydown = (e: Event) => {
+      const ke = e as KeyboardEvent;
+      if (SCROLL_UP_KEYS.has(ke.key)) {
+        onUserScrollDeferred();
+      }
+    };
+    viewport.addEventListener("keydown", onKeydown, { passive: true });
+
+    // Also check on native scroll events to catch edge cases (e.g. trackpad
+    // inertia scrolling back to the bottom).
+    viewport.addEventListener("scroll", () => requestAnimationFrame(checkIfAtBottom), {
+      passive: true,
+    });
+
+    this._documentCleanups.push(() => {
+      viewport.removeEventListener("wheel", onUserScrollDeferred);
+      viewport.removeEventListener("touchmove", onUserScrollDeferred);
+      viewport.removeEventListener("keydown", onKeydown);
     });
   }
 
@@ -1164,7 +1229,12 @@ export class TerminalTab {
     });
 
     // Scroll-to-bottom button
-    attachScrollButton(stored.containerEl, stored.terminal);
+    attachScrollButton(stored.containerEl, stored.terminal, () => {
+      tab._userScrolledUp = false;
+    });
+
+    // User-initiated scroll detection
+    tab._wireUserScrollDetection();
 
     // Re-attach resize observer - debounced to avoid fitting during transitions
     stored.resizeObserver.disconnect();
