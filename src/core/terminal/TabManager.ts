@@ -122,6 +122,7 @@ export class TabManager {
           targetIdx = remembered;
         }
       }
+      tabs[targetIdx].resetScreenFingerprint();
       tabs[targetIdx].show();
       tabs[targetIdx].clearWaiting();
       this.activeTabIndex = targetIdx;
@@ -237,6 +238,7 @@ export class TabManager {
     if (index < 0 || index >= tabs.length) return;
 
     this.hideAllTerminals();
+    tabs[index].resetScreenFingerprint();
     tabs[index].show();
     tabs[index].clearWaiting();
     this.activeTabIndex = index;

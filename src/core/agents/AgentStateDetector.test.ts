@@ -630,6 +630,27 @@ describe("AgentStateDetector", () => {
       expect(detector.state).toBe("waiting");
       detector.stop();
     });
+
+    it("resetScreenFingerprint prevents false active after tab/item switch", () => {
+      const terminal = mutableMockTerminal(["  line 1"]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      // First poll: baseline
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+
+      // Simulate a tab switch: content changes completely (different terminal)
+      terminal.setLines(["  completely different content from another tab"]);
+
+      // Reset fingerprint before the next poll (as TabManager would do)
+      detector.resetScreenFingerprint();
+
+      // Next poll: should treat this as a new baseline, not a change
+      vi.advanceTimersByTime(2000);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
   });
 
   describe("active suppression during grace period", () => {

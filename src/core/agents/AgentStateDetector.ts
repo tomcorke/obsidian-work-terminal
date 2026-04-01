@@ -230,6 +230,16 @@ export class AgentStateDetector {
     return hasAgentWaitingIndicator(screenLines || [], this._recentCleanLines || []);
   }
 
+  /**
+   * Reset the screen fingerprint baseline. Call when the viewed terminal
+   * changes (tab/item switch) so the first poll compares against the new
+   * content rather than the previous terminal's content.
+   */
+  resetScreenFingerprint(): void {
+    this._prevScreenFingerprint = "";
+    this._unchangedPolls = 0;
+  }
+
   /** Clear the waiting state (e.g. when the user activates this tab). */
   clearWaiting(): void {
     if (this._state === "waiting") {
