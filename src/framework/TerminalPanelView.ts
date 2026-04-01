@@ -164,6 +164,7 @@ export class TerminalPanelView {
   private hookWarningCheckQueued = false;
   private isDisposed = false;
   private profileManager: AgentProfileManager | null = null;
+  private tabBarResizeObserver: ResizeObserver | null = null;
   private readonly handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     this.renderTabBar();
@@ -513,6 +514,52 @@ export class TerminalPanelView {
     customBtn.addEventListener("click", () => {
       this.launchAction("profile launch", () => this.openProfileLaunchModal());
     });
+
+    // Detect overflow: when tabs compete with buttons for space, switch to expanded layout
+    this.setupTabBarOverflowDetection(tabsContainer, buttonsContainer);
+  }
+
+  /**
+   * Monitor tab bar for overflow and toggle expanded layout when tabs crowd buttons.
+   * Uses a ResizeObserver so the layout adapts responsively without fixed breakpoints.
+   */
+  private setupTabBarOverflowDetection(
+    tabsContainer: HTMLElement,
+    buttonsContainer: HTMLElement,
+  ): void {
+    // Clean up previous observer
+    this.tabBarResizeObserver?.disconnect();
+    this.tabBarResizeObserver = null;
+
+    const checkOverflow = () => {
+      const tabEls = tabsContainer.querySelectorAll(".wt-tab");
+      if (tabEls.length === 0) {
+        this.tabBarEl.removeClass("wt-tab-bar-expanded");
+        return;
+      }
+
+      // Measure total width of all tabs (natural size)
+      let totalTabWidth = 0;
+      for (const tab of Array.from(tabEls)) {
+        totalTabWidth += (tab as HTMLElement).offsetWidth;
+      }
+      // Add gaps between tabs
+      totalTabWidth += (tabEls.length - 1) * 4;
+
+      const barWidth = this.tabBarEl.offsetWidth;
+      const buttonsWidth = buttonsContainer.offsetWidth;
+
+      // Switch to expanded layout when tabs would use more than the space left by buttons
+      const shouldExpand = totalTabWidth > barWidth - buttonsWidth - 20;
+      this.tabBarEl.toggleClass("wt-tab-bar-expanded", shouldExpand);
+    };
+
+    // Check immediately after render
+    checkOverflow();
+
+    // Re-check on resize
+    this.tabBarResizeObserver = new ResizeObserver(checkOverflow);
+    this.tabBarResizeObserver.observe(this.tabBarEl);
   }
 
   /** Update agent state classes on existing tab elements without full re-render. */
@@ -2269,6 +2316,8 @@ export class TerminalPanelView {
     }
     this.stopHookWarningPoller();
     this.detachSettingsListener();
+    this.tabBarResizeObserver?.disconnect();
+    this.tabBarResizeObserver = null;
     this.tabManager.disposeAll();
     this.clearDebugGlobal();
   }
