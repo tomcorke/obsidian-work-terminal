@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentProfileArraySchema,
   AgentProfileSchema,
+  BRAND_COLORS,
   agentTypeToSessionType,
   sessionTypeToAgentType,
   createDefaultProfile,
@@ -142,5 +143,36 @@ describe("zod validation", () => {
   it("rejects invalid array entries", () => {
     const result = AgentProfileArraySchema.safeParse([{ bad: "data" }]);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("BRAND_COLORS", () => {
+  it("defines colors for all branded icons", () => {
+    expect(BRAND_COLORS.claude).toBe("#D97757");
+    expect(BRAND_COLORS.copilot).toBe("#6E40C9");
+    expect(BRAND_COLORS.aws).toBe("#FF9900");
+    expect(BRAND_COLORS.skyscanner).toBe("#0770E3");
+  });
+
+  it("does not define colors for non-branded icons", () => {
+    expect(BRAND_COLORS.terminal).toBeUndefined();
+    expect(BRAND_COLORS.bee).toBeUndefined();
+  });
+});
+
+describe("default profile button colors", () => {
+  it("sets Claude brand color on the default Claude profile", () => {
+    const profile = createDefaultClaudeProfile();
+    expect(profile.button.color).toBe(BRAND_COLORS.claude);
+  });
+
+  it("sets Claude brand color on the default Claude (ctx) profile", () => {
+    const profile = createDefaultClaudeCtxProfile();
+    expect(profile.button.color).toBe(BRAND_COLORS.claude);
+  });
+
+  it("does not set a color on the default Copilot profile", () => {
+    const profile = createDefaultCopilotProfile();
+    expect(profile.button.color).toBeUndefined();
   });
 });

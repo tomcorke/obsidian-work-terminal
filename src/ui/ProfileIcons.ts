@@ -73,10 +73,14 @@ function createClaudeIcon(size: number): SVGSVGElement {
 function createCopilotIcon(size: number): SVGSVGElement {
   // GitHub Copilot dual-lens visor mark
   const svg = makeSvg(size, "0 0 24 24");
-  addPath(
-    svg,
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "currentColor");
+  path.setAttribute("fill-rule", "evenodd");
+  path.setAttribute(
+    "d",
     "M12 1C5.9 1 1 5 1 10.2c0 3.4 2 6.4 5 8.1V22l3.5-2.3c.8.2 1.6.3 2.5.3 6.1 0 11-4 11-9.2S18.1 1 12 1zm-3 12.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4z",
   );
+  svg.appendChild(path);
   return svg;
 }
 
