@@ -543,7 +543,7 @@ export class TerminalPanelView {
       }
 
       // Temporarily remove expanded class so tabs return to natural inline size
-      // for accurate measurement (expanded mode sets max-width: none + column layout)
+      // for accurate measurement (expanded mode changes flex-direction)
       const wasExpanded = this.tabBarEl.classList.contains("wt-tab-bar-expanded");
       if (wasExpanded) {
         this.tabBarEl.removeClass("wt-tab-bar-expanded");
