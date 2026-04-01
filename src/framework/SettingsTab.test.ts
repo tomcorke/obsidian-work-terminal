@@ -1,19 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  isAbsoluteCommandPathMock,
-  isPathLikeCommandMock,
-  resolveCommandInfoMock,
-  splitConfiguredCommandMock,
-  checkHookStatusMock,
-  resetGuidedTourStatusMock,
-  NoticeMock,
-} = vi.hoisted(() => ({
-  isAbsoluteCommandPathMock: vi.fn(),
-  isPathLikeCommandMock: vi.fn(),
-  resolveCommandInfoMock: vi.fn(),
-  splitConfiguredCommandMock: vi.fn(),
+const { checkHookStatusMock, resetGuidedTourStatusMock, NoticeMock } = vi.hoisted(() => ({
   checkHookStatusMock: vi.fn(() => ({
     scriptExists: false,
     hooksConfigured: false,
@@ -204,13 +192,6 @@ vi.mock("../core/PluginDataStore", () => ({
   },
 }));
 
-vi.mock("../core/agents/AgentLauncher", () => ({
-  isAbsoluteCommandPath: isAbsoluteCommandPathMock,
-  isPathLikeCommand: isPathLikeCommandMock,
-  resolveCommandInfo: resolveCommandInfoMock,
-  splitConfiguredCommand: splitConfiguredCommandMock,
-}));
-
 import { WorkTerminalSettingsTab } from "./SettingsTab";
 
 type CreateChildOptions = {
@@ -309,39 +290,6 @@ describe("WorkTerminalSettingsTab", () => {
     process.env.HOME = "/Users/tester";
     document.body.innerHTML = "";
     installDomHelpers();
-    isAbsoluteCommandPathMock.mockReset();
-    isPathLikeCommandMock.mockReset();
-    resolveCommandInfoMock.mockReset();
-    splitConfiguredCommandMock.mockReset();
-    isAbsoluteCommandPathMock.mockImplementation((command: string) => {
-      const path = require("path") as typeof import("path");
-      return path.isAbsolute(command) || path.win32.isAbsolute(command);
-    });
-    isPathLikeCommandMock.mockImplementation(
-      (command: string) => command.includes("/") || command.includes("\\"),
-    );
-    resolveCommandInfoMock.mockImplementation((command: string, cwd?: string) => {
-      if (command === "claude") {
-        return {
-          requested: command,
-          resolved: "/opt/homebrew/bin/claude",
-          found: true,
-        };
-      }
-      if (command === "./agent.sh") {
-        return {
-          requested: command,
-          resolved: `${cwd}/agent.sh`,
-          found: cwd === "/Users/tester/vault",
-        };
-      }
-      return {
-        requested: command,
-        resolved: command,
-        found: false,
-      };
-    });
-    splitConfiguredCommandMock.mockImplementation((command: string) => command.trim().split(/\s+/));
   });
 
   afterEach(() => {
@@ -349,188 +297,25 @@ describe("WorkTerminalSettingsTab", () => {
     vi.clearAllMocks();
   });
 
-  it("renders found and not found badges for configured command settings", async () => {
+  it("does not render legacy agent command settings", async () => {
     const plugin = makePlugin({
       "core.claudeCommand": "claude",
-      "core.copilotCommand": "missing-copilot",
-      "core.strandsCommand": "./agent.sh",
-      "core.defaultTerminalCwd": "~/vault",
+      "core.copilotCommand": "copilot",
     });
     const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
     tab.display();
     await flushAsyncWork();
 
-    const badges = Array.from(
-      tab.containerEl.querySelectorAll<HTMLElement>(".wt-command-status-badge"),
-    ).map((badge) => badge.textContent?.trim());
-
-    expect(badges).toEqual(["Found", "Not found", "Found"]);
-    expect(tab.containerEl.textContent).toContain("Resolved from /Users/tester/vault");
-    expect(resolveCommandInfoMock).toHaveBeenCalledWith("claude", "/Users/tester/vault");
-    expect(resolveCommandInfoMock).toHaveBeenCalledWith("missing-copilot", "/Users/tester/vault");
-    expect(resolveCommandInfoMock).toHaveBeenCalledWith("./agent.sh", "/Users/tester/vault");
-  });
-
-  it("refreshes binary validation when the default cwd changes", async () => {
-    const plugin = makePlugin({
-      "core.claudeCommand": "claude",
-      "core.copilotCommand": "missing-copilot",
-      "core.strandsCommand": "./agent.sh",
-      "core.defaultTerminalCwd": "~/missing",
-    });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
-
-    tab.display();
-    await flushAsyncWork();
-
-    const strandsBadge = tab.containerEl.querySelector<HTMLElement>(
-      '[data-command-validation-key="core.strandsCommand"] .wt-command-status-badge',
-    );
-    expect(strandsBadge?.textContent).toBe("Not found");
-
-    const cwdInput = tab.containerEl.querySelector<HTMLInputElement>(
-      '[data-setting-key="core.defaultTerminalCwd"]',
-    );
-    if (!cwdInput) {
-      throw new Error("Missing defaultTerminalCwd input");
-    }
-    cwdInput.value = "~/vault";
-    cwdInput.dispatchEvent(new Event("input"));
-    await flushAsyncWork();
-
-    expect(strandsBadge?.textContent).toBe("Found");
-    expect(plugin.saveData).toHaveBeenCalled();
-    expect(resolveCommandInfoMock).toHaveBeenLastCalledWith("./agent.sh", "/Users/tester/vault");
-  });
-
-  it("validates the executable token for multi-token Strands commands", async () => {
-    resolveCommandInfoMock.mockImplementation((command: string, cwd?: string) => {
-      if (command === "uv") {
-        return {
-          requested: command,
-          resolved: "/opt/homebrew/bin/uv",
-          found: true,
-        };
-      }
-      return {
-        requested: command,
-        resolved: `${cwd}/${command}`,
-        found: false,
-      };
-    });
-    const plugin = makePlugin({
-      "core.claudeCommand": "claude",
-      "core.copilotCommand": "./package.json",
-      "core.strandsCommand": "uv run python agent.py",
-      "core.defaultTerminalCwd": "~/vault",
-    });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
-
-    tab.display();
-    await flushAsyncWork();
-
-    const strandsBadge = tab.containerEl.querySelector<HTMLElement>(
-      '[data-command-validation-key="core.strandsCommand"] .wt-command-status-badge',
-    );
-    expect(strandsBadge?.textContent).toBe("Found");
-    expect(tab.containerEl.textContent).toContain("Inline args: run python agent.py");
-    expect(resolveCommandInfoMock).toHaveBeenCalledWith("uv", "/Users/tester/vault");
-
-    const copilotBadge = tab.containerEl.querySelector<HTMLElement>(
-      '[data-command-validation-key="core.copilotCommand"] .wt-command-status-badge',
-    );
-    expect(copilotBadge?.textContent).toBe("Not found");
-  });
-
-  it("validates quoted Windows Strands executable paths with spaces using the executable token only", async () => {
-    splitConfiguredCommandMock.mockReturnValue([
-      "C:\\Program Files\\Python\\python.exe",
-      "agent.py",
-      "--profile",
-      "local",
-    ]);
-    resolveCommandInfoMock.mockImplementation((command: string) => {
-      if (command === "C:\\Program Files\\Python\\python.exe") {
-        return {
-          requested: command,
-          resolved: command,
-          found: true,
-        };
-      }
-      return {
-        requested: command,
-        resolved: command,
-        found: false,
-      };
-    });
-    const plugin = makePlugin({
-      "core.claudeCommand": "claude",
-      "core.copilotCommand": "./package.json",
-      "core.strandsCommand": `"C:\\Program Files\\Python\\python.exe" agent.py --profile local`,
-      "core.defaultTerminalCwd": "C:\\vault",
-    });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
-
-    tab.display();
-    await flushAsyncWork();
-
-    const strandsBadge = tab.containerEl.querySelector<HTMLElement>(
-      '[data-command-validation-key="core.strandsCommand"] .wt-command-status-badge',
-    );
-    expect(strandsBadge?.textContent).toBe("Found");
-    expect(tab.containerEl.textContent).toContain("Inline args: agent.py --profile local");
-    expect(resolveCommandInfoMock).toHaveBeenCalledWith(
-      "C:\\Program Files\\Python\\python.exe",
-      "C:\\vault",
-    );
-  });
-
-  it("labels Windows absolute and relative command paths correctly", async () => {
-    resolveCommandInfoMock.mockImplementation((command: string, cwd?: string) => {
-      if (command === "C:\\Tools\\claude.exe") {
-        return {
-          requested: command,
-          resolved: command,
-          found: true,
-        };
-      }
-      if (command === "\\\\server\\share\\copilot.cmd") {
-        return {
-          requested: command,
-          resolved: command,
-          found: true,
-        };
-      }
-      if (command === ".\\agent.cmd") {
-        return {
-          requested: command,
-          resolved: "C:\\vault\\agent.cmd",
-          found: true,
-        };
-      }
-      return {
-        requested: command,
-        resolved: `${cwd}/${command}`,
-        found: false,
-      };
-    });
-    const plugin = makePlugin({
-      "core.claudeCommand": "C:\\Tools\\claude.exe",
-      "core.copilotCommand": "\\\\server\\share\\copilot.cmd",
-      "core.strandsCommand": ".\\agent.cmd",
-      "core.defaultTerminalCwd": "C:\\vault",
-    });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
-
-    tab.display();
-    await flushAsyncWork();
-
-    expect(tab.containerEl.textContent).toContain("Using configured path: C:\\Tools\\claude.exe");
-    expect(tab.containerEl.textContent).toContain(
-      "Using configured path: \\\\server\\share\\copilot.cmd",
-    );
-    expect(tab.containerEl.textContent).toContain("Resolved from C:\\vault: C:\\vault\\agent.cmd");
+    expect(tab.containerEl.querySelector('[data-setting-key="core.claudeCommand"]')).toBeNull();
+    expect(tab.containerEl.querySelector('[data-setting-key="core.copilotCommand"]')).toBeNull();
+    expect(tab.containerEl.querySelector('[data-setting-key="core.strandsCommand"]')).toBeNull();
+    expect(tab.containerEl.querySelector('[data-setting-key="core.claudeExtraArgs"]')).toBeNull();
+    expect(
+      tab.containerEl.querySelector('[data-setting-key="core.additionalAgentContext"]'),
+    ).toBeNull();
+    // But core settings like defaultShell should still be present
+    expect(tab.containerEl.querySelector('[data-setting-key="core.defaultShell"]')).not.toBeNull();
   });
 
   it("renders a reset guided tour button that calls resetGuidedTourStatus and shows a Notice", async () => {
