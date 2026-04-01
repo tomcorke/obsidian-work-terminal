@@ -3532,4 +3532,127 @@ describe("profile launch", () => {
     expect(callArgs.prompt).toContain("adapter prompt");
     expect(callArgs.prompt).toContain("Context for Task");
   });
+
+  it("passes arguments when paramPassMode is launch-only", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--model opus",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({ paramPassMode: "launch-only", arguments: "--model opus" }),
+    );
+
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.extraArgs).toBe("--model opus");
+  });
+
+  it("suppresses arguments when paramPassMode is resume-only", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--model opus",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({ paramPassMode: "resume-only", arguments: "--model opus" }),
+    );
+
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.extraArgs).toBe("");
+  });
+
+  it("suppresses context prompt when paramPassMode is resume-only", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "Context for $title",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        paramPassMode: "resume-only",
+        useContext: true,
+        contextPrompt: "Context for $title",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.prompt).toBeUndefined();
+  });
+
+  it("passes arguments and prompt when paramPassMode is both", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--verbose",
+      resolveContextPrompt: () => "Context for $title",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        paramPassMode: "both",
+        useContext: true,
+        arguments: "--verbose",
+        contextPrompt: "Context for $title",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.extraArgs).toBe("--verbose");
+    expect(callArgs.prompt).toContain("adapter prompt");
+    expect(callArgs.prompt).toContain("Context for Task");
+  });
 });

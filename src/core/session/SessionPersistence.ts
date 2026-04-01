@@ -14,6 +14,7 @@ import {
   type PersistedSession,
   type SessionType,
 } from "./types";
+import type { ParamPassMode } from "../agents/AgentProfile";
 import { mergeAndSavePluginData, type PluginDataStore } from "../PluginDataStore";
 import { PARAM_PASS_MODES, type ParamPassMode } from "../agents/AgentProfile";
 

@@ -33,6 +33,7 @@ import {
 } from "../session/types";
 import { AgentSessionTracker } from "../agents/AgentSessionTracker";
 import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
+import type { ParamPassMode } from "../agents/AgentProfile";
 
 export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
@@ -1010,6 +1011,7 @@ export class TerminalTab {
       sessionType: this.sessionType,
       profileId: this.profileId,
       profileColor: this.profileColor,
+      paramPassMode: this.paramPassMode,
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
@@ -1049,6 +1051,7 @@ export class TerminalTab {
     tab.sessionType = stored.sessionType;
     tab.profileId = stored.profileId;
     tab.profileColor = stored.profileColor;
+    tab.paramPassMode = stored.paramPassMode;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;

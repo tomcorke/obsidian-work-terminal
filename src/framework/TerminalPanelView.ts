@@ -41,7 +41,7 @@ import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import { getDefaultSessionLabel, isClaudeSession } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
-import type { AgentProfile } from "../core/agents/AgentProfile";
+import type { AgentProfile, ParamPassMode } from "../core/agents/AgentProfile";
 import { agentTypeToSessionType } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
 
@@ -815,6 +815,7 @@ export class TerminalPanelView {
         commandArgs: tab.launchCommandArgs,
         profileId: tab.profileId,
         profileColor: tab.profileColor,
+        paramPassMode: tab.paramPassMode,
       };
     }
 
@@ -836,6 +837,7 @@ export class TerminalPanelView {
       commandArgs: tab.launchCommandArgs,
       profileId: tab.profileId,
       profileColor: tab.profileColor,
+      paramPassMode: tab.paramPassMode,
     };
   }
 
@@ -1249,10 +1251,14 @@ export class TerminalPanelView {
     const extraArgs = this.profileManager.resolveArguments(profile, fresh);
     const label = profile.button.label || profile.name;
 
+    // Determine whether params (arguments + context prompt) should be passed on launch
+    const passParamsOnLaunch =
+      profile.paramPassMode === "launch-only" || profile.paramPassMode === "both";
+
     // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
     const item = this.getActiveItem();
-    let expandedArgs = extraArgs;
-    if (item) {
+    let expandedArgs = passParamsOnLaunch ? extraArgs : "";
+    if (item && expandedArgs) {
       expandedArgs = this.expandProfilePlaceholders(expandedArgs, item, "$sessionId");
     }
 
@@ -1267,9 +1273,9 @@ export class TerminalPanelView {
       return;
     }
 
-    // Build context prompt if the profile uses context
+    // Build context prompt if the profile uses context and params should be passed on launch
     let prompt: string | undefined;
-    if (profile.useContext && item) {
+    if (passParamsOnLaunch && profile.useContext && item) {
       const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
       if (contextTemplate) {
         // Build from adapter prompt + profile context template
@@ -1342,6 +1348,9 @@ export class TerminalPanelView {
       if (lastTab) {
         lastTab.profileId = profile.id;
         if (profile.button.color) lastTab.profileColor = profile.button.color;
+        if (profile.paramPassMode !== "launch-only") {
+          lastTab.paramPassMode = profile.paramPassMode;
+        }
         this.renderTabBar();
       }
     }
@@ -1406,6 +1415,7 @@ export class TerminalPanelView {
               label: persisted.label,
               sessionId: this.getPersistedSessionId(persisted) || "",
               freshSettings: fresh,
+              paramPassMode: persisted.paramPassMode,
               ...this.getSavedResumeLaunchContext(persisted),
             })
           : null;
@@ -1422,6 +1432,9 @@ export class TerminalPanelView {
       }
     } else if (persisted.profileColor) {
       tab.profileColor = persisted.profileColor;
+    }
+    if (persisted.paramPassMode) {
+      tab.paramPassMode = persisted.paramPassMode;
     }
 
     this.trackRecoverySuccess(tab, () => {
@@ -1467,6 +1480,7 @@ export class TerminalPanelView {
     cwd?: string;
     resolvedCommand?: string;
     extraArgs?: string[];
+    paramPassMode?: ParamPassMode;
   }): TerminalTab | null {
     const isCopilot =
       options.sessionType === "copilot" || options.sessionType === "copilot-with-context";
@@ -1490,11 +1504,17 @@ export class TerminalPanelView {
       return null;
     }
     const args = isCopilot ? [`--resume=${options.sessionId}`] : ["--resume", options.sessionId];
-    const extraArgs =
-      options.extraArgs ||
-      (isCopilot
+    // When paramPassMode is "launch-only", skip stored profile args on resume
+    // and fall through to global defaults only
+    const passParamsOnResume = !options.paramPassMode || options.paramPassMode !== "launch-only";
+    const extraArgs = passParamsOnResume
+      ? options.extraArgs ||
+        (isCopilot
+          ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
+          : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", ""))
+      : isCopilot
         ? this.getStringSetting(options.freshSettings, "core.copilotExtraArgs", "")
-        : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", ""));
+        : this.getStringSetting(options.freshSettings, "core.claudeExtraArgs", "");
     const parsedExtraArgs = Array.isArray(extraArgs) ? extraArgs : parseExtraArgs(extraArgs);
 
     if (parsedExtraArgs.length > 0) {
@@ -1542,6 +1562,7 @@ export class TerminalPanelView {
           tab.launchCommandArgs?.[0] ||
           resolveCommand(this.getStringSetting(fresh, "core.claudeCommand", "claude")),
         extraArgs: this.extractResumeExtraArgs(tab.sessionType, tab.launchCommandArgs),
+        paramPassMode: tab.paramPassMode,
       });
     } else if (tab.launchCommandArgs?.length) {
       replacement = this.tabManager.createTabForItem(
@@ -2039,6 +2060,7 @@ export class TerminalPanelView {
               label: claimedEntry.label,
               sessionId,
               freshSettings: fresh,
+              paramPassMode: claimedEntry.paramPassMode,
               ...this.getSavedResumeLaunchContext(claimedEntry),
             })
           : null;
@@ -2060,6 +2082,9 @@ export class TerminalPanelView {
       }
     } else if (claimedEntry.profileColor) {
       tab.profileColor = claimedEntry.profileColor;
+    }
+    if (claimedEntry.paramPassMode) {
+      tab.paramPassMode = claimedEntry.paramPassMode;
     }
 
     this.trackRecoverySuccess(
