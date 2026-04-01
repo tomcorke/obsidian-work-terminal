@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildClaudeArgs,
   buildCopilotArgs,
@@ -9,6 +9,7 @@ import {
   resolveCommand,
   resolveCommandInfo,
   splitConfiguredCommand,
+  _resetLoginShellPathCache,
 } from "./AgentLauncher";
 import { expandTilde } from "../utils";
 
@@ -16,9 +17,14 @@ describe("AgentLauncher", () => {
   const originalPath = process.env.PATH;
   const originalPathext = process.env.PATHEXT;
 
+  beforeEach(() => {
+    _resetLoginShellPathCache();
+  });
+
   afterEach(() => {
     process.env.PATH = originalPath;
     process.env.PATHEXT = originalPathext;
+    _resetLoginShellPathCache();
   });
 
   it("parses backslash-newline continuations without keeping continuation tokens", () => {
@@ -361,9 +367,7 @@ describe("AgentLauncher", () => {
   });
 
   it("builds the Claude missing CLI notice", () => {
-    expect(buildMissingCliNotice("claude", "claude")).toContain(
-      "brew install --cask claude-code",
-    );
+    expect(buildMissingCliNotice("claude", "claude")).toContain("brew install --cask claude-code");
   });
 
   it("builds the Copilot missing CLI notice", () => {
@@ -384,12 +388,7 @@ describe("AgentLauncher", () => {
       splitConfiguredCommand(
         `"C:\\Program Files\\Python\\python.exe" "agent \\"quoted\\".py" --profile local`,
       ),
-    ).toEqual([
-      "C:\\Program Files\\Python\\python.exe",
-      'agent "quoted".py',
-      "--profile",
-      "local",
-    ]);
+    ).toEqual(["C:\\Program Files\\Python\\python.exe", 'agent "quoted".py', "--profile", "local"]);
   });
 
   it("preserves quoted POSIX executable paths in configured commands", () => {
