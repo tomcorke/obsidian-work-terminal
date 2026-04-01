@@ -180,6 +180,11 @@ export class RecentlyClosedStore {
     const profileId = typeof candidate.profileId === "string" ? candidate.profileId : undefined;
     const profileColor =
       typeof candidate.profileColor === "string" ? candidate.profileColor : undefined;
+    const paramPassMode = (PARAM_PASS_MODES as readonly string[]).includes(
+      candidate.paramPassMode as string,
+    )
+      ? (candidate.paramPassMode as ParamPassMode)
+      : undefined;
 
     if (!itemId || !label || !sessionType || !Number.isFinite(closedAt) || !recoveryMode) {
       return null;
@@ -214,6 +219,7 @@ export class RecentlyClosedStore {
       commandArgs,
       profileId,
       profileColor,
+      paramPassMode,
     };
   }
 

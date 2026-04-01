@@ -1506,7 +1506,8 @@ export class TerminalPanelView {
     const args = isCopilot ? [`--resume=${options.sessionId}`] : ["--resume", options.sessionId];
     // When paramPassMode is "launch-only", skip stored profile args on resume
     // and fall through to global defaults only
-    const passParamsOnResume = !options.paramPassMode || options.paramPassMode !== "launch-only";
+    const passParamsOnResume =
+      options.paramPassMode === "resume-only" || options.paramPassMode === "both";
     const extraArgs = passParamsOnResume
       ? options.extraArgs ||
         (isCopilot
