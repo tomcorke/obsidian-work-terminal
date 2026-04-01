@@ -354,6 +354,67 @@ describe("AgentStateDetector", () => {
       detector.stop();
     });
 
+    it("does not treat Tip lines ending in ? as waiting", () => {
+      const terminal = mockTerminal([
+        "  some previous output",
+        "  Tip: Did you know you can drag and drop image files into your terminal?",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("does not treat other informational prefixes ending in ? as waiting", () => {
+      const prefixes = [
+        "Hint: Have you tried using the keyboard shortcut?",
+        "Note: Did you know this feature supports multiple formats?",
+        "Pro tip: Want to speed things up with parallel execution?",
+        "FYI: Did you know about the new caching feature?",
+      ];
+      for (const line of prefixes) {
+        const terminal = mockTerminal(["  some previous output", `  ${line}`]);
+        const detector = new AgentStateDetector(terminal, () => false);
+        detector.start();
+
+        vi.advanceTimersByTime(2100);
+        expect(detector.state).toBe("idle");
+        detector.stop();
+      }
+    });
+
+    it("does not treat Tip lines in hidden Claude prompt context as waiting", () => {
+      const terminal = mockTerminal([
+        "  Tip: Did you know you can drag and drop image files into your terminal?",
+        "  ────────────────",
+        "  ❯",
+        "  ────────────────",
+        "  ➜  obsidian-work-terminal git:(main) cwd context",
+        "  ⏵⏵ permissions",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("still detects real questions ending in ? as waiting", () => {
+      const terminal = mockTerminal([
+        "  some previous output",
+        "  Would you like me to proceed with this change?",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("waiting");
+      detector.stop();
+    });
+
     it("does not treat ordinary boxed output as waiting", () => {
       const terminal = mockTerminal(["  some previous output"]);
       const detector = new AgentStateDetector(terminal, () => false);

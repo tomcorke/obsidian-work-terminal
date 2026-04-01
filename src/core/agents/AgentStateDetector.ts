@@ -22,12 +22,16 @@ const GENERIC_WAITING_QUESTION_WINDOW = 5;
 const HIDDEN_CLAUDE_QUESTION_WINDOW = 10;
 const HIDDEN_CLAUDE_PROMPT_CHROME_SCAN_LINES = 6;
 
+/** Matches lines that are informational and should not be treated as questions. */
+const INFORMATIONAL_PREFIX_PATTERN = /^(?:Tip|Hint|Note|Info|FYI|Did you know|Pro tip)\s*:/i;
+
 function looksLikeHiddenClaudePrompt(tail: string[], questionIndex: number): boolean {
   const normalizedQuestion = normalizeWaitingLine(tail[questionIndex]);
   if (
     questionIndex < tail.length - HIDDEN_CLAUDE_QUESTION_WINDOW ||
     !normalizedQuestion.endsWith("?") ||
-    normalizedQuestion.length <= 10
+    normalizedQuestion.length <= 10 ||
+    INFORMATIONAL_PREFIX_PATTERN.test(normalizedQuestion)
   ) {
     return false;
   }
@@ -78,7 +82,8 @@ function findLastWaitingLineIndex(lines: string[]): number {
     if (
       i >= tail.length - GENERIC_WAITING_QUESTION_WINDOW &&
       normalizedLine.endsWith("?") &&
-      normalizedLine.length > 10
+      normalizedLine.length > 10 &&
+      !INFORMATIONAL_PREFIX_PATTERN.test(normalizedLine)
     ) {
       return tailStart + i;
     }
