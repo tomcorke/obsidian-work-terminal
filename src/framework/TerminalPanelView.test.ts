@@ -1542,6 +1542,7 @@ describe("TerminalPanelView hook warning", () => {
           "--another=saved",
         ],
         claudeSessionId: "saved-session",
+        paramPassMode: "both",
       }),
       "Tasks/task-1.md",
     );
@@ -1578,6 +1579,7 @@ describe("TerminalPanelView hook warning", () => {
           "--resume=old-session",
         ],
         claudeSessionId: "saved-session",
+        paramPassMode: "both",
       }),
       "Tasks/task-1.md",
     );
@@ -1610,6 +1612,7 @@ describe("TerminalPanelView hook warning", () => {
         command: "./missing/copilot-wrapper",
         commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
         claudeSessionId: "saved-session",
+        paramPassMode: "both",
       }),
       "Tasks/task-1.md",
     );
@@ -1641,6 +1644,7 @@ describe("TerminalPanelView hook warning", () => {
         command: "./missing/copilot-wrapper",
         commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
         claudeSessionId: "saved-session",
+        paramPassMode: "both",
       }),
       "Tasks/task-1.md",
     );
@@ -1683,6 +1687,7 @@ describe("TerminalPanelView hook warning", () => {
         "old-session",
         "--session-id=legacy",
       ],
+      paramPassMode: "both" as const,
     };
     (view as any).recentlyClosedStore.add(entry);
 
@@ -1722,6 +1727,7 @@ describe("TerminalPanelView hook warning", () => {
           "Prompt that should not replay",
         ],
         claudeSessionId: "saved-session",
+        paramPassMode: "both",
       }),
       "Tasks/task-1.md",
     );
@@ -1763,6 +1769,7 @@ describe("TerminalPanelView hook warning", () => {
         "-i",
         "Prompt that should not replay",
       ],
+      paramPassMode: "both" as const,
     };
     (view as any).recentlyClosedStore.add(entry);
 
@@ -2193,6 +2200,7 @@ describe("TerminalPanelView hook warning", () => {
         label: "Claude",
         taskPath: "task-1",
         agentSessionId: "session-123",
+        paramPassMode: "both",
         launchShell: "/bin/echo",
         launchCwd: expandTilde("~/resume"),
         launchCommandArgs: [
@@ -3531,5 +3539,277 @@ describe("profile launch", () => {
     const callArgs = spawnCopilotSpy.mock.calls[0][0];
     expect(callArgs.prompt).toContain("adapter prompt");
     expect(callArgs.prompt).toContain("Context for Task");
+  });
+
+  it("passes arguments when paramPassMode is launch-only", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--model opus",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({ paramPassMode: "launch-only", arguments: "--model opus" }),
+    );
+
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.extraArgs).toBe("--model opus");
+  });
+
+  it("suppresses arguments when paramPassMode is resume-only", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--model opus",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({ paramPassMode: "resume-only", arguments: "--model opus" }),
+    );
+
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.extraArgs).toBe("");
+  });
+
+  it("suppresses context prompt when paramPassMode is resume-only", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "Context for $title",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        paramPassMode: "resume-only",
+        useContext: true,
+        contextPrompt: "Context for $title",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.prompt).toBeUndefined();
+  });
+
+  it("passes arguments and prompt when paramPassMode is both", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--verbose",
+      resolveContextPrompt: () => "Context for $title",
+    };
+
+    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        paramPassMode: "both",
+        useContext: true,
+        arguments: "--verbose",
+        contextPrompt: "Context for $title",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
+    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(callArgs.extraArgs).toBe("--verbose");
+    expect(callArgs.prompt).toContain("adapter prompt");
+    expect(callArgs.prompt).toContain("Context for Task");
+  });
+});
+
+describe("paramPassMode resume behavior", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    vi.stubGlobal("Element", dom.window.Element);
+    vi.stubGlobal("Node", dom.window.Node);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    installDomHelpers({
+      window: dom.window,
+      document: dom.window.document,
+      HTMLElement: dom.window.HTMLElement,
+      Element: dom.window.Element,
+      Node: dom.window.Node,
+    });
+
+    mockState.activeSessions = new Map();
+    mockState.activeTabs = [];
+    mockState.activeItemId = "task-1";
+    mockState.tabsByItem = new Map();
+    mockState.activeTabIndex = 0;
+    mockState.persistedSessions = [];
+    mockState.tabDiagnostics = [];
+    mockState.idleSinceByItem = new Map();
+    mockState.menuTitles = [];
+    mockState.menuActions = new Map();
+    mockState.notices = [];
+    mockState.clipboardWriteText.mockClear();
+    mockState.latestCreateTabArgs = null;
+    mockState.tabManagerCalls = [];
+    mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
+    mockState.openExternal.mockClear();
+    mockState.latestTabManager = null;
+    mockState.latestTabManagerCtorArgs = null;
+    mockState.stopPeriodicPersist.mockClear();
+  });
+
+  afterEach(() => {
+    while (createdViews.length > 0) {
+      createdViews.pop()?.disposeAll();
+    }
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  it("does not pass stored extra args on resume when paramPassMode is undefined (default launch-only)", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ found: true, resolved: "/bin/echo" });
+
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.claudeExtraArgs": "--global-flag",
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    const tab = (view as any).createResumedTab({
+      targetItemId: "task-1",
+      sessionType: "claude",
+      label: "Claude",
+      sessionId: "session-123",
+      freshSettings: { "core.claudeExtraArgs": "--global-flag" },
+      resolvedCommand: "/bin/echo",
+      extraArgs: ["--model", "opus"],
+      // paramPassMode undefined = default "launch-only"
+    });
+
+    expect(tab).not.toBeNull();
+    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
+    expect(commandArgs).toBeDefined();
+    expect(commandArgs.join(" ")).toContain("--global-flag");
+    expect(commandArgs.join(" ")).not.toContain("--model");
+    expect(commandArgs.join(" ")).not.toContain("opus");
+    resolveStub.mockRestore();
+  });
+
+  it("passes stored extra args on resume when paramPassMode is resume-only", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ found: true, resolved: "/bin/echo" });
+
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.claudeExtraArgs": "--global-flag",
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    const tab = (view as any).createResumedTab({
+      targetItemId: "task-1",
+      sessionType: "claude",
+      label: "Claude",
+      sessionId: "session-456",
+      freshSettings: { "core.claudeExtraArgs": "--global-flag" },
+      resolvedCommand: "/bin/echo",
+      extraArgs: ["--model", "opus"],
+      paramPassMode: "resume-only",
+    });
+
+    expect(tab).not.toBeNull();
+    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
+    expect(commandArgs).toBeDefined();
+    expect(commandArgs.join(" ")).toContain("--model");
+    expect(commandArgs.join(" ")).toContain("opus");
+    resolveStub.mockRestore();
+  });
+
+  it("passes stored extra args on resume when paramPassMode is both", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ found: true, resolved: "/bin/echo" });
+
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    const tab = (view as any).createResumedTab({
+      targetItemId: "task-1",
+      sessionType: "claude",
+      label: "Claude",
+      sessionId: "session-789",
+      freshSettings: {},
+      resolvedCommand: "/bin/echo",
+      extraArgs: ["--model", "opus"],
+      paramPassMode: "both",
+    });
+
+    expect(tab).not.toBeNull();
+    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
+    expect(commandArgs).toBeDefined();
+    expect(commandArgs.join(" ")).toContain("--model");
+    expect(commandArgs.join(" ")).toContain("opus");
+    resolveStub.mockRestore();
   });
 });

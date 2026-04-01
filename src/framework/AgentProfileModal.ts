@@ -8,12 +8,14 @@ import type {
   AgentProfile,
   AgentType,
   BorderStyle,
+  ParamPassMode,
   ProfileIcon,
 } from "../core/agents/AgentProfile";
 import {
   AGENT_TYPES,
   BORDER_STYLES,
   BRAND_COLORS,
+  PARAM_PASS_MODES,
   PROFILE_ICONS,
   createDefaultProfile,
 } from "../core/agents/AgentProfile";
@@ -36,6 +38,12 @@ const BORDER_STYLE_LABELS: Record<BorderStyle, string> = {
   dashed: "Dashed",
   dotted: "Dotted",
   thick: "Thick",
+};
+
+const PARAM_PASS_MODE_LABELS: Record<ParamPassMode, string> = {
+  "launch-only": "Launch only",
+  "resume-only": "Resume only",
+  both: "Both",
 };
 
 const ICON_LABELS: Record<ProfileIcon, string> = {
@@ -195,7 +203,18 @@ export class AgentProfileEditModal extends Modal {
     ctxSetting.settingEl.style.flexWrap = "wrap";
     ctxSetting.controlEl.style.width = "100%";
 
-    // Parameter pass mode - hidden until implemented (see GitHub issue)
+    // Parameter pass mode
+    new Setting(contentEl)
+      .setName("Parameter pass mode")
+      .setDesc("When to pass arguments and context prompt: on initial launch, on resume, or both")
+      .addDropdown((dropdown) => {
+        for (const mode of PARAM_PASS_MODES) {
+          dropdown.addOption(mode, PARAM_PASS_MODE_LABELS[mode]);
+        }
+        dropdown.setValue(this.draft.paramPassMode).onChange((value) => {
+          this.draft.paramPassMode = value as ParamPassMode;
+        });
+      });
 
     // ---------------------------------------------------------------------------
     // Button configuration
