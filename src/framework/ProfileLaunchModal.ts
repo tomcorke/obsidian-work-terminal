@@ -1,6 +1,8 @@
 import { App, Modal, Setting } from "obsidian";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import type { ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
+import { isValidCssColor } from "../core/utils";
+import { createProfileIcon } from "../ui/ProfileIcons";
 import { getDefaultSessionLabel } from "./CustomSessionConfig";
 
 function formatTimeAgo(closedAt: number): string {
@@ -84,6 +86,8 @@ export class ProfileLaunchModal extends Modal {
       cls: "wt-custom-spawn-help",
     });
 
+    const summaryContainer = contentEl.createDiv({ cls: "wt-launch-summary" });
+
     new Setting(contentEl)
       .setName("Profile")
       .setDesc("Agent profile to launch")
@@ -96,8 +100,11 @@ export class ProfileLaunchModal extends Modal {
         }
         dropdown.onChange((value) => {
           this.selectedProfile = this.profiles.find((p) => p.id === value) || this.profiles[0];
+          this.renderProfileSummary(summaryContainer);
         });
       });
+
+    this.renderProfileSummary(summaryContainer);
 
     new Setting(contentEl)
       .setName("Working directory")
@@ -154,6 +161,10 @@ export class ProfileLaunchModal extends Modal {
     });
   }
 
+  private renderProfileSummary(container: HTMLElement): void {
+    renderProfileSummary(container, this.selectedProfile);
+  }
+
   private renderRestoreTab(contentEl: HTMLElement): void {
     contentEl.createEl("h3", { text: "Restore recent sessions" });
     contentEl.createEl("p", {
@@ -195,5 +206,65 @@ export class ProfileLaunchModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+  }
+}
+
+export function renderProfileSummary(container: HTMLElement, profile: AgentProfile | null): void {
+  container.empty();
+  if (!profile) return;
+
+  const color = profile.button.color;
+  if (color && isValidCssColor(color)) {
+    container.style.borderLeftColor = color;
+  } else {
+    container.style.borderLeftColor = "var(--background-modifier-border)";
+  }
+
+  const header = container.createDiv({ cls: "wt-launch-summary-header" });
+  const icon = createProfileIcon(profile.button.icon, 18);
+  if (icon) {
+    if (color && isValidCssColor(color)) {
+      icon.style.color = color;
+    }
+    header.appendChild(icon);
+  }
+  header.createSpan({ text: profile.name, cls: "wt-launch-summary-name" });
+
+  const details = container.createDiv({ cls: "wt-launch-summary-details" });
+
+  if (profile.command) {
+    details.createDiv({
+      cls: "wt-launch-summary-row",
+      text: `Command: ${profile.command}`,
+    });
+  }
+  if (profile.arguments) {
+    details.createDiv({
+      cls: "wt-launch-summary-row",
+      text: `Arguments: ${profile.arguments}`,
+    });
+  }
+  if (profile.defaultCwd) {
+    details.createDiv({
+      cls: "wt-launch-summary-row",
+      text: `CWD: ${profile.defaultCwd}`,
+    });
+  }
+  if (profile.contextPrompt) {
+    const snippet =
+      profile.contextPrompt.length > 80
+        ? profile.contextPrompt.slice(0, 80) + "..."
+        : profile.contextPrompt;
+    details.createDiv({
+      cls: "wt-launch-summary-row",
+      text: `Context: ${snippet}`,
+    });
+  }
+
+  if (!profile.command && !profile.arguments && !profile.defaultCwd && !profile.contextPrompt) {
+    details.createDiv({
+      cls: "wt-launch-summary-row wt-launch-summary-default",
+      text: "Using default settings",
+    });
   }
 }

@@ -780,6 +780,42 @@ button.wt-spawn-claude-ctx:hover svg {
   border-bottom-color: var(--interactive-accent);
 }
 
+/* Profile summary in launch dialog */
+.wt-launch-summary {
+  border-left: 3px solid var(--background-modifier-border);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 0 4px 4px 0;
+  background: var(--background-secondary);
+}
+
+.wt-launch-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.wt-launch-summary-name {
+  font-weight: var(--font-semibold);
+}
+
+.wt-launch-summary-details {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.wt-launch-summary-row {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.6;
+}
+
+.wt-launch-summary-default {
+  font-style: italic;
+}
+
 /* Recently closed sessions list */
 .wt-recently-closed-list {
   display: flex;
