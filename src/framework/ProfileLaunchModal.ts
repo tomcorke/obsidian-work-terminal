@@ -26,6 +26,9 @@ export class ProfileLaunchModal extends Modal {
   private extraArgsOverride = "";
   private labelOverride = "";
   private activeTab: "new" | "restore" = "new";
+  private cwdInput: HTMLInputElement | null = null;
+  private labelInput: HTMLInputElement | null = null;
+  private argsInput: HTMLTextAreaElement | null = null;
 
   constructor(
     app: App,
@@ -99,6 +102,7 @@ export class ProfileLaunchModal extends Modal {
         dropdown.onChange((value) => {
           this.selectedProfile = this.profiles.find((p) => p.id === value) || this.profiles[0];
           this.renderProfileSummary(summaryContainer);
+          this.updatePlaceholders();
         });
       });
 
@@ -110,12 +114,13 @@ export class ProfileLaunchModal extends Modal {
       .setDesc("Override the working directory (leave blank to use the profile default)")
       .addText((text) => {
         text
-          .setPlaceholder(this.defaultCwd)
+          .setPlaceholder(this.getCwdPlaceholder())
           .setValue(this.cwdOverride)
           .onChange((value) => {
             this.cwdOverride = value;
           });
         text.inputEl.addClass("wt-custom-spawn-input");
+        this.cwdInput = text.inputEl;
       });
 
     new Setting(contentEl)
@@ -123,12 +128,13 @@ export class ProfileLaunchModal extends Modal {
       .setDesc("Override the tab label (leave blank to use the profile default)")
       .addText((text) => {
         text
-          .setPlaceholder(this.selectedProfile?.name || "")
+          .setPlaceholder(this.getLabelPlaceholder())
           .setValue(this.labelOverride)
           .onChange((value) => {
             this.labelOverride = value;
           });
         text.inputEl.addClass("wt-custom-spawn-input");
+        this.labelInput = text.inputEl;
       });
 
     new Setting(contentEl)
@@ -136,12 +142,13 @@ export class ProfileLaunchModal extends Modal {
       .setDesc("Additional CLI arguments appended to the profile arguments")
       .addTextArea((text) => {
         text
-          .setPlaceholder("--model gpt-5.4")
+          .setPlaceholder(this.getArgsPlaceholder())
           .setValue(this.extraArgsOverride)
           .onChange((value) => {
             this.extraArgsOverride = value;
           });
         text.inputEl.addClass("wt-custom-spawn-textarea");
+        this.argsInput = text.inputEl;
       });
 
     const buttons = contentEl.createDiv({ cls: "wt-custom-spawn-buttons" });
@@ -158,6 +165,25 @@ export class ProfileLaunchModal extends Modal {
       });
       this.close();
     });
+  }
+
+  private getCwdPlaceholder(): string {
+    return this.selectedProfile?.defaultCwd || this.defaultCwd || "Profile default";
+  }
+
+  private getLabelPlaceholder(): string {
+    const profile = this.selectedProfile;
+    return profile?.button.label || profile?.name || "";
+  }
+
+  private getArgsPlaceholder(): string {
+    return this.selectedProfile?.arguments || "Optional extra arguments";
+  }
+
+  private updatePlaceholders(): void {
+    if (this.cwdInput) this.cwdInput.placeholder = this.getCwdPlaceholder();
+    if (this.labelInput) this.labelInput.placeholder = this.getLabelPlaceholder();
+    if (this.argsInput) this.argsInput.placeholder = this.getArgsPlaceholder();
   }
 
   private renderProfileSummary(container: HTMLElement): void {
@@ -211,6 +237,9 @@ export class ProfileLaunchModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    this.cwdInput = null;
+    this.labelInput = null;
+    this.argsInput = null;
   }
 }
 
