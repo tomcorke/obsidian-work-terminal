@@ -51,6 +51,7 @@ export class TabManager {
             this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
           };
           tab.hide();
+          tab.suspendWebGl();
           tabs.push(tab);
         }
         this.sessions.set(itemId, tabs);
@@ -122,6 +123,7 @@ export class TabManager {
           targetIdx = remembered;
         }
       }
+      tabs[targetIdx].resumeWebGl();
       tabs[targetIdx].resetScreenFingerprint();
       tabs[targetIdx].show();
       tabs[targetIdx].clearWaiting();
@@ -218,10 +220,12 @@ export class TabManager {
     if (isActiveItem) {
       // Hide others, show new
       this.hideAllTerminals();
+      tab.resumeWebGl();
       tab.show();
       this.activeTabIndex = tabs.length - 1;
     } else {
       tab.hide();
+      tab.suspendWebGl();
     }
 
     this.onSessionChange?.();
@@ -238,6 +242,7 @@ export class TabManager {
     if (index < 0 || index >= tabs.length) return;
 
     this.hideAllTerminals();
+    tabs[index].resumeWebGl();
     tabs[index].resetScreenFingerprint();
     tabs[index].show();
     tabs[index].clearWaiting();
@@ -350,6 +355,7 @@ export class TabManager {
       if (isActiveItem) this.activeTabIndex = 0;
     } else if (isActiveItem) {
       this.activeTabIndex = Math.min(this.activeTabIndex, tabs.length - 1);
+      tabs[this.activeTabIndex].resumeWebGl();
       tabs[this.activeTabIndex].show();
     } else {
       const remembered = this.lastActiveTab.get(itemId) ?? 0;
@@ -609,6 +615,7 @@ export class TabManager {
     for (const tabs of this.sessions.values()) {
       for (const tab of tabs) {
         tab.hide();
+        tab.suspendWebGl();
       }
     }
   }

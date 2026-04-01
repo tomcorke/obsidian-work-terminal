@@ -24,6 +24,8 @@ const terminalTabMock = vi.hoisted(() => {
     show = vi.fn();
     hide = vi.fn();
     clearWaiting = vi.fn();
+    suspendWebGl = vi.fn();
+    resumeWebGl = vi.fn();
     getDiagnostics = vi.fn(() => ({
       tabId: this.id,
       label: this.label,
@@ -48,6 +50,7 @@ const terminalTabMock = vi.hoisted(() => {
         hasBlankRenderSurface: false,
         trackedWebglAddonPresent: false,
         trackedWebglAddonDisposed: false,
+        webglSuspended: false,
         staleDisposedWebglOwnership: false,
       },
       buffer: {
@@ -115,6 +118,8 @@ function makeStubTab(
   show: ReturnType<typeof vi.fn>;
   hide: ReturnType<typeof vi.fn>;
   clearWaiting: ReturnType<typeof vi.fn>;
+  suspendWebGl: ReturnType<typeof vi.fn>;
+  resumeWebGl: ReturnType<typeof vi.fn>;
   taskPath: string;
   isDisposed: boolean;
   getDiagnostics: ReturnType<typeof vi.fn>;
@@ -132,6 +137,8 @@ function makeStubTab(
     show: vi.fn(),
     hide: vi.fn(),
     clearWaiting: vi.fn(),
+    suspendWebGl: vi.fn(),
+    resumeWebGl: vi.fn(),
     taskPath: overrides.taskPath ?? "item-1",
     isDisposed,
     getDiagnostics: vi.fn(() => ({
@@ -158,6 +165,7 @@ function makeStubTab(
         hasBlankRenderSurface: false,
         trackedWebglAddonPresent: false,
         trackedWebglAddonDisposed: false,
+        webglSuspended: false,
         staleDisposedWebglOwnership: false,
       },
       buffer: {
