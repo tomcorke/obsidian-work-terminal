@@ -439,13 +439,15 @@ export class ListPanel {
       const sourceFullPath = `${vaultBase}/${sourceItem.path}`;
       const newFullPath = `${vaultBase}/${result.path}`;
 
-      // Build the split-scoping prompt
+      // Build the split-scoping prompt.
+      // Paths are NOT quoted to avoid Claude including literal quote characters
+      // in tool parameters (causes "Invalid tool parameters" errors).
       const prompt =
-        `Read the task file at "${sourceFullPath}". ` +
-        `A new split task has been created at "${newFullPath}" as a sub-scope of the original. ` +
+        `Read the original task file at ${sourceFullPath} and the new split task file at ${newFullPath}. ` +
+        `The new file was created as a sub-scope of the original. ` +
         `Ask the user what the scope of this new split task should be. ` +
-        `Once the user answers, immediately update the new task file: ` +
-        `set the title, write a brief description with relevant context and references from the original task, ` +
+        `Once the user answers, update the new task file in place: ` +
+        `set the title, write a brief description with relevant context from the original task, ` +
         `and log the scope in the activity log. ` +
         `Then rename the file to match the convention TASK-YYYYMMDD-HHMM-slugified-title.md ` +
         `(use the existing date prefix, replace the "pending-XXXXXXXX" segment with a slug of the final title).`;
