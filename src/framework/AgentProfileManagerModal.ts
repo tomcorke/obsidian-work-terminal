@@ -112,6 +112,12 @@ export class AgentProfileManagerModal extends Modal {
       }
     });
 
+    // Color swatch
+    if (profile.button.color) {
+      const swatch = row.createDiv({ cls: "wt-profile-color-swatch" });
+      swatch.style.backgroundColor = profile.button.color;
+    }
+
     // Profile info
     const infoEl = row.createDiv({ cls: "wt-profile-info" });
     infoEl.createDiv({ text: profile.name, cls: "wt-profile-name" });

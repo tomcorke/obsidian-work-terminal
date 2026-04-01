@@ -244,7 +244,7 @@ export class AgentProfileEditModal extends Modal {
         });
       });
 
-    new Setting(contentEl)
+    const colorSetting = new Setting(contentEl)
       .setName("Button color")
       .setDesc("CSS color for the button border and icon (e.g. #e67e22, var(--text-accent))")
       .addText((text) => {
@@ -253,9 +253,11 @@ export class AgentProfileEditModal extends Modal {
           .setValue(this.draft.button.color || "")
           .onChange((value) => {
             this.draft.button.color = value.trim() || undefined;
+            this.updateColorPreview(colorSetting.controlEl);
           });
         text.inputEl.addClass("wt-profile-input");
       });
+    this.addColorPreview(colorSetting.controlEl);
 
     // ---------------------------------------------------------------------------
     // Action buttons
@@ -291,6 +293,25 @@ export class AgentProfileEditModal extends Modal {
       this.onSave(this.draft);
       this.close();
     });
+  }
+
+  private addColorPreview(controlEl: HTMLElement): void {
+    const preview = controlEl.createDiv({ cls: "wt-color-preview" });
+    this.updateColorPreview(controlEl);
+    controlEl.prepend(preview);
+  }
+
+  private updateColorPreview(controlEl: HTMLElement): void {
+    const preview = controlEl.querySelector<HTMLElement>(".wt-color-preview");
+    if (!preview) return;
+    const color = this.draft.button.color;
+    if (color) {
+      preview.style.backgroundColor = color;
+      preview.classList.remove("wt-color-preview-empty");
+    } else {
+      preview.style.backgroundColor = "";
+      preview.classList.add("wt-color-preview-empty");
+    }
   }
 
   private addCommandValidation(descEl: HTMLElement): void {
