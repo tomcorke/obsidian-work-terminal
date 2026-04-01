@@ -148,22 +148,23 @@ describe("renderProfileSummary", () => {
     expect(container.style.borderLeftColor).toBeTruthy();
   });
 
-  it("uses fallback border color when no button color", () => {
+  it("does not set inline border color when no button color (CSS handles fallback)", () => {
     const container = document.createElement("div");
     renderProfileSummary(container, makeProfile());
 
-    expect(container.style.borderLeftColor).toContain("var(--background-modifier-border");
+    expect(container.style.borderLeftColor).toBe("");
   });
 
-  it("renders icon with profile color", () => {
+  it("renders icon with profile color and no margin-right", () => {
     const container = document.createElement("div");
     const claudeProfile = createDefaultClaudeProfile();
     renderProfileSummary(container, claudeProfile);
 
     const header = container.querySelector(".wt-launch-summary-header");
-    const svg = header?.querySelector("svg");
+    const svg = header?.querySelector("svg") as SVGSVGElement;
     expect(svg).not.toBeNull();
     expect(svg?.style.color).toBeTruthy();
+    expect(svg?.style.marginRight).toBe("0px");
   });
 
   it("clears container before rendering", () => {

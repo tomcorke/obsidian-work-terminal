@@ -86,8 +86,6 @@ export class ProfileLaunchModal extends Modal {
       cls: "wt-custom-spawn-help",
     });
 
-    const summaryContainer = contentEl.createDiv({ cls: "wt-launch-summary" });
-
     new Setting(contentEl)
       .setName("Profile")
       .setDesc("Agent profile to launch")
@@ -104,6 +102,7 @@ export class ProfileLaunchModal extends Modal {
         });
       });
 
+    const summaryContainer = contentEl.createDiv({ cls: "wt-launch-summary" });
     this.renderProfileSummary(summaryContainer);
 
     new Setting(contentEl)
@@ -216,13 +215,12 @@ export function renderProfileSummary(container: HTMLElement, profile: AgentProfi
   const color = profile.button.color;
   if (color && isValidCssColor(color)) {
     container.style.borderLeftColor = color;
-  } else {
-    container.style.borderLeftColor = "var(--background-modifier-border)";
   }
 
   const header = container.createDiv({ cls: "wt-launch-summary-header" });
   const icon = createProfileIcon(profile.button.icon, 18);
   if (icon) {
+    icon.style.marginRight = "0";
     if (color && isValidCssColor(color)) {
       icon.style.color = color;
     }
