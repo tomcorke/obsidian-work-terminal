@@ -395,6 +395,13 @@ export class TerminalPanelView {
         tabEl.setAttribute("draggable", "true");
         tabEl.setAttribute("data-tab-index", String(i));
 
+        // Profile color triangle indicator
+        if (tab.profileColor) {
+          const triangle = tabEl.createDiv({ cls: "wt-tab-color-indicator" });
+          triangle.style.borderTopColor = tab.profileColor;
+          triangle.style.borderLeftColor = tab.profileColor;
+        }
+
         // Tab label
         const labelEl = tabEl.createSpan({ cls: "wt-tab-label", text: tab.label });
 
@@ -752,6 +759,7 @@ export class TerminalPanelView {
         cwd: tab.launchCwd,
         command: tab.launchCommandArgs?.[0] || tab.launchShell,
         commandArgs: tab.launchCommandArgs,
+        profileColor: tab.profileColor,
       };
     }
 
@@ -771,6 +779,7 @@ export class TerminalPanelView {
       cwd: tab.launchCwd,
       command,
       commandArgs: tab.launchCommandArgs,
+      profileColor: tab.profileColor,
     };
   }
 
@@ -1193,7 +1202,8 @@ export class TerminalPanelView {
 
     if (profile.agentType === "shell") {
       const expandedCwd = expandTilde(cwd);
-      this.tabManager.createTab(command, expandedCwd, label, "shell");
+      const tab = this.tabManager.createTab(command, expandedCwd, label, "shell");
+      if (tab && profile.button.color) tab.profileColor = profile.button.color;
       this.renderTabBar();
       return;
     }
@@ -1261,6 +1271,19 @@ export class TerminalPanelView {
         });
         break;
     }
+
+    // Apply profile color to the newly created tab
+    if (profile.button.color) {
+      const activeItemId = this.tabManager.getActiveItemId();
+      if (activeItemId) {
+        const tabs = this.tabManager.getTabs(activeItemId);
+        const lastTab = tabs[tabs.length - 1];
+        if (lastTab) {
+          lastTab.profileColor = profile.button.color;
+          this.renderTabBar();
+        }
+      }
+    }
   }
 
   private expandProfilePlaceholders(template: string, item: WorkItem, sessionId: string): string {
@@ -1327,6 +1350,10 @@ export class TerminalPanelView {
           : null;
 
     if (!tab) return;
+
+    if (persisted.profileColor) {
+      tab.profileColor = persisted.profileColor;
+    }
 
     this.trackRecoverySuccess(tab, () => {
       this.removePersistedSession(persisted);
@@ -1952,6 +1979,10 @@ export class TerminalPanelView {
       this.syncRecentlyClosedState();
       this.persistRecentlyClosedSessions().catch(() => {});
       return;
+    }
+
+    if (claimedEntry.profileColor) {
+      tab.profileColor = claimedEntry.profileColor;
     }
 
     this.trackRecoverySuccess(

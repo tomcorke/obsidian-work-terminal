@@ -524,6 +524,20 @@
   border-radius: 4px 4px 0 0;
   user-select: none;
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.wt-tab-color-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 6px;
+  border-color: transparent;
+  pointer-events: none;
 }
 
 .wt-tab:hover {
@@ -795,6 +809,8 @@ button.wt-spawn-claude-ctx:hover svg {
   border-radius: var(--radius-s);
   cursor: pointer;
   background: var(--background-secondary);
+  position: relative;
+  overflow: hidden;
 }
 
 .wt-recently-closed-row:hover {

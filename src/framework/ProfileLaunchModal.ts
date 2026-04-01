@@ -166,6 +166,12 @@ export class ProfileLaunchModal extends Modal {
     for (const entry of this.closedSessions) {
       const row = listEl.createEl("button", { cls: "wt-recently-closed-row" });
 
+      if (entry.profileColor) {
+        const triangle = row.createDiv({ cls: "wt-tab-color-indicator" });
+        triangle.style.borderTopColor = entry.profileColor;
+        triangle.style.borderLeftColor = entry.profileColor;
+      }
+
       const labelEl = row.createDiv({ cls: "wt-recently-closed-label" });
       labelEl.createSpan({ text: entry.label, cls: "wt-recently-closed-name" });
       labelEl.createSpan({
