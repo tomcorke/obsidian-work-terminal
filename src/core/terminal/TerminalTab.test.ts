@@ -128,10 +128,12 @@ import { resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
 class FakeElement {
   appendChild = vi.fn();
   addEventListener = vi.fn();
+  removeEventListener = vi.fn();
   remove = vi.fn();
   hasClass = vi.fn(() => false);
   addClass = vi.fn();
   removeClass = vi.fn();
+  querySelector = vi.fn(() => null);
   querySelectorAll = vi.fn(() => []);
 }
 
@@ -219,7 +221,9 @@ describe("TerminalTab hot-reload addon handling", () => {
     const addEventListener = vi.fn();
     const containerEl = {
       addEventListener,
+      removeEventListener: vi.fn(),
       hasClass: vi.fn(() => false),
+      querySelector: vi.fn(() => null),
     };
     const parentEl = { appendChild: vi.fn() };
 
@@ -267,7 +271,12 @@ describe("TerminalTab hot-reload addon handling", () => {
         terminal: { focus: vi.fn(), scrollToBottom: vi.fn(), cols: 80 } as any,
         fitAddon: {} as any,
         searchAddon: {} as any,
-        containerEl: { addEventListener: vi.fn(), hasClass: vi.fn(() => false) } as any,
+        containerEl: {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          hasClass: vi.fn(() => false),
+          querySelector: vi.fn(() => null),
+        } as any,
         process: null,
         webglAddon: null,
         webglContextLossListener: null,
@@ -297,7 +306,12 @@ describe("TerminalTab hot-reload addon handling", () => {
         terminal: terminal as any,
         fitAddon: {} as any,
         searchAddon: {} as any,
-        containerEl: { addEventListener: vi.fn(), hasClass: vi.fn(() => false) } as any,
+        containerEl: {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          hasClass: vi.fn(() => false),
+          querySelector: vi.fn(() => null),
+        } as any,
         process: null,
         webglAddon: null,
         webglContextLossListener: null,
@@ -336,7 +350,12 @@ describe("TerminalTab hot-reload addon handling", () => {
         terminal: terminal as any,
         fitAddon: {} as any,
         searchAddon: {} as any,
-        containerEl: { addEventListener: vi.fn(), hasClass: vi.fn(() => false) } as any,
+        containerEl: {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          hasClass: vi.fn(() => false),
+          querySelector: vi.fn(() => null),
+        } as any,
         process: null,
         webglAddon: null,
         webglContextLossListener: null,
@@ -614,7 +633,9 @@ describe("TerminalTab hot-reload addon handling", () => {
     const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
     const containerEl = {
       addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
       hasClass: vi.fn(() => false),
+      querySelector: vi.fn(() => null),
       remove: vi.fn(),
     };
     const parentEl = { appendChild: vi.fn() };
@@ -1327,6 +1348,7 @@ describe("TerminalTab auto-scroll on write", () => {
       containerEl: new FakeElement(),
       process: null,
       _isDisposed: false,
+      _userScrolledUp: false,
       _sessionTracker: null,
       _renameDecoder: { write: () => "", end: () => "" },
       _renameLineBuffer: "",
@@ -1367,86 +1389,185 @@ describe("TerminalTab auto-scroll on write", () => {
     };
   }
 
-  it("auto-scrolls to bottom on stdout data when viewport is at bottom", () => {
-    const { tab, scrollToBottom, bufferActive } = createTabWithMockTerminal();
+  it("always auto-scrolls to bottom on stdout data by default", () => {
+    const { tab, scrollToBottom } = createTabWithMockTerminal();
     const proc = createMockProcess();
 
-    // viewportY === baseY means at bottom
-    bufferActive.viewportY = 100;
-    bufferActive.baseY = 100;
-
     (tab as any).wireProcess(proc);
-    scrollToBottom.mockClear(); // clear any setup calls
+    scrollToBottom.mockClear();
 
     proc.emitStdout(Buffer.from("hello"));
 
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
   });
 
-  it("does not auto-scroll when user has scrolled up", () => {
-    const { tab, scrollToBottom, bufferActive } = createTabWithMockTerminal();
+  it("does not auto-scroll when _userScrolledUp flag is set", () => {
+    const { tab, scrollToBottom } = createTabWithMockTerminal();
     const proc = createMockProcess();
-
-    // viewportY < baseY means user scrolled up
-    bufferActive.viewportY = 50;
-    bufferActive.baseY = 100;
 
     (tab as any).wireProcess(proc);
     scrollToBottom.mockClear();
+
+    // Simulate user having scrolled up (set by wheel/touchmove/keydown listeners)
+    tab._userScrolledUp = true;
 
     proc.emitStdout(Buffer.from("hello"));
 
     expect(scrollToBottom).not.toHaveBeenCalled();
   });
 
-  it("resumes auto-scroll when user returns to bottom", () => {
-    const { tab, scrollToBottom, bufferActive } = createTabWithMockTerminal();
+  it("resumes auto-scroll when _userScrolledUp flag is cleared", () => {
+    const { tab, scrollToBottom } = createTabWithMockTerminal();
     const proc = createMockProcess();
-
-    bufferActive.viewportY = 50;
-    bufferActive.baseY = 100;
 
     (tab as any).wireProcess(proc);
     scrollToBottom.mockClear();
 
-    // First write: user is scrolled up - no auto-scroll
+    // User scrolled up
+    tab._userScrolledUp = true;
     proc.emitStdout(Buffer.from("hello"));
     expect(scrollToBottom).not.toHaveBeenCalled();
 
-    // User scrolls back to bottom
-    bufferActive.viewportY = 100;
-
-    // Second write: viewport is at bottom again - should auto-scroll
+    // User scrolls back to bottom (flag cleared by scroll/button handler)
+    tab._userScrolledUp = false;
     proc.emitStdout(Buffer.from("world"));
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
   });
 
-  it("captures per-write scroll snapshot even when callbacks are deferred", () => {
-    // Simulate real xterm async: multiple writes queue before any callback fires
-    const { tab, scrollToBottom, bufferActive, flushCallbacks } = createTabWithMockTerminal({
+  it("auto-scrolls all deferred writes when user has not scrolled up", () => {
+    const { tab, scrollToBottom, flushCallbacks } = createTabWithMockTerminal({
       deferCallbacks: true,
     });
     const proc = createMockProcess();
 
-    bufferActive.viewportY = 100;
-    bufferActive.baseY = 100;
+    (tab as any).wireProcess(proc);
+    scrollToBottom.mockClear();
+
+    // Two writes arrive while user has not scrolled up
+    proc.emitStdout(Buffer.from("chunk-1"));
+    proc.emitStdout(Buffer.from("chunk-2"));
+
+    expect(scrollToBottom).not.toHaveBeenCalled();
+
+    // Flush all deferred callbacks - both should auto-scroll
+    flushCallbacks();
+    expect(scrollToBottom).toHaveBeenCalledTimes(2);
+  });
+
+  it("suppresses all deferred writes when user scrolls up before flush", () => {
+    const { tab, scrollToBottom, flushCallbacks } = createTabWithMockTerminal({
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
 
     (tab as any).wireProcess(proc);
     scrollToBottom.mockClear();
 
-    // Write 1: user is at bottom
+    // Writes arrive
     proc.emitStdout(Buffer.from("chunk-1"));
-
-    // Before callback fires, user scrolls up, then write 2 arrives
-    bufferActive.viewportY = 50;
     proc.emitStdout(Buffer.from("chunk-2"));
 
-    // No callbacks have fired yet
-    expect(scrollToBottom).not.toHaveBeenCalled();
+    // User scrolls up before callbacks fire
+    tab._userScrolledUp = true;
 
-    // Now flush: write-1's callback should scroll (was at bottom),
-    // write-2's callback should not (user had scrolled up)
     flushCallbacks();
-    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(scrollToBottom).not.toHaveBeenCalled();
+  });
+});
+
+describe("TerminalTab user scroll detection", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    }) as typeof requestAnimationFrame);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function createTabWithViewport() {
+    const viewportEl = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const containerEl = {
+      querySelector: vi.fn((selector: string) =>
+        selector === ".xterm-viewport" ? viewportEl : null,
+      ),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const bufferActive = { viewportY: 100, baseY: 100 };
+    const terminal = {
+      buffer: { active: bufferActive },
+    };
+
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      terminal,
+      containerEl,
+      _userScrolledUp: false,
+      _isDisposed: false,
+      _documentCleanups: [],
+    }) as TerminalTab;
+
+    return { tab, viewportEl, bufferActive };
+  }
+
+  it("sets _userScrolledUp when wheel event fires and viewport is not at bottom", () => {
+    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+
+    tab._wireUserScrollDetection();
+
+    // Find the wheel listener
+    const wheelCall = viewportEl.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "wheel",
+    );
+    expect(wheelCall).toBeDefined();
+    const wheelHandler = wheelCall[1] as () => void;
+
+    // Simulate user scrolling up
+    bufferActive.viewportY = 50;
+    wheelHandler();
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
+  it("clears _userScrolledUp when user scrolls back to bottom", () => {
+    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+
+    tab._wireUserScrollDetection();
+    tab._userScrolledUp = true;
+
+    const wheelCall = viewportEl.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "wheel",
+    );
+    const wheelHandler = wheelCall[1] as () => void;
+
+    // User scrolls back to bottom
+    bufferActive.viewportY = 100;
+    wheelHandler();
+
+    expect(tab._userScrolledUp).toBe(false);
+  });
+
+  it("does nothing when no viewport element exists", () => {
+    const containerEl = {
+      querySelector: vi.fn(() => null),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      terminal: { buffer: { active: { viewportY: 100, baseY: 100 } } },
+      containerEl,
+      _userScrolledUp: false,
+      _isDisposed: false,
+      _documentCleanups: [],
+    }) as TerminalTab;
+
+    // Should not throw
+    tab._wireUserScrollDetection();
+    expect(tab._userScrolledUp).toBe(false);
   });
 });

@@ -6,7 +6,11 @@
  */
 import type { Terminal } from "@xterm/xterm";
 
-export function attachScrollButton(containerEl: HTMLElement, terminal: Terminal): void {
+export function attachScrollButton(
+  containerEl: HTMLElement,
+  terminal: Terminal,
+  onScrollToBottom?: () => void,
+): void {
   // Remove any existing button (e.g. from a previous reload)
   containerEl.querySelector(".wt-scroll-bottom")?.remove();
 
@@ -46,6 +50,7 @@ export function attachScrollButton(containerEl: HTMLElement, terminal: Terminal)
   scrollBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     terminal.scrollToBottom();
+    onScrollToBottom?.();
     terminal.focus();
     scheduleVisibilityUpdate();
   });
