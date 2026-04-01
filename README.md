@@ -34,8 +34,8 @@ Use Node.js 20.19.0 or newer (`node -v` to check), then run these commands from 
 ```bash
 git clone https://github.com/tomcorke/obsidian-work-terminal.git
 cd obsidian-work-terminal
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 Then symlink this repo directory into your vault. Replace `"/path/to/your/vault"` with your vault path:
@@ -46,7 +46,7 @@ mkdir -p "$VAULT/.obsidian/plugins"
 ln -s "$(pwd)" "$VAULT/.obsidian/plugins/work-terminal"
 ```
 
-If `work-terminal` already exists in `.obsidian/plugins`, remove that directory or symlink first. After pulling updates, run `npm run build` again before reopening Obsidian. Then enable **Work Terminal** in Obsidian's **Community plugins** settings.
+If `work-terminal` already exists in `.obsidian/plugins`, remove that directory or symlink first. After pulling updates, run `pnpm run build` again before reopening Obsidian. Then enable **Work Terminal** in Obsidian's **Community plugins** settings.
 
 ## Quick start
 
