@@ -1204,7 +1204,10 @@ export class TerminalPanelView {
       const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
       if (contextTemplate) {
         // Build from adapter prompt + profile context template
-        const adapterPrompt = this.promptBuilder.build(item);
+        const adapterPrompt = this.promptBuilder.buildPrompt(
+          item,
+          this.resolveWorkItemPath(item.path),
+        );
         // Defer $sessionId in context template too
         const expandedContext = this.expandProfilePlaceholders(contextTemplate, item, "$sessionId");
         prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;

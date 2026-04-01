@@ -3476,4 +3476,41 @@ describe("profile launch", () => {
       "No agent profiles configured. Open Settings to create one.",
     );
   });
+
+  it("calls promptBuilder.buildPrompt (not .build) for context profiles", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "copilot",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "Context for $title",
+    };
+
+    const spawnCopilotSpy = vi
+      .spyOn(view as any, "spawnCopilotSession")
+      .mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        agentType: "copilot",
+        useContext: true,
+        contextPrompt: "Context for $title",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
+    expect(spawnCopilotSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnCopilotSpy.mock.calls[0][0];
+    expect(callArgs.prompt).toContain("adapter prompt");
+    expect(callArgs.prompt).toContain("Context for Task");
+  });
 });
