@@ -1023,12 +1023,11 @@ button.wt-spawn-claude-ctx:hover svg {
   background: var(--background-secondary);
 }
 
-/* Hidden terminals: visibility hidden preserves render state,
-   z-index -1 prevents focus capture */
+/* Hidden terminals: display none fully removes from rendering and compositing,
+   preventing ghost content from GPU-accelerated WebGL canvases bleeding through.
+   The show() method re-fits via requestAnimationFrame after removing the class. */
 .wt-terminal-instance.hidden {
-  visibility: hidden;
-  pointer-events: none;
-  z-index: -1;
+  display: none;
 }
 
 /* xterm overflow fixes */
