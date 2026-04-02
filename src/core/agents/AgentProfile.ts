@@ -220,7 +220,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     defaultCommand: "strands",
     extraArgsSettingKey: "core.strandsExtraArgs",
     cliDisplayName: "Strands agent",
-    installHint: "Configure the Strands command in Work Terminal settings.",
+    installHint: "Point the Strands command to a wrapper script in Work Terminal settings.",
   },
   shell: {
     resumable: false,

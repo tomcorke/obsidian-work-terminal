@@ -9,7 +9,6 @@ import {
   parseExtraArgs,
   resolveCommand,
   resolveCommandInfo,
-  splitConfiguredCommand,
   _resetLoginShellPathCache,
 } from "./AgentLauncher";
 import { expandTilde } from "../utils";
@@ -430,35 +429,5 @@ describe("AgentLauncher", () => {
 
   it("builds the Copilot missing CLI notice", () => {
     expect(buildMissingCliNotice("copilot", "copilot")).toContain("brew install copilot-cli");
-  });
-
-  it("splits multi-token configured commands consistently", () => {
-    expect(splitConfiguredCommand("uv run python agent.py")).toEqual([
-      "uv",
-      "run",
-      "python",
-      "agent.py",
-    ]);
-  });
-
-  it("preserves quoted Windows executable paths and escaped quotes in configured commands", () => {
-    expect(
-      splitConfiguredCommand(
-        `"C:\\Program Files\\Python\\python.exe" "agent \\"quoted\\".py" --profile local`,
-      ),
-    ).toEqual(["C:\\Program Files\\Python\\python.exe", 'agent "quoted".py', "--profile", "local"]);
-  });
-
-  it("preserves quoted POSIX executable paths in configured commands", () => {
-    expect(
-      splitConfiguredCommand(
-        '"/Applications/Strands Agent/bin/python3" "./agents/agent.py" --mode interactive',
-      ),
-    ).toEqual([
-      "/Applications/Strands Agent/bin/python3",
-      "./agents/agent.py",
-      "--mode",
-      "interactive",
-    ]);
   });
 });
