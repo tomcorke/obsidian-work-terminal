@@ -12,6 +12,7 @@ import {
   getBuiltInProfiles,
   getResumeConfig,
   isResumableAgentType,
+  getAllResumeFlags,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -206,6 +207,21 @@ describe("isResumableAgentType", () => {
   it("returns false for strands and shell", () => {
     expect(isResumableAgentType("strands")).toBe(false);
     expect(isResumableAgentType("shell")).toBe(false);
+  });
+});
+
+describe("getAllResumeFlags", () => {
+  it("returns all unique resume flags across agent types", () => {
+    const flags = getAllResumeFlags();
+    expect(flags).toContain("--session-id");
+    expect(flags).toContain("--resume");
+    // No duplicates
+    expect(new Set(flags).size).toBe(flags.length);
+  });
+
+  it("does not include empty flags", () => {
+    const flags = getAllResumeFlags();
+    expect(flags).not.toContain("");
   });
 });
 

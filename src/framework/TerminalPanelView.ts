@@ -46,6 +46,7 @@ import {
   agentTypeToSessionType,
   sessionTypeToAgentType,
   getResumeConfig,
+  getAllResumeFlags,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
 
@@ -1627,33 +1628,15 @@ export class TerminalPanelView {
         null,
         tab.durableSessionId,
       );
-    } else if (agentType === "copilot") {
-      replacement = null;
-      await this.spawnCopilotSession({
-        sessionType: tab.sessionType as "copilot" | "copilot-with-context",
-        cwd: fallbackCwd,
-        label: tab.label,
-        freshSettings: fresh,
-      });
-      // spawnCopilotSession doesn't return the tab, get it from the tab manager
-      const tabs = this.tabManager.getTabs(targetItemId);
-      replacement = tabs[tabs.length - 1] ?? null;
-    } else if (agentType === "strands") {
-      replacement = null;
-      await this.spawnStrandsSession({
-        sessionType: tab.sessionType as "strands" | "strands-with-context",
-        cwd: fallbackCwd,
-        label: tab.label,
-        freshSettings: fresh,
-      });
-      const tabs = this.tabManager.getTabs(targetItemId);
-      replacement = tabs[tabs.length - 1] ?? null;
     } else {
-      replacement = await this.spawnClaudeSession({
-        sessionType: tab.sessionType === "claude-with-context" ? "claude-with-context" : "claude",
+      // No session ID and no saved command args - spawn a fresh session.
+      // Dispatch via agent type using a unified pattern rather than per-agent branching.
+      replacement = await this.spawnFreshAgentSession(agentType, {
+        sessionType: tab.sessionType,
         cwd: fallbackCwd,
         label: tab.label,
         freshSettings: fresh,
+        targetItemId,
       });
     }
 
@@ -1666,6 +1649,22 @@ export class TerminalPanelView {
     }
   }
 
+  /**
+   * Extract extra args from a previous launch's command args, stripping the
+   * resume flag (and its value) plus any context prompt so they can be
+   * regenerated fresh on resume.
+   *
+   * Uses AgentResumeConfig rather than per-agent branching:
+   * - All known resume flags (from every agent type) are stripped, since
+   *   persisted command args may contain flags from any historical launch.
+   * - `promptInjectionMode` + `promptFlag` from the current agent's config
+   *   determine how to recognise and strip the context prompt.
+   *
+   * For "positional" prompt injection, the context prompt is the argument
+   * immediately after the resume flag + value pair. For "flag" injection
+   * (e.g. copilot's "-i"), the prompt flag and its value are stripped
+   * wherever they appear in the arg list.
+   */
   private extractResumeExtraArgs(
     sessionType: PersistedSession["sessionType"],
     commandArgs?: string[],
@@ -1674,33 +1673,50 @@ export class TerminalPanelView {
       return [];
     }
     const args = commandArgs.slice(1);
+    const { withContext } = sessionTypeToAgentType(sessionType);
+    const resumeConfig = getResumeConfig(sessionTypeToAgentType(sessionType).agentType);
+    const { promptInjectionMode, promptFlag } = resumeConfig;
+
+    // Collect all known resume flags so we strip any that appear in
+    // historical command args, regardless of which agent spawned them.
+    const allResumeFlags = getAllResumeFlags();
+    const allResumePrefixes = allResumeFlags.map((f) => f + "=");
+
     const extraArgs: string[] = [];
-    const stripClaudeContextPrompt = sessionType === "claude-with-context";
-    const stripCopilotContextPrompt = sessionType === "copilot-with-context";
 
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
-      if (stripCopilotContextPrompt && arg === "-i") {
+
+      // Strip flag-based context prompt (e.g. copilot's "-i <prompt>")
+      if (withContext && promptInjectionMode === "flag" && promptFlag && arg === promptFlag) {
         if (i + 1 < args.length) {
-          i++;
+          i++; // skip the prompt value
         }
         continue;
       }
-      if (arg === "--session-id" || arg === "--resume") {
+
+      // Strip any known resume flag in "flag-space" format (e.g. "--session-id <id>")
+      if (allResumeFlags.includes(arg)) {
         if (i + 1 < args.length) {
-          i++;
+          i++; // skip the session-id value
         }
-        if (stripClaudeContextPrompt && arg === "--session-id" && i + 1 < args.length) {
-          i++;
-        }
-        continue;
-      }
-      if (arg.startsWith("--session-id=") || arg.startsWith("--resume=")) {
-        if (stripClaudeContextPrompt && arg.startsWith("--session-id=") && i + 1 < args.length) {
-          i++;
+        // For positional prompt injection, the context prompt follows the
+        // resume flag + value pair as the next argument
+        if (withContext && promptInjectionMode === "positional" && i + 1 < args.length) {
+          i++; // skip the trailing context prompt
         }
         continue;
       }
+
+      // Strip any known resume flag in "flag-equals" format (e.g. "--resume=<id>")
+      if (allResumePrefixes.some((prefix) => arg.startsWith(prefix))) {
+        // For positional prompt injection, context prompt follows as the next arg
+        if (withContext && promptInjectionMode === "positional" && i + 1 < args.length) {
+          i++; // skip the trailing context prompt
+        }
+        continue;
+      }
+
       extraArgs.push(arg);
     }
 
@@ -2171,6 +2187,58 @@ export class TerminalPanelView {
       },
     );
     this.renderTabBar();
+  }
+
+  /**
+   * Spawn a fresh agent session by agent type. Used as the fallback when
+   * restarting a tab that has no saved session ID or command args.
+   *
+   * Dispatches to the appropriate spawn method and normalises the return
+   * value - some spawn methods return the tab directly while others
+   * require fetching the last tab from the tab manager.
+   */
+  private async spawnFreshAgentSession(
+    agentType: AgentType,
+    options: {
+      sessionType: PersistedSession["sessionType"];
+      cwd: string;
+      label: string;
+      freshSettings: Record<string, unknown>;
+      targetItemId: string;
+    },
+  ): Promise<TerminalTab | null> {
+    switch (agentType) {
+      case "claude": {
+        return await this.spawnClaudeSession({
+          sessionType: options.sessionType as "claude" | "claude-with-context",
+          cwd: options.cwd,
+          label: options.label,
+          freshSettings: options.freshSettings,
+        });
+      }
+      case "copilot": {
+        await this.spawnCopilotSession({
+          sessionType: options.sessionType as "copilot" | "copilot-with-context",
+          cwd: options.cwd,
+          label: options.label,
+          freshSettings: options.freshSettings,
+        });
+        const tabs = this.tabManager.getTabs(options.targetItemId);
+        return tabs[tabs.length - 1] ?? null;
+      }
+      case "strands": {
+        await this.spawnStrandsSession({
+          sessionType: options.sessionType as "strands" | "strands-with-context",
+          cwd: options.cwd,
+          label: options.label,
+          freshSettings: options.freshSettings,
+        });
+        const tabs = this.tabManager.getTabs(options.targetItemId);
+        return tabs[tabs.length - 1] ?? null;
+      }
+      default:
+        return null;
+    }
   }
 
   private async spawnClaudeSession(options: {

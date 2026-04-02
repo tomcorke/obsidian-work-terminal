@@ -250,6 +250,21 @@ export function isResumableAgentType(agentType: AgentType): boolean {
   return AGENT_RESUME_CONFIGS[agentType].resumable;
 }
 
+/**
+ * Collect all unique resume flags across all agent types.
+ * Used when stripping resume-related args from persisted command args,
+ * since historical sessions may contain flags from any agent type.
+ */
+export function getAllResumeFlags(): string[] {
+  const flags = new Set<string>();
+  for (const config of Object.values(AGENT_RESUME_CONFIGS)) {
+    if (config.resumeFlag) {
+      flags.add(config.resumeFlag);
+    }
+  }
+  return [...flags];
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
