@@ -3,9 +3,11 @@ import {
   createDefaultCustomSessionConfig,
   getDefaultSessionLabel,
   getSessionTypeHelp,
+  isAgentTypeSession,
   isClaudeSession,
   isContextSession,
   isCopilotSession,
+  isSessionTrackingSession,
   isStrandsSession,
   sanitizeCustomSessionConfig,
   supportsExtraArgs,
@@ -102,5 +104,22 @@ describe("CustomSessionConfig", () => {
     expect(isStrandsSession("strands-with-context")).toBe(true);
     expect(isStrandsSession("copilot")).toBe(false);
     expect(isStrandsSession("claude")).toBe(false);
+  });
+
+  it("isAgentTypeSession matches any agent type generically", () => {
+    expect(isAgentTypeSession("claude", "claude")).toBe(true);
+    expect(isAgentTypeSession("claude-with-context", "claude")).toBe(true);
+    expect(isAgentTypeSession("copilot", "copilot")).toBe(true);
+    expect(isAgentTypeSession("strands", "strands")).toBe(true);
+    expect(isAgentTypeSession("shell", "shell")).toBe(true);
+    expect(isAgentTypeSession("claude", "copilot")).toBe(false);
+  });
+
+  it("isSessionTrackingSession returns true only for session-tracking types", () => {
+    expect(isSessionTrackingSession("claude")).toBe(true);
+    expect(isSessionTrackingSession("claude-with-context")).toBe(true);
+    expect(isSessionTrackingSession("copilot")).toBe(false);
+    expect(isSessionTrackingSession("strands")).toBe(false);
+    expect(isSessionTrackingSession("shell")).toBe(false);
   });
 });

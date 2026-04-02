@@ -35,7 +35,7 @@ import { buildAgentContextPrompt } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
-import { getDefaultSessionLabel, isClaudeSession } from "./CustomSessionConfig";
+import { getDefaultSessionLabel, isSessionTrackingSession } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
 import type { AgentProfile, AgentType, ParamPassMode } from "../core/agents/AgentProfile";
@@ -43,6 +43,7 @@ import {
   agentTypeToSessionType,
   sessionTypeToAgentType,
   getResumeConfig,
+  getAllResumeFlags,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
 
@@ -352,7 +353,7 @@ export class TerminalPanelView {
   private hasClaudeHookDependentUsage(): boolean {
     for (const tabs of this.tabManager.getSessions().values()) {
       for (const tab of tabs) {
-        if (isClaudeSession(tab.sessionType)) {
+        if (isSessionTrackingSession(tab.sessionType)) {
           return true;
         }
       }
@@ -360,11 +361,14 @@ export class TerminalPanelView {
 
     return (
       this.persistedSessions.some(
-        (session) => session.recoveryMode === "resume" && isClaudeSession(session.sessionType),
+        (session) =>
+          session.recoveryMode === "resume" && isSessionTrackingSession(session.sessionType),
       ) ||
       this.recentlyClosedStore
         .serialize()
-        .some((entry) => entry.recoveryMode === "resume" && isClaudeSession(entry.sessionType))
+        .some(
+          (entry) => entry.recoveryMode === "resume" && isSessionTrackingSession(entry.sessionType),
+        )
     );
   }
 
@@ -454,9 +458,12 @@ export class TerminalPanelView {
           this.showTabContextMenu(tab, i, e);
         });
 
-        // Tab drag-and-drop
-        this.setupTabDragDrop(tabEl, i);
+        // Tab drag start/end (source identification)
+        this.setupTabDragStartEnd(tabEl, i);
       }
+
+      // Container-level drag-drop for positional indicator
+      this.setupContainerDragDrop(tabsContainer);
     }
 
     // Spawn buttons
@@ -591,7 +598,7 @@ export class TerminalPanelView {
   // Tab drag-and-drop
   // ---------------------------------------------------------------------------
 
-  private setupTabDragDrop(tabEl: HTMLElement, index: number): void {
+  private setupTabDragStartEnd(tabEl: HTMLElement, index: number): void {
     tabEl.addEventListener("dragstart", (e: DragEvent) => {
       this.tabManager.setDragSourceIndex(index);
       tabEl.addClass("wt-tab-dragging");
@@ -602,31 +609,97 @@ export class TerminalPanelView {
       this.tabManager.setDragSourceIndex(null);
       tabEl.removeClass("wt-tab-dragging");
     });
+  }
 
-    tabEl.addEventListener("dragover", (e: DragEvent) => {
+  private setupContainerDragDrop(container: HTMLElement): void {
+    container.addEventListener("dragover", (e: DragEvent) => {
       e.preventDefault();
-      const sourceIdx = this.tabManager.getDragSourceIndex();
-      if (sourceIdx === null || sourceIdx === index) return;
-      tabEl.addClass("wt-tab-drop-target");
-    });
-
-    tabEl.addEventListener("dragleave", () => {
-      tabEl.removeClass("wt-tab-drop-target");
-    });
-
-    tabEl.addEventListener("drop", (e: DragEvent) => {
-      e.preventDefault();
-      tabEl.removeClass("wt-tab-drop-target");
       const sourceIdx = this.tabManager.getDragSourceIndex();
       if (sourceIdx === null) return;
 
-      // Determine drop side (left or right of midpoint)
-      const rect = tabEl.getBoundingClientRect();
-      const dropAfter = e.clientX > rect.left + rect.width / 2;
+      const tabs = Array.from(container.querySelectorAll(".wt-tab")) as HTMLElement[];
+      if (tabs.length === 0) return;
 
-      this.tabManager.reorderTab(sourceIdx, index, dropAfter);
+      // Find insertion index by comparing clientX against tab midpoints
+      let insertBeforeIndex = tabs.length;
+      for (let i = 0; i < tabs.length; i++) {
+        const rect = tabs[i].getBoundingClientRect();
+        const midpoint = rect.left + rect.width / 2;
+        if (e.clientX < midpoint) {
+          insertBeforeIndex = i;
+          break;
+        }
+      }
+
+      // Skip if indicator would be right next to the dragged tab (no-op position)
+      if (insertBeforeIndex === sourceIdx || insertBeforeIndex === sourceIdx + 1) {
+        this.removeDropIndicators(container);
+        return;
+      }
+
+      // Remove existing indicator
+      this.removeDropIndicators(container);
+
+      // Insert indicator at the calculated position
+      const indicator = document.createElement("div");
+      indicator.className = "wt-tab-drop-indicator";
+      if (insertBeforeIndex < tabs.length) {
+        container.insertBefore(indicator, tabs[insertBeforeIndex]);
+      } else {
+        container.appendChild(indicator);
+      }
+    });
+
+    container.addEventListener("dragleave", (e: DragEvent) => {
+      const related = e.relatedTarget as Node | null;
+      if (!related || !container.contains(related)) {
+        this.removeDropIndicators(container);
+      }
+    });
+
+    container.addEventListener("drop", (e: DragEvent) => {
+      e.preventDefault();
+      const sourceIdx = this.tabManager.getDragSourceIndex();
+
+      // Derive target index from indicator position.
+      // Capture nextElementSibling BEFORE removing the indicator from the DOM,
+      // otherwise it will always be null once the element is detached.
+      const indicator = container.querySelector(".wt-tab-drop-indicator");
+      const indicatorNext = indicator?.nextElementSibling as HTMLElement | null;
+      this.removeDropIndicators(container);
+
+      if (sourceIdx === null || !indicator) return;
+
+      const tabs = Array.from(container.querySelectorAll(".wt-tab")) as HTMLElement[];
+
+      if (!indicatorNext || !indicatorNext.classList.contains("wt-tab")) {
+        // Indicator is at the end - drop after the last tab
+        const lastIndex = tabs.length - 1;
+        if (lastIndex >= 0 && lastIndex !== sourceIdx) {
+          this.tabManager.reorderTab(sourceIdx, lastIndex, true);
+        }
+      } else {
+        // Indicator is before a tab - find that tab's index
+        const tabIndexAttr = indicatorNext.getAttribute("data-tab-index");
+        if (tabIndexAttr === null) {
+          console.warn(
+            "work-terminal: drop target tab missing data-tab-index attribute, aborting reorder",
+          );
+          this.renderTabBar();
+          return;
+        }
+        const targetIndex = parseInt(tabIndexAttr, 10);
+        // dropAfter=false because we're inserting before this tab
+        this.tabManager.reorderTab(sourceIdx, targetIndex, false);
+      }
+
       this.renderTabBar();
     });
+  }
+
+  /** Remove all drop indicator elements from the given container. */
+  private removeDropIndicators(container: HTMLElement): void {
+    container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
   }
 
   // ---------------------------------------------------------------------------
@@ -1602,6 +1675,7 @@ export class TerminalPanelView {
         cwd: fallbackCwd,
         label: tab.label,
         freshSettings: fresh,
+        targetItemId,
       });
     }
 
@@ -1614,6 +1688,22 @@ export class TerminalPanelView {
     }
   }
 
+  /**
+   * Extract extra args from a previous launch's command args, stripping the
+   * resume flag (and its value) plus any context prompt so they can be
+   * regenerated fresh on resume.
+   *
+   * Uses AgentResumeConfig rather than per-agent branching:
+   * - All known resume flags (from every agent type) are stripped, since
+   *   persisted command args may contain flags from any historical launch.
+   * - `promptInjectionMode` + `promptFlag` from the current agent's config
+   *   determine how to recognise and strip the context prompt.
+   *
+   * For "positional" prompt injection, the context prompt is the argument
+   * immediately after the resume flag + value pair. For "flag" injection
+   * (e.g. copilot's "-i"), the prompt flag and its value are stripped
+   * wherever they appear in the arg list.
+   */
   private extractResumeExtraArgs(
     sessionType: PersistedSession["sessionType"],
     commandArgs?: string[],
@@ -1622,33 +1712,50 @@ export class TerminalPanelView {
       return [];
     }
     const args = commandArgs.slice(1);
+    const { withContext } = sessionTypeToAgentType(sessionType);
+    const resumeConfig = getResumeConfig(sessionTypeToAgentType(sessionType).agentType);
+    const { promptInjectionMode, promptFlag } = resumeConfig;
+
+    // Collect all known resume flags so we strip any that appear in
+    // historical command args, regardless of which agent spawned them.
+    const allResumeFlags = getAllResumeFlags();
+    const allResumePrefixes = allResumeFlags.map((f) => f + "=");
+
     const extraArgs: string[] = [];
-    const stripClaudeContextPrompt = sessionType === "claude-with-context";
-    const stripCopilotContextPrompt = sessionType === "copilot-with-context";
 
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
-      if (stripCopilotContextPrompt && arg === "-i") {
+
+      // Strip flag-based context prompt (e.g. copilot's "-i <prompt>")
+      if (withContext && promptInjectionMode === "flag" && promptFlag && arg === promptFlag) {
         if (i + 1 < args.length) {
-          i++;
+          i++; // skip the prompt value
         }
         continue;
       }
-      if (arg === "--session-id" || arg === "--resume") {
+
+      // Strip any known resume flag in "flag-space" format (e.g. "--session-id <id>")
+      if (allResumeFlags.includes(arg)) {
         if (i + 1 < args.length) {
-          i++;
+          i++; // skip the session-id value
         }
-        if (stripClaudeContextPrompt && arg === "--session-id" && i + 1 < args.length) {
-          i++;
-        }
-        continue;
-      }
-      if (arg.startsWith("--session-id=") || arg.startsWith("--resume=")) {
-        if (stripClaudeContextPrompt && arg.startsWith("--session-id=") && i + 1 < args.length) {
-          i++;
+        // For positional prompt injection, the context prompt follows the
+        // resume flag + value pair as the next argument
+        if (withContext && promptInjectionMode === "positional" && i + 1 < args.length) {
+          i++; // skip the trailing context prompt
         }
         continue;
       }
+
+      // Strip any known resume flag in "flag-equals" format (e.g. "--resume=<id>")
+      if (allResumePrefixes.some((prefix) => arg.startsWith(prefix))) {
+        // For positional prompt injection, context prompt follows as the next arg
+        if (withContext && promptInjectionMode === "positional" && i + 1 < args.length) {
+          i++; // skip the trailing context prompt
+        }
+        continue;
+      }
+
       extraArgs.push(arg);
     }
 

@@ -12,6 +12,8 @@ import {
   getBuiltInProfiles,
   getResumeConfig,
   isResumableAgentType,
+  getAllResumeFlags,
+  hasSessionTracking,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -206,6 +208,46 @@ describe("isResumableAgentType", () => {
   it("returns false for strands and shell", () => {
     expect(isResumableAgentType("strands")).toBe(false);
     expect(isResumableAgentType("shell")).toBe(false);
+  });
+});
+
+describe("getAllResumeFlags", () => {
+  it("returns all unique resume flags across agent types", () => {
+    const flags = getAllResumeFlags();
+    expect(flags).toContain("--session-id");
+    expect(flags).toContain("--resume");
+    // No duplicates
+    expect(new Set(flags).size).toBe(flags.length);
+  });
+
+  it("does not include empty flags", () => {
+    const flags = getAllResumeFlags();
+    expect(flags).not.toContain("");
+  });
+});
+
+describe("hasSessionTracking", () => {
+  it("returns true only for claude", () => {
+    expect(hasSessionTracking("claude")).toBe(true);
+    expect(hasSessionTracking("copilot")).toBe(false);
+    expect(hasSessionTracking("strands")).toBe(false);
+    expect(hasSessionTracking("shell")).toBe(false);
+  });
+});
+
+describe("resume config display fields", () => {
+  it("provides displayLabel for all agent types", () => {
+    expect(getResumeConfig("claude").displayLabel).toBe("Claude");
+    expect(getResumeConfig("copilot").displayLabel).toBe("Copilot");
+    expect(getResumeConfig("strands").displayLabel).toBe("Strands");
+    expect(getResumeConfig("shell").displayLabel).toBe("Shell");
+  });
+
+  it("provides helpText for all agent types", () => {
+    expect(getResumeConfig("claude").helpText).toContain("--session-id");
+    expect(getResumeConfig("copilot").helpText).toContain("--resume[=sessionId]");
+    expect(getResumeConfig("strands").helpText).toContain("start fresh");
+    expect(getResumeConfig("shell").helpText).toContain("not saved for restart resume");
   });
 });
 
