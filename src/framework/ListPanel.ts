@@ -478,10 +478,16 @@ export class ListPanel {
     }
 
     this.setIngesting(item.id);
-    this.adapter.onRetryEnrich(item, this.settings).then(
-      () => this.clearIngesting(item.id),
-      () => this.clearIngesting(item.id),
-    );
+    void (async () => {
+      try {
+        await this.adapter.onRetryEnrich!(item, this.settings);
+      } catch (err) {
+        console.error("[work-terminal] retryEnrichment failed:", err);
+        new Notice("Failed to re-run enrichment. See console for details.");
+      } finally {
+        this.clearIngesting(item.id);
+      }
+    })();
   }
 
   private deleteItem(item: WorkItem): void {
