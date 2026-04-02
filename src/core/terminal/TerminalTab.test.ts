@@ -1344,7 +1344,10 @@ describe("TerminalTab auto-scroll on write", () => {
     vi.unstubAllGlobals();
   });
 
-  function createTabWithMockTerminal({ deferCallbacks = false } = {}) {
+  function createTabWithMockTerminal({
+    deferCallbacks = false,
+    withViewport = false,
+  }: { deferCallbacks?: boolean; withViewport?: boolean } = {}) {
     const onDataHandlers: Array<(data: string) => void> = [];
     const scrollToBottom = vi.fn();
     const pendingCallbacks: Array<() => void> = [];
@@ -1359,6 +1362,12 @@ describe("TerminalTab auto-scroll on write", () => {
     });
 
     const bufferActive = { viewportY: 100, baseY: 100 };
+    const viewportEl = withViewport
+      ? {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }
+      : null;
 
     const terminal = {
       onData: vi.fn((handler: (data: string) => void) => {
@@ -1375,11 +1384,21 @@ describe("TerminalTab auto-scroll on write", () => {
       label: "Shell",
       sessionType: "shell",
       terminal,
-      containerEl: new FakeElement(),
+      containerEl: withViewport
+        ? {
+            querySelector: vi.fn((selector: string) =>
+              selector === ".xterm-viewport" ? viewportEl : null,
+            ),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+          }
+        : new FakeElement(),
       process: null,
       _isDisposed: false,
       _userScrolledUp: false,
       _programmaticScrollGuards: 0,
+      _pendingBottomCheck: false,
+      _documentCleanups: [],
       _sessionTracker: null,
       _renameDecoder: { write: () => "", end: () => "" },
       _renameLineBuffer: "",
@@ -1394,7 +1413,15 @@ describe("TerminalTab auto-scroll on write", () => {
       }
     };
 
-    return { tab, terminal, scrollToBottom, bufferActive, pendingCallbacks, flushCallbacks };
+    return {
+      tab,
+      terminal,
+      scrollToBottom,
+      bufferActive,
+      pendingCallbacks,
+      flushCallbacks,
+      viewportEl,
+    };
   }
 
   function createMockProcess() {
@@ -1505,6 +1532,90 @@ describe("TerminalTab auto-scroll on write", () => {
     expect(scrollToBottom).not.toHaveBeenCalled();
   });
 
+  it("keeps rapid writes locked after an upward wheel event before RAF settles", () => {
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    }) as typeof requestAnimationFrame);
+
+    const { tab, scrollToBottom, flushCallbacks, bufferActive, viewportEl } =
+      createTabWithMockTerminal({
+        deferCallbacks: true,
+        withViewport: true,
+      });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab._wireUserScrollDetection();
+    scrollToBottom.mockClear();
+
+    proc.emitStdout(Buffer.from("chunk-1"));
+
+    const wheelCall = viewportEl?.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "wheel",
+    );
+    expect(wheelCall).toBeDefined();
+    const wheelHandler = wheelCall?.[1] as (event: Event) => void;
+    wheelHandler({ deltaY: -120 } as WheelEvent);
+
+    expect(tab._userScrolledUp).toBe(true);
+
+    proc.emitStdout(Buffer.from("chunk-2"));
+    flushCallbacks();
+
+    expect(scrollToBottom).not.toHaveBeenCalled();
+
+    bufferActive.viewportY = 50;
+    const runUserScrollCheck = rafCallbacks.shift();
+    expect(runUserScrollCheck).toBeDefined();
+    runUserScrollCheck?.(0);
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
+  it("keeps rapid writes locked after an upward PageUp key before RAF settles", () => {
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    }) as typeof requestAnimationFrame);
+
+    const { tab, scrollToBottom, flushCallbacks, bufferActive, viewportEl } =
+      createTabWithMockTerminal({
+        deferCallbacks: true,
+        withViewport: true,
+      });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab._wireUserScrollDetection();
+    scrollToBottom.mockClear();
+
+    proc.emitStdout(Buffer.from("chunk-1"));
+
+    const keydownCall = viewportEl?.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "keydown",
+    );
+    expect(keydownCall).toBeDefined();
+    const keydownHandler = keydownCall?.[1] as (event: Event) => void;
+    keydownHandler({ key: "PageUp" } as KeyboardEvent);
+
+    expect(tab._userScrolledUp).toBe(true);
+
+    proc.emitStdout(Buffer.from("chunk-2"));
+    flushCallbacks();
+
+    expect(scrollToBottom).not.toHaveBeenCalled();
+
+    bufferActive.viewportY = 50;
+    const runUserScrollCheck = rafCallbacks.shift();
+    expect(runUserScrollCheck).toBeDefined();
+    runUserScrollCheck?.(0);
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
   it("keeps the native scroll guard active until the write frame settles", () => {
     const rafCallbacks: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
@@ -1530,6 +1641,50 @@ describe("TerminalTab auto-scroll on write", () => {
     clearGuard?.(0);
 
     expect(tab._programmaticScrollGuards).toBe(0);
+  });
+
+  it("rechecks return-to-bottom after a guarded native scroll event settles", () => {
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    }) as typeof requestAnimationFrame);
+
+    const { tab, bufferActive, viewportEl, flushCallbacks } = createTabWithMockTerminal({
+      withViewport: true,
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab._wireUserScrollDetection();
+    tab._userScrolledUp = true;
+
+    proc.emitStdout(Buffer.from("chunk-1"));
+
+    const scrollCall = viewportEl?.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "scroll",
+    );
+    expect(scrollCall).toBeDefined();
+    const scrollHandler = scrollCall?.[1] as () => void;
+
+    bufferActive.viewportY = bufferActive.baseY;
+    scrollHandler();
+
+    expect(tab._userScrolledUp).toBe(true);
+
+    const guardedCheck = rafCallbacks.shift();
+    expect(guardedCheck).toBeDefined();
+    guardedCheck?.(0);
+    expect(tab._userScrolledUp).toBe(true);
+    expect(tab._pendingBottomCheck).toBe(true);
+
+    flushCallbacks();
+    const clearGuard = rafCallbacks.shift();
+    expect(clearGuard).toBeDefined();
+    clearGuard?.(0);
+
+    expect(tab._userScrolledUp).toBe(false);
   });
 });
 
@@ -1567,6 +1722,7 @@ describe("TerminalTab user scroll detection", () => {
       containerEl,
       _userScrolledUp: false,
       _programmaticScrollGuards: 0,
+      _pendingBottomCheck: false,
       _isDisposed: false,
       _documentCleanups: [],
     }) as TerminalTab;
@@ -1584,11 +1740,28 @@ describe("TerminalTab user scroll detection", () => {
       (c: unknown[]) => c[0] === "wheel",
     );
     expect(wheelCall).toBeDefined();
-    const wheelHandler = wheelCall[1] as () => void;
+    const wheelHandler = wheelCall[1] as (event: Event) => void;
 
     // Simulate user scrolling up
     bufferActive.viewportY = 50;
-    wheelHandler();
+    wheelHandler({ deltaY: -120 } as WheelEvent);
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
+  it("sets _userScrolledUp immediately for PageUp", () => {
+    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+
+    tab._wireUserScrollDetection();
+
+    const keydownCall = viewportEl.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "keydown",
+    );
+    expect(keydownCall).toBeDefined();
+    const keydownHandler = keydownCall[1] as (event: Event) => void;
+
+    bufferActive.viewportY = 50;
+    keydownHandler({ key: "PageUp" } as KeyboardEvent);
 
     expect(tab._userScrolledUp).toBe(true);
   });
@@ -1602,11 +1775,11 @@ describe("TerminalTab user scroll detection", () => {
     const wheelCall = viewportEl.addEventListener.mock.calls.find(
       (c: unknown[]) => c[0] === "wheel",
     );
-    const wheelHandler = wheelCall[1] as () => void;
+    const wheelHandler = wheelCall[1] as (event: Event) => void;
 
     // User scrolls back to bottom
     bufferActive.viewportY = 100;
-    wheelHandler();
+    wheelHandler({ deltaY: 120 } as WheelEvent);
 
     expect(tab._userScrolledUp).toBe(false);
   });
@@ -1628,6 +1801,7 @@ describe("TerminalTab user scroll detection", () => {
     scrollHandler();
 
     expect(tab._userScrolledUp).toBe(true);
+    expect(tab._pendingBottomCheck).toBe(true);
   });
 
   it("does nothing when no viewport element exists", () => {
@@ -1641,6 +1815,7 @@ describe("TerminalTab user scroll detection", () => {
       containerEl,
       _userScrolledUp: false,
       _programmaticScrollGuards: 0,
+      _pendingBottomCheck: false,
       _isDisposed: false,
       _documentCleanups: [],
     }) as TerminalTab;
