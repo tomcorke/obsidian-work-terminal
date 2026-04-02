@@ -184,6 +184,17 @@ export interface AgentResumeConfig {
   displayLabel: string;
   /** Help text describing session resume behavior for this agent type. */
   helpText: string;
+  /**
+   * When true, the resume flag conflicts with the prompt flag on fresh launch.
+   * Fresh context sessions should omit the resume flag and discover the session
+   * ID from the agent's log files after spawn. The detected ID is then stored
+   * for future resume.
+   */
+  deferSessionId: boolean;
+  /** Log directory pattern for deferred session ID detection (e.g. "~/.copilot/logs"). */
+  sessionLogDir?: string;
+  /** Regex pattern to extract session UUID from log lines. Must have a capture group. */
+  sessionLogPattern?: string;
 }
 
 const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
@@ -202,6 +213,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     displayLabel: "Claude",
     helpText:
       "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.",
+    deferSessionId: false,
   },
   copilot: {
     resumable: true,
@@ -219,6 +231,9 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     displayLabel: "Copilot",
     helpText:
       "Copilot uses --resume[=sessionId] for both new and resumed sessions. Restart resume works without Claude hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.",
+    deferSessionId: true,
+    sessionLogDir: "~/.copilot/logs",
+    sessionLogPattern: "Workspace initialized: ([0-9a-f-]{36})",
   },
   strands: {
     resumable: false,
@@ -234,6 +249,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     displayLabel: "Strands",
     helpText:
       "Strands sessions start fresh each time. Work Terminal does not persist restart-resume metadata for them.",
+    deferSessionId: false,
   },
   shell: {
     resumable: false,
@@ -248,6 +264,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     installHint: "",
     displayLabel: "Shell",
     helpText: "Shell tabs are local terminals only and are not saved for restart resume.",
+    deferSessionId: false,
   },
 };
 

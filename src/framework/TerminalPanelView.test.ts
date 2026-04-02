@@ -2980,12 +2980,15 @@ describe("TerminalPanelView hook warning", () => {
       sessionType: "copilot-with-context",
     });
 
+    // Copilot context sessions omit --resume to avoid the -i flag being ignored.
+    // The session ID is detected from log files after spawn instead.
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      expect.stringMatching(/^--resume=/),
       "-i",
       "Built prompt\n\nTemplate for Task One in doing",
     ]);
+    // Session ID should be null (deferred detection)
+    expect(mockState.latestCreateTabArgs?.[6]).toBeNull();
   });
 
   it("does not inject context prompt into plain Copilot sessions", async () => {

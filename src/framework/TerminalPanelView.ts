@@ -2280,8 +2280,12 @@ export class TerminalPanelView {
       return null;
     }
 
-    // Generate session ID for resumable agents
-    const sessionId = resumeConfig.resumable ? crypto.randomUUID() : undefined;
+    // Generate session ID for resumable agents, unless this agent type defers
+    // session ID detection when a prompt is present (e.g. Copilot's --resume
+    // flag conflicts with -i, so fresh context sessions omit it and discover
+    // the session ID from log files after spawn).
+    const deferDetection = resumeConfig.deferSessionId && !!prompt;
+    const sessionId = resumeConfig.resumable && !deferDetection ? crypto.randomUUID() : undefined;
 
     // Merge extra args (skip global merge when profile already includes them)
     const rawExtraArgs = options.skipGlobalArgs
@@ -2296,7 +2300,7 @@ export class TerminalPanelView {
     // Build args via the unified buildAgentArgs helper
     const baseArgs = buildAgentArgs(options.agentType, mergedExtraArgs, prompt);
 
-    // Prepend session/resume flag for resumable agents
+    // Prepend session/resume flag for resumable agents (skip when deferring)
     let args: string[];
     if (sessionId) {
       if (resumeConfig.resumeFlagFormat === "flag-equals") {
