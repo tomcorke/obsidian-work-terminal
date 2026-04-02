@@ -1443,10 +1443,20 @@ export class TerminalPanelView {
       tab.paramPassMode = persisted.paramPassMode;
     }
 
-    this.trackRecoverySuccess(tab, () => {
-      this.removePersistedSession(persisted);
-      this.persistSessions().catch(() => {});
-    });
+    // Remove eagerly so data.json reflects the live session, not a pending
+    // resume.  If the process dies within 5s, re-add so the user can retry.
+    this.removePersistedSession(persisted);
+    this.persistSessions().catch(() => {});
+
+    this.trackRecoverySuccess(
+      tab,
+      () => {}, // success - already removed, nothing to do
+      () => {
+        // Process died within 5s - restore so the user can retry
+        this.persistedSessions.push(persisted);
+        this.persistSessions().catch(() => {});
+      },
+    );
 
     this.renderTabBar();
   }
