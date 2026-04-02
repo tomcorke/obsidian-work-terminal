@@ -17,6 +17,7 @@ function createMockPlugin(initialData: Record<string, any> = {}) {
 function makePersisted(
   overrides: Partial<{
     taskPath: string;
+    agentSessionId: string | null;
     claudeSessionId: string | null;
     label: string;
     sessionType: string;
@@ -29,12 +30,15 @@ function makePersisted(
     durableSessionIdGenerated: boolean;
     profileId: string;
     profileColor: string;
+    paramPassMode: string;
   }> = {},
 ) {
+  const sessionId = overrides.agentSessionId ?? overrides.claudeSessionId ?? "session-1";
   return {
     version: 2 as const,
     taskPath: overrides.taskPath ?? "tasks/my-task.md",
-    claudeSessionId: overrides.claudeSessionId ?? "session-1",
+    agentSessionId: sessionId,
+    claudeSessionId: sessionId,
     durableSessionId: overrides.durableSessionId,
     label: overrides.label ?? "Claude",
     sessionType: (overrides.sessionType ?? "claude") as any,
@@ -46,6 +50,7 @@ function makePersisted(
     durableSessionIdGenerated: overrides.durableSessionIdGenerated,
     profileId: overrides.profileId,
     profileColor: overrides.profileColor,
+    paramPassMode: overrides.paramPassMode,
   };
 }
 
@@ -101,8 +106,11 @@ describe("SessionPersistence", () => {
       const saved = plugin.saveData.mock.calls[0][0];
       expect(saved.persistedSessions).toHaveLength(4);
       expect(saved.persistedSessions[0].claudeSessionId).toBe("s1");
+      expect(saved.persistedSessions[0].agentSessionId).toBe("s1");
+      expect(saved.persistedSessions[1].agentSessionId).toBe("s2");
       expect(saved.persistedSessions[1].claudeSessionId).toBe("s2");
       expect(saved.persistedSessions[1].sessionType).toBe("copilot");
+      expect(saved.persistedSessions[1].label).toBe("Copilot");
       expect(saved.persistedSessions[2]).toMatchObject({
         sessionType: "shell",
         recoveryMode: "relaunch",
@@ -115,6 +123,35 @@ describe("SessionPersistence", () => {
         recoveryMode: "relaunch",
         durableSessionId: expect.any(String),
         command: "claude",
+      });
+    });
+
+    it("round-trips Copilot session with correct label and sessionType", async () => {
+      const plugin = createMockPlugin();
+      const sessions = new Map<string, any[]>();
+      sessions.set("task-1", [
+        {
+          isResumableAgent: true,
+          agentSessionId: "copilot-session-1",
+          label: "Copilot",
+          taskPath: "task-1",
+          sessionType: "copilot",
+          launchShell: "copilot",
+          launchCwd: "/vault",
+          launchCommandArgs: ["copilot", "--resume=copilot-session-1"],
+        },
+      ]);
+
+      await SessionPersistence.saveToDisk(plugin, sessions);
+
+      const loaded = await SessionPersistence.loadFromDisk(plugin);
+      expect(loaded).toHaveLength(1);
+      expect(loaded[0]).toMatchObject({
+        sessionType: "copilot",
+        label: "Copilot",
+        agentSessionId: "copilot-session-1",
+        claudeSessionId: "copilot-session-1",
+        recoveryMode: "resume",
       });
     });
 
