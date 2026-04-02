@@ -123,9 +123,9 @@ export interface CardActionContext {
   getContextPrompt(): Promise<string | null>;
   /** Retry background enrichment for this item. */
   onRetryEnrich(): void;
-  /** Clear persisted/recently-closed resume sessions for this item and remove the indicator. */
+  /** Clear stored resume sessions for this item and remove the resume indicator. */
   onClearResumeSessions(): Promise<void>;
-  /** Whether this item has any pending resume sessions (persisted or recently-closed). */
+  /** Whether this item currently shows the framework resume indicator. */
   hasResumeSessions(): boolean;
 }
 

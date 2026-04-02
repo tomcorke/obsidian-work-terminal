@@ -454,6 +454,54 @@ describe("ListPanel", () => {
     );
   });
 
+  it("hides the resume context action when a resumable agent session is already active", () => {
+    const item = makeItem("task-1");
+    const { panel, terminalPanel } = createListPanel();
+    terminalPanel.getPersistedSessions.mockReturnValue([
+      {
+        version: 2,
+        taskPath: "task-1",
+        claudeSessionId: "session-1",
+        label: "Claude",
+        sessionType: "claude",
+        savedAt: new Date().toISOString(),
+        recoveryMode: "resume",
+        cwd: "/vault",
+        command: "claude",
+        commandArgs: ["claude", "--resume", "session-1"],
+      },
+    ]);
+    terminalPanel.hasResumableAgentSessions.mockReturnValue(true);
+
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+
+    expect(ctx.hasResumeSessions()).toBe(false);
+  });
+
+  it("shows the resume context action when the resume badge is visible", () => {
+    const item = makeItem("task-1");
+    const { panel, terminalPanel } = createListPanel();
+    terminalPanel.getPersistedSessions.mockReturnValue([
+      {
+        version: 2,
+        taskPath: "task-1",
+        claudeSessionId: "session-1",
+        label: "Claude",
+        sessionType: "claude",
+        savedAt: new Date().toISOString(),
+        recoveryMode: "resume",
+        cwd: "/vault",
+        command: "claude",
+        commandArgs: ["claude", "--resume", "session-1"],
+      },
+    ]);
+    terminalPanel.hasResumableAgentSessions.mockReturnValue(false);
+
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+
+    expect(ctx.hasResumeSessions()).toBe(true);
+  });
+
   it("uses wt-agent classes on initial render and clears legacy wt-claude classes", () => {
     const { panel } = createListPanel({ cardClasses: ["wt-claude-active"] });
     panel.updateAgentState("task-1", "waiting");
