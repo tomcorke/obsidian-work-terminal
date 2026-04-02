@@ -52,6 +52,13 @@ describe("BackgroundEnrich", () => {
 
       expect(result).toBe(content);
     });
+
+    it("does not treat a horizontal rule --- as frontmatter", () => {
+      const content = "# Title\n\nSome text\n\n---\n\nMore text\n";
+      const result = insertIngestionFailedFlag(content);
+
+      expect(result).toBe(content);
+    });
   });
 
   it("resolves relative Claude wrapper commands from core.defaultTerminalCwd during background enrichment", async () => {

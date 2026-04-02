@@ -154,7 +154,10 @@ async function markIngestionFailed(app: App, filePath: string): Promise<void> {
  * Exported for testing.
  */
 export function insertIngestionFailedFlag(content: string): string {
-  const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+  // Only treat a leading `---` block as YAML frontmatter; ignore `---` later in the file.
+  if (!content.startsWith("---")) return content;
+
+  const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(---(?:\r?\n|$))/);
   if (!fmMatch) return content;
 
   const [fullMatch, openFence, frontmatter, closeFence] = fmMatch;
