@@ -32,6 +32,23 @@ const mocks = vi.hoisted(() => {
     }
   }
 
+  let copilotSessionDetectorStartImpl: ((detector: MockCopilotSessionDetector) => void) | null =
+    null;
+
+  class MockCopilotSessionDetector {
+    static instances: MockCopilotSessionDetector[] = [];
+
+    onSessionDetected: ((sessionId: string) => void) | null = null;
+    start = vi.fn(() => {
+      copilotSessionDetectorStartImpl?.(this);
+    });
+    dispose = vi.fn();
+
+    constructor(_config: unknown) {
+      MockCopilotSessionDetector.instances.push(this);
+    }
+  }
+
   return {
     injectXtermCss: vi.fn(),
     attachScrollButton: vi.fn(() => vi.fn()),
@@ -45,6 +62,12 @@ const mocks = vi.hoisted(() => {
       join: (...parts: string[]) => parts.join("/").replace(/\/{2,}/g, "/"),
     },
     MockWebglAddon,
+    MockCopilotSessionDetector,
+    setCopilotSessionDetectorStartImpl: (
+      impl: ((detector: MockCopilotSessionDetector) => void) | null,
+    ) => {
+      copilotSessionDetectorStartImpl = impl;
+    },
   };
 });
 
@@ -82,6 +105,10 @@ vi.mock("../agents/AgentSessionTracker", () => ({
   AgentSessionTracker: class {
     dispose(): void {}
   },
+}));
+
+vi.mock("../agents/CopilotSessionDetector", () => ({
+  CopilotSessionDetector: mocks.MockCopilotSessionDetector,
 }));
 
 vi.mock("@xterm/xterm", () => ({
@@ -147,6 +174,8 @@ class MockResizeObserver {
 describe("TerminalTab hot-reload addon handling", () => {
   beforeEach(() => {
     mocks.MockWebglAddon.instances.length = 0;
+    mocks.MockCopilotSessionDetector.instances.length = 0;
+    mocks.setCopilotSessionDetectorStartImpl(null);
     vi.restoreAllMocks();
     mocks.injectXtermCss.mockClear();
     mocks.attachScrollButton.mockClear();
@@ -1570,5 +1599,89 @@ describe("TerminalTab user scroll detection", () => {
     // Should not throw
     tab._wireUserScrollDetection();
     expect(tab._userScrolledUp).toBe(false);
+  });
+});
+
+describe("TerminalTab deferred session detection and state tracking", () => {
+  beforeEach(() => {
+    mocks.MockCopilotSessionDetector.instances.length = 0;
+    mocks.setCopilotSessionDetectorStartImpl(null);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("_detectResumableAgent returns true when _sessionDetector is active but no session ID", () => {
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      sessionType: "copilot-with-context",
+      agentSessionId: null,
+      _sessionDetector: { start: vi.fn(), stop: vi.fn() }, // fake active detector
+    }) as TerminalTab;
+
+    const result = (
+      tab as never as { _detectResumableAgent: () => boolean }
+    )._detectResumableAgent();
+    expect(result).toBe(true);
+  });
+
+  it("startStateTracking starts timer when _sessionDetector is active (deferred detection)", () => {
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      sessionType: "copilot-with-context",
+      agentSessionId: null,
+      _sessionDetector: { start: vi.fn(), stop: vi.fn() },
+      _stateTimer: null,
+      _agentState: null,
+      _recentCleanLines: null,
+      _suppressActiveUntil: 0,
+      _isResumableAgent: false,
+      terminal: { buffer: { active: { cursorY: 0 } } },
+    }) as TerminalTab;
+
+    tab.startStateTracking();
+
+    expect((tab as never as { _isResumableAgent: boolean })._isResumableAgent).toBe(true);
+    expect((tab as never as { _stateTimer: unknown })._stateTimer).not.toBeNull();
+
+    // Clean up the interval
+    clearInterval((tab as never as { _stateTimer: ReturnType<typeof setInterval> })._stateTimer);
+  });
+
+  it("startStateTracking is idempotent when synchronous deferred detection fires first", () => {
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      sessionType: "copilot-with-context",
+      agentSessionId: null,
+      spawnTime: Date.now(),
+      _sessionDetector: null,
+      _stateTimer: null,
+      _agentState: null,
+      _recentCleanLines: null,
+      _suppressActiveUntil: 0,
+      _isResumableAgent: false,
+      terminal: { buffer: { active: { cursorY: 0 } } },
+    }) as TerminalTab;
+
+    mocks.setCopilotSessionDetectorStartImpl((detector) => {
+      detector.onSessionDetected?.("session-123");
+    });
+
+    (tab as never as { _initDeferredSessionDetector: () => void })._initDeferredSessionDetector();
+    const firstTimer = (tab as never as { _stateTimer: ReturnType<typeof setInterval> })
+      ._stateTimer;
+
+    tab.startStateTracking();
+
+    expect((tab as never as { agentSessionId: string | null }).agentSessionId).toBe("session-123");
+    expect((tab as never as { _sessionDetector: unknown })._sessionDetector).toBeNull();
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    expect((tab as never as { _stateTimer: ReturnType<typeof setInterval> })._stateTimer).toBe(
+      firstTimer,
+    );
+
+    clearInterval(firstTimer);
   });
 });

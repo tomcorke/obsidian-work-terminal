@@ -74,7 +74,7 @@ describe("CustomSessionConfig", () => {
     expect(getSessionTypeHelp("claude")).toContain("--session-id");
     expect(getSessionTypeHelp("claude")).toContain("Claude hooks");
     expect(getSessionTypeHelp("copilot")).toContain("--resume[=sessionId]");
-    expect(getSessionTypeHelp("copilot")).toContain("without Claude hooks");
+    expect(getSessionTypeHelp("copilot")).toContain("without hooks");
     expect(getSessionTypeHelp("strands")).toContain("start fresh each time");
   });
 

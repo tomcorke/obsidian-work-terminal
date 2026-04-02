@@ -321,8 +321,8 @@ export class TerminalTab {
         console.log("[work-terminal] Spawned pid:", proc.pid, "cols:", cols, "rows:", rows);
         this.process = proc;
         this.wireProcess(proc);
-        this.startStateTracking();
         this._initSessionTracker();
+        this.startStateTracking();
         this.terminal.scrollToBottom();
       } catch (err) {
         console.error("[work-terminal] Failed to spawn:", err);
@@ -1033,7 +1033,7 @@ export class TerminalTab {
   /** Start state tracking for Claude/Agent sessions. Call after label is known. */
   startStateTracking(): void {
     this._isResumableAgent = this._detectResumableAgent();
-    if (!this._isResumableAgent) return;
+    if (!this._isResumableAgent || this._stateTimer) return;
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
@@ -1088,6 +1088,11 @@ export class TerminalTab {
       this._isResumableAgent = this._detectResumableAgent();
       console.log("[work-terminal] Deferred session ID detected:", sessionId);
       this._sessionDetector = null;
+      // Start state tracking if it was skipped during initial setup
+      // (safety net for cases where detector didn't exist yet at startStateTracking time)
+      if (this._isResumableAgent && !this._stateTimer) {
+        this.startStateTracking();
+      }
     };
     this._sessionDetector.start();
   }
