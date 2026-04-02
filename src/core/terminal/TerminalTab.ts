@@ -586,6 +586,7 @@ export class TerminalTab {
     if (!viewport) return;
 
     const SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End"]);
+    const IMMEDIATE_SCROLL_UP_KEYS = new Set(["PageUp", "Home"]);
 
     const checkIfAtBottom = () => {
       if (this._programmaticScrollGuards > 0) {
@@ -626,6 +627,9 @@ export class TerminalTab {
 
     const onKeydown = (e: Event) => {
       const ke = e as KeyboardEvent;
+      if (IMMEDIATE_SCROLL_UP_KEYS.has(ke.key)) {
+        this._userScrolledUp = true;
+      }
       if (SCROLL_KEYS.has(ke.key)) {
         onUserScrollDeferred();
       }

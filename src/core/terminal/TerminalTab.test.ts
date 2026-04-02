@@ -1574,6 +1574,48 @@ describe("TerminalTab auto-scroll on write", () => {
     expect(tab._userScrolledUp).toBe(true);
   });
 
+  it("keeps rapid writes locked after an upward PageUp key before RAF settles", () => {
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    }) as typeof requestAnimationFrame);
+
+    const { tab, scrollToBottom, flushCallbacks, bufferActive, viewportEl } =
+      createTabWithMockTerminal({
+        deferCallbacks: true,
+        withViewport: true,
+      });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab._wireUserScrollDetection();
+    scrollToBottom.mockClear();
+
+    proc.emitStdout(Buffer.from("chunk-1"));
+
+    const keydownCall = viewportEl?.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "keydown",
+    );
+    expect(keydownCall).toBeDefined();
+    const keydownHandler = keydownCall?.[1] as (event: Event) => void;
+    keydownHandler({ key: "PageUp" } as KeyboardEvent);
+
+    expect(tab._userScrolledUp).toBe(true);
+
+    proc.emitStdout(Buffer.from("chunk-2"));
+    flushCallbacks();
+
+    expect(scrollToBottom).not.toHaveBeenCalled();
+
+    bufferActive.viewportY = 50;
+    const runUserScrollCheck = rafCallbacks.shift();
+    expect(runUserScrollCheck).toBeDefined();
+    runUserScrollCheck?.(0);
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
   it("keeps the native scroll guard active until the write frame settles", () => {
     const rafCallbacks: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
@@ -1703,6 +1745,23 @@ describe("TerminalTab user scroll detection", () => {
     // Simulate user scrolling up
     bufferActive.viewportY = 50;
     wheelHandler({ deltaY: -120 } as WheelEvent);
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
+  it("sets _userScrolledUp immediately for PageUp", () => {
+    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+
+    tab._wireUserScrollDetection();
+
+    const keydownCall = viewportEl.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "keydown",
+    );
+    expect(keydownCall).toBeDefined();
+    const keydownHandler = keydownCall[1] as (event: Event) => void;
+
+    bufferActive.viewportY = 50;
+    keydownHandler({ key: "PageUp" } as KeyboardEvent);
 
     expect(tab._userScrolledUp).toBe(true);
   });
