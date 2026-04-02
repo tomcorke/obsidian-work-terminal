@@ -164,8 +164,12 @@ export interface AgentResumeConfig {
   sessionTracking: boolean;
   /** How the resume flag is formatted: "flag-space" = --resume ID, "flag-equals" = --resume=ID */
   resumeFlagFormat: "flag-space" | "flag-equals";
-  /** The resume flag name (e.g. "--resume"). */
+  /** The resume flag name (e.g. "--session-id"). */
   resumeFlag: string;
+  /** How the context prompt is passed to the CLI: "positional" = trailing arg, "flag" = via promptFlag. */
+  promptInjectionMode: "positional" | "flag";
+  /** CLI flag for injecting the context prompt (e.g. "-i"). Only used when promptInjectionMode is "flag". */
+  promptFlag?: string;
   /** Global settings key for the command (e.g. "core.claudeCommand"). */
   commandSettingKey: string;
   /** Default command name when no setting is configured. */
@@ -183,7 +187,8 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     resumable: true,
     sessionTracking: true,
     resumeFlagFormat: "flag-space",
-    resumeFlag: "--resume",
+    resumeFlag: "--session-id",
+    promptInjectionMode: "positional",
     commandSettingKey: "core.claudeCommand",
     defaultCommand: "claude",
     extraArgsSettingKey: "core.claudeExtraArgs",
@@ -196,6 +201,8 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     sessionTracking: false,
     resumeFlagFormat: "flag-equals",
     resumeFlag: "--resume",
+    promptInjectionMode: "flag",
+    promptFlag: "-i",
     commandSettingKey: "core.copilotCommand",
     defaultCommand: "copilot",
     extraArgsSettingKey: "core.copilotExtraArgs",
@@ -208,6 +215,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     sessionTracking: false,
     resumeFlagFormat: "flag-space",
     resumeFlag: "--resume",
+    promptInjectionMode: "positional",
     commandSettingKey: "core.strandsCommand",
     defaultCommand: "strands",
     extraArgsSettingKey: "core.strandsExtraArgs",
@@ -219,6 +227,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     sessionTracking: false,
     resumeFlagFormat: "flag-space",
     resumeFlag: "",
+    promptInjectionMode: "positional",
     commandSettingKey: "core.defaultShell",
     defaultCommand: "",
     extraArgsSettingKey: "",
