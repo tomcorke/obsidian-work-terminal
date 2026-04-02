@@ -1306,6 +1306,159 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("clears resume state for one item and persists the remaining sessions", async () => {
+    mockState.persistedSessions = [
+      makePersistedSession("claude", {
+        taskPath: "Tasks/task-1.md",
+        label: "Claude 1",
+        claudeSessionId: "session-1",
+        commandArgs: ["claude", "--resume", "session-1"],
+      }),
+      makePersistedSession("claude", {
+        taskPath: "Tasks/task-2.md",
+        label: "Claude 2",
+        claudeSessionId: "session-2",
+        commandArgs: ["claude", "--resume", "session-2"],
+      }),
+    ];
+
+    let storedData: Record<string, any> = {
+      settings: {},
+      persistedSessions: mockState.persistedSessions.map((session) => ({
+        ...session,
+        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+      })),
+      recentlyClosedSessions: [
+        {
+          sessionType: "claude",
+          label: "Recovered Claude 1",
+          claudeSessionId: "closed-1",
+          closedAt: Date.now(),
+          itemId: "Tasks/task-1.md",
+          recoveryMode: "resume",
+          cwd: "/vault",
+          command: "claude",
+          commandArgs: ["claude", "--resume", "closed-1"],
+        },
+        {
+          sessionType: "claude",
+          label: "Recovered Claude 2",
+          claudeSessionId: "closed-2",
+          closedAt: Date.now(),
+          itemId: "Tasks/task-2.md",
+          recoveryMode: "resume",
+          cwd: "/vault",
+          command: "claude",
+          commandArgs: ["claude", "--resume", "closed-2"],
+        },
+      ],
+    };
+    const loadData = vi.fn(async () => JSON.parse(JSON.stringify(storedData)));
+    const saveData = vi.fn(async (data: Record<string, any>) => {
+      storedData = JSON.parse(JSON.stringify(data));
+    });
+    const { view } = createView({}, { loadData, saveData });
+    const onSessionChange = vi.fn();
+    (view as any).onSessionChange = onSessionChange;
+    await flushAsync(10);
+
+    await view.clearResumeSessionsForItem("Tasks/task-1.md");
+
+    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
+    expect(view.getPersistedSessions("Tasks/task-2.md")).toEqual([
+      expect.objectContaining({
+        taskPath: "Tasks/task-2.md",
+        claudeSessionId: "session-2",
+      }),
+    ]);
+    expect((view as any).recentlyClosedStore.serialize()).toEqual([
+      expect.objectContaining({
+        itemId: "Tasks/task-2.md",
+        claudeSessionId: "closed-2",
+      }),
+    ]);
+    expect(saveData.mock.calls.at(-1)?.[0]).toMatchObject({
+      persistedSessions: [
+        expect.objectContaining({
+          taskPath: "Tasks/task-2.md",
+          claudeSessionId: "session-2",
+        }),
+      ],
+      recentlyClosedSessions: [
+        expect.objectContaining({
+          itemId: "Tasks/task-2.md",
+          claudeSessionId: "closed-2",
+        }),
+      ],
+    });
+    expect(onSessionChange).toHaveBeenCalledTimes(1);
+    expect(mockState.notices).toEqual([]);
+  });
+
+  it("refreshes the UI and shows a notice when clearing resume state fails to persist", async () => {
+    mockState.persistedSessions = [
+      makePersistedSession("claude", {
+        taskPath: "Tasks/task-1.md",
+        label: "Claude 1",
+        claudeSessionId: "session-1",
+        commandArgs: ["claude", "--resume", "session-1"],
+      }),
+    ];
+
+    const storedData: Record<string, any> = {
+      settings: {},
+      persistedSessions: mockState.persistedSessions.map((session) => ({
+        ...session,
+        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
+      })),
+      recentlyClosedSessions: [
+        {
+          sessionType: "claude",
+          label: "Recovered Claude 1",
+          claudeSessionId: "closed-1",
+          closedAt: Date.now(),
+          itemId: "Tasks/task-1.md",
+          recoveryMode: "resume",
+          cwd: "/vault",
+          command: "claude",
+          commandArgs: ["claude", "--resume", "closed-1"],
+        },
+      ],
+    };
+    const loadData = vi.fn(async () => JSON.parse(JSON.stringify(storedData)));
+    const saveData = vi.fn(async (data: Record<string, any>) => {
+      throw new Error(`disk full: ${JSON.stringify(data.persistedSessions ?? [])}`);
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { view } = createView({}, { loadData, saveData });
+    const onSessionChange = vi.fn();
+    (view as any).onSessionChange = onSessionChange;
+    await flushAsync(10);
+
+    await expect(view.clearResumeSessionsForItem("Tasks/task-1.md")).resolves.toBeUndefined();
+
+    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
+    expect((view as any).recentlyClosedStore.serialize()).toEqual([]);
+    expect(onSessionChange).toHaveBeenCalledTimes(1);
+    expect(mockState.notices).toContain(
+      "Cleared resume sessions in the UI, but failed to save the updated resume state.",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "[work-terminal] Failed to persist cleared resume sessions:",
+      expect.any(Error),
+    );
+    expect(storedData.persistedSessions).toEqual([
+      expect.objectContaining({
+        taskPath: "Tasks/task-1.md",
+      }),
+    ]);
+    expect(storedData.recentlyClosedSessions).toEqual([
+      expect.objectContaining({
+        itemId: "Tasks/task-1.md",
+      }),
+    ]);
+  });
+
   it("removes a closed resume session from persisted sessions to prevent auto-restore", async () => {
     mockState.persistedSessions = [
       makePersistedSession("claude", { claudeSessionId: "agent-session-1" }),

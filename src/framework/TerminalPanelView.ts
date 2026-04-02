@@ -2400,13 +2400,17 @@ export class TerminalPanelView {
 
     // Remove from recently-closed store
     this.recentlyClosedStore.removeByItemId(itemId);
+    this.syncRecentlyClosedState();
 
-    // Persist both changes to disk
-    await this.persistSessions();
-    await this.persistRecentlyClosedSessions();
-
-    // Trigger session badge refresh (via the onSessionChange callback)
-    this.onSessionChange();
+    try {
+      await this.persistClearedResumeState();
+    } catch (error) {
+      console.error("[work-terminal] Failed to persist cleared resume sessions:", error);
+      new Notice("Cleared resume sessions in the UI, but failed to save the updated resume state.");
+    } finally {
+      // Trigger session badge refresh (via the onSessionChange callback)
+      this.onSessionChange();
+    }
   }
 
   getPendingPersistedSessionsForPersist(): PersistedSession[] {
@@ -2414,6 +2418,27 @@ export class TerminalPanelView {
       ...session,
       commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
     }));
+  }
+
+  private async persistClearedResumeState(): Promise<void> {
+    if (this.isDisposed) return;
+    this.recalculatePendingPersistedSessions();
+    const persistedSessions = SessionPersistence.mergePersistedSessions(
+      this.pendingPersistedSessions,
+      this.getLiveSessionsAcrossViews(),
+    );
+    const recentlyClosed = this.recentlyClosedStore.serialize();
+    await mergeAndSavePluginData(this.plugin, async (data) => {
+      SessionPersistence.setPersistedSessions(data, persistedSessions);
+      if (recentlyClosed.length > 0) {
+        data.recentlyClosedSessions = recentlyClosed;
+      } else {
+        delete data.recentlyClosedSessions;
+      }
+    });
+    if (this.isDisposed) return;
+    this.syncPersistedSessionState(persistedSessions);
+    this.syncRecentlyClosedState();
   }
 
   /**
