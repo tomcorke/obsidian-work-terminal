@@ -164,6 +164,7 @@ export class TerminalTab {
   // scroll-to-bottom button.
   _userScrolledUp = false;
   _programmaticScrollGuards = 0;
+  _pendingBottomCheck = false;
 
   // Session tracking (/resume detection)
   private _sessionTracker: AgentSessionTracker | null = null;
@@ -535,6 +536,13 @@ export class TerminalTab {
         }
         requestAnimationFrame(() => {
           this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
+          if (this._programmaticScrollGuards === 0 && this._pendingBottomCheck) {
+            this._pendingBottomCheck = false;
+            const buf = this.terminal.buffer.active;
+            if (buf.viewportY >= buf.baseY) {
+              this._userScrolledUp = false;
+            }
+          }
         });
       });
     };
@@ -577,10 +585,14 @@ export class TerminalTab {
     const viewport = this.containerEl.querySelector(".xterm-viewport");
     if (!viewport) return;
 
-    const SCROLL_UP_KEYS = new Set(["PageUp", "PageDown", "Home", "End"]);
+    const SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End"]);
 
     const checkIfAtBottom = () => {
-      if (this._programmaticScrollGuards > 0) return;
+      if (this._programmaticScrollGuards > 0) {
+        this._pendingBottomCheck = true;
+        return;
+      }
+      this._pendingBottomCheck = false;
       const buf = this.terminal.buffer.active;
       if (buf.viewportY >= buf.baseY) {
         this._userScrolledUp = false;
@@ -602,12 +614,19 @@ export class TerminalTab {
       requestAnimationFrame(onUserScroll);
     };
 
-    viewport.addEventListener("wheel", onUserScrollDeferred, { passive: true });
+    const onWheel = (e: Event) => {
+      const wheelEvent = e as WheelEvent;
+      if (wheelEvent.deltaY < 0) {
+        this._userScrolledUp = true;
+      }
+      onUserScrollDeferred();
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: true });
     viewport.addEventListener("touchmove", onUserScrollDeferred, { passive: true });
 
     const onKeydown = (e: Event) => {
       const ke = e as KeyboardEvent;
-      if (SCROLL_UP_KEYS.has(ke.key)) {
+      if (SCROLL_KEYS.has(ke.key)) {
         onUserScrollDeferred();
       }
     };
@@ -619,7 +638,7 @@ export class TerminalTab {
     viewport.addEventListener("scroll", onScroll, { passive: true });
 
     this._documentCleanups.push(() => {
-      viewport.removeEventListener("wheel", onUserScrollDeferred);
+      viewport.removeEventListener("wheel", onWheel);
       viewport.removeEventListener("touchmove", onUserScrollDeferred);
       viewport.removeEventListener("keydown", onKeydown);
       viewport.removeEventListener("scroll", onScroll);
