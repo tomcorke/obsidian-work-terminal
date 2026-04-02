@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  buildAgentArgs,
   buildClaudeArgs,
   buildCopilotArgs,
   buildMissingCliNotice,
@@ -51,6 +52,63 @@ describe("AgentLauncher", () => {
       ),
     ).toBe("--dangerously-skip-permissions --plugin-dir /path/a --plugin-dir /path/b --verbose");
   });
+
+  // ---- buildAgentArgs (unified) ----
+
+  it("builds agent args for claude with positional prompt injection", () => {
+    expect(buildAgentArgs("claude", "--model sonnet", "Review this task")).toEqual([
+      "--model",
+      "sonnet",
+      "Review this task",
+    ]);
+  });
+
+  it("builds agent args for copilot with flag-based prompt injection", () => {
+    expect(
+      buildAgentArgs("copilot", "--model gpt-5.4 --allow-all-tools", "Review this task"),
+    ).toEqual(["--model", "gpt-5.4", "--allow-all-tools", "-i", "Review this task"]);
+  });
+
+  it("builds agent args for strands with positional prompt injection", () => {
+    expect(buildAgentArgs("strands", "--verbose --region us-east-1", "Review this task")).toEqual([
+      "--verbose",
+      "--region",
+      "us-east-1",
+      "Review this task",
+    ]);
+  });
+
+  it("builds agent args with no prompt", () => {
+    expect(buildAgentArgs("claude", "--model sonnet")).toEqual(["--model", "sonnet"]);
+  });
+
+  it("builds agent args with no extra args or prompt", () => {
+    expect(buildAgentArgs("strands")).toEqual([]);
+  });
+
+  it("appends additionalAgentContext to prompt for all agent types", () => {
+    expect(buildAgentArgs("claude", undefined, "Review this task", "Follow repo rules.")).toEqual([
+      "Review this task\n\nFollow repo rules.",
+    ]);
+
+    expect(buildAgentArgs("copilot", undefined, "Review this task", "Follow repo rules.")).toEqual([
+      "-i",
+      "Review this task\n\nFollow repo rules.",
+    ]);
+
+    expect(buildAgentArgs("strands", undefined, "Review this task", "Follow repo rules.")).toEqual([
+      "Review this task\n\nFollow repo rules.",
+    ]);
+  });
+
+  it("ignores additionalAgentContext when no prompt is provided", () => {
+    expect(buildAgentArgs("claude", "--model sonnet", undefined, "Follow repo rules.")).toEqual([
+      "--model",
+      "sonnet",
+    ]);
+  });
+
+  // ---- Legacy wrappers (backward compat) ----
 
   it("builds Claude args with session id and prompt", () => {
     expect(
