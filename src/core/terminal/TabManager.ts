@@ -71,6 +71,10 @@ export class TabManager {
 
       console.log("[work-terminal] Recovered", this.sessions.size, "item groups");
     }
+
+    // Clean up any orphaned terminal containers left in the DOM from a
+    // previous session that wasn't properly disposed before reload.
+    this.hideOrphanedContainers();
   }
 
   // ---------------------------------------------------------------------------
@@ -620,6 +624,33 @@ export class TabManager {
       for (const tab of tabs) {
         tab.hide();
         tab.suspendWebGl();
+      }
+    }
+    // Safety net: hide any orphaned terminal containers in the DOM that are
+    // not tracked in the sessions Map (e.g. left over from a failed dispose
+    // or reload race). This prevents ghost terminal content from remaining
+    // visible when switching to a task with no sessions.
+    this.hideOrphanedContainers();
+  }
+
+  /**
+   * Find and hide any `.wt-terminal-instance` elements in the wrapper that
+   * are not owned by a tracked TerminalTab. These are orphans that would
+   * otherwise remain visible and interactive.
+   */
+  private hideOrphanedContainers(): void {
+    if (!this.terminalWrapperEl) return;
+    const tracked = new Set<HTMLElement>();
+    for (const tabs of this.sessions.values()) {
+      for (const tab of tabs) {
+        tracked.add(tab.containerEl);
+      }
+    }
+    const allContainers = this.terminalWrapperEl.querySelectorAll(".wt-terminal-instance");
+    for (const container of Array.from(allContainers)) {
+      if (!tracked.has(container as HTMLElement)) {
+        (container as HTMLElement).remove();
+        console.warn("[work-terminal] Removed orphaned terminal container from DOM");
       }
     }
   }

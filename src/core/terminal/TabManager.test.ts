@@ -139,6 +139,7 @@ function makeStubTab(
     clearWaiting: vi.fn(),
     suspendWebGl: vi.fn(),
     resumeWebGl: vi.fn(),
+    resetScreenFingerprint: vi.fn(),
     taskPath: overrides.taskPath ?? "item-1",
     isDisposed,
     getDiagnostics: vi.fn(() => ({
@@ -652,5 +653,105 @@ describe("TabManager - diagnostics lifecycle", () => {
     const mgr = makeTabManagerWithSessions("item-1", [disposedTab]);
 
     expect(mgr.getTabDiagnostics()[0].recovery.lifecycle).toBe("disposed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Orphaned container cleanup
+// ---------------------------------------------------------------------------
+
+describe("TabManager - orphaned container cleanup", () => {
+  /**
+   * Minimal mock wrapper that supports querySelectorAll, appendChild, contains,
+   * and child remove() - just enough for hideOrphanedContainers to work.
+   */
+  function makeMockWrapper(): {
+    wrapper: HTMLElement;
+    addChild: (className: string) => HTMLElement;
+  } {
+    const children: Array<{ className: string; el: any }> = [];
+
+    const wrapper = {
+      querySelectorAll(selector: string) {
+        const cls = selector.replace(".", "");
+        return children.filter((c) => c.className === cls).map((c) => c.el);
+      },
+      appendChild(child: any) {
+        children.push({ className: child.className, el: child });
+      },
+      contains(el: any) {
+        return children.some((c) => c.el === el);
+      },
+    } as unknown as HTMLElement;
+
+    function addChild(className: string) {
+      const el = {
+        className,
+        remove() {
+          const idx = children.findIndex((c) => c.el === el);
+          if (idx >= 0) children.splice(idx, 1);
+        },
+      } as unknown as HTMLElement;
+      wrapper.appendChild(el);
+      return el;
+    }
+
+    return { wrapper, addChild };
+  }
+
+  it("removes orphaned .wt-terminal-instance elements from the wrapper during construction", () => {
+    const { wrapper, addChild } = makeMockWrapper();
+    addChild("wt-terminal-instance");
+    addChild("wt-terminal-instance");
+    expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(2);
+
+    // Constructor calls hideOrphanedContainers which removes untracked containers
+    new TabManager(wrapper);
+
+    expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(0);
+  });
+
+  it("removes orphaned containers added after construction when setActiveItem is called", () => {
+    const { wrapper, addChild } = makeMockWrapper();
+    const mgr = new TabManager(wrapper);
+
+    // Add orphans after construction
+    addChild("wt-terminal-instance");
+    addChild("wt-terminal-instance");
+    expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(2);
+
+    mgr.setActiveItem("some-item");
+
+    expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(0);
+  });
+
+  it("preserves tracked terminal containers and only removes orphans", () => {
+    const { wrapper, addChild } = makeMockWrapper();
+    const mgr = new TabManager(wrapper);
+
+    // Add an orphan after construction
+    const orphan = addChild("wt-terminal-instance");
+
+    // Add a tracked container
+    const tab = makeStubTab({ id: "tab-tracked", taskPath: "item-1" });
+    const trackedContainer = addChild("wt-terminal-instance");
+    (tab as any).containerEl = trackedContainer;
+
+    (mgr as any).sessions.set("item-1", [tab]);
+
+    expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(2);
+
+    mgr.setActiveItem("item-1");
+
+    // Only the orphan should be removed; the tracked container stays
+    expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(1);
+    expect(wrapper.contains(trackedContainer)).toBe(true);
+    expect(wrapper.contains(orphan)).toBe(false);
+  });
+
+  it("is safe when terminalWrapperEl is null", () => {
+    const mgr = new TabManager(null as any);
+    // Should not throw
+    expect(() => mgr.setActiveItem("item-1")).not.toThrow();
   });
 });
