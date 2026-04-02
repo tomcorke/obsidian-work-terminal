@@ -12,7 +12,6 @@ import {
   buildMissingCliNotice,
   resolveCommand,
   resolveCommandInfo,
-  splitConfiguredCommand,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
@@ -2324,17 +2323,15 @@ export class TerminalPanelView {
     }
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const strandsCmd = expandTilde(
-      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands"),
+    const strandsCmd =
+      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands");
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
-    const [cmdToken, ...cmdArgs] = splitConfiguredCommand(strandsCmd);
-    if (!cmdToken) {
-      new Notice(
-        "Set a Strands command in Work Terminal settings before launching Strands sessions.",
-      );
+    const resolved = this.resolveAgentCommandOrNotice("strands", strandsCmd, cwd);
+    if (!resolved) {
       return;
     }
-    const resolved = resolveCommand(cmdToken);
     const rawExtraArgs = options.skipGlobalArgs
       ? options.extraArgs || ""
       : mergeExtraArgs(
@@ -2344,13 +2341,9 @@ export class TerminalPanelView {
     // Strands has no session ID - strip any deferred $sessionId placeholders
     const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, "");
     const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, prompt);
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
       resolved,
-      ...cmdArgs,
       ...args,
     ]);
     this.renderTabBar();

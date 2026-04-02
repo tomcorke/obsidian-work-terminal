@@ -3093,14 +3093,12 @@ describe("TerminalPanelView hook warning", () => {
     });
 
     expect(mockState.latestCreateTabArgs).toBeNull();
-    expect(mockState.notices).toContain(
-      "Set a Strands command in Work Terminal settings before launching Strands sessions.",
-    );
+    expect(mockState.notices[0]).toContain("Strands agent not found");
   });
 
-  it("launches Strands with quoted POSIX executable paths intact", async () => {
+  it("treats Strands command as a simple binary path like Claude/Copilot", async () => {
     const { view } = createView({
-      "core.strandsCommand": `"/Applications/Strands Agent/bin/python3" "./agents/agent.py"`,
+      "core.strandsCommand": "/bin/echo",
       "core.strandsExtraArgs": "--mode interactive",
       "core.defaultTerminalCwd": "~/one",
     });
@@ -3110,7 +3108,7 @@ describe("TerminalPanelView hook warning", () => {
       sessionType: "strands",
       prompt: "Review this task",
       freshSettings: {
-        "core.strandsCommand": `"/Applications/Strands Agent/bin/python3" "./agents/agent.py"`,
+        "core.strandsCommand": "/bin/echo",
         "core.strandsExtraArgs": "--mode interactive",
         "core.defaultTerminalCwd": "~/one",
       },
@@ -3118,18 +3116,12 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.notices).toEqual([]);
     expect(mockState.latestCreateTabArgs).toEqual([
-      "/Applications/Strands Agent/bin/python3",
+      "/bin/echo",
       expandTilde("~/one"),
       "Strands",
       "strands",
       undefined,
-      [
-        "/Applications/Strands Agent/bin/python3",
-        "./agents/agent.py",
-        "--mode",
-        "interactive",
-        "Review this task",
-      ],
+      ["/bin/echo", "--mode", "interactive", "Review this task"],
     ]);
   });
 
