@@ -38,7 +38,7 @@ import { buildAgentContextPrompt } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
-import { getDefaultSessionLabel, isClaudeSession } from "./CustomSessionConfig";
+import { getDefaultSessionLabel, isSessionTrackingSession } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
 import type { AgentProfile, AgentType, ParamPassMode } from "../core/agents/AgentProfile";
@@ -355,7 +355,7 @@ export class TerminalPanelView {
   private hasClaudeHookDependentUsage(): boolean {
     for (const tabs of this.tabManager.getSessions().values()) {
       for (const tab of tabs) {
-        if (isClaudeSession(tab.sessionType)) {
+        if (isSessionTrackingSession(tab.sessionType)) {
           return true;
         }
       }
@@ -363,11 +363,14 @@ export class TerminalPanelView {
 
     return (
       this.persistedSessions.some(
-        (session) => session.recoveryMode === "resume" && isClaudeSession(session.sessionType),
+        (session) =>
+          session.recoveryMode === "resume" && isSessionTrackingSession(session.sessionType),
       ) ||
       this.recentlyClosedStore
         .serialize()
-        .some((entry) => entry.recoveryMode === "resume" && isClaudeSession(entry.sessionType))
+        .some(
+          (entry) => entry.recoveryMode === "resume" && isSessionTrackingSession(entry.sessionType),
+        )
     );
   }
 

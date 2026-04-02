@@ -16,6 +16,7 @@ import {
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
+  getResumeConfig,
 } from "./AgentProfile";
 
 const PROFILES_KEY = "agentProfiles";
@@ -264,17 +265,10 @@ export class AgentProfileManager {
     if (profile.command.trim()) {
       return profile.command.trim();
     }
-    // Fall back to global settings
-    switch (profile.agentType) {
-      case "claude":
-        return String(settings["core.claudeCommand"] || "claude");
-      case "copilot":
-        return String(settings["core.copilotCommand"] || "copilot");
-      case "strands":
-        return String(settings["core.strandsCommand"] || "strands");
-      case "shell":
-        return String(settings["core.defaultShell"] || process.env.SHELL || "/bin/zsh");
-    }
+    // Fall back to global settings via AgentResumeConfig
+    const config = getResumeConfig(profile.agentType);
+    const shellFallback = profile.agentType === "shell" ? process.env.SHELL || "/bin/zsh" : "";
+    return String(settings[config.commandSettingKey] || config.defaultCommand || shellFallback);
   }
 
   /**
@@ -292,19 +286,11 @@ export class AgentProfileManager {
    */
   resolveArguments(profile: AgentProfile, settings: Record<string, unknown>): string {
     const profileArgs = profile.arguments.trim();
-    // Global args (for backward compatibility)
-    let globalArgs = "";
-    switch (profile.agentType) {
-      case "claude":
-        globalArgs = String(settings["core.claudeExtraArgs"] || "");
-        break;
-      case "copilot":
-        globalArgs = String(settings["core.copilotExtraArgs"] || "");
-        break;
-      case "strands":
-        globalArgs = String(settings["core.strandsExtraArgs"] || "");
-        break;
-    }
+    // Global args (for backward compatibility) via AgentResumeConfig
+    const config = getResumeConfig(profile.agentType);
+    const globalArgs = config.extraArgsSettingKey
+      ? String(settings[config.extraArgsSettingKey] || "")
+      : "";
     const parts = [globalArgs.trim(), profileArgs].filter(Boolean);
     return parts.join(" ");
   }
