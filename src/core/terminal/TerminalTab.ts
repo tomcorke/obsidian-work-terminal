@@ -163,6 +163,7 @@ export class TerminalTab {
   // is set. Reset when the user scrolls back to the bottom or clicks the
   // scroll-to-bottom button.
   _userScrolledUp = false;
+  _programmaticScrollGuards = 0;
 
   // Session tracking (/resume detection)
   private _sessionTracker: AgentSessionTracker | null = null;
@@ -527,10 +528,14 @@ export class TerminalTab {
     // This replaces the per-write wasAtBottom snapshot approach which was
     // defeated by DOM scroll events firing during screen clear/redraw cycles.
     const writeWithAutoScroll = (data: string | Uint8Array) => {
+      this._programmaticScrollGuards += 1;
       this.terminal.write(data, () => {
         if (!this._userScrolledUp) {
           this.terminal.scrollToBottom();
         }
+        requestAnimationFrame(() => {
+          this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
+        });
       });
     };
 
@@ -575,6 +580,7 @@ export class TerminalTab {
     const SCROLL_UP_KEYS = new Set(["PageUp", "PageDown", "Home", "End"]);
 
     const checkIfAtBottom = () => {
+      if (this._programmaticScrollGuards > 0) return;
       const buf = this.terminal.buffer.active;
       if (buf.viewportY >= buf.baseY) {
         this._userScrolledUp = false;
