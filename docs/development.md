@@ -247,7 +247,7 @@ and why.
 
 1. **Create the isolated instance** in the worktree (not the project root):
    ```bash
-   cd .claude/worktrees/<branch>
+   cd .claude/worktrees/<name>
    pnpm run obsidian:test:open -- --vault .claude/testing/<issue-name> --clean
    ```
 
@@ -288,8 +288,7 @@ and why.
   with `app.workspace.getLeavesOfType('markdown').forEach(l => l.detach())` before
   screenshotting the terminal panel.
 - **CDP port changes on each launch**. Use the `port` value from the JSON output.
-  Pass it with `node cdp.js --port <port>` (not `CDP_PORT` env var, which works
-  but is less convenient).
+  Pass it with `CDP_PORT=<port> node cdp.js ...` or `node cdp.js --port <port>`.
 - **Modifying data.json directly** works for testing settings/profiles, but you must
   reload the plugin via `node cdp.js --port <port>` afterwards for the plugin to
   pick up changes.
