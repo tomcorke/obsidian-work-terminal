@@ -32,6 +32,7 @@ import {
   isResumableSessionType,
 } from "../session/types";
 import { AgentSessionTracker } from "../agents/AgentSessionTracker";
+import { CopilotSessionDetector } from "../agents/CopilotSessionDetector";
 import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
 import {
   type ParamPassMode,
@@ -165,6 +166,9 @@ export class TerminalTab {
 
   // Session tracking (/resume detection)
   private _sessionTracker: AgentSessionTracker | null = null;
+
+  // Deferred session ID detection (Copilot context sessions)
+  private _sessionDetector: CopilotSessionDetector | null = null;
 
   // Rename detection
   private _renameDecoder = new StringDecoder("utf8");
@@ -1042,7 +1046,11 @@ export class TerminalTab {
 
   /** Initialize session tracker for agent sessions that support session tracking. */
   private _initSessionTracker(): void {
-    if (!this.agentSessionId) return;
+    if (!this.agentSessionId) {
+      // No session ID yet - check if this agent type supports deferred detection
+      this._initDeferredSessionDetector();
+      return;
+    }
     const { agentType } = sessionTypeToAgentType(this.sessionType);
     const resumeConfig = getResumeConfig(agentType);
     if (!resumeConfig.sessionTracking) return;
@@ -1054,8 +1062,40 @@ export class TerminalTab {
     };
   }
 
+  /**
+   * Start deferred session ID detection for agents that discover their session
+   * ID from log files after spawn (e.g. Copilot context sessions launched
+   * without --resume).
+   */
+  private _initDeferredSessionDetector(): void {
+    const { agentType } = sessionTypeToAgentType(this.sessionType);
+    const resumeConfig = getResumeConfig(agentType);
+    if (
+      !resumeConfig.deferSessionId ||
+      !resumeConfig.sessionLogDir ||
+      !resumeConfig.sessionLogPattern
+    ) {
+      return;
+    }
+
+    this._sessionDetector = new CopilotSessionDetector({
+      logDir: resumeConfig.sessionLogDir,
+      logPattern: resumeConfig.sessionLogPattern,
+      spawnTime: this.spawnTime,
+    });
+    this._sessionDetector.onSessionDetected = (sessionId) => {
+      this.agentSessionId = sessionId;
+      this._isResumableAgent = this._detectResumableAgent();
+      console.log("[work-terminal] Deferred session ID detected:", sessionId);
+      this._sessionDetector = null;
+    };
+    this._sessionDetector.start();
+  }
+
   private _detectResumableAgent(): boolean {
-    return isResumableSessionType(this.sessionType) && !!this.agentSessionId;
+    if (!isResumableSessionType(this.sessionType)) return false;
+    // Either we already have a session ID, or we're actively detecting one
+    return !!this.agentSessionId || !!this._sessionDetector;
   }
 
   /** Called on each chunk of output data to track activity. */
@@ -1434,9 +1474,11 @@ export class TerminalTab {
   dispose(): void {
     if (this._isDisposed) return;
     this._isDisposed = true;
-    // Stop session tracker
+    // Stop session tracker and deferred session detector
     this._sessionTracker?.dispose();
     this._sessionTracker = null;
+    this._sessionDetector?.dispose();
+    this._sessionDetector = null;
     // Stop state tracking
     if (this._stateTimer) {
       clearInterval(this._stateTimer);

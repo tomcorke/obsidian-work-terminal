@@ -251,6 +251,24 @@ describe("resume config display fields", () => {
   });
 });
 
+describe("deferSessionId config", () => {
+  it("copilot defers session ID detection with log dir and pattern", () => {
+    const config = getResumeConfig("copilot");
+    expect(config.deferSessionId).toBe(true);
+    expect(config.sessionLogDir).toBe("~/.copilot/logs");
+    expect(config.sessionLogPattern).toContain("Workspace initialized:");
+  });
+
+  it("claude does not defer session ID detection", () => {
+    expect(getResumeConfig("claude").deferSessionId).toBe(false);
+  });
+
+  it("non-resumable agents do not defer", () => {
+    expect(getResumeConfig("strands").deferSessionId).toBe(false);
+    expect(getResumeConfig("shell").deferSessionId).toBe(false);
+  });
+});
+
 describe("default profile button colors", () => {
   it("sets Claude brand color on the default Claude profile", () => {
     const profile = createDefaultClaudeProfile();

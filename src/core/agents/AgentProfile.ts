@@ -157,7 +157,8 @@ export { AgentProfileSchema };
 // Resume configuration per agent type
 // ---------------------------------------------------------------------------
 
-export interface AgentResumeConfig {
+/** Shared fields for all agent resume configurations. */
+interface AgentResumeConfigBase {
   /** Whether this agent type supports session resume. */
   resumable: boolean;
   /** Whether this agent type supports session ID tracking (watching for /resume). */
@@ -186,6 +187,29 @@ export interface AgentResumeConfig {
   helpText: string;
 }
 
+/**
+ * Discriminated union for deferSessionId:
+ * - When false, log fields are absent.
+ * - When true, sessionLogDir and sessionLogPattern are required.
+ */
+type DeferredSessionConfig =
+  | { deferSessionId: false; sessionLogDir?: undefined; sessionLogPattern?: undefined }
+  | {
+      /**
+       * When true, the resume flag conflicts with the prompt flag on fresh launch.
+       * Fresh context sessions should omit the resume flag and discover the session
+       * ID from the agent's log files after spawn. The detected ID is then stored
+       * for future resume.
+       */
+      deferSessionId: true;
+      /** Log directory pattern for deferred session ID detection (e.g. "~/.copilot/logs"). */
+      sessionLogDir: string;
+      /** Regex pattern to extract session UUID from log lines. Must have a capture group. */
+      sessionLogPattern: string;
+    };
+
+export type AgentResumeConfig = AgentResumeConfigBase & DeferredSessionConfig;
+
 const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
   claude: {
     resumable: true,
@@ -202,6 +226,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     displayLabel: "Claude",
     helpText:
       "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.",
+    deferSessionId: false,
   },
   copilot: {
     resumable: true,
@@ -219,6 +244,9 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     displayLabel: "Copilot",
     helpText:
       "Copilot uses --resume[=sessionId] for both new and resumed sessions. Restart resume works without Claude hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.",
+    deferSessionId: true,
+    sessionLogDir: "~/.copilot/logs",
+    sessionLogPattern: "Workspace initialized: ([0-9a-f-]{36})",
   },
   strands: {
     resumable: false,
@@ -234,6 +262,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     displayLabel: "Strands",
     helpText:
       "Strands sessions start fresh each time. Work Terminal does not persist restart-resume metadata for them.",
+    deferSessionId: false,
   },
   shell: {
     resumable: false,
@@ -248,6 +277,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     installHint: "",
     displayLabel: "Shell",
     helpText: "Shell tabs are local terminals only and are not saved for restart resume.",
+    deferSessionId: false,
   },
 };
 
