@@ -73,6 +73,11 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 
 ## Development rules
 
+### Branching and worktrees
+- **NEVER modify the project root** by checking out other branches. The repo root is symlinked as an Obsidian plugin - switching branches disrupts the user's live vault. All development work must be done in **git worktrees** (`.claude/worktrees/`), not by checking out branches in the project root.
+- **New branches must always be based on `origin/main`** to avoid including unrelated changes. Before creating a branch, fetch and branch from `origin/main`, not from whatever the local `main` happens to be.
+- Ask the user before creating a worktree or switching branches if there is any ambiguity.
+
 ### Commits
 Commit each discrete change individually with a clear message. Do not batch unrelated changes. Commit regularly - do not accumulate large uncommitted diffs.
 
