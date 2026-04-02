@@ -1700,7 +1700,7 @@ describe("TerminalPanelView hook warning", () => {
       "Claude",
       "claude",
       undefined,
-      ["/bin/echo", "--saved-flag", "value", "--resume", "saved-session"],
+      ["/bin/echo", "--saved-flag", "value", "--session-id", "saved-session"],
       "saved-session",
     ]);
   });
@@ -1739,7 +1739,7 @@ describe("TerminalPanelView hook warning", () => {
       "Claude (ctx)",
       "claude-with-context",
       undefined,
-      ["/bin/echo", "--model", "sonnet", "--resume", "saved-session"],
+      ["/bin/echo", "--model", "sonnet", "--session-id", "saved-session"],
       "saved-session",
     ]);
   });
@@ -2181,7 +2181,7 @@ describe("TerminalPanelView hook warning", () => {
       "Claude",
       "claude",
       undefined,
-      ["/bin/echo", "--dangerously-skip-permissions", "--resume", "session-123"],
+      ["/bin/echo", "--dangerously-skip-permissions", "--session-id", "session-123"],
       "session-123",
     ]);
   });
@@ -2241,7 +2241,7 @@ describe("TerminalPanelView hook warning", () => {
         "beta",
         "--another=option",
         "--tail",
-        "--resume",
+        "--session-id",
         "session-123",
       ],
       "session-123",
@@ -2353,7 +2353,7 @@ describe("TerminalPanelView hook warning", () => {
       "Recovered Claude",
       "claude",
       undefined,
-      ["/bin/echo", "--resume", "session-456"],
+      ["/bin/echo", "--session-id", "session-456"],
       "session-456",
     ]);
   });
@@ -2388,7 +2388,7 @@ describe("TerminalPanelView hook warning", () => {
         "--dangerously-skip-permissions",
         "--plugin-dir",
         "/path/a",
-        "--resume",
+        "--session-id",
         "session-456",
       ],
       "session-456",

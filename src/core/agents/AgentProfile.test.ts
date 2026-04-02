@@ -168,7 +168,8 @@ describe("getResumeConfig", () => {
     expect(config.resumable).toBe(true);
     expect(config.sessionTracking).toBe(true);
     expect(config.resumeFlagFormat).toBe("flag-space");
-    expect(config.resumeFlag).toBe("--resume");
+    expect(config.resumeFlag).toBe("--session-id");
+    expect(config.promptInjectionMode).toBe("positional");
     expect(config.commandSettingKey).toBe("core.claudeCommand");
     expect(config.defaultCommand).toBe("claude");
     expect(config.extraArgsSettingKey).toBe("core.claudeExtraArgs");
