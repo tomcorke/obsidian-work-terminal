@@ -558,8 +558,11 @@ export class ListPanel {
       this.positionDropIndicator(cardsEl, e.clientY);
     });
 
-    cardsEl.addEventListener("dragleave", () => {
-      cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+    cardsEl.addEventListener("dragleave", (e: DragEvent) => {
+      const related = e.relatedTarget as Node | null;
+      if (!related || !cardsEl.contains(related)) {
+        cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+      }
     });
 
     cardsEl.addEventListener("drop", async (e: DragEvent) => {
@@ -600,9 +603,6 @@ export class ListPanel {
   }
 
   private positionDropIndicator(cardsEl: HTMLElement, clientY: number): void {
-    // Remove existing indicators
-    cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
-
     const cards = Array.from(cardsEl.querySelectorAll(".wt-card-wrapper:not(.wt-card-dragging)"));
     let insertBefore: Element | null = null;
 
@@ -614,13 +614,28 @@ export class ListPanel {
       }
     }
 
-    const indicator = document.createElement("div");
-    indicator.addClass("wt-drop-indicator");
+    // Reuse existing indicator if present, only move when insertion point changes
+    let indicator = cardsEl.querySelector(".wt-drop-indicator") as HTMLElement | null;
+    const currentNext = indicator?.nextElementSibling ?? null;
 
-    if (insertBefore) {
-      cardsEl.insertBefore(indicator, insertBefore);
+    if (indicator) {
+      // Indicator already at correct position - nothing to do
+      if (insertBefore === currentNext) return;
+      // Move existing indicator to new position
+      if (insertBefore) {
+        cardsEl.insertBefore(indicator, insertBefore);
+      } else {
+        cardsEl.appendChild(indicator);
+      }
     } else {
-      cardsEl.appendChild(indicator);
+      // Create new indicator
+      indicator = document.createElement("div");
+      indicator.addClass("wt-drop-indicator");
+      if (insertBefore) {
+        cardsEl.insertBefore(indicator, insertBefore);
+      } else {
+        cardsEl.appendChild(indicator);
+      }
     }
   }
 
