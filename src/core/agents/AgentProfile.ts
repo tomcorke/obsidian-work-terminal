@@ -106,6 +106,9 @@ const ProfileButtonSchema = z.object({
   color: z.string().optional(),
 });
 
+/**
+ * Strict schema used for import validation - all fields required.
+ */
 const AgentProfileSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -119,6 +122,32 @@ const AgentProfileSchema = z.object({
   button: ProfileButtonSchema,
   sortOrder: z.number(),
 });
+
+/**
+ * Lenient schema for loading stored profiles - tolerates missing fields that
+ * may not have existed when the profile was originally saved. Missing fields
+ * get sensible defaults so user customisations are never silently discarded.
+ */
+const StoredProfileSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    agentType: z.enum(AGENT_TYPES),
+    command: z.string().default(""),
+    defaultCwd: z.string().default(""),
+    arguments: z.string().default(""),
+    contextPrompt: z.string().default(""),
+    useContext: z.boolean().default(false),
+    paramPassMode: z.enum(PARAM_PASS_MODES).default("launch-only"),
+    button: ProfileButtonSchema.default({
+      enabled: false,
+      label: "Agent",
+    }),
+    sortOrder: z.number().default(0),
+  })
+  .passthrough();
+
+export const StoredProfileArraySchema = z.array(StoredProfileSchema);
 
 export const AgentProfileArraySchema = z.array(AgentProfileSchema);
 
