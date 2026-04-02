@@ -294,6 +294,131 @@ describe("CopilotSessionDetector", () => {
     expect(callback).toHaveBeenCalledWith(sessionId);
   });
 
+  it("filters by filename epoch, not mtime - excludes old epoch with recent mtime", () => {
+    const spawnTime = 5000;
+    // Old Copilot process: epoch 1000 in filename, but mtime is recent because
+    // the process is still running and appending to the file
+    const fs = createMockFs({
+      "/home/.copilot/logs": { content: "", mtimeMs: spawnTime },
+      "/home/.copilot/logs/process-1000-99999.log": {
+        content:
+          "[INFO] Workspace initialized: 11111111-1111-1111-1111-111111111111 (checkpoints: 0)",
+        mtimeMs: spawnTime + 1000, // recent mtime, but old epoch
+      },
+    });
+
+    const detector = new CopilotSessionDetector({
+      logDir: "/home/.copilot/logs",
+      logPattern: "Workspace initialized: ([0-9a-f-]{36})",
+      spawnTime,
+      deps: { fs, pathModule: createMockPath() },
+    });
+
+    const callback = vi.fn();
+    detector.onSessionDetected = callback;
+    detector.start();
+
+    vi.advanceTimersByTime(5000);
+    expect(callback).not.toHaveBeenCalled();
+    detector.dispose();
+  });
+
+  it("includes log file with recent filename epoch", () => {
+    const spawnTime = 5000;
+    const sessionId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+    const fs = createMockFs({
+      "/home/.copilot/logs": { content: "", mtimeMs: spawnTime },
+      "/home/.copilot/logs/process-5200-12345.log": {
+        content: `[INFO] Workspace initialized: ${sessionId} (checkpoints: 0)`,
+        mtimeMs: spawnTime + 500,
+      },
+    });
+
+    const detector = new CopilotSessionDetector({
+      logDir: "/home/.copilot/logs",
+      logPattern: "Workspace initialized: ([0-9a-f-]{36})",
+      spawnTime,
+      deps: { fs, pathModule: createMockPath() },
+    });
+
+    const callback = vi.fn();
+    detector.onSessionDetected = callback;
+    detector.start();
+
+    expect(callback).toHaveBeenCalledWith(sessionId);
+  });
+
+  it("falls back to mtime for non-standard filenames", () => {
+    const spawnTime = 1000;
+    const sessionId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+    // Filename matches process-*.log but doesn't have the standard epoch-pid format
+    const fs = createMockFs({
+      "/home/.copilot/logs": { content: "", mtimeMs: spawnTime },
+      "/home/.copilot/logs/process-debug.log": {
+        content: `[INFO] Workspace initialized: ${sessionId} (checkpoints: 0)`,
+        mtimeMs: spawnTime + 500,
+      },
+    });
+
+    const detector = new CopilotSessionDetector({
+      logDir: "/home/.copilot/logs",
+      logPattern: "Workspace initialized: ([0-9a-f-]{36})",
+      spawnTime,
+      deps: { fs, pathModule: createMockPath() },
+    });
+
+    const callback = vi.fn();
+    detector.onSessionDetected = callback;
+    detector.start();
+
+    expect(callback).toHaveBeenCalledWith(sessionId);
+  });
+
+  it("sorts by filename epoch, picking newest over older with higher mtime", () => {
+    const spawnTime = 1000;
+    const oldSessionId = "11111111-1111-1111-1111-111111111111";
+    const newSessionId = "22222222-2222-2222-2222-222222222222";
+
+    const fs = createMockFs({
+      "/home/.copilot/logs": { content: "", mtimeMs: spawnTime },
+      "/home/.copilot/logs/process-1000-111.log": {
+        content: `[INFO] Workspace initialized: ${oldSessionId} (checkpoints: 0)`,
+        mtimeMs: spawnTime + 9000, // higher mtime (still being written to)
+      },
+      "/home/.copilot/logs/process-1500-222.log": {
+        content: `[INFO] Workspace initialized: ${newSessionId} (checkpoints: 0)`,
+        mtimeMs: spawnTime + 100, // lower mtime
+      },
+    });
+
+    const detector = new CopilotSessionDetector({
+      logDir: "/home/.copilot/logs",
+      logPattern: "Workspace initialized: ([0-9a-f-]{36})",
+      spawnTime,
+      deps: { fs, pathModule: createMockPath() },
+    });
+
+    const callback = vi.fn();
+    detector.onSessionDetected = callback;
+    detector.start();
+
+    // Should pick process-1500 (epoch 1500) over process-1000 (epoch 1000)
+    // even though process-1000 has a higher mtime
+    expect(callback).toHaveBeenCalledWith(newSessionId);
+  });
+
+  it("parseFilenameEpoch extracts epoch from standard filenames", () => {
+    expect(CopilotSessionDetector.parseFilenameEpoch("process-1234567890-99999.log")).toBe(
+      1234567890,
+    );
+    expect(CopilotSessionDetector.parseFilenameEpoch("process-0-1.log")).toBe(0);
+    expect(CopilotSessionDetector.parseFilenameEpoch("process-debug.log")).toBeNull();
+    expect(CopilotSessionDetector.parseFilenameEpoch("other-file.log")).toBeNull();
+    expect(CopilotSessionDetector.parseFilenameEpoch("process-abc-123.log")).toBeNull();
+  });
+
   it("wires callback to set agentSessionId on a tab-like object", () => {
     // Integration-style test: verify the TerminalTab callback wiring pattern.
     // TerminalTab._initDeferredSessionDetector sets onSessionDetected to assign

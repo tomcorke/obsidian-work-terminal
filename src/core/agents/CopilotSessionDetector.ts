@@ -95,18 +95,40 @@ export class CopilotSessionDetector {
     }
   }
 
+  /**
+   * Parse the epoch timestamp from a `process-<epoch_ms>-<pid>.log` filename.
+   * Returns the epoch in ms, or null if the filename doesn't match.
+   */
+  static parseFilenameEpoch(name: string): number | null {
+    const m = /^process-(\d+)-\d+\.log$/.exec(name);
+    if (!m) return null;
+    const epoch = Number(m[1]);
+    return Number.isFinite(epoch) ? epoch : null;
+  }
+
   private _poll(): void {
     if (!this._fs.existsSync(this._logDir)) return;
 
-    // Find log files modified after spawn time, caching mtime for sort
-    const mtimeCache = new Map<string, number>();
+    // Find log files created after spawn time.
+    // Prefer the epoch embedded in the filename (immune to mtime updates from
+    // other running Copilot processes). Fall back to mtime for non-standard names.
+    const epochCache = new Map<string, number>();
     const files = this._fs.readdirSync(this._logDir).filter((name) => {
       if (!name.startsWith("process-") || !name.endsWith(".log")) return false;
+      const filenameEpoch = CopilotSessionDetector.parseFilenameEpoch(name);
+      if (filenameEpoch !== null) {
+        // Filename epoch is the creation time - use it directly
+        if (filenameEpoch >= this._spawnTime - 500) {
+          epochCache.set(name, filenameEpoch);
+          return true;
+        }
+        return false;
+      }
+      // Fallback: no parseable epoch in filename, use mtime
       try {
         const stat = this._fs.statSync(this._path.join(this._logDir, name));
-        // Use mtime with a small buffer (500ms) for filesystem granularity
         if (stat.mtimeMs >= this._spawnTime - 500) {
-          mtimeCache.set(name, stat.mtimeMs);
+          epochCache.set(name, stat.mtimeMs);
           return true;
         }
         return false;
@@ -115,8 +137,8 @@ export class CopilotSessionDetector {
       }
     });
 
-    // Sort by modification time descending (newest first) using cached values
-    files.sort((a, b) => (mtimeCache.get(b) ?? 0) - (mtimeCache.get(a) ?? 0));
+    // Sort by epoch descending (newest first)
+    files.sort((a, b) => (epochCache.get(b) ?? 0) - (epochCache.get(a) ?? 0));
 
     for (const file of files) {
       try {
