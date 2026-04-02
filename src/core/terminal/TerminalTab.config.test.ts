@@ -150,6 +150,7 @@ describe("TerminalTab keyboard configuration", () => {
     new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Shell", null, "shell");
 
     expect(mocks.MockTerminal.lastOptions?.macOptionIsMeta).toBe(true);
+    expect(mocks.MockTerminal.lastOptions?.scrollback).toBe(5000);
     expect(mocks.MockTerminal.lastInstance?.options.macOptionIsMeta).toBe(true);
     expect(mocks.MockTerminal.lastInstance?.attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);
   });

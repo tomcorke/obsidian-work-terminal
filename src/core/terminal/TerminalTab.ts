@@ -45,6 +45,7 @@ export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
 
 let sessionCounter = 0;
+const TERMINAL_SCROLLBACK = 5000;
 
 type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
@@ -219,6 +220,7 @@ export class TerminalTab {
       fontSize: 13,
       fontFamily: "Menlo, Monaco, 'Courier New', monospace",
       macOptionIsMeta: true,
+      scrollback: TERMINAL_SCROLLBACK,
       theme: {
         background: "#1e1e1e",
         foreground: "#d4d4d4",
