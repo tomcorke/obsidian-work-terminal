@@ -109,17 +109,17 @@ export class CopilotSessionDetector {
   private _poll(): void {
     if (!this._fs.existsSync(this._logDir)) return;
 
-    // Find log files created after spawn time.
+    // Find candidate log files using a time-based sort/filter key.
     // Prefer the epoch embedded in the filename (immune to mtime updates from
     // other running Copilot processes). Fall back to mtime for non-standard names.
-    const epochCache = new Map<string, number>();
+    const timeCache = new Map<string, number>();
     const files = this._fs.readdirSync(this._logDir).filter((name) => {
       if (!name.startsWith("process-") || !name.endsWith(".log")) return false;
       const filenameEpoch = CopilotSessionDetector.parseFilenameEpoch(name);
       if (filenameEpoch !== null) {
         // Filename epoch is the creation time - use it directly
         if (filenameEpoch >= this._spawnTime - 500) {
-          epochCache.set(name, filenameEpoch);
+          timeCache.set(name, filenameEpoch);
           return true;
         }
         return false;
@@ -128,7 +128,7 @@ export class CopilotSessionDetector {
       try {
         const stat = this._fs.statSync(this._path.join(this._logDir, name));
         if (stat.mtimeMs >= this._spawnTime - 500) {
-          epochCache.set(name, stat.mtimeMs);
+          timeCache.set(name, stat.mtimeMs);
           return true;
         }
         return false;
@@ -137,8 +137,8 @@ export class CopilotSessionDetector {
       }
     });
 
-    // Sort by epoch descending (newest first)
-    files.sort((a, b) => (epochCache.get(b) ?? 0) - (epochCache.get(a) ?? 0));
+    // Sort by the cached time key descending (newest first)
+    files.sort((a, b) => (timeCache.get(b) ?? 0) - (timeCache.get(a) ?? 0));
 
     for (const file of files) {
       try {
