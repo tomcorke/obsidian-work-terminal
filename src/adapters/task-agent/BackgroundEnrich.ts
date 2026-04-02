@@ -185,7 +185,7 @@ export function insertIngestionFailedFlag(content: string): string {
 }
 
 /**
- * Clear the `background-ingestion: failed` flag from a task file (set to `done`).
+ * Clear the `background-ingestion: failed` flag from a task file by setting it to `retrying`.
  * Called before retrying enrichment.
  */
 async function clearIngestionFailedFlag(app: App, filePath: string): Promise<void> {
