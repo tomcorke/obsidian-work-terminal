@@ -632,12 +632,12 @@ export class TerminalPanelView {
 
       // Skip if indicator would be right next to the dragged tab (no-op position)
       if (insertBeforeIndex === sourceIdx || insertBeforeIndex === sourceIdx + 1) {
-        container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
+        this.removeDropIndicators(container);
         return;
       }
 
       // Remove existing indicator
-      container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
+      this.removeDropIndicators(container);
 
       // Insert indicator at the calculated position
       const indicator = document.createElement("div");
@@ -652,7 +652,7 @@ export class TerminalPanelView {
     container.addEventListener("dragleave", (e: DragEvent) => {
       const related = e.relatedTarget as Node | null;
       if (!related || !container.contains(related)) {
-        container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
+        this.removeDropIndicators(container);
       }
     });
 
@@ -660,14 +660,16 @@ export class TerminalPanelView {
       e.preventDefault();
       const sourceIdx = this.tabManager.getDragSourceIndex();
 
-      // Derive target index from indicator position
+      // Derive target index from indicator position.
+      // Capture nextElementSibling BEFORE removing the indicator from the DOM,
+      // otherwise it will always be null once the element is detached.
       const indicator = container.querySelector(".wt-tab-drop-indicator");
-      container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
+      const indicatorNext = indicator?.nextElementSibling as HTMLElement | null;
+      this.removeDropIndicators(container);
 
       if (sourceIdx === null || !indicator) return;
 
       const tabs = Array.from(container.querySelectorAll(".wt-tab")) as HTMLElement[];
-      const indicatorNext = indicator.nextElementSibling as HTMLElement | null;
 
       if (!indicatorNext || !indicatorNext.classList.contains("wt-tab")) {
         // Indicator is at the end - drop after the last tab
@@ -677,13 +679,26 @@ export class TerminalPanelView {
         }
       } else {
         // Indicator is before a tab - find that tab's index
-        const targetIndex = parseInt(indicatorNext.getAttribute("data-tab-index") || "0", 10);
+        const tabIndexAttr = indicatorNext.getAttribute("data-tab-index");
+        if (tabIndexAttr === null) {
+          console.warn(
+            "work-terminal: drop target tab missing data-tab-index attribute, aborting reorder",
+          );
+          this.renderTabBar();
+          return;
+        }
+        const targetIndex = parseInt(tabIndexAttr, 10);
         // dropAfter=false because we're inserting before this tab
         this.tabManager.reorderTab(sourceIdx, targetIndex, false);
       }
 
       this.renderTabBar();
     });
+  }
+
+  /** Remove all drop indicator elements from the given container. */
+  private removeDropIndicators(container: HTMLElement): void {
+    container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
   }
 
   // ---------------------------------------------------------------------------
