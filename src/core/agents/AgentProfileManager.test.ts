@@ -299,5 +299,58 @@ describe("AgentProfileManager", () => {
       expect(manager.getProfiles()).toHaveLength(1);
       expect(manager.getProfiles()[0].name).toBe("Valid Profile");
     });
+
+    it("does NOT call saveData when stored profiles fail validation", async () => {
+      plugin = createMockPlugin({
+        agentProfiles: [{ id: "bad", agentType: "not-a-real-type" }],
+        agentProfilesMigrated: true,
+      });
+      manager = new AgentProfileManager(plugin);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await manager.load();
+      expect(plugin.saveData).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+
+    it("does NOT call saveData when migrated flag is set but profiles are absent", async () => {
+      plugin = createMockPlugin({
+        agentProfilesMigrated: true,
+        // No agentProfiles key
+      });
+      manager = new AgentProfileManager(plugin);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await manager.load();
+
+      // Uses built-in defaults in-memory
+      expect(manager.getProfiles().find((p) => p.name === "Claude")).toBeTruthy();
+      // Does NOT write to disk
+      expect(plugin.saveData).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+
+    it("fills in defaults for profiles saved without newer fields", async () => {
+      plugin = createMockPlugin({
+        agentProfiles: [
+          {
+            id: "old-1",
+            name: "Legacy Profile",
+            agentType: "claude",
+            // Missing: command, defaultCwd, arguments, contextPrompt, useContext,
+            //          paramPassMode, button, sortOrder
+          },
+        ],
+        agentProfilesMigrated: true,
+      });
+      manager = new AgentProfileManager(plugin);
+      await manager.load();
+      const profile = manager.getProfiles()[0];
+      expect(profile.name).toBe("Legacy Profile");
+      expect(profile.command).toBe("");
+      expect(profile.defaultCwd).toBe("");
+      expect(profile.useContext).toBe(false);
+      expect(profile.paramPassMode).toBe("launch-only");
+      expect(profile.sortOrder).toBe(0);
+      expect(plugin.saveData).not.toHaveBeenCalled();
+    });
   });
 });
