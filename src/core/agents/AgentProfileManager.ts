@@ -10,6 +10,7 @@ import {
   type AgentProfile,
   type AgentType,
   AgentProfileArraySchema,
+  StoredProfileArraySchema,
   createDefaultProfile,
   createDefaultClaudeProfile,
   createDefaultClaudeCtxProfile,
@@ -36,24 +37,34 @@ export class AgentProfileManager {
     const data = (await this.plugin.loadData()) || {};
 
     if (data[PROFILES_KEY] && Array.isArray(data[PROFILES_KEY])) {
-      const result = AgentProfileArraySchema.safeParse(data[PROFILES_KEY]);
+      // Use the lenient schema for loading stored profiles - tolerates missing
+      // fields from older versions so user customisations are never discarded.
+      const result = StoredProfileArraySchema.safeParse(data[PROFILES_KEY]);
       if (result.success) {
         this.profiles = result.data as AgentProfile[];
       } else {
+        // Even the lenient schema failed - profiles are seriously malformed.
+        // Log but do NOT overwrite the stored data; fall back in-memory only
+        // so the user can export/fix via settings on next open.
         console.warn(
-          "[work-terminal] Stored profiles failed validation, falling back to built-in defaults:",
+          "[work-terminal] Stored profiles failed validation (kept on disk, using built-in defaults in-memory):",
           result.error.issues,
         );
         this.profiles = getBuiltInProfiles();
-        await this.save();
       }
     } else if (!data[MIGRATED_KEY]) {
       // First load - migrate from legacy settings or create defaults
       this.profiles = this.migrateFromLegacySettings(data);
       await this.saveAndMark(true);
     } else {
+      // Migrated but no profiles in data - this can happen if data.json was
+      // partially written or corrupted. Use defaults in-memory but do NOT
+      // overwrite the file (avoids permanently losing profiles if the read
+      // was the one at fault).
+      console.warn(
+        "[work-terminal] agentProfilesMigrated is set but no profiles found in data - using built-in defaults without overwriting disk",
+      );
       this.profiles = getBuiltInProfiles();
-      await this.save();
     }
 
     this.loaded = true;
