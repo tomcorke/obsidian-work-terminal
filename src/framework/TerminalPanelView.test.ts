@@ -2943,6 +2943,97 @@ describe("TerminalPanelView hook warning", () => {
     ]);
   });
 
+  it("injects context prompt into Copilot-with-context sessions", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "Template for $title in $state",
+        "core.copilotCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnCopilotSession({ sessionType: "copilot-with-context" });
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      expect.stringMatching(/^--resume=/),
+      "-i",
+      "Built prompt\n\nTemplate for Task One in doing",
+    ]);
+  });
+
+  it("does not inject context prompt into plain Copilot sessions", async () => {
+    mockState.activeItemId = "task-1";
+    const { view } = createView({
+      "core.additionalAgentContext": "Template path: $filePath",
+      "core.copilotCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/ctx",
+    });
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnCopilotSession({ sessionType: "copilot" });
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      expect.stringMatching(/^--resume=/),
+    ]);
+  });
+
+  it("injects context prompt into Strands-with-context sessions", async () => {
+    mockState.activeItemId = "task-1";
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.additionalAgentContext": "Template for $title in $state",
+        "core.strandsCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-1",
+        title: "Task One",
+        state: "doing",
+        path: "Tasks/task-1.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnStrandsSession({ sessionType: "strands-with-context" });
+
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "Built prompt\n\nTemplate for Task One in doing",
+    ]);
+  });
+
   it("merges multiline continuation args from settings and custom launches", async () => {
     const { view } = createView({
       "core.claudeCommand": "/bin/echo",
