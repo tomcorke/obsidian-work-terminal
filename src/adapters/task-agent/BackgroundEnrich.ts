@@ -246,6 +246,13 @@ export async function retryEnrichment(
       try {
         let content = await app.vault.read(file);
         content = content.replace(/^background-ingestion:[ \t]*[^\r\n]*\r?\n?/m, "");
+        // Remove stale "Background ingestion incomplete" warning callout
+        content = content.replace(
+          /> \[!warning\] Background ingestion incomplete[\s\S]*?(?=\n[^>]|\n*$)/g,
+          "",
+        );
+        // Clean up any leftover double blank lines from removal
+        content = content.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
         await app.vault.modify(file, content);
       } catch (err) {
         console.error("[work-terminal] Failed to clean ingestion flag after success:", err);
