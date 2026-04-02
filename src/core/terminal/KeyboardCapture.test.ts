@@ -28,9 +28,13 @@ describe("KeyboardCapture", () => {
 
   it("sends Option+B, Option+F, and Option+D as escape sequences", () => {
     const write = vi.fn();
-    const cleanup = attachCapturePhase(containerEl, () => ({
-      stdin: { destroyed: false, write },
-    }) as any);
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
 
     const backwardEvent = new KeyboardEvent("keydown", {
       key: "∫",
@@ -69,14 +73,19 @@ describe("KeyboardCapture", () => {
     expect(deleteEvent.defaultPrevented).toBe(true);
   });
 
-  it("does not intercept printable Option+digit combinations", () => {
+  it("does not intercept Option+digit when key matches the raw digit (US layout)", () => {
     const write = vi.fn();
-    const cleanup = attachCapturePhase(containerEl, () => ({
-      stdin: { destroyed: false, write },
-    }) as any);
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
 
     const event = new KeyboardEvent("keydown", {
       key: "3",
+      code: "Digit3",
       altKey: true,
       bubbles: true,
       cancelable: true,
@@ -89,11 +98,65 @@ describe("KeyboardCapture", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it("writes composed Option+digit characters directly to PTY (e.g. UK # via Option+3)", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "#",
+      code: "Digit3",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).toHaveBeenCalledWith("#");
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("writes composed Option+digit characters for other layouts (e.g. Euro sign via Option+2)", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "\u20AC",
+      code: "Digit2",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).toHaveBeenCalledWith("\u20AC");
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it("does not intercept AltGraph-style ctrl+alt combinations", () => {
     const write = vi.fn();
-    const cleanup = attachCapturePhase(containerEl, () => ({
-      stdin: { destroyed: false, write },
-    }) as any);
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
 
     const event = new KeyboardEvent("keydown", {
       key: "∫",
@@ -113,11 +176,7 @@ describe("KeyboardCapture", () => {
 
   it("does not treat Cmd+Shift+F as plain Cmd+F", () => {
     const onSearch = vi.fn();
-    const cleanup = attachCapturePhase(
-      containerEl,
-      () => null,
-      onSearch,
-    );
+    const cleanup = attachCapturePhase(containerEl, () => null, onSearch);
 
     const event = new KeyboardEvent("keydown", {
       key: "F",
