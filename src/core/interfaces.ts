@@ -123,6 +123,10 @@ export interface CardActionContext {
   getContextPrompt(): Promise<string | null>;
   /** Retry background enrichment for this item. */
   onRetryEnrich(): void;
+  /** Clear persisted/recently-closed resume sessions for this item and remove the indicator. */
+  onClearResumeSessions(): Promise<void>;
+  /** Whether this item has any pending resume sessions (persisted or recently-closed). */
+  hasResumeSessions(): boolean;
 }
 
 /**

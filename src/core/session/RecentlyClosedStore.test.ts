@@ -355,4 +355,30 @@ describe("RecentlyClosedStore", () => {
     );
     expect(firstStore.serialize()).toEqual([]);
   });
+
+  describe("removeByItemId", () => {
+    it("removes all entries matching the item ID", () => {
+      store.add(makeEntry({ itemId: "item-1", label: "A" }));
+      store.add(makeEntry({ itemId: "item-1", label: "B" }));
+      store.add(makeEntry({ itemId: "item-2", label: "C" }));
+
+      const removed = store.removeByItemId("item-1");
+      expect(removed).toBe(2);
+
+      const remaining = store.getEntries(new Set());
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].itemId).toBe("item-2");
+    });
+
+    it("returns 0 when no entries match", () => {
+      store.add(makeEntry({ itemId: "item-1" }));
+      const removed = store.removeByItemId("item-999");
+      expect(removed).toBe(0);
+      expect(store.getEntries(new Set())).toHaveLength(1);
+    });
+
+    it("returns 0 on empty store", () => {
+      expect(store.removeByItemId("item-1")).toBe(0);
+    });
+  });
 });

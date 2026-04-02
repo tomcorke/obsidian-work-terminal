@@ -291,6 +291,11 @@ export class ListPanel {
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
       getContextPrompt: () => this.terminalPanel.getAgentContextPrompt(item),
       onRetryEnrich: () => this.retryEnrichment(item),
+      onClearResumeSessions: () => this.terminalPanel.clearResumeSessionsForItem(item.id),
+      hasResumeSessions: () => {
+        const persisted = this.terminalPanel.getPersistedSessions(item.id);
+        return persisted.length > 0;
+      },
     };
   }
 

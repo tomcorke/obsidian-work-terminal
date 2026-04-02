@@ -2384,6 +2384,31 @@ export class TerminalPanelView {
     return this.pendingPersistedSessions.filter((session) => session.taskPath === itemId);
   }
 
+  /**
+   * Clear all persisted and recently-closed resume sessions for an item.
+   * Removes the indicator from the card by triggering a session badge refresh.
+   */
+  async clearResumeSessionsForItem(itemId: string): Promise<void> {
+    // Remove from persisted sessions (both pending and durable)
+    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
+      (session) => session.taskPath !== itemId,
+    );
+    this.persistedSessions = this.persistedSessions.filter(
+      (session) => session.taskPath !== itemId,
+    );
+    this.syncPersistedSessionState(this.persistedSessions);
+
+    // Remove from recently-closed store
+    this.recentlyClosedStore.removeByItemId(itemId);
+
+    // Persist both changes to disk
+    await this.persistSessions();
+    await this.persistRecentlyClosedSessions();
+
+    // Trigger session badge refresh (via the onSessionChange callback)
+    this.onSessionChange();
+  }
+
   getPendingPersistedSessionsForPersist(): PersistedSession[] {
     return this.pendingPersistedSessions.map((session) => ({
       ...session,

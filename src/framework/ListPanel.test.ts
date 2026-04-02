@@ -153,6 +153,7 @@ function createListPanel(
     getPersistedSessions: vi.fn(() => []),
     getIdleSince: vi.fn(() => null),
     resumeSession: vi.fn(),
+    clearResumeSessionsForItem: vi.fn().mockResolvedValue(undefined),
   };
 
   const plugin = {
