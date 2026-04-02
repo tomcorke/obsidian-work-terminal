@@ -234,6 +234,102 @@ pnpm run obsidian:test:init
 - Prefer `CDP_PORT=<port> node cdp.js screenshot` for verification over visual
   inspection of the hidden window
 
+### Issue replication and fix verification workflow
+
+When investigating or fixing bugs, use isolated Obsidian instances to replicate and
+verify. This produces concrete evidence that the issue exists and the fix works.
+
+**Before launching an isolated instance**: ask the user for consent. Launching briefly
+steals screen focus (~2-3s) which can be disruptive. Explain what you're about to do
+and why.
+
+**Workflow:**
+
+1. **Create the isolated instance** in the worktree (not the project root):
+   ```bash
+   cd .claude/worktrees/<name>
+   pnpm run obsidian:test:open -- --vault .claude/testing/<issue-name> --clean
+   ```
+
+2. **Replicate the bug** using CDP commands (filesystem manipulation, plugin API
+   calls, screenshots). Document exact reproduction steps.
+
+3. **Post reproduction evidence** as a comment on the GitHub issue:
+   - Steps taken to reproduce
+   - CDP commands or filesystem operations used
+   - Screenshots or state dumps showing the bug
+
+4. **Apply the fix**, rebuild (`pnpm run build`), and reload (`node cdp.js --port <port>`)
+
+5. **Verify the fix** using the same reproduction steps. Document that the bug no
+   longer occurs.
+
+6. **Include in the PR description**:
+   - Reproduction steps (what was done to trigger the bug)
+   - Observed behaviour (what went wrong)
+   - Root cause (what code was responsible)
+   - Verification steps (how the fix was confirmed in the isolated instance)
+
+7. **Stop the isolated instance** when done:
+   ```bash
+   pnpm run obsidian:test:stop -- --vault .claude/testing/<issue-name>
+   ```
+
+### Gotchas for isolated instance testing
+
+- **Shell tabs will fail** with `ENOENT` for `python3` if the isolated instance's
+  PATH does not include Homebrew or pyenv. This is expected - the pty-wrapper.py
+  subprocess can't be found. Tab lifecycle can still be verified via CDP state
+  inspection even when processes fail to spawn.
+- **View type is `work-terminal-view`**, not `work-terminal`. Use
+  `app.workspace.getLeavesOfType('work-terminal-view')` in CDP expressions.
+- **Detail view covers the terminal panel**. When a task is clicked, a markdown
+  detail view opens in a split leaf that covers the Work Terminal pane. Close it
+  with `app.workspace.getLeavesOfType('markdown').forEach(l => l.detach())` before
+  screenshotting the terminal panel.
+- **CDP port changes on each launch**. Use the `port` value from the JSON output.
+  Pass it with `CDP_PORT=<port> node cdp.js ...` or `node cdp.js --port <port>`.
+- **Modifying data.json directly** works for testing settings/profiles, but you must
+  reload the plugin via `node cdp.js --port <port>` afterwards for the plugin to
+  pick up changes.
+- **Tab creation via CDP** requires the full API signature:
+  `tm.createTabForItem(itemId, '/bin/zsh', '/tmp', 'Label', 'shell')`. Using an
+  options object will throw because the method expects positional arguments.
+- **WebGL addon dispose errors** occur when calling `suspendWebGl()` on tabs whose
+  process spawn failed before WebGL was registered with xterm's addon manager. These
+  are now caught and handled, but be aware when testing rapid tab creation.
+
+## Branching and worktrees
+
+**IMPORTANT**: Never modify the project root by checking out other branches. The repo
+root is symlinked as an Obsidian plugin in the user's live vault - switching branches
+here disrupts the running plugin.
+
+All development work must be done in **git worktrees**:
+
+```bash
+# Create a worktree for a new feature/fix
+git worktree add .claude/worktrees/<name> -b <branch-name> origin/main
+
+# Work in the worktree
+cd .claude/worktrees/<name>
+pnpm install
+pnpm run build
+pnpm exec vitest run
+
+# Clean up when done
+cd /path/to/repo
+git worktree remove .claude/worktrees/<name>
+```
+
+**New branches must always be based on `origin/main`** (not local `main` or another
+feature branch) to avoid including unrelated changes in PRs. Fetch before branching:
+
+```bash
+git fetch origin
+git worktree add .claude/worktrees/<name> -b <branch-name> origin/main
+```
+
 ## Known constraints
 
 - **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround. Non-negotiable.
