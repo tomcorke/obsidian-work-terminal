@@ -1443,14 +1443,20 @@ export class TerminalPanelView {
       tab.paramPassMode = persisted.paramPassMode;
     }
 
-    // Remove the persisted session immediately now that the tab has been
-    // created.  Previously this was deferred to process exit via
-    // trackRecoverySuccess, which meant the entry lingered in data.json
-    // until the resumed process eventually exited (or the next periodic
-    // persist happened to run).  Clearing it eagerly ensures data.json
-    // reflects the true state: the session is now live, not pending resume.
+    // Remove eagerly so data.json reflects the live session, not a pending
+    // resume.  If the process dies within 5s, re-add so the user can retry.
     this.removePersistedSession(persisted);
     this.persistSessions().catch(() => {});
+
+    this.trackRecoverySuccess(
+      tab,
+      () => {}, // success - already removed, nothing to do
+      () => {
+        // Process died within 5s - restore so the user can retry
+        this.persistedSessions.push(persisted);
+        this.persistSessions().catch(() => {});
+      },
+    );
 
     this.renderTabBar();
   }
