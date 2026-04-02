@@ -13,6 +13,7 @@ import type {
   WorkItemParser,
   CardActionContext,
 } from "../core/interfaces";
+import type { PersistedSession } from "../core/session/types";
 import type { TerminalPanelView } from "./TerminalPanelView";
 import { DangerConfirm } from "./DangerConfirm";
 
@@ -291,6 +292,8 @@ export class ListPanel {
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
       getContextPrompt: () => this.terminalPanel.getAgentContextPrompt(item),
       onRetryEnrich: () => this.retryEnrichment(item),
+      onClearResumeSessions: () => this.terminalPanel.clearResumeSessionsForItem(item.id),
+      hasResumeSessions: () => this.hasVisibleResumeSessions(item.id),
     };
   }
 
@@ -756,10 +759,7 @@ export class ListPanel {
 
   private renderResumeBadge(containerEl: HTMLElement, item: WorkItem): void {
     const persisted = this.terminalPanel.getPersistedSessions(item.id);
-    if (!persisted || persisted.length === 0) return;
-
-    // Only show resume badge if there are no active resumable agent sessions
-    if (this.terminalPanel.hasResumableAgentSessions(item.id)) return;
+    if (!this.hasVisibleResumeSessions(item.id, persisted)) return;
 
     const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
     let resumeInProgress = false;
@@ -791,6 +791,11 @@ export class ListPanel {
         resumeInProgress = false;
       }
     });
+  }
+
+  private hasVisibleResumeSessions(itemId: string, persisted?: PersistedSession[]): boolean {
+    const sessions = persisted ?? this.terminalPanel.getPersistedSessions(itemId);
+    return sessions.length > 0 && !this.terminalPanel.hasResumableAgentSessions(itemId);
   }
 
   private getCardActionsContainer(cardEl: HTMLElement): HTMLElement {

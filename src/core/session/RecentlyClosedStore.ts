@@ -81,6 +81,13 @@ export class RecentlyClosedStore {
     );
   }
 
+  /** Remove all entries for a given item ID. Returns the number of entries removed. */
+  removeByItemId(itemId: string): number {
+    const before = this.state.entries.length;
+    this.state.entries = this.state.entries.filter((entry) => entry.itemId !== itemId);
+    return before - this.state.entries.length;
+  }
+
   take(entry: ClosedSessionEntry): ClosedSessionEntry | null {
     this.prune();
     const key = RecentlyClosedStore.entryKey(entry);

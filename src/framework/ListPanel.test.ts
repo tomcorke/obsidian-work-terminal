@@ -153,6 +153,7 @@ function createListPanel(
     getPersistedSessions: vi.fn(() => []),
     getIdleSince: vi.fn(() => null),
     resumeSession: vi.fn(),
+    clearResumeSessionsForItem: vi.fn().mockResolvedValue(undefined),
   };
 
   const plugin = {
@@ -451,6 +452,54 @@ describe("ListPanel", () => {
     expect(document.querySelector('[data-item-id="task-1"] .wt-resume-badge')?.textContent).toBe(
       "↻",
     );
+  });
+
+  it("hides the resume context action when a resumable agent session is already active", () => {
+    const item = makeItem("task-1");
+    const { panel, terminalPanel } = createListPanel();
+    terminalPanel.getPersistedSessions.mockReturnValue([
+      {
+        version: 2,
+        taskPath: "task-1",
+        claudeSessionId: "session-1",
+        label: "Claude",
+        sessionType: "claude",
+        savedAt: new Date().toISOString(),
+        recoveryMode: "resume",
+        cwd: "/vault",
+        command: "claude",
+        commandArgs: ["claude", "--resume", "session-1"],
+      },
+    ]);
+    terminalPanel.hasResumableAgentSessions.mockReturnValue(true);
+
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+
+    expect(ctx.hasResumeSessions()).toBe(false);
+  });
+
+  it("shows the resume context action when the resume badge is visible", () => {
+    const item = makeItem("task-1");
+    const { panel, terminalPanel } = createListPanel();
+    terminalPanel.getPersistedSessions.mockReturnValue([
+      {
+        version: 2,
+        taskPath: "task-1",
+        claudeSessionId: "session-1",
+        label: "Claude",
+        sessionType: "claude",
+        savedAt: new Date().toISOString(),
+        recoveryMode: "resume",
+        cwd: "/vault",
+        command: "claude",
+        commandArgs: ["claude", "--resume", "session-1"],
+      },
+    ]);
+    terminalPanel.hasResumableAgentSessions.mockReturnValue(false);
+
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+
+    expect(ctx.hasResumeSessions()).toBe(true);
   });
 
   it("uses wt-agent classes on initial render and clears legacy wt-claude classes", () => {

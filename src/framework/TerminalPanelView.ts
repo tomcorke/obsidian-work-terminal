@@ -2384,11 +2384,61 @@ export class TerminalPanelView {
     return this.pendingPersistedSessions.filter((session) => session.taskPath === itemId);
   }
 
+  /**
+   * Clear all persisted and recently-closed resume sessions for an item.
+   * Removes the indicator from the card by triggering a session badge refresh.
+   */
+  async clearResumeSessionsForItem(itemId: string): Promise<void> {
+    // Remove from persisted sessions (both pending and durable)
+    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
+      (session) => session.taskPath !== itemId,
+    );
+    this.persistedSessions = this.persistedSessions.filter(
+      (session) => session.taskPath !== itemId,
+    );
+    this.syncPersistedSessionState(this.persistedSessions);
+
+    // Remove from recently-closed store
+    this.recentlyClosedStore.removeByItemId(itemId);
+    this.syncRecentlyClosedState();
+
+    try {
+      await this.persistClearedResumeState();
+    } catch (error) {
+      console.error("[work-terminal] Failed to persist cleared resume sessions:", error);
+      new Notice("Cleared resume sessions in the UI, but failed to save the updated resume state.");
+    } finally {
+      // Trigger session badge refresh (via the onSessionChange callback)
+      this.onSessionChange();
+    }
+  }
+
   getPendingPersistedSessionsForPersist(): PersistedSession[] {
     return this.pendingPersistedSessions.map((session) => ({
       ...session,
       commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
     }));
+  }
+
+  private async persistClearedResumeState(): Promise<void> {
+    if (this.isDisposed) return;
+    this.recalculatePendingPersistedSessions();
+    const persistedSessions = SessionPersistence.mergePersistedSessions(
+      this.pendingPersistedSessions,
+      this.getLiveSessionsAcrossViews(),
+    );
+    const recentlyClosed = this.recentlyClosedStore.serialize();
+    await mergeAndSavePluginData(this.plugin, async (data) => {
+      SessionPersistence.setPersistedSessions(data, persistedSessions);
+      if (recentlyClosed.length > 0) {
+        data.recentlyClosedSessions = recentlyClosed;
+      } else {
+        delete data.recentlyClosedSessions;
+      }
+    });
+    if (this.isDisposed) return;
+    this.syncPersistedSessionState(persistedSessions);
+    this.syncRecentlyClosedState();
   }
 
   /**
