@@ -1572,3 +1572,49 @@ describe("TerminalTab user scroll detection", () => {
     expect(tab._userScrolledUp).toBe(false);
   });
 });
+
+describe("TerminalTab deferred session detection and state tracking", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("_detectResumableAgent returns true when _sessionDetector is active but no session ID", () => {
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      sessionType: "copilot-with-context",
+      agentSessionId: null,
+      _sessionDetector: { start: vi.fn(), stop: vi.fn() }, // fake active detector
+    }) as TerminalTab;
+
+    const result = (
+      tab as never as { _detectResumableAgent: () => boolean }
+    )._detectResumableAgent();
+    expect(result).toBe(true);
+  });
+
+  it("startStateTracking starts timer when _sessionDetector is active (deferred detection)", () => {
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      sessionType: "copilot-with-context",
+      agentSessionId: null,
+      _sessionDetector: { start: vi.fn(), stop: vi.fn() },
+      _stateTimer: null,
+      _agentState: null,
+      _recentCleanLines: null,
+      _suppressActiveUntil: 0,
+      _isResumableAgent: false,
+      terminal: { buffer: { active: { cursorY: 0 } } },
+    }) as TerminalTab;
+
+    tab.startStateTracking();
+
+    expect((tab as never as { _isResumableAgent: boolean })._isResumableAgent).toBe(true);
+    expect((tab as never as { _stateTimer: unknown })._stateTimer).not.toBeNull();
+
+    // Clean up the interval
+    clearInterval((tab as never as { _stateTimer: ReturnType<typeof setInterval> })._stateTimer);
+  });
+});

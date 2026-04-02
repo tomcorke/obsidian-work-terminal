@@ -243,7 +243,7 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
       "Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.",
     displayLabel: "Copilot",
     helpText:
-      "Copilot uses --resume[=sessionId] for both new and resumed sessions. Restart resume works without Claude hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.",
+      "Copilot resumes sessions with --resume[=sessionId]. For context sessions launched from Work Terminal, --resume is omitted on fresh launch and the session ID is discovered from Copilot logs. Restart resume works without hooks.",
     deferSessionId: true,
     sessionLogDir: "~/.copilot/logs",
     sessionLogPattern: "Workspace initialized: ([0-9a-f-]{36})",
