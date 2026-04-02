@@ -121,6 +121,8 @@ export interface CardActionContext {
   onCloseSessions(): void;
   /** Build the exact prompt used by "Claude (ctx)" for this item, or null when unavailable. */
   getContextPrompt(): Promise<string | null>;
+  /** Retry background enrichment for this item. */
+  onRetryEnrich(): void;
 }
 
 /**
@@ -209,6 +211,11 @@ export interface AdapterBundle {
    * to update the list without relying on vault file events.
    */
   requestRefresh?: () => void;
+  /**
+   * Retry background enrichment for an item whose initial enrichment failed.
+   * Returns a promise that resolves when the retry completes (success or failure).
+   */
+  onRetryEnrich?(item: WorkItem, settings: Record<string, unknown>): Promise<void>;
   /**
    * Called before deleting an item. Return false to prevent the
    * default vault.trash() behavior (e.g. for API-backed items that

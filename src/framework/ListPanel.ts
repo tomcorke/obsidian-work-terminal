@@ -290,6 +290,7 @@ export class ListPanel {
       onDelete: () => this.deleteItem(item),
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
       getContextPrompt: () => this.terminalPanel.getAgentContextPrompt(item),
+      onRetryEnrich: () => this.retryEnrichment(item),
     };
   }
 
@@ -468,6 +469,19 @@ export class ListPanel {
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
     }
+  }
+
+  private retryEnrichment(item: WorkItem): void {
+    if (!this.adapter.onRetryEnrich) {
+      console.warn("[work-terminal] retryEnrichment: adapter has no onRetryEnrich");
+      return;
+    }
+
+    this.setIngesting(item.id);
+    this.adapter.onRetryEnrich(item, this.settings).then(
+      () => this.clearIngesting(item.id),
+      () => this.clearIngesting(item.id),
+    );
   }
 
   private deleteItem(item: WorkItem): void {

@@ -29,6 +29,7 @@ export interface TaskFile {
   agentActionable: boolean;
   goal: string[];
   color?: string;
+  backgroundIngestion?: "failed" | "retrying";
   created: string;
   updated: string;
 }

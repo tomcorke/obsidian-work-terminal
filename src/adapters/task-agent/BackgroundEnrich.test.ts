@@ -8,7 +8,7 @@ vi.mock("../../core/claude/HeadlessClaude", () => ({
   spawnHeadlessClaude: spawnHeadlessClaudeMock,
 }));
 
-import { handleItemCreated } from "./BackgroundEnrich";
+import { handleItemCreated, insertIngestionFailedFlag } from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {
   beforeEach(() => {
@@ -18,6 +18,39 @@ describe("BackgroundEnrich", () => {
       exitCode: 0,
       stdout: "",
       stderr: "",
+    });
+  });
+
+  describe("insertIngestionFailedFlag", () => {
+    it("inserts background-ingestion: failed into frontmatter", () => {
+      const content = `---\nid: test-123\nstate: todo\n---\n# My Task\n`;
+      const result = insertIngestionFailedFlag(content);
+
+      expect(result).toContain("background-ingestion: failed");
+      expect(result).toContain("Background ingestion incomplete");
+    });
+
+    it("replaces existing background-ingestion field", () => {
+      const content = `---\nid: test-123\nbackground-ingestion: retrying\nstate: todo\n---\n# My Task\n`;
+      const result = insertIngestionFailedFlag(content);
+
+      expect(result).toContain("background-ingestion: failed");
+      expect(result).not.toContain("background-ingestion: retrying");
+    });
+
+    it("does not duplicate the callout note", () => {
+      const content = `---\nid: test-123\nstate: todo\n---\n# My Task\n\n> [!warning] Background ingestion incomplete\n`;
+      const result = insertIngestionFailedFlag(content);
+
+      const matches = result.match(/Background ingestion incomplete/g);
+      expect(matches).toHaveLength(1);
+    });
+
+    it("returns content unchanged when no frontmatter present", () => {
+      const content = "# No frontmatter here\n";
+      const result = insertIngestionFailedFlag(content);
+
+      expect(result).toBe(content);
     });
   });
 

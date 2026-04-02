@@ -14,7 +14,7 @@ import { TaskMover } from "./TaskMover";
 import { TaskCard } from "./TaskCard";
 import { TaskPromptBuilder } from "./TaskPromptBuilder";
 import { TaskDetailView } from "./TaskDetailView";
-import { handleItemCreated, handleSplitTaskCreated } from "./BackgroundEnrich";
+import { handleItemCreated, handleSplitTaskCreated, retryEnrichment } from "./BackgroundEnrich";
 import type { KanbanColumn } from "./types";
 
 export class TaskAgentAdapter extends BaseAdapter {
@@ -87,6 +87,13 @@ export class TaskAgentAdapter extends BaseAdapter {
       filename: sourceFilename,
       title: sourceItem.title,
     });
+  }
+
+  async onRetryEnrich(item: WorkItem, settings: Record<string, any>): Promise<void> {
+    if (!this._app) {
+      throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
+    }
+    return retryEnrichment(this._app, item.path, settings);
   }
 
   transformSessionLabel(_oldLabel: string, detectedLabel: string): string {
