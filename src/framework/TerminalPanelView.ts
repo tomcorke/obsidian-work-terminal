@@ -2217,6 +2217,22 @@ export class TerminalPanelView {
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<void> {
+    let prompt = options.prompt;
+    if (options.sessionType === "copilot-with-context" && !prompt) {
+      const item = this.getActiveItem();
+      if (!item) {
+        new Notice(`Select a ${this.adapter.config.itemName} first to launch Copilot with context`);
+        return;
+      }
+      const fresh = options.freshSettings ?? (await this.loadFreshSettings());
+      prompt = await this.getAgentContextPrompt(item, fresh);
+      if (!prompt) {
+        new Notice("Could not build a contextual prompt for this item");
+        return;
+      }
+      options.freshSettings = fresh;
+    }
+
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const copilotCmd =
       options.command || this.getStringSetting(fresh, "core.copilotCommand", "copilot");
@@ -2237,7 +2253,7 @@ export class TerminalPanelView {
     const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
     const args = [
       `--resume=${sessionId}`,
-      ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, options.prompt),
+      ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, prompt),
     ];
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     this.tabManager.createTab(
@@ -2262,6 +2278,22 @@ export class TerminalPanelView {
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<void> {
+    let prompt = options.prompt;
+    if (options.sessionType === "strands-with-context" && !prompt) {
+      const item = this.getActiveItem();
+      if (!item) {
+        new Notice(`Select a ${this.adapter.config.itemName} first to launch Strands with context`);
+        return;
+      }
+      const fresh = options.freshSettings ?? (await this.loadFreshSettings());
+      prompt = await this.getAgentContextPrompt(item, fresh);
+      if (!prompt) {
+        new Notice("Could not build a contextual prompt for this item");
+        return;
+      }
+      options.freshSettings = fresh;
+    }
+
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const strandsCmd = expandTilde(
       options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands"),
@@ -2282,7 +2314,7 @@ export class TerminalPanelView {
         );
     // Strands has no session ID - strip any deferred $sessionId placeholders
     const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, "");
-    const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, options.prompt);
+    const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, prompt);
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
