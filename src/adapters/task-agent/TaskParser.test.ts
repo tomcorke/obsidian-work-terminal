@@ -407,6 +407,48 @@ describe("TaskParser", () => {
     });
   });
 
+  describe("backgroundIngestion property", () => {
+    it("parses background-ingestion: failed from frontmatter", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ "background-ingestion": "failed" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      expect((item!.metadata as any).backgroundIngestion).toBe("failed");
+    });
+
+    it("parses background-ingestion: retrying from frontmatter", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ "background-ingestion": "retrying" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      expect((item!.metadata as any).backgroundIngestion).toBe("retrying");
+    });
+
+    it("omits backgroundIngestion when not set in frontmatter", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({}),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      expect((item!.metadata as any).backgroundIngestion).toBeUndefined();
+    });
+
+    it("ignores unrecognised background-ingestion values", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ "background-ingestion": "unknown" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+      expect((item!.metadata as any).backgroundIngestion).toBeUndefined();
+    });
+  });
+
   describe("groupByColumn", () => {
     it("excludes abandoned tasks", () => {
       const parser = new TaskParser({} as App, "", defaultSettings);

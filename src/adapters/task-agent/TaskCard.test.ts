@@ -66,6 +66,7 @@ function makeContext(overrides: Partial<CardActionContext> = {}): CardActionCont
     onDelete: vi.fn(),
     onCloseSessions: vi.fn(),
     getContextPrompt: vi.fn().mockResolvedValue("Task: Fix context prompt\nState: priority"),
+    onRetryEnrich: vi.fn(),
     ...overrides,
   };
 }
@@ -221,6 +222,78 @@ describe("TaskCard", () => {
       const badge = el.querySelector(".wt-card-goal") as HTMLElement;
 
       expect(badge.textContent).toBe("ship feature");
+    });
+  });
+
+  describe("enrichment failed badge and retry menu", () => {
+    it("renders an enrichment failed badge when backgroundIngestion is failed", () => {
+      const item = makeItem({
+        metadata: { backgroundIngestion: "failed" },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-enrich-failed") as HTMLElement;
+
+      expect(badge).not.toBeNull();
+      expect(badge.textContent).toBe("enrichment failed");
+    });
+
+    it("does not render enrichment failed badge when backgroundIngestion is absent", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-enrich-failed");
+
+      expect(badge).toBeNull();
+    });
+
+    it("shows Retry Enrichment context menu item when backgroundIngestion is failed", () => {
+      const item = makeItem({
+        metadata: { backgroundIngestion: "failed" },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const menuItems = card.getContextMenuItems(item, ctx);
+      const retryItem = menuItems.find(
+        (menuItem) => (menuItem as any).title === "Retry Enrichment",
+      );
+
+      expect(retryItem).toBeDefined();
+    });
+
+    it("does not show Retry Enrichment when backgroundIngestion is not failed", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const menuItems = card.getContextMenuItems(item, ctx);
+      const retryItem = menuItems.find(
+        (menuItem) => (menuItem as any).title === "Retry Enrichment",
+      );
+
+      expect(retryItem).toBeUndefined();
+    });
+
+    it("calls onRetryEnrich when Retry Enrichment is triggered", () => {
+      const item = makeItem({
+        metadata: { backgroundIngestion: "failed" },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const menuItems = card.getContextMenuItems(item, ctx);
+      const retryItem = menuItems.find(
+        (menuItem) => (menuItem as any).title === "Retry Enrichment",
+      ) as { callback: () => void } | undefined;
+
+      retryItem?.callback();
+
+      expect(ctx.onRetryEnrich).toHaveBeenCalledTimes(1);
     });
   });
 

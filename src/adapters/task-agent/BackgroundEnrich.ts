@@ -1,4 +1,4 @@
-import { Notice, type App } from "obsidian";
+import { Notice, type App, type TFile } from "obsidian";
 import { spawnHeadlessClaude } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource } from "./TaskFileTemplate";
@@ -71,10 +71,11 @@ export async function handleItemCreated(
     claudeCommand,
     claudeExtraArgs,
   ).then(
-    (result) => {
+    async (result) => {
       if (result.missingCli) {
         new Notice(result.stderr);
         console.warn("[work-terminal] Background enrich skipped:", result.stderr);
+        await markIngestionFailed(app, filePath);
         return;
       }
       if (result.exitCode === 0) {
@@ -84,10 +85,12 @@ export async function handleItemCreated(
           `[work-terminal] Background enrich failed (exit ${result.exitCode}):`,
           result.stderr.slice(0, 500),
         );
+        await markIngestionFailed(app, filePath);
       }
     },
-    (err) => {
+    async (err) => {
       console.error("[work-terminal] Background enrich error:", err);
+      await markIngestionFailed(app, filePath);
     },
   );
 
@@ -117,6 +120,151 @@ export async function handleSplitTaskCreated(
   console.log(`[work-terminal] Split task created: ${filePath} (from ${splitFrom.filename})`);
 
   return { path: filePath, id };
+}
+
+const INGESTION_FAILED_NOTE =
+  `> [!warning] Background ingestion incomplete\n` +
+  `> Automatic enrichment was attempted but did not complete successfully.\n` +
+  `> To enrich this task, right-click the card and select **Retry Enrichment**,\n` +
+  `> or open a Claude session and use the task-agent skill manually.\n`;
+
+/**
+ * Mark a task file as having failed background ingestion.
+ * Adds `background-ingestion: failed` to frontmatter and appends a note to the body.
+ */
+async function markIngestionFailed(app: App, filePath: string): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
+  if (!file) {
+    console.warn(`[work-terminal] Cannot mark ingestion failed - file not found: ${filePath}`);
+    return;
+  }
+
+  try {
+    const content = await app.vault.read(file);
+    const updated = insertIngestionFailedFlag(content);
+    await app.vault.modify(file, updated);
+    console.log(`[work-terminal] Marked ingestion failed: ${filePath}`);
+  } catch (err) {
+    console.error(`[work-terminal] Failed to mark ingestion failure on ${filePath}:`, err);
+  }
+}
+
+/**
+ * Insert `background-ingestion: failed` into frontmatter and append a callout note.
+ * Exported for testing.
+ */
+export function insertIngestionFailedFlag(content: string): string {
+  // Only treat a leading `---` block as YAML frontmatter; ignore `---` later in the file.
+  if (!content.startsWith("---")) return content;
+
+  const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(---(?:\r?\n|$))/);
+  if (!fmMatch) return content;
+
+  const [fullMatch, openFence, frontmatter, closeFence] = fmMatch;
+  const newline = openFence.endsWith("\r\n") ? "\r\n" : "\n";
+
+  // Replace existing flag or insert before closing fence
+  let updatedFm: string;
+  if (/^background-ingestion:[ \t]*/m.test(frontmatter)) {
+    updatedFm = frontmatter.replace(
+      /^background-ingestion:[ \t]*[^\r\n]*/m,
+      "background-ingestion: failed",
+    );
+  } else {
+    updatedFm = `${frontmatter}background-ingestion: failed${newline}`;
+  }
+
+  let result = content.replace(fullMatch, `${openFence}${updatedFm}${closeFence}`);
+
+  // Append the callout note if not already present
+  if (!result.includes("Background ingestion incomplete")) {
+    result = result.trimEnd() + `\n\n${INGESTION_FAILED_NOTE}`;
+  }
+
+  return result;
+}
+
+/**
+ * Clear the `background-ingestion: failed` flag from a task file by setting it to `retrying`.
+ * Called before retrying enrichment.
+ */
+async function clearIngestionFailedFlag(app: App, filePath: string): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
+  if (!file) return;
+
+  try {
+    let content = await app.vault.read(file);
+    content = content.replace(
+      /^background-ingestion:[ \t]*failed[^\r\n]*/m,
+      "background-ingestion: retrying",
+    );
+    await app.vault.modify(file, content);
+  } catch (err) {
+    console.error(`[work-terminal] Failed to clear ingestion flag on ${filePath}:`, err);
+  }
+}
+
+/**
+ * Retry background enrichment for an existing task file.
+ * Clears the failed flag, runs headless Claude, and marks failed again if it doesn't succeed.
+ */
+export async function retryEnrichment(
+  app: App,
+  filePath: string,
+  settings: Record<string, any>,
+): Promise<void> {
+  const claudeCommand = settings["core.claudeCommand"] || "claude";
+  const claudeExtraArgs = settings["core.claudeExtraArgs"] || "";
+
+  await clearIngestionFailedFlag(app, filePath);
+
+  const fullPath = resolveFullPath(app, filePath);
+  const enrichPrompt =
+    `/tc-tasks:task-agent --fast The task file at ${fullPath} needs enrichment. ` +
+    `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
+    RENAME_INSTRUCTION;
+
+  const result = await spawnHeadlessClaude(
+    enrichPrompt,
+    resolveClaudeLaunchCwd(settings),
+    claudeCommand,
+    claudeExtraArgs,
+  );
+
+  if (result.missingCli) {
+    new Notice(result.stderr);
+    console.warn("[work-terminal] Retry enrich skipped:", result.stderr);
+    await markIngestionFailed(app, filePath);
+    return;
+  }
+
+  if (result.exitCode === 0) {
+    console.log(`[work-terminal] Retry enrich completed: ${filePath}`);
+    // Remove the failed flag entirely on success
+    const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
+    if (file) {
+      try {
+        let content = await app.vault.read(file);
+        content = content.replace(/^background-ingestion:[ \t]*[^\r\n]*\r?\n?/m, "");
+        // Remove stale "Background ingestion incomplete" warning callout
+        content = content.replace(
+          /> \[!warning\] Background ingestion incomplete[\s\S]*?(?=\n[^>]|\n*$)/g,
+          "",
+        );
+        // Clean up any leftover double blank lines from removal
+        content = content.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+        await app.vault.modify(file, content);
+      } catch (err) {
+        console.error("[work-terminal] Failed to clean ingestion flag after success:", err);
+      }
+    }
+  } else {
+    console.error(
+      `[work-terminal] Retry enrich failed (exit ${result.exitCode}):`,
+      result.stderr.slice(0, 500),
+    );
+    await markIngestionFailed(app, filePath);
+  }
 }
 
 export { RENAME_INSTRUCTION, resolveFullPath };

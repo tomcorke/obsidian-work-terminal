@@ -55,6 +55,10 @@ export class TaskParser implements WorkItemParser {
     const tags = this.normaliseTags(fm.tags);
     const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
 
+    const bgIngestion = fm["background-ingestion"];
+    const backgroundIngestion =
+      bgIngestion === "failed" || bgIngestion === "retrying" ? bgIngestion : undefined;
+
     return {
       id: this.resolveTaskId(fm.id, file.path, transientId),
       path: file.path,
@@ -73,6 +77,7 @@ export class TaskParser implements WorkItemParser {
       agentActionable: fm["agent-actionable"] ?? false,
       goal,
       color: fm.color || undefined,
+      backgroundIngestion,
       created: fm.created || "",
       updated: fm.updated || "",
     };
@@ -301,6 +306,7 @@ export class TaskParser implements WorkItemParser {
         agentActionable: task.agentActionable,
         goal: task.goal,
         color: task.color,
+        backgroundIngestion: task.backgroundIngestion,
         created: task.created,
         updated: task.updated,
       },

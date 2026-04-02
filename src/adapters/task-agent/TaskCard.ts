@@ -50,6 +50,14 @@ export class TaskCard implements CardRenderer {
       badge.textContent = "ingesting...";
     }
 
+    // Enrichment failed indicator
+    const backgroundIngestion = meta.backgroundIngestion;
+    if (backgroundIngestion === "failed") {
+      const failBadge = metaRow.createSpan({ cls: "wt-card-enrich-failed" });
+      failBadge.textContent = "enrichment failed";
+      failBadge.title = "Background ingestion did not complete. Right-click to retry.";
+    }
+
     // Priority score badge
     if (priority.score > 0) {
       const scoreBadge = metaRow.createSpan({ cls: "wt-card-score" });
@@ -112,6 +120,15 @@ export class TaskCard implements CardRenderer {
       title: "Move to Top",
       callback: () => ctx.onMoveToTop(),
     });
+
+    // Retry enrichment (shown only when background ingestion failed)
+    const meta = (item.metadata || {}) as Record<string, any>;
+    if (meta.backgroundIngestion === "failed") {
+      (items as any[]).push({
+        title: "Retry Enrichment",
+        callback: () => ctx.onRetryEnrich(),
+      });
+    }
 
     // Split task: create new task with reference, spawn Claude to scope it
     (items as any[]).push({

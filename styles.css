@@ -1379,6 +1379,18 @@ button.wt-spawn-claude-ctx:hover svg {
   50% { opacity: 0.6; }
 }
 
+/* Enrichment failed badge - amber warning */
+.wt-card-enrich-failed {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #d97706, #f59e0b);
+  color: white;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* =============================================================================
    New task success animation - green border + bar below card that slides up
    ============================================================================= */
