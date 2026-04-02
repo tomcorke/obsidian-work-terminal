@@ -806,11 +806,13 @@ export class TerminalPanelView {
   }
 
   private buildClosedSessionEntry(itemId: string, tab: TerminalTab): ClosedSessionEntry | null {
-    if (tab.isResumableAgent && tab.claudeSessionId) {
+    if (tab.isResumableAgent && (tab.agentSessionId || tab.claudeSessionId)) {
+      const sessionId = tab.agentSessionId ?? tab.claudeSessionId;
       return {
         sessionType: tab.sessionType,
         label: tab.label,
-        claudeSessionId: tab.claudeSessionId,
+        agentSessionId: sessionId!,
+        claudeSessionId: sessionId!,
         durableSessionId: tab.durableSessionId ?? undefined,
         closedAt: Date.now(),
         itemId,
@@ -832,6 +834,7 @@ export class TerminalPanelView {
     return {
       sessionType: tab.sessionType,
       label: tab.label,
+      agentSessionId: null,
       claudeSessionId: null,
       durableSessionId: tab.durableSessionId ?? undefined,
       closedAt: Date.now(),
@@ -852,6 +855,7 @@ export class TerminalPanelView {
       PersistedSession | ClosedSessionEntry,
       | "sessionType"
       | "label"
+      | "agentSessionId"
       | "claudeSessionId"
       | "durableSessionId"
       | "durableSessionIdGenerated"
@@ -866,7 +870,9 @@ export class TerminalPanelView {
     }
 
     if (session.recoveryMode === "resume") {
-      return !!session.claudeSessionId && tab.claudeSessionId === session.claudeSessionId;
+      const sessionId = session.agentSessionId || session.claudeSessionId;
+      const tabSessionId = tab.agentSessionId || tab.claudeSessionId;
+      return !!sessionId && tabSessionId === sessionId;
     }
 
     if (session.durableSessionId && tab.durableSessionId) {
@@ -907,6 +913,7 @@ export class TerminalPanelView {
           this.matchesRecoverySession(tab, {
             sessionType: session.sessionType,
             label: session.label,
+            agentSessionId: session.agentSessionId,
             claudeSessionId: session.claudeSessionId,
             durableSessionId: undefined,
             durableSessionIdGenerated: undefined,
@@ -1153,6 +1160,7 @@ export class TerminalPanelView {
     entry: {
       itemId: string;
       recoveryMode?: DurableRecoveryMode;
+      agentSessionId?: string | null;
       claudeSessionId?: string | null;
       durableSessionId?: string;
       sessionType: SessionType;
@@ -1167,7 +1175,9 @@ export class TerminalPanelView {
     }
 
     if (entry.recoveryMode === "resume") {
-      return !!entry.claudeSessionId && candidate.claudeSessionId === entry.claudeSessionId;
+      const entrySessionId = entry.agentSessionId || entry.claudeSessionId;
+      const candidateSessionId = candidate.agentSessionId || candidate.claudeSessionId;
+      return !!entrySessionId && candidateSessionId === entrySessionId;
     }
 
     if (entry.durableSessionId && candidate.durableSessionId) {
@@ -1190,6 +1200,7 @@ export class TerminalPanelView {
     const entry = {
       itemId: session.taskPath,
       recoveryMode: session.recoveryMode,
+      agentSessionId: session.agentSessionId,
       claudeSessionId: session.claudeSessionId,
       durableSessionId: session.durableSessionId,
       sessionType: session.sessionType,
@@ -1627,6 +1638,16 @@ export class TerminalPanelView {
       // spawnCopilotSession doesn't return the tab, get it from the tab manager
       const tabs = this.tabManager.getTabs(targetItemId);
       replacement = tabs[tabs.length - 1] ?? null;
+    } else if (agentType === "strands") {
+      replacement = null;
+      await this.spawnStrandsSession({
+        sessionType: tab.sessionType as "strands" | "strands-with-context",
+        cwd: fallbackCwd,
+        label: tab.label,
+        freshSettings: fresh,
+      });
+      const tabs = this.tabManager.getTabs(targetItemId);
+      replacement = tabs[tabs.length - 1] ?? null;
     } else {
       replacement = await this.spawnClaudeSession({
         sessionType: tab.sessionType === "claude-with-context" ? "claude-with-context" : "claude",
@@ -1885,9 +1906,7 @@ export class TerminalPanelView {
   }
 
   private getClosedSessionId(entry: ClosedSessionEntry): string | null {
-    return (
-      entry.agentSessionId || (entry as { claudeSessionId?: string | null }).claudeSessionId || null
-    );
+    return entry.agentSessionId || entry.claudeSessionId || null;
   }
 
   private buildSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {

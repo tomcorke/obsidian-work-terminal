@@ -115,7 +115,7 @@ export class RecentlyClosedStore {
     for (const entry of this.state.entries) {
       if (result.length >= limit) break;
       // Skip if the session is currently active (reopened by any means)
-      const sessionId = entry.claudeSessionId ?? entry.agentSessionId;
+      const sessionId = entry.agentSessionId ?? entry.claudeSessionId;
       if (sessionId && activeSessionIds.has(sessionId)) {
         continue;
       }
@@ -151,11 +151,11 @@ export class RecentlyClosedStore {
     const itemId = typeof candidate.itemId === "string" ? candidate.itemId : null;
     const label = typeof candidate.label === "string" ? candidate.label : null;
     const sessionType = isSessionType(candidate.sessionType) ? candidate.sessionType : null;
-    const claudeSessionId =
-      typeof candidate.claudeSessionId === "string"
-        ? candidate.claudeSessionId
-        : typeof candidate.agentSessionId === "string"
-          ? candidate.agentSessionId
+    const sessionId =
+      typeof candidate.agentSessionId === "string"
+        ? candidate.agentSessionId
+        : typeof candidate.claudeSessionId === "string"
+          ? candidate.claudeSessionId
           : null;
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
@@ -169,7 +169,7 @@ export class RecentlyClosedStore {
     const recoveryMode =
       candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
         ? candidate.recoveryMode
-        : claudeSessionId
+        : sessionId
           ? "resume"
           : null;
     const cwd = typeof candidate.cwd === "string" ? candidate.cwd : undefined;
@@ -190,7 +190,7 @@ export class RecentlyClosedStore {
       return null;
     }
 
-    if (recoveryMode === "resume" && !claudeSessionId) {
+    if (recoveryMode === "resume" && !sessionId) {
       return null;
     }
 
@@ -205,7 +205,8 @@ export class RecentlyClosedStore {
       itemId,
       label,
       sessionType,
-      claudeSessionId,
+      agentSessionId: sessionId,
+      claudeSessionId: sessionId,
       durableSessionId:
         recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
       durableSessionIdGenerated:
@@ -224,8 +225,9 @@ export class RecentlyClosedStore {
   }
 
   private static entryKey(entry: ClosedSessionEntry): string {
-    if (entry.recoveryMode === "resume" && entry.claudeSessionId) {
-      return `resume:${entry.claudeSessionId}`;
+    const sessionId = entry.agentSessionId || entry.claudeSessionId;
+    if (entry.recoveryMode === "resume" && sessionId) {
+      return `resume:${sessionId}`;
     }
 
     if (entry.durableSessionId) {

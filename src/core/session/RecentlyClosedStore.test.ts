@@ -6,10 +6,15 @@ import {
 } from "./RecentlyClosedStore";
 
 function makeEntry(overrides: Partial<ClosedSessionEntry> = {}): ClosedSessionEntry {
+  const hasExplicitSessionId = "agentSessionId" in overrides || "claudeSessionId" in overrides;
+  const sessionId = hasExplicitSessionId
+    ? (overrides.agentSessionId ?? overrides.claudeSessionId ?? null)
+    : `session-${Math.random().toString(36).slice(2)}`;
   return {
     sessionType: "claude",
     label: "Claude",
-    claudeSessionId: `session-${Math.random().toString(36).slice(2)}`,
+    agentSessionId: sessionId,
+    claudeSessionId: sessionId,
     durableSessionId:
       overrides.durableSessionId ??
       (overrides.recoveryMode === "relaunch" ? "durable-session" : undefined),

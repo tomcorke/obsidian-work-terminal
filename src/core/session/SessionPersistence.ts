@@ -51,12 +51,13 @@ export class SessionPersistence {
       return null;
     }
 
-    const claudeSessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+    const sessionId = tab.agentSessionId ?? tab.claudeSessionId ?? null;
 
     return {
       version: 2,
       taskPath,
-      claudeSessionId,
+      agentSessionId: sessionId,
+      claudeSessionId: sessionId,
       durableSessionId:
         recoveryMode === "relaunch"
           ? (tab.durableSessionId ?? globalThis.crypto.randomUUID())
@@ -75,8 +76,8 @@ export class SessionPersistence {
   }
 
   private static getRecoveryMode(tab: PersistableTab): DurableRecoveryMode | null {
-    const claudeSessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
-    if (tab.isResumableAgent && claudeSessionId) {
+    const sessionId = tab.agentSessionId ?? tab.claudeSessionId ?? null;
+    if (tab.isResumableAgent && sessionId) {
       return "resume";
     }
 
@@ -103,11 +104,11 @@ export class SessionPersistence {
     }
 
     // Support both legacy claudeSessionId and newer agentSessionId from disk
-    const claudeSessionId =
-      typeof candidate.claudeSessionId === "string"
-        ? candidate.claudeSessionId
-        : typeof candidate.agentSessionId === "string"
-          ? candidate.agentSessionId
+    const sessionId =
+      typeof candidate.agentSessionId === "string"
+        ? candidate.agentSessionId
+        : typeof candidate.claudeSessionId === "string"
+          ? candidate.claudeSessionId
           : null;
     const durableSessionId =
       typeof candidate.durableSessionId === "string" ? candidate.durableSessionId : undefined;
@@ -123,7 +124,7 @@ export class SessionPersistence {
     const recoveryMode =
       candidate.recoveryMode === "resume" || candidate.recoveryMode === "relaunch"
         ? candidate.recoveryMode
-        : claudeSessionId
+        : sessionId
           ? "resume"
           : null;
     const cwd = typeof candidate.cwd === "string" ? candidate.cwd : undefined;
@@ -136,7 +137,7 @@ export class SessionPersistence {
       return null;
     }
 
-    if (recoveryMode === "resume" && !claudeSessionId) {
+    if (recoveryMode === "resume" && !sessionId) {
       return null;
     }
 
@@ -150,7 +151,8 @@ export class SessionPersistence {
     return {
       version: candidate.version === 1 ? 1 : 2,
       taskPath,
-      claudeSessionId,
+      agentSessionId: sessionId,
+      claudeSessionId: sessionId,
       durableSessionId:
         recoveryMode === "relaunch" ? durableSessionId || generatedDurableSessionId : undefined,
       durableSessionIdGenerated:
@@ -189,6 +191,7 @@ export class SessionPersistence {
       PersistedSession,
       | "taskPath"
       | "sessionType"
+      | "agentSessionId"
       | "claudeSessionId"
       | "durableSessionId"
       | "durableSessionIdGenerated"
@@ -200,7 +203,7 @@ export class SessionPersistence {
     >,
   ): string {
     if (session.recoveryMode === "resume") {
-      return `resume:${session.claudeSessionId || ""}`;
+      return `resume:${session.agentSessionId || session.claudeSessionId || ""}`;
     }
 
     if (session.durableSessionId) {
