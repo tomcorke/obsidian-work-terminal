@@ -12,9 +12,7 @@ import {
   buildMissingCliNotice,
   resolveCommand,
   resolveCommandInfo,
-  buildClaudeArgs,
-  buildCopilotArgs,
-  buildStrandsArgs,
+  buildAgentArgs,
   mergeExtraArgs,
   parseExtraArgs,
 } from "../core/agents/AgentLauncher";
@@ -1376,10 +1374,7 @@ export class TerminalPanelView {
         prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
       } else {
         // Fall back to standard context prompt building
-        prompt =
-          profile.agentType === "claude"
-            ? await this.getClaudeContextPrompt(item, fresh)
-            : await this.getAgentContextPrompt(item, fresh);
+        prompt = await this.getAgentContextPrompt(item, fresh);
       }
       if (!prompt) {
         new Notice("Could not build a contextual prompt for this item");
@@ -1388,45 +1383,18 @@ export class TerminalPanelView {
     }
 
     // Profile's resolveArguments() already includes global args, so skip the
-    // global merge inside spawn*Session to avoid doubling them.
-    switch (profile.agentType) {
-      case "claude":
-        await this.spawnClaudeSession({
-          sessionType: sessionType as "claude" | "claude-with-context",
-          command,
-          cwd,
-          extraArgs: expandedArgs,
-          skipGlobalArgs: true,
-          label,
-          prompt,
-          freshSettings: fresh,
-        });
-        break;
-      case "copilot":
-        await this.spawnCopilotSession({
-          sessionType: sessionType as "copilot" | "copilot-with-context",
-          command,
-          cwd,
-          extraArgs: expandedArgs,
-          skipGlobalArgs: true,
-          label,
-          prompt,
-          freshSettings: fresh,
-        });
-        break;
-      case "strands":
-        await this.spawnStrandsSession({
-          sessionType: sessionType as "strands" | "strands-with-context",
-          command,
-          cwd,
-          extraArgs: expandedArgs,
-          skipGlobalArgs: true,
-          label,
-          prompt,
-          freshSettings: fresh,
-        });
-        break;
-    }
+    // global merge inside spawnAgentSession to avoid doubling them.
+    await this.spawnAgentSession({
+      agentType: profile.agentType,
+      sessionType,
+      command,
+      cwd,
+      extraArgs: expandedArgs,
+      skipGlobalArgs: true,
+      label,
+      prompt,
+      freshSettings: fresh,
+    });
 
     // Apply profile metadata to the newly created tab
     const activeItemId = this.tabManager.getActiveItemId();
@@ -1466,15 +1434,16 @@ export class TerminalPanelView {
   }
 
   private async spawnClaude(): Promise<void> {
-    await this.spawnClaudeSession({ sessionType: "claude" });
+    await this.spawnAgentSession({ agentType: "claude", sessionType: "claude" });
   }
 
   private async spawnClaudeWithContext(): Promise<void> {
-    await this.spawnClaudeSession({ sessionType: "claude-with-context" });
+    await this.spawnAgentSession({ agentType: "claude", sessionType: "claude-with-context" });
   }
 
   async spawnClaudeWithPrompt(prompt: string, label?: string): Promise<void> {
-    await this.spawnClaudeSession({
+    await this.spawnAgentSession({
+      agentType: "claude",
       sessionType: "claude-with-context",
       prompt,
       label: label || "Claude (ctx)",
@@ -1700,9 +1669,8 @@ export class TerminalPanelView {
         tab.durableSessionId,
       );
     } else {
-      // No session ID and no saved command args - spawn a fresh session.
-      // Dispatch via agent type using a unified pattern rather than per-agent branching.
-      replacement = await this.spawnFreshAgentSession(agentType, {
+      replacement = await this.spawnAgentSession({
+        agentType,
         sessionType: tab.sessionType,
         cwd: fallbackCwd,
         label: tab.label,
@@ -1914,12 +1882,14 @@ export class TerminalPanelView {
     this.titleEl.style.display = "block";
   }
 
+  /**
+   * @deprecated Use getAgentContextPrompt instead. Kept for backward compatibility.
+   */
   async getClaudeContextPrompt(
     item: WorkItem,
     freshSettings?: Record<string, unknown>,
   ): Promise<string | null> {
-    const settings = freshSettings ?? (await this.loadFreshSettings());
-    return buildAgentContextPrompt(item, settings, this.resolveWorkItemPath(item.path));
+    return this.getAgentContextPrompt(item, freshSettings);
   }
 
   async getAgentContextPrompt(
@@ -2261,59 +2231,13 @@ export class TerminalPanelView {
   }
 
   /**
-   * Spawn a fresh agent session by agent type. Used as the fallback when
-   * restarting a tab that has no saved session ID or command args.
-   *
-   * Dispatches to the appropriate spawn method and normalises the return
-   * value - some spawn methods return the tab directly while others
-   * require fetching the last tab from the tab manager.
+   * Unified agent session spawner. Dispatches via AgentResumeConfig to handle
+   * command resolution, session ID generation, argument building, and tab
+   * creation for any agent type.
    */
-  private async spawnFreshAgentSession(
-    agentType: AgentType,
-    options: {
-      sessionType: PersistedSession["sessionType"];
-      cwd: string;
-      label: string;
-      freshSettings: Record<string, unknown>;
-      targetItemId: string;
-    },
-  ): Promise<TerminalTab | null> {
-    switch (agentType) {
-      case "claude": {
-        return await this.spawnClaudeSession({
-          sessionType: options.sessionType as "claude" | "claude-with-context",
-          cwd: options.cwd,
-          label: options.label,
-          freshSettings: options.freshSettings,
-        });
-      }
-      case "copilot": {
-        await this.spawnCopilotSession({
-          sessionType: options.sessionType as "copilot" | "copilot-with-context",
-          cwd: options.cwd,
-          label: options.label,
-          freshSettings: options.freshSettings,
-        });
-        const tabs = this.tabManager.getTabs(options.targetItemId);
-        return tabs[tabs.length - 1] ?? null;
-      }
-      case "strands": {
-        await this.spawnStrandsSession({
-          sessionType: options.sessionType as "strands" | "strands-with-context",
-          cwd: options.cwd,
-          label: options.label,
-          freshSettings: options.freshSettings,
-        });
-        const tabs = this.tabManager.getTabs(options.targetItemId);
-        return tabs[tabs.length - 1] ?? null;
-      }
-      default:
-        return null;
-    }
-  }
-
-  private async spawnClaudeSession(options: {
-    sessionType: "claude" | "claude-with-context";
+  private async spawnAgentSession(options: {
+    agentType: AgentType;
+    sessionType: SessionType;
     cwd?: string;
     command?: string;
     extraArgs?: string;
@@ -2322,15 +2246,21 @@ export class TerminalPanelView {
     prompt?: string;
     freshSettings?: Record<string, unknown>;
   }): Promise<TerminalTab | null> {
+    const resumeConfig = getResumeConfig(options.agentType);
+    const { withContext } = sessionTypeToAgentType(options.sessionType);
+
+    // Build context prompt on demand if this is a context session without one
     let prompt = options.prompt;
-    if (options.sessionType === "claude-with-context" && !prompt) {
+    if (withContext && !prompt) {
       const item = this.getActiveItem();
       if (!item) {
-        new Notice(`Select a ${this.adapter.config.itemName} first to launch Claude with context`);
+        new Notice(
+          `Select a ${this.adapter.config.itemName} first to launch ${resumeConfig.cliDisplayName} with context`,
+        );
         return null;
       }
       const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-      prompt = await this.getClaudeContextPrompt(item, fresh);
+      prompt = await this.getAgentContextPrompt(item, fresh);
       if (!prompt) {
         new Notice("Could not build a contextual prompt for this item");
         return null;
@@ -2339,25 +2269,45 @@ export class TerminalPanelView {
     }
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const claudeCmd =
-      options.command || this.getStringSetting(fresh, "core.claudeCommand", "claude");
+    const agentCmd =
+      options.command ||
+      this.getStringSetting(fresh, resumeConfig.commandSettingKey, resumeConfig.defaultCommand);
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
-    const resolved = this.resolveAgentCommandOrNotice("claude", claudeCmd, cwd);
+    const resolved = this.resolveAgentCommandOrNotice(options.agentType, agentCmd, cwd);
     if (!resolved) {
       return null;
     }
-    const sessionId = crypto.randomUUID();
+
+    // Generate session ID for resumable agents
+    const sessionId = resumeConfig.resumable ? crypto.randomUUID() : undefined;
+
+    // Merge extra args (skip global merge when profile already includes them)
     const rawExtraArgs = options.skipGlobalArgs
       ? options.extraArgs || ""
       : mergeExtraArgs(
-          this.getStringSetting(fresh, "core.claudeExtraArgs", ""),
+          this.getStringSetting(fresh, resumeConfig.extraArgsSettingKey, ""),
           options.extraArgs || "",
         );
-    // Replace deferred $sessionId placeholders with the real session ID
-    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
-    const args = buildClaudeArgs({ claudeExtraArgs: mergedExtraArgs }, sessionId, prompt);
+    // Replace or strip deferred $sessionId placeholders
+    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId || "");
+
+    // Build args via the unified buildAgentArgs helper
+    const baseArgs = buildAgentArgs(options.agentType, mergedExtraArgs, prompt);
+
+    // Prepend session/resume flag for resumable agents
+    let args: string[];
+    if (sessionId) {
+      if (resumeConfig.resumeFlagFormat === "flag-equals") {
+        args = [`${resumeConfig.resumeFlag}=${sessionId}`, ...baseArgs];
+      } else {
+        args = [resumeConfig.resumeFlag, sessionId, ...baseArgs];
+      }
+    } else {
+      args = baseArgs;
+    }
+
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     const tab = this.tabManager.createTab(
       resolved,
@@ -2366,127 +2316,13 @@ export class TerminalPanelView {
       options.sessionType,
       undefined,
       [resolved, ...args],
-      sessionId,
+      sessionId ?? null,
     );
     if (tab && this.adapter.transformSessionLabel) {
       tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
     }
     this.renderTabBar();
     return tab;
-  }
-
-  private async spawnCopilotSession(options: {
-    sessionType: "copilot" | "copilot-with-context";
-    cwd?: string;
-    command?: string;
-    extraArgs?: string;
-    skipGlobalArgs?: boolean;
-    label?: string;
-    prompt?: string;
-    freshSettings?: Record<string, unknown>;
-  }): Promise<void> {
-    let prompt = options.prompt;
-    if (options.sessionType === "copilot-with-context" && !prompt) {
-      const item = this.getActiveItem();
-      if (!item) {
-        new Notice(`Select a ${this.adapter.config.itemName} first to launch Copilot with context`);
-        return;
-      }
-      const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-      prompt = await this.getAgentContextPrompt(item, fresh);
-      if (!prompt) {
-        new Notice("Could not build a contextual prompt for this item");
-        return;
-      }
-      options.freshSettings = fresh;
-    }
-
-    const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const copilotCmd =
-      options.command || this.getStringSetting(fresh, "core.copilotCommand", "copilot");
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
-    const resolved = this.resolveAgentCommandOrNotice("copilot", copilotCmd, cwd);
-    if (!resolved) {
-      return;
-    }
-    const sessionId = crypto.randomUUID();
-    const rawExtraArgs = options.skipGlobalArgs
-      ? options.extraArgs || ""
-      : mergeExtraArgs(
-          this.getStringSetting(fresh, "core.copilotExtraArgs", ""),
-          options.extraArgs || "",
-        );
-    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId);
-    const args = [
-      `--resume=${sessionId}`,
-      ...buildCopilotArgs({ copilotExtraArgs: mergedExtraArgs }, prompt),
-    ];
-    const label = options.label || getDefaultSessionLabel(options.sessionType);
-    this.tabManager.createTab(
-      resolved,
-      cwd,
-      label,
-      options.sessionType,
-      undefined,
-      [resolved, ...args],
-      sessionId,
-    );
-    this.renderTabBar();
-  }
-
-  private async spawnStrandsSession(options: {
-    sessionType: "strands" | "strands-with-context";
-    cwd?: string;
-    command?: string;
-    extraArgs?: string;
-    skipGlobalArgs?: boolean;
-    label?: string;
-    prompt?: string;
-    freshSettings?: Record<string, unknown>;
-  }): Promise<void> {
-    let prompt = options.prompt;
-    if (options.sessionType === "strands-with-context" && !prompt) {
-      const item = this.getActiveItem();
-      if (!item) {
-        new Notice(`Select a ${this.adapter.config.itemName} first to launch Strands with context`);
-        return;
-      }
-      const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-      prompt = await this.getAgentContextPrompt(item, fresh);
-      if (!prompt) {
-        new Notice("Could not build a contextual prompt for this item");
-        return;
-      }
-      options.freshSettings = fresh;
-    }
-
-    const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const strandsCmd =
-      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands");
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
-    const resolved = this.resolveAgentCommandOrNotice("strands", strandsCmd, cwd);
-    if (!resolved) {
-      return;
-    }
-    const rawExtraArgs = options.skipGlobalArgs
-      ? options.extraArgs || ""
-      : mergeExtraArgs(
-          this.getStringSetting(fresh, "core.strandsExtraArgs", ""),
-          options.extraArgs || "",
-        );
-    // Strands has no session ID - strip any deferred $sessionId placeholders
-    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, "");
-    const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, prompt);
-    const label = options.label || getDefaultSessionLabel(options.sessionType);
-    this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
-      resolved,
-      ...args,
-    ]);
-    this.renderTabBar();
   }
 
   private resolveAgentCommandOrNotice(

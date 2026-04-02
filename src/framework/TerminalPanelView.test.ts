@@ -2701,7 +2701,7 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).spawnClaudeSession({ sessionType: "claude" });
+    await (view as any).spawnAgentSession({ agentType: "claude", sessionType: "claude" });
 
     expect(mockState.latestCreateTabArgs).toBeNull();
     expect(mockState.notices).toContain(
@@ -2715,7 +2715,7 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).spawnCopilotSession({ sessionType: "copilot" });
+    await (view as any).spawnAgentSession({ agentType: "copilot", sessionType: "copilot" });
 
     expect(mockState.latestCreateTabArgs).toBeNull();
     expect(mockState.notices).toContain(
@@ -2767,7 +2767,7 @@ describe("TerminalPanelView hook warning", () => {
     );
   });
 
-  it("refuses Claude-with-context launches when no template is configured", async () => {
+  it("falls back to adapter prompt for Claude-with-context when no template is configured", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
@@ -2792,12 +2792,16 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
-    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
-    expect(mockState.latestCreateTabArgs).toBeNull();
-    expect(mockState.notices).toContain("Could not build a contextual prompt for this item");
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt for /vault/Tasks/task-1.md",
+    ]);
   });
 
-  it("refuses Claude-with-context launches when the template is whitespace only", async () => {
+  it("falls back to adapter prompt for Claude-with-context when template is whitespace only", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
@@ -2823,12 +2827,16 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
-    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
-    expect(mockState.latestCreateTabArgs).toBeNull();
-    expect(mockState.notices).toContain("Could not build a contextual prompt for this item");
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
+      "/bin/echo",
+      "--session-id",
+      expect.any(String),
+      "Built prompt for /vault/Tasks/task-1.md",
+    ]);
   });
 
-  it("uses only the configured context template for Claude-with-context sessions", async () => {
+  it("combines adapter prompt and context template for Claude-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn(() => "Built prompt"),
@@ -2854,12 +2862,12 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
-    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
       "--session-id",
       expect.any(String),
-      "Template for Task One in doing",
+      "Built prompt\n\nTemplate for Task One in doing",
     ]);
   });
 
@@ -2889,12 +2897,12 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaudeWithContext();
 
-    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
       "--session-id",
       expect.any(String),
-      "Template path: /vault/Tasks/task-1.md",
+      "Built prompt\n\nTemplate path: /vault/Tasks/task-1.md",
     ]);
   });
 
@@ -2967,7 +2975,10 @@ describe("TerminalPanelView hook warning", () => {
     ]);
     await flushAsync();
 
-    await (view as any).spawnCopilotSession({ sessionType: "copilot-with-context" });
+    await (view as any).spawnAgentSession({
+      agentType: "copilot",
+      sessionType: "copilot-with-context",
+    });
 
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
@@ -2994,7 +3005,7 @@ describe("TerminalPanelView hook warning", () => {
     ]);
     await flushAsync();
 
-    await (view as any).spawnCopilotSession({ sessionType: "copilot" });
+    await (view as any).spawnAgentSession({ agentType: "copilot", sessionType: "copilot" });
 
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
@@ -3026,7 +3037,10 @@ describe("TerminalPanelView hook warning", () => {
     ]);
     await flushAsync();
 
-    await (view as any).spawnStrandsSession({ sessionType: "strands-with-context" });
+    await (view as any).spawnAgentSession({
+      agentType: "strands",
+      sessionType: "strands-with-context",
+    });
 
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
@@ -3043,7 +3057,8 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).spawnClaudeSession({
+    await (view as any).spawnAgentSession({
+      agentType: "claude",
       sessionType: "claude",
       extraArgs: `--plugin-dir /path/b \\
         --verbose`,
@@ -3057,14 +3072,14 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
+      "--session-id",
+      expect.any(String),
       "--dangerously-skip-permissions",
       "--plugin-dir",
       "/path/a",
       "--plugin-dir",
       "/path/b",
       "--verbose",
-      "--session-id",
-      expect.any(String),
     ]);
   });
 
@@ -3084,7 +3099,8 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).spawnStrandsSession({
+    await (view as any).spawnAgentSession({
+      agentType: "strands",
       sessionType: "strands",
       freshSettings: {
         "core.strandsCommand": "   ",
@@ -3104,7 +3120,8 @@ describe("TerminalPanelView hook warning", () => {
     });
     await flushAsync();
 
-    await (view as any).spawnStrandsSession({
+    await (view as any).spawnAgentSession({
+      agentType: "strands",
       sessionType: "strands",
       prompt: "Review this task",
       freshSettings: {
@@ -3122,6 +3139,7 @@ describe("TerminalPanelView hook warning", () => {
       "strands",
       undefined,
       ["/bin/echo", "--mode", "interactive", "Review this task"],
+      null,
     ]);
   });
 
@@ -3605,9 +3623,7 @@ describe("profile launch", () => {
       resolveContextPrompt: () => "Context for $title",
     };
 
-    const spawnCopilotSpy = vi
-      .spyOn(view as any, "spawnCopilotSession")
-      .mockResolvedValue(undefined);
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
 
     await (view as any).spawnFromProfile(
       makeProfile({
@@ -3618,8 +3634,8 @@ describe("profile launch", () => {
     );
 
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
-    expect(spawnCopilotSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnCopilotSpy.mock.calls[0][0];
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.prompt).toContain("adapter prompt");
     expect(callArgs.prompt).toContain("Context for Task");
   });
@@ -3639,14 +3655,14 @@ describe("profile launch", () => {
       resolveContextPrompt: () => "",
     };
 
-    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
 
     await (view as any).spawnFromProfile(
       makeProfile({ paramPassMode: "launch-only", arguments: "--model opus" }),
     );
 
-    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.extraArgs).toBe("--model opus");
   });
 
@@ -3665,14 +3681,14 @@ describe("profile launch", () => {
       resolveContextPrompt: () => "",
     };
 
-    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
 
     await (view as any).spawnFromProfile(
       makeProfile({ paramPassMode: "resume-only", arguments: "--model opus" }),
     );
 
-    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.extraArgs).toBe("");
   });
 
@@ -3694,7 +3710,7 @@ describe("profile launch", () => {
       resolveContextPrompt: () => "Context for $title",
     };
 
-    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
 
     await (view as any).spawnFromProfile(
       makeProfile({
@@ -3705,8 +3721,8 @@ describe("profile launch", () => {
     );
 
     expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
-    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.prompt).toBeUndefined();
   });
 
@@ -3728,7 +3744,7 @@ describe("profile launch", () => {
       resolveContextPrompt: () => "Context for $title",
     };
 
-    const spawnClaudeSpy = vi.spyOn(view as any, "spawnClaudeSession").mockResolvedValue(undefined);
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
 
     await (view as any).spawnFromProfile(
       makeProfile({
@@ -3740,8 +3756,8 @@ describe("profile launch", () => {
     );
 
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
-    expect(spawnClaudeSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnClaudeSpy.mock.calls[0][0];
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.extraArgs).toBe("--verbose");
     expect(callArgs.prompt).toContain("adapter prompt");
     expect(callArgs.prompt).toContain("Context for Task");
