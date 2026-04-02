@@ -98,42 +98,44 @@ export class CopilotSessionDetector {
   private _poll(): void {
     if (!this._fs.existsSync(this._logDir)) return;
 
-    // Find log files modified after spawn time
+    // Find log files modified after spawn time, caching mtime for sort
+    const mtimeCache = new Map<string, number>();
     const files = this._fs.readdirSync(this._logDir).filter((name) => {
       if (!name.startsWith("process-") || !name.endsWith(".log")) return false;
       try {
         const stat = this._fs.statSync(this._path.join(this._logDir, name));
         // Use mtime with a small buffer (500ms) for filesystem granularity
-        return stat.mtimeMs >= this._spawnTime - 500;
+        if (stat.mtimeMs >= this._spawnTime - 500) {
+          mtimeCache.set(name, stat.mtimeMs);
+          return true;
+        }
+        return false;
       } catch {
         return false;
       }
     });
 
-    // Sort by modification time descending (newest first)
-    files.sort((a, b) => {
-      try {
-        const aStat = this._fs.statSync(this._path.join(this._logDir, a));
-        const bStat = this._fs.statSync(this._path.join(this._logDir, b));
-        return bStat.mtimeMs - aStat.mtimeMs;
-      } catch {
-        return 0;
-      }
-    });
+    // Sort by modification time descending (newest first) using cached values
+    files.sort((a, b) => (mtimeCache.get(b) ?? 0) - (mtimeCache.get(a) ?? 0));
 
     for (const file of files) {
-      const content = this._fs.readFileSync(this._path.join(this._logDir, file), "utf8");
-      const match = this._logPattern.exec(content);
-      if (match?.[1]) {
-        const sessionId = match[1];
-        console.log("[CopilotSessionDetector] Detected session ID:", sessionId, "from", file);
-        this.dispose();
-        try {
-          this.onSessionDetected?.(sessionId);
-        } catch (err) {
-          console.warn("[CopilotSessionDetector] onSessionDetected callback error:", err);
+      try {
+        const content = this._fs.readFileSync(this._path.join(this._logDir, file), "utf8");
+        const match = this._logPattern.exec(content);
+        if (match?.[1]) {
+          const sessionId = match[1];
+          console.log("[CopilotSessionDetector] Detected session ID:", sessionId, "from", file);
+          this.dispose();
+          try {
+            this.onSessionDetected?.(sessionId);
+          } catch (err) {
+            console.warn("[CopilotSessionDetector] onSessionDetected callback error:", err);
+          }
+          return;
         }
-        return;
+      } catch (err) {
+        // File may have been deleted between readdirSync and readFileSync - skip it
+        console.warn("[CopilotSessionDetector] Skipping unreadable file:", file, err);
       }
     }
   }

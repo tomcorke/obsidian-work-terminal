@@ -157,7 +157,8 @@ export { AgentProfileSchema };
 // Resume configuration per agent type
 // ---------------------------------------------------------------------------
 
-export interface AgentResumeConfig {
+/** Shared fields for all agent resume configurations. */
+interface AgentResumeConfigBase {
   /** Whether this agent type supports session resume. */
   resumable: boolean;
   /** Whether this agent type supports session ID tracking (watching for /resume). */
@@ -184,18 +185,30 @@ export interface AgentResumeConfig {
   displayLabel: string;
   /** Help text describing session resume behavior for this agent type. */
   helpText: string;
-  /**
-   * When true, the resume flag conflicts with the prompt flag on fresh launch.
-   * Fresh context sessions should omit the resume flag and discover the session
-   * ID from the agent's log files after spawn. The detected ID is then stored
-   * for future resume.
-   */
-  deferSessionId: boolean;
-  /** Log directory pattern for deferred session ID detection (e.g. "~/.copilot/logs"). */
-  sessionLogDir?: string;
-  /** Regex pattern to extract session UUID from log lines. Must have a capture group. */
-  sessionLogPattern?: string;
 }
+
+/**
+ * Discriminated union for deferSessionId:
+ * - When false, log fields are absent.
+ * - When true, sessionLogDir and sessionLogPattern are required.
+ */
+type DeferredSessionConfig =
+  | { deferSessionId: false; sessionLogDir?: undefined; sessionLogPattern?: undefined }
+  | {
+      /**
+       * When true, the resume flag conflicts with the prompt flag on fresh launch.
+       * Fresh context sessions should omit the resume flag and discover the session
+       * ID from the agent's log files after spawn. The detected ID is then stored
+       * for future resume.
+       */
+      deferSessionId: true;
+      /** Log directory pattern for deferred session ID detection (e.g. "~/.copilot/logs"). */
+      sessionLogDir: string;
+      /** Regex pattern to extract session UUID from log lines. Must have a capture group. */
+      sessionLogPattern: string;
+    };
+
+export type AgentResumeConfig = AgentResumeConfigBase & DeferredSessionConfig;
 
 const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
   claude: {
