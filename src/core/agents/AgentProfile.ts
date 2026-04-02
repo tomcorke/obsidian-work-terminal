@@ -266,6 +266,21 @@ export function isResumableAgentType(agentType: AgentType): boolean {
 }
 
 /**
+ * Collect all unique resume flags across all agent types.
+ * Used when stripping resume-related args from persisted command args,
+ * since historical sessions may contain flags from any agent type.
+ */
+export function getAllResumeFlags(): string[] {
+  const flags = new Set<string>();
+  for (const config of Object.values(AGENT_RESUME_CONFIGS)) {
+    if (config.resumeFlag) {
+      flags.add(config.resumeFlag);
+    }
+  }
+  return [...flags];
+}
+
+/**
  * Check whether an agent type uses session tracking (e.g. Claude hooks).
  */
 export function hasSessionTracking(agentType: AgentType): boolean {
