@@ -1379,6 +1379,7 @@ describe("TerminalTab auto-scroll on write", () => {
       process: null,
       _isDisposed: false,
       _userScrolledUp: false,
+      _programmaticScrollGuards: 0,
       _sessionTracker: null,
       _renameDecoder: { write: () => "", end: () => "" },
       _renameLineBuffer: "",
@@ -1503,6 +1504,33 @@ describe("TerminalTab auto-scroll on write", () => {
     flushCallbacks();
     expect(scrollToBottom).not.toHaveBeenCalled();
   });
+
+  it("keeps the native scroll guard active until the write frame settles", () => {
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    }) as typeof requestAnimationFrame);
+
+    const { tab, flushCallbacks } = createTabWithMockTerminal({
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+
+    proc.emitStdout(Buffer.from("chunk-1"));
+    expect(tab._programmaticScrollGuards).toBe(1);
+
+    flushCallbacks();
+    expect(tab._programmaticScrollGuards).toBe(1);
+
+    const clearGuard = rafCallbacks.shift();
+    expect(clearGuard).toBeDefined();
+    clearGuard?.(0);
+
+    expect(tab._programmaticScrollGuards).toBe(0);
+  });
 });
 
 describe("TerminalTab user scroll detection", () => {
@@ -1538,6 +1566,7 @@ describe("TerminalTab user scroll detection", () => {
       terminal,
       containerEl,
       _userScrolledUp: false,
+      _programmaticScrollGuards: 0,
       _isDisposed: false,
       _documentCleanups: [],
     }) as TerminalTab;
@@ -1582,6 +1611,25 @@ describe("TerminalTab user scroll detection", () => {
     expect(tab._userScrolledUp).toBe(false);
   });
 
+  it("ignores native scroll-to-bottom events while programmatic writes are settling", () => {
+    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+
+    tab._wireUserScrollDetection();
+    tab._userScrolledUp = true;
+    tab._programmaticScrollGuards = 1;
+
+    const scrollCall = viewportEl.addEventListener.mock.calls.find(
+      (c: unknown[]) => c[0] === "scroll",
+    );
+    expect(scrollCall).toBeDefined();
+    const scrollHandler = scrollCall[1] as () => void;
+
+    bufferActive.viewportY = 100;
+    scrollHandler();
+
+    expect(tab._userScrolledUp).toBe(true);
+  });
+
   it("does nothing when no viewport element exists", () => {
     const containerEl = {
       querySelector: vi.fn(() => null),
@@ -1592,6 +1640,7 @@ describe("TerminalTab user scroll detection", () => {
       terminal: { buffer: { active: { viewportY: 100, baseY: 100 } } },
       containerEl,
       _userScrolledUp: false,
+      _programmaticScrollGuards: 0,
       _isDisposed: false,
       _documentCleanups: [],
     }) as TerminalTab;
