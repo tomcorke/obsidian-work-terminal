@@ -1033,7 +1033,7 @@ export class TerminalTab {
   /** Start state tracking for Claude/Agent sessions. Call after label is known. */
   startStateTracking(): void {
     this._isResumableAgent = this._detectResumableAgent();
-    if (!this._isResumableAgent) return;
+    if (!this._isResumableAgent || this._stateTimer) return;
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
