@@ -312,71 +312,6 @@ export function buildMissingCliNotice(agent: AgentType, command: string): string
   return `${config.cliDisplayName} not found for "${normalized}". ${config.installHint}`;
 }
 
-export function splitConfiguredCommand(command: string): string[] {
-  const normalized = normalizeExtraArgs(command);
-  if (!normalized) {
-    return [];
-  }
-
-  const tokens: string[] = [];
-  let current = "";
-  let quote: '"' | "'" | null = null;
-  let tokenStarted = false;
-
-  for (let index = 0; index < normalized.length; index += 1) {
-    const char = normalized[index];
-
-    if (quote === null && /\s/.test(char)) {
-      if (tokenStarted) {
-        tokens.push(current);
-        current = "";
-        tokenStarted = false;
-      }
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      if (quote === null) {
-        quote = char;
-        tokenStarted = true;
-        continue;
-      }
-      if (quote === char) {
-        quote = null;
-        continue;
-      }
-    }
-
-    if (char === "\\") {
-      const next = normalized[index + 1];
-      if (next !== undefined) {
-        if (quote === '"') {
-          if (next === '"') {
-            current += next;
-            tokenStarted = true;
-            index += 1;
-            continue;
-          }
-        } else if (quote === null && (/\s/.test(next) || next === '"' || next === "'")) {
-          current += next;
-          tokenStarted = true;
-          index += 1;
-          continue;
-        }
-      }
-    }
-
-    current += char;
-    tokenStarted = true;
-  }
-
-  if (tokenStarted) {
-    tokens.push(current);
-  }
-
-  return tokens;
-}
-
 export function normalizeExtraArgs(extraArgs = ""): string {
   return extraArgs.replace(/\\\r?\n[ \t]*/g, " ").trim();
 }
@@ -391,7 +326,48 @@ export function mergeExtraArgs(...extraArgs: Array<string | undefined>): string 
 }
 
 /**
+ * Build agent CLI argument array from agent type config, extra args, and optional prompt.
+ *
+ * Uses AgentResumeConfig to determine:
+ * - Which settings key holds extra args (extraArgsSettingKey)
+ * - How the prompt is injected (promptInjectionMode / promptFlag)
+ * - Whether additionalAgentContext is appended to the prompt (all agent types)
+ *
+ * Session ID / resume handling is NOT included here - that stays agent-specific
+ * in the spawn methods (see TerminalPanelView).
+ */
+export function buildAgentArgs(
+  agentType: AgentType,
+  extraArgs?: string,
+  prompt?: string,
+  additionalAgentContext?: string,
+): string[] {
+  const config = getResumeConfig(agentType);
+  const args: string[] = [];
+
+  if (extraArgs) {
+    args.push(...parseExtraArgs(extraArgs));
+  }
+
+  if (prompt) {
+    let fullPrompt = prompt;
+    if (additionalAgentContext) {
+      fullPrompt += "\n\n" + additionalAgentContext;
+    }
+    if (config.promptInjectionMode === "flag" && config.promptFlag) {
+      args.push(config.promptFlag, fullPrompt);
+    } else {
+      // positional: append prompt as trailing arg
+      args.push(fullPrompt);
+    }
+  }
+
+  return args;
+}
+
+/**
  * Build Claude CLI argument array from settings, session ID, and optional prompt.
+ * @deprecated Use buildAgentArgs("claude", ...) instead. Kept for backward compatibility.
  */
 export function buildClaudeArgs(
   settings: {
@@ -401,25 +377,25 @@ export function buildClaudeArgs(
   sessionId: string,
   prompt?: string,
 ): string[] {
-  const args: string[] = [];
-  if (settings.claudeExtraArgs) {
-    args.push(...parseExtraArgs(settings.claudeExtraArgs));
-  }
-  args.push("--session-id", sessionId);
+  const promptArgs = buildAgentArgs(
+    "claude",
+    settings.claudeExtraArgs,
+    prompt,
+    settings.additionalAgentContext,
+  );
+  // Insert session ID after extra args but before the prompt (if any).
+  // The prompt is always the last element when present.
+  const sessionArgs = ["--session-id", sessionId];
   if (prompt) {
-    let fullPrompt = prompt;
-    if (settings.additionalAgentContext) {
-      fullPrompt += "\n\n" + settings.additionalAgentContext;
-    }
-    // Pass as positional arg (initial message in interactive session),
-    // not -p (which is one-shot print mode that exits after response).
-    args.push(fullPrompt);
+    // prompt is the last element - insert session args before it
+    return [...promptArgs.slice(0, -1), ...sessionArgs, promptArgs[promptArgs.length - 1]];
   }
-  return args;
+  return [...promptArgs, ...sessionArgs];
 }
 
 /**
  * Build GitHub Copilot CLI argument array from settings and optional prompt.
+ * @deprecated Use buildAgentArgs("copilot", ...) instead. Kept for backward compatibility.
  */
 export function buildCopilotArgs(
   settings: {
@@ -427,21 +403,12 @@ export function buildCopilotArgs(
   },
   prompt?: string,
 ): string[] {
-  const args: string[] = [];
-  if (settings.copilotExtraArgs) {
-    args.push(...parseExtraArgs(settings.copilotExtraArgs));
-  }
-  if (prompt) {
-    args.push("-i", prompt);
-  }
-  return args;
+  return buildAgentArgs("copilot", settings.copilotExtraArgs, prompt);
 }
 
 /**
  * Build AWS Strands agent argument array from settings and optional prompt.
- * The Strands SDK has no standard CLI binary - the command is user-configured.
- * Extra args are space-split and passed through; the prompt (if any) is appended as a
- * positional argument so users can pipe context into their agent entry-point.
+ * @deprecated Use buildAgentArgs("strands", ...) instead. Kept for backward compatibility.
  */
 export function buildStrandsArgs(
   settings: {
@@ -449,12 +416,5 @@ export function buildStrandsArgs(
   },
   prompt?: string,
 ): string[] {
-  const args: string[] = [];
-  if (settings.strandsExtraArgs) {
-    args.push(...parseExtraArgs(settings.strandsExtraArgs));
-  }
-  if (prompt) {
-    args.push(prompt);
-  }
-  return args;
+  return buildAgentArgs("strands", settings.strandsExtraArgs, prompt);
 }

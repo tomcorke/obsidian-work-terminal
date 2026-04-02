@@ -589,8 +589,15 @@
   opacity: 0.4;
 }
 
-.wt-tab-drop-target {
-  border-bottom-color: var(--interactive-accent) !important;
+.wt-tab-drop-indicator {
+  width: 2px;
+  height: 24px;
+  background: var(--interactive-accent);
+  border-radius: 1px;
+  margin: 0 -1px;
+  align-self: center;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 /* Tab agent state classes */

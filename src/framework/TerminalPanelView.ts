@@ -12,7 +12,6 @@ import {
   buildMissingCliNotice,
   resolveCommand,
   resolveCommandInfo,
-  splitConfiguredCommand,
   buildClaudeArgs,
   buildCopilotArgs,
   buildStrandsArgs,
@@ -38,7 +37,7 @@ import { buildAgentContextPrompt } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
-import { getDefaultSessionLabel, isClaudeSession } from "./CustomSessionConfig";
+import { getDefaultSessionLabel, isSessionTrackingSession } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
 import type { AgentProfile, AgentType, ParamPassMode } from "../core/agents/AgentProfile";
@@ -356,7 +355,7 @@ export class TerminalPanelView {
   private hasClaudeHookDependentUsage(): boolean {
     for (const tabs of this.tabManager.getSessions().values()) {
       for (const tab of tabs) {
-        if (isClaudeSession(tab.sessionType)) {
+        if (isSessionTrackingSession(tab.sessionType)) {
           return true;
         }
       }
@@ -364,11 +363,14 @@ export class TerminalPanelView {
 
     return (
       this.persistedSessions.some(
-        (session) => session.recoveryMode === "resume" && isClaudeSession(session.sessionType),
+        (session) =>
+          session.recoveryMode === "resume" && isSessionTrackingSession(session.sessionType),
       ) ||
       this.recentlyClosedStore
         .serialize()
-        .some((entry) => entry.recoveryMode === "resume" && isClaudeSession(entry.sessionType))
+        .some(
+          (entry) => entry.recoveryMode === "resume" && isSessionTrackingSession(entry.sessionType),
+        )
     );
   }
 
@@ -458,9 +460,12 @@ export class TerminalPanelView {
           this.showTabContextMenu(tab, i, e);
         });
 
-        // Tab drag-and-drop
-        this.setupTabDragDrop(tabEl, i);
+        // Tab drag start/end (source identification)
+        this.setupTabDragStartEnd(tabEl, i);
       }
+
+      // Container-level drag-drop for positional indicator
+      this.setupContainerDragDrop(tabsContainer);
     }
 
     // Spawn buttons
@@ -595,7 +600,7 @@ export class TerminalPanelView {
   // Tab drag-and-drop
   // ---------------------------------------------------------------------------
 
-  private setupTabDragDrop(tabEl: HTMLElement, index: number): void {
+  private setupTabDragStartEnd(tabEl: HTMLElement, index: number): void {
     tabEl.addEventListener("dragstart", (e: DragEvent) => {
       this.tabManager.setDragSourceIndex(index);
       tabEl.addClass("wt-tab-dragging");
@@ -606,31 +611,97 @@ export class TerminalPanelView {
       this.tabManager.setDragSourceIndex(null);
       tabEl.removeClass("wt-tab-dragging");
     });
+  }
 
-    tabEl.addEventListener("dragover", (e: DragEvent) => {
+  private setupContainerDragDrop(container: HTMLElement): void {
+    container.addEventListener("dragover", (e: DragEvent) => {
       e.preventDefault();
-      const sourceIdx = this.tabManager.getDragSourceIndex();
-      if (sourceIdx === null || sourceIdx === index) return;
-      tabEl.addClass("wt-tab-drop-target");
-    });
-
-    tabEl.addEventListener("dragleave", () => {
-      tabEl.removeClass("wt-tab-drop-target");
-    });
-
-    tabEl.addEventListener("drop", (e: DragEvent) => {
-      e.preventDefault();
-      tabEl.removeClass("wt-tab-drop-target");
       const sourceIdx = this.tabManager.getDragSourceIndex();
       if (sourceIdx === null) return;
 
-      // Determine drop side (left or right of midpoint)
-      const rect = tabEl.getBoundingClientRect();
-      const dropAfter = e.clientX > rect.left + rect.width / 2;
+      const tabs = Array.from(container.querySelectorAll(".wt-tab")) as HTMLElement[];
+      if (tabs.length === 0) return;
 
-      this.tabManager.reorderTab(sourceIdx, index, dropAfter);
+      // Find insertion index by comparing clientX against tab midpoints
+      let insertBeforeIndex = tabs.length;
+      for (let i = 0; i < tabs.length; i++) {
+        const rect = tabs[i].getBoundingClientRect();
+        const midpoint = rect.left + rect.width / 2;
+        if (e.clientX < midpoint) {
+          insertBeforeIndex = i;
+          break;
+        }
+      }
+
+      // Skip if indicator would be right next to the dragged tab (no-op position)
+      if (insertBeforeIndex === sourceIdx || insertBeforeIndex === sourceIdx + 1) {
+        this.removeDropIndicators(container);
+        return;
+      }
+
+      // Remove existing indicator
+      this.removeDropIndicators(container);
+
+      // Insert indicator at the calculated position
+      const indicator = document.createElement("div");
+      indicator.className = "wt-tab-drop-indicator";
+      if (insertBeforeIndex < tabs.length) {
+        container.insertBefore(indicator, tabs[insertBeforeIndex]);
+      } else {
+        container.appendChild(indicator);
+      }
+    });
+
+    container.addEventListener("dragleave", (e: DragEvent) => {
+      const related = e.relatedTarget as Node | null;
+      if (!related || !container.contains(related)) {
+        this.removeDropIndicators(container);
+      }
+    });
+
+    container.addEventListener("drop", (e: DragEvent) => {
+      e.preventDefault();
+      const sourceIdx = this.tabManager.getDragSourceIndex();
+
+      // Derive target index from indicator position.
+      // Capture nextElementSibling BEFORE removing the indicator from the DOM,
+      // otherwise it will always be null once the element is detached.
+      const indicator = container.querySelector(".wt-tab-drop-indicator");
+      const indicatorNext = indicator?.nextElementSibling as HTMLElement | null;
+      this.removeDropIndicators(container);
+
+      if (sourceIdx === null || !indicator) return;
+
+      const tabs = Array.from(container.querySelectorAll(".wt-tab")) as HTMLElement[];
+
+      if (!indicatorNext || !indicatorNext.classList.contains("wt-tab")) {
+        // Indicator is at the end - drop after the last tab
+        const lastIndex = tabs.length - 1;
+        if (lastIndex >= 0 && lastIndex !== sourceIdx) {
+          this.tabManager.reorderTab(sourceIdx, lastIndex, true);
+        }
+      } else {
+        // Indicator is before a tab - find that tab's index
+        const tabIndexAttr = indicatorNext.getAttribute("data-tab-index");
+        if (tabIndexAttr === null) {
+          console.warn(
+            "work-terminal: drop target tab missing data-tab-index attribute, aborting reorder",
+          );
+          this.renderTabBar();
+          return;
+        }
+        const targetIndex = parseInt(tabIndexAttr, 10);
+        // dropAfter=false because we're inserting before this tab
+        this.tabManager.reorderTab(sourceIdx, targetIndex, false);
+      }
+
       this.renderTabBar();
     });
+  }
+
+  /** Remove all drop indicator elements from the given container. */
+  private removeDropIndicators(container: HTMLElement): void {
+    container.querySelectorAll(".wt-tab-drop-indicator").forEach((el) => el.remove());
   }
 
   // ---------------------------------------------------------------------------
@@ -2392,17 +2463,15 @@ export class TerminalPanelView {
     }
 
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
-    const strandsCmd = expandTilde(
-      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands"),
+    const strandsCmd =
+      options.command || this.getStringSetting(fresh, "core.strandsCommand", "strands");
+    const cwd = expandTilde(
+      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
-    const [cmdToken, ...cmdArgs] = splitConfiguredCommand(strandsCmd);
-    if (!cmdToken) {
-      new Notice(
-        "Set a Strands command in Work Terminal settings before launching Strands sessions.",
-      );
+    const resolved = this.resolveAgentCommandOrNotice("strands", strandsCmd, cwd);
+    if (!resolved) {
       return;
     }
-    const resolved = resolveCommand(cmdToken);
     const rawExtraArgs = options.skipGlobalArgs
       ? options.extraArgs || ""
       : mergeExtraArgs(
@@ -2412,13 +2481,9 @@ export class TerminalPanelView {
     // Strands has no session ID - strip any deferred $sessionId placeholders
     const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, "");
     const args = buildStrandsArgs({ strandsExtraArgs: mergedExtraArgs }, prompt);
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
       resolved,
-      ...cmdArgs,
       ...args,
     ]);
     this.renderTabBar();
