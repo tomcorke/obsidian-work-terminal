@@ -421,7 +421,12 @@ export class TerminalTab {
     // xterm's addon manager; dispose() releases the actual GL resources.
     const addon = this.webglAddon;
     this.detachTrackedWebglAddon(addon);
-    addon.dispose();
+    try {
+      addon.dispose();
+    } catch {
+      // WebGL addon may not have been fully loaded (e.g. process spawn failed
+      // before the addon was registered with xterm's addon manager).
+    }
     this._webglSuspended = true;
 
     // Force canvas renderer to paint the buffer content
@@ -1463,7 +1468,10 @@ export class TerminalTab {
     }
     this.disposeAddonsBeforeTerminal();
     this.terminal.dispose();
-    this.containerEl.remove();
+    // Container may already have been removed from DOM by orphan cleanup
+    if (this.containerEl.parentElement) {
+      this.containerEl.remove();
+    }
   }
 
   private disposeAddonsBeforeTerminal(): void {

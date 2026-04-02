@@ -420,7 +420,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         _addonManager: { dispose: vi.fn(() => order.push("addon-manager")) },
         dispose: vi.fn(() => order.push("terminal")),
       },
-      containerEl: { remove: vi.fn(() => order.push("container")) },
+      containerEl: { parentElement: {}, remove: vi.fn(() => order.push("container")) },
     }) as TerminalTab;
 
     tab.dispose();
@@ -506,7 +506,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         _addonManager: { _addons: addonEntries },
         dispose: terminalDispose,
       },
-      containerEl: { remove: vi.fn(() => order.push("container")) },
+      containerEl: { parentElement: {}, remove: vi.fn(() => order.push("container")) },
     }) as TerminalTab & {
       trackWebglAddon: (addon: InstanceType<typeof mocks.MockWebglAddon>) => void;
       webglContextLossListener: { dispose: ReturnType<typeof vi.fn> } | null;
@@ -562,7 +562,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         _addonManager: { dispose: addonManagerDispose },
         dispose: vi.fn(() => order.push("terminal")),
       },
-      containerEl: { remove: vi.fn(() => order.push("container")) },
+      containerEl: { parentElement: {}, remove: vi.fn(() => order.push("container")) },
     }) as TerminalTab;
 
     tab.dispose();
@@ -637,6 +637,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       hasClass: vi.fn(() => false),
       querySelector: vi.fn(() => null),
       remove: vi.fn(),
+      parentElement: {},
     };
     const parentEl = { appendChild: vi.fn() };
 
