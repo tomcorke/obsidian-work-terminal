@@ -74,7 +74,7 @@ export class TabManager {
 
     // Clean up any orphaned terminal containers left in the DOM from a
     // previous session that wasn't properly disposed before reload.
-    this.hideOrphanedContainers();
+    this.removeOrphanedContainers();
   }
 
   // ---------------------------------------------------------------------------
@@ -626,19 +626,19 @@ export class TabManager {
         tab.suspendWebGl();
       }
     }
-    // Safety net: hide any orphaned terminal containers in the DOM that are
+    // Safety net: remove any orphaned terminal containers in the DOM that are
     // not tracked in the sessions Map (e.g. left over from a failed dispose
     // or reload race). This prevents ghost terminal content from remaining
     // visible when switching to a task with no sessions.
-    this.hideOrphanedContainers();
+    this.removeOrphanedContainers();
   }
 
   /**
-   * Find and hide any `.wt-terminal-instance` elements in the wrapper that
-   * are not owned by a tracked TerminalTab. These are orphans that would
-   * otherwise remain visible and interactive.
+   * Find and remove any `.wt-terminal-instance` elements in the wrapper that
+   * are not owned by a tracked TerminalTab. These are orphans left over from
+   * a failed dispose or reload race.
    */
-  private hideOrphanedContainers(): void {
+  private removeOrphanedContainers(): void {
     if (!this.terminalWrapperEl) return;
     const tracked = new Set<HTMLElement>();
     for (const tabs of this.sessions.values()) {
@@ -647,11 +647,15 @@ export class TabManager {
       }
     }
     const allContainers = this.terminalWrapperEl.querySelectorAll(".wt-terminal-instance");
+    let removed = 0;
     for (const container of Array.from(allContainers)) {
       if (!tracked.has(container as HTMLElement)) {
         (container as HTMLElement).remove();
-        console.warn("[work-terminal] Removed orphaned terminal container from DOM");
+        removed++;
       }
+    }
+    if (removed > 0) {
+      console.warn(`[work-terminal] Removed ${removed} orphaned terminal container(s) from DOM`);
     }
   }
 

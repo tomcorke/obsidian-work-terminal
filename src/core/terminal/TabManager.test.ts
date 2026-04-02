@@ -663,7 +663,7 @@ describe("TabManager - diagnostics lifecycle", () => {
 describe("TabManager - orphaned container cleanup", () => {
   /**
    * Minimal mock wrapper that supports querySelectorAll, appendChild, contains,
-   * and child remove() - just enough for hideOrphanedContainers to work.
+   * and child remove() - just enough for removeOrphanedContainers to work.
    */
   function makeMockWrapper(): {
     wrapper: HTMLElement;
@@ -705,7 +705,7 @@ describe("TabManager - orphaned container cleanup", () => {
     addChild("wt-terminal-instance");
     expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(2);
 
-    // Constructor calls hideOrphanedContainers which removes untracked containers
+    // Constructor calls removeOrphanedContainers which removes untracked containers
     new TabManager(wrapper);
 
     expect(wrapper.querySelectorAll(".wt-terminal-instance").length).toBe(0);
