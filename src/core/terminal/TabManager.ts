@@ -109,6 +109,9 @@ export class TabManager {
     }
 
     this.hideAllTerminals();
+    // Clean up orphaned containers now - sessions map is stable and no new
+    // tabs are being created, so nothing will be incorrectly removed.
+    this.removeOrphanedContainers();
     this.activeItemId = itemId;
     this.activeTabIndex = 0;
 
@@ -626,11 +629,6 @@ export class TabManager {
         tab.suspendWebGl();
       }
     }
-    // Safety net: remove any orphaned terminal containers in the DOM that are
-    // not tracked in the sessions Map (e.g. left over from a failed dispose
-    // or reload race). This prevents ghost terminal content from remaining
-    // visible when switching to a task with no sessions.
-    this.removeOrphanedContainers();
   }
 
   /**
