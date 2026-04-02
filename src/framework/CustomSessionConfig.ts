@@ -1,4 +1,10 @@
 import type { SessionType } from "../core/session/types";
+import {
+  type AgentType,
+  sessionTypeToAgentType,
+  getResumeConfig,
+  hasSessionTracking,
+} from "../core/agents/AgentProfile";
 
 export interface CustomSessionConfig {
   sessionType: SessionType;
@@ -40,62 +46,48 @@ export function sanitizeCustomSessionConfig(
 }
 
 export function getDefaultSessionLabel(sessionType: SessionType): string {
-  switch (sessionType) {
-    case "shell":
-      return "Shell";
-    case "claude":
-      return "Claude";
-    case "claude-with-context":
-      return "Claude (ctx)";
-    case "copilot":
-      return "Copilot";
-    case "copilot-with-context":
-      return "Copilot (ctx)";
-    case "strands":
-      return "Strands";
-    case "strands-with-context":
-      return "Strands (ctx)";
-  }
+  const { agentType, withContext } = sessionTypeToAgentType(sessionType);
+  const config = getResumeConfig(agentType);
+  return withContext ? `${config.displayLabel} (ctx)` : config.displayLabel;
 }
 
 export function getSessionTypeHelp(sessionType: SessionType): string {
-  switch (sessionType) {
-    case "shell":
-      return "Shell tabs are local terminals only and are not saved for restart resume.";
-    case "claude":
-    case "claude-with-context":
-      return "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.";
-    case "copilot":
-    case "copilot-with-context":
-      return "Copilot uses --resume[=sessionId] for both new and resumed sessions. Restart resume works without Claude hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.";
-    case "strands":
-    case "strands-with-context":
-      return "Strands sessions start fresh each time. Work Terminal does not persist restart-resume metadata for them.";
-  }
+  const { agentType } = sessionTypeToAgentType(sessionType);
+  return getResumeConfig(agentType).helpText;
 }
 
 export function isContextSession(sessionType: SessionType): boolean {
-  return (
-    sessionType === "claude-with-context" ||
-    sessionType === "copilot-with-context" ||
-    sessionType === "strands-with-context"
-  );
+  return sessionTypeToAgentType(sessionType).withContext;
+}
+
+/**
+ * Check whether a session type belongs to a given agent type.
+ */
+export function isAgentTypeSession(sessionType: SessionType, target: AgentType): boolean {
+  return sessionTypeToAgentType(sessionType).agentType === target;
+}
+
+/**
+ * Check whether a session type uses session tracking (e.g. Claude hooks).
+ */
+export function isSessionTrackingSession(sessionType: SessionType): boolean {
+  return hasSessionTracking(sessionTypeToAgentType(sessionType).agentType);
 }
 
 export function isCopilotSession(sessionType: SessionType): boolean {
-  return sessionType === "copilot" || sessionType === "copilot-with-context";
+  return isAgentTypeSession(sessionType, "copilot");
 }
 
 export function isClaudeSession(sessionType: SessionType): boolean {
-  return sessionType === "claude" || sessionType === "claude-with-context";
+  return isAgentTypeSession(sessionType, "claude");
 }
 
 export function isStrandsSession(sessionType: SessionType): boolean {
-  return sessionType === "strands" || sessionType === "strands-with-context";
+  return isAgentTypeSession(sessionType, "strands");
 }
 
 export function supportsExtraArgs(sessionType: SessionType): boolean {
-  return sessionType !== "shell";
+  return sessionTypeToAgentType(sessionType).agentType !== "shell";
 }
 
 function isSessionType(value: unknown): value is SessionType {

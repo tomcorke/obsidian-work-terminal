@@ -12,6 +12,7 @@ import {
   getBuiltInProfiles,
   getResumeConfig,
   isResumableAgentType,
+  hasSessionTracking,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -206,6 +207,31 @@ describe("isResumableAgentType", () => {
   it("returns false for strands and shell", () => {
     expect(isResumableAgentType("strands")).toBe(false);
     expect(isResumableAgentType("shell")).toBe(false);
+  });
+});
+
+describe("hasSessionTracking", () => {
+  it("returns true only for claude", () => {
+    expect(hasSessionTracking("claude")).toBe(true);
+    expect(hasSessionTracking("copilot")).toBe(false);
+    expect(hasSessionTracking("strands")).toBe(false);
+    expect(hasSessionTracking("shell")).toBe(false);
+  });
+});
+
+describe("resume config display fields", () => {
+  it("provides displayLabel for all agent types", () => {
+    expect(getResumeConfig("claude").displayLabel).toBe("Claude");
+    expect(getResumeConfig("copilot").displayLabel).toBe("Copilot");
+    expect(getResumeConfig("strands").displayLabel).toBe("Strands");
+    expect(getResumeConfig("shell").displayLabel).toBe("Shell");
+  });
+
+  it("provides helpText for all agent types", () => {
+    expect(getResumeConfig("claude").helpText).toContain("--session-id");
+    expect(getResumeConfig("copilot").helpText).toContain("--resume[=sessionId]");
+    expect(getResumeConfig("strands").helpText).toContain("start fresh");
+    expect(getResumeConfig("shell").helpText).toContain("not saved for restart resume");
   });
 });
 

@@ -180,6 +180,10 @@ export interface AgentResumeConfig {
   cliDisplayName: string;
   /** Install hint for CLI-not-found notices. */
   installHint: string;
+  /** Human-readable label for the agent type (e.g. "Claude"). */
+  displayLabel: string;
+  /** Help text describing session resume behavior for this agent type. */
+  helpText: string;
 }
 
 const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
@@ -195,6 +199,9 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     cliDisplayName: "Claude Code CLI",
     installHint:
       "Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.",
+    displayLabel: "Claude",
+    helpText:
+      "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.",
   },
   copilot: {
     resumable: true,
@@ -209,6 +216,9 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     cliDisplayName: "GitHub Copilot CLI",
     installHint:
       "Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.",
+    displayLabel: "Copilot",
+    helpText:
+      "Copilot uses --resume[=sessionId] for both new and resumed sessions. Restart resume works without Claude hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.",
   },
   strands: {
     resumable: false,
@@ -221,6 +231,9 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     extraArgsSettingKey: "core.strandsExtraArgs",
     cliDisplayName: "Strands agent",
     installHint: "Point the Strands command to a wrapper script in Work Terminal settings.",
+    displayLabel: "Strands",
+    helpText:
+      "Strands sessions start fresh each time. Work Terminal does not persist restart-resume metadata for them.",
   },
   shell: {
     resumable: false,
@@ -233,6 +246,8 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     extraArgsSettingKey: "",
     cliDisplayName: "Shell",
     installHint: "",
+    displayLabel: "Shell",
+    helpText: "Shell tabs are local terminals only and are not saved for restart resume.",
   },
 };
 
@@ -248,6 +263,13 @@ export function getResumeConfig(agentType: AgentType): AgentResumeConfig {
  */
 export function isResumableAgentType(agentType: AgentType): boolean {
   return AGENT_RESUME_CONFIGS[agentType].resumable;
+}
+
+/**
+ * Check whether an agent type uses session tracking (e.g. Claude hooks).
+ */
+export function hasSessionTracking(agentType: AgentType): boolean {
+  return AGENT_RESUME_CONFIGS[agentType].sessionTracking;
 }
 
 // ---------------------------------------------------------------------------
