@@ -73,7 +73,7 @@ describe("KeyboardCapture", () => {
     expect(deleteEvent.defaultPrevented).toBe(true);
   });
 
-  it("does not intercept Option+digit when key matches the raw digit (US layout)", () => {
+  it("does not intercept Option+digit when key is the raw digit (no composition)", () => {
     const write = vi.fn();
     const cleanup = attachCapturePhase(
       containerEl,
@@ -96,6 +96,31 @@ describe("KeyboardCapture", () => {
 
     expect(write).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("intercepts Option+digit on US layout when it produces a composed character (e.g. Option+3 → £)", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "\u00A3",
+      code: "Digit3",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).toHaveBeenCalledWith("\u00A3");
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it("writes composed Option+digit characters directly to PTY (e.g. UK # via Option+3)", () => {

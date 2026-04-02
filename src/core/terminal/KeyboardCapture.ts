@@ -96,11 +96,12 @@ export function attachCapturePhase(
       seq = "\x05";
     }
 
-    // Option+digit producing a layout-specific printable character (e.g.
-    // Option+3 → # on UK Mac).  Obsidian's own capture-phase hotkey handler
-    // may preventDefault the keydown, which suppresses the subsequent keypress
-    // that xterm relies on for third-level-shift characters.  Detect these
-    // combos and write the composed character directly to PTY stdin.
+    // Option+digit producing a composed printable character on any layout
+    // where Option+digit differs from the raw digit (e.g. UK Option+3 → #,
+    // US Option+3 → £, Option+2 → €).  Obsidian's capture-phase hotkey
+    // handler may preventDefault the keydown, suppressing the subsequent
+    // keypress that xterm relies on for these characters.  Detect the combo
+    // and write the composed character directly to PTY stdin.
     if (
       !seq &&
       !isAltGraph &&
@@ -109,7 +110,7 @@ export function attachCapturePhase(
       !e.metaKey &&
       /^Digit\d$/.test(e.code) &&
       e.key.length === 1 &&
-      e.key !== e.code.charAt(5) // produced char differs from the raw digit
+      e.key !== e.code[5] // "Digit3"[5] -> "3"; composed char differs from raw digit
     ) {
       seq = e.key;
     }
