@@ -349,6 +349,34 @@ describe("SessionPersistence", () => {
       ]);
     });
 
+    it("normalizes pre-upgrade data with only claudeSessionId (no agentSessionId key)", async () => {
+      const plugin = createMockPlugin({
+        persistedSessions: [
+          {
+            version: 2,
+            taskPath: "tasks/my-task.md",
+            claudeSessionId: "legacy-only-claude",
+            label: "Claude",
+            sessionType: "claude",
+            savedAt: new Date().toISOString(),
+            recoveryMode: "resume",
+            cwd: "/vault",
+            command: "claude",
+            commandArgs: ["claude", "--resume", "legacy-only-claude"],
+          },
+        ],
+      });
+
+      const result = await SessionPersistence.loadFromDisk(plugin);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        agentSessionId: "legacy-only-claude",
+        claudeSessionId: "legacy-only-claude",
+        recoveryMode: "resume",
+        sessionType: "claude",
+      });
+    });
+
     it("assigns durable relaunch identities to legacy relaunch entries", async () => {
       const plugin = createMockPlugin({
         persistedSessions: [

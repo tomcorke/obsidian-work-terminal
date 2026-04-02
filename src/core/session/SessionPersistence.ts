@@ -51,7 +51,7 @@ export class SessionPersistence {
       return null;
     }
 
-    const sessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+    const sessionId = tab.agentSessionId ?? tab.claudeSessionId ?? null;
 
     return {
       version: 2,
@@ -76,7 +76,7 @@ export class SessionPersistence {
   }
 
   private static getRecoveryMode(tab: PersistableTab): DurableRecoveryMode | null {
-    const sessionId = tab.claudeSessionId ?? tab.agentSessionId ?? null;
+    const sessionId = tab.agentSessionId ?? tab.claudeSessionId ?? null;
     if (tab.isResumableAgent && sessionId) {
       return "resume";
     }

@@ -806,12 +806,13 @@ export class TerminalPanelView {
   }
 
   private buildClosedSessionEntry(itemId: string, tab: TerminalTab): ClosedSessionEntry | null {
-    if (tab.isResumableAgent && tab.agentSessionId) {
+    if (tab.isResumableAgent && (tab.agentSessionId || tab.claudeSessionId)) {
+      const sessionId = tab.agentSessionId ?? tab.claudeSessionId;
       return {
         sessionType: tab.sessionType,
         label: tab.label,
-        agentSessionId: tab.agentSessionId,
-        claudeSessionId: tab.agentSessionId,
+        agentSessionId: sessionId!,
+        claudeSessionId: sessionId!,
         durableSessionId: tab.durableSessionId ?? undefined,
         closedAt: Date.now(),
         itemId,
