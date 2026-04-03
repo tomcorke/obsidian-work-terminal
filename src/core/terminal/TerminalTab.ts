@@ -586,6 +586,10 @@ export class TerminalTab {
   _wireUserScrollDetection(): void {
     const viewport = this.containerEl.querySelector(".xterm-viewport");
     if (!viewport) return;
+    const gestureTarget =
+      this.containerEl.querySelector(".xterm") ||
+      this.containerEl.querySelector(".xterm-screen") ||
+      viewport;
 
     const SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End"]);
     const IMMEDIATE_SCROLL_UP_KEYS = new Set(["PageUp", "Home"]);
@@ -624,8 +628,8 @@ export class TerminalTab {
       }
       onUserScrollDeferred();
     };
-    viewport.addEventListener("wheel", onWheel, { passive: true });
-    viewport.addEventListener("touchmove", onUserScrollDeferred, { passive: true });
+    gestureTarget.addEventListener("wheel", onWheel, { passive: true });
+    gestureTarget.addEventListener("touchmove", onUserScrollDeferred, { passive: true });
 
     const onKeydown = (e: Event) => {
       const ke = e as KeyboardEvent;
@@ -644,8 +648,8 @@ export class TerminalTab {
     viewport.addEventListener("scroll", onScroll, { passive: true });
 
     this._documentCleanups.push(() => {
-      viewport.removeEventListener("wheel", onWheel);
-      viewport.removeEventListener("touchmove", onUserScrollDeferred);
+      gestureTarget.removeEventListener("wheel", onWheel);
+      gestureTarget.removeEventListener("touchmove", onUserScrollDeferred);
       viewport.removeEventListener("keydown", onKeydown);
       viewport.removeEventListener("scroll", onScroll);
     });
