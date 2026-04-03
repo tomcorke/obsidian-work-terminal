@@ -21,6 +21,7 @@ function normalizeWaitingLine(line: string): string {
 const GENERIC_WAITING_QUESTION_WINDOW = 5;
 const HIDDEN_CLAUDE_QUESTION_WINDOW = 10;
 const HIDDEN_CLAUDE_PROMPT_CHROME_SCAN_LINES = 6;
+const USER_PROMPT_LINE_PATTERN = /^❯\s+\S/;
 
 /** Matches lines that are informational and should not be treated as questions. */
 const INFORMATIONAL_PREFIX_PATTERN = /^(?:Tip|Hint|Note|Info|FYI|Did you know|Pro tip)\s*:/i;
@@ -63,6 +64,7 @@ function findLastWaitingLineIndex(lines: string[]): number {
   for (let i = tail.length - 1; i >= Math.max(0, tail.length - 15); i--) {
     const normalizedLine = normalizeWaitingLine(tail[i]);
     if (!normalizedLine) continue;
+    if (USER_PROMPT_LINE_PATTERN.test(normalizedLine)) continue;
 
     if (/Enter to (?:select|confirm)|to navigate/i.test(normalizedLine)) return tailStart + i;
 
