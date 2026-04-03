@@ -415,6 +415,42 @@ describe("AgentStateDetector", () => {
       detector.stop();
     });
 
+    it("does not treat user-typed Claude prompt questions as waiting", () => {
+      const terminal = mockTerminal([
+        "  some previous output",
+        "  ❯ Would you like to review the latest change?",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("does not treat user-typed Copilot prompt questions as waiting", () => {
+      const terminal = mockTerminal([
+        "  some previous output",
+        "  ❯ Can you explain this refactor in more detail?",
+      ]);
+      const detector = new AgentStateDetector(terminal, () => false);
+      detector.start();
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
+    it("does not treat user-typed prompt questions from recent output as waiting", () => {
+      const detector = new AgentStateDetector(mockTerminal([]), () => false);
+      detector.trackOutput("❯ Could you summarize the latest test failure?");
+      detector.start(true);
+
+      vi.advanceTimersByTime(2100);
+      expect(detector.state).toBe("idle");
+      detector.stop();
+    });
+
     it("does not treat ordinary boxed output as waiting", () => {
       const terminal = mockTerminal(["  some previous output"]);
       const detector = new AgentStateDetector(terminal, () => false);
