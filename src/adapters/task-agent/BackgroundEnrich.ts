@@ -27,6 +27,15 @@ function resolveClaudeLaunchCwd(settings: Record<string, any>): string {
   return expandTilde(settings["core.defaultTerminalCwd"] || "~");
 }
 
+/**
+ * Detect known patterns in Claude stdout that indicate silent failure despite exit code 0.
+ * Returns a short description of the failure, or null if none detected.
+ */
+function detectSilentFailure(stdout: string): string | null {
+  const match = stdout.match(/Unknown skill:\s*\S+/i);
+  return match ? match[0] : null;
+}
+
 export interface ItemCreatedResult {
   id: string;
   columnId: string;
@@ -61,7 +70,7 @@ export async function handleItemCreated(
   // Background enrichment - returns a promise the caller can track
   const fullPath = resolveFullPath(app, filePath);
   const enrichPrompt =
-    `/tc-tasks:task-agent --fast The task file at ${fullPath} was just created with minimal data. ` +
+    `The task file at ${fullPath} was just created with minimal data. ` +
     `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
     RENAME_INSTRUCTION;
 
@@ -79,6 +88,24 @@ export async function handleItemCreated(
         return;
       }
       if (result.exitCode === 0) {
+        const silentFailure = detectSilentFailure(result.stdout);
+        if (silentFailure) {
+          console.error(
+            `[work-terminal] Background enrich exited 0 but reported: ${silentFailure}`,
+          );
+          await markIngestionFailed(app, filePath);
+          return;
+        }
+        // Success requires an observable outcome: the pending file must have been
+        // renamed away. If it still exists the enrichment was a no-op.
+        const pendingStillExists = await app.vault.adapter.exists(filePath);
+        if (pendingStillExists) {
+          console.warn(
+            `[work-terminal] Background enrich exited 0 but pending file was not renamed: ${filePath}`,
+          );
+          await markIngestionFailed(app, filePath);
+          return;
+        }
         console.log(`[work-terminal] Background enrich completed: ${filePath}`);
       } else {
         console.error(
@@ -216,11 +243,16 @@ export async function retryEnrichment(
   const claudeCommand = settings["core.claudeCommand"] || "claude";
   const claudeExtraArgs = settings["core.claudeExtraArgs"] || "";
 
-  await clearIngestionFailedFlag(app, filePath);
+  // For pending files, skip writing "retrying" - the file will be renamed by Claude on success
+  // and we cannot look up the new path to clean up afterwards. For non-pending files, marking
+  // "retrying" gives the user a visible signal that a retry is in progress.
+  if (!filePath.includes("pending-")) {
+    await clearIngestionFailedFlag(app, filePath);
+  }
 
   const fullPath = resolveFullPath(app, filePath);
   const enrichPrompt =
-    `/tc-tasks:task-agent --fast The task file at ${fullPath} needs enrichment. ` +
+    `The task file at ${fullPath} needs enrichment. ` +
     `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
     RENAME_INSTRUCTION;
 
@@ -239,6 +271,28 @@ export async function retryEnrichment(
   }
 
   if (result.exitCode === 0) {
+    const silentFailure = detectSilentFailure(result.stdout);
+    if (silentFailure) {
+      console.error(`[work-terminal] Retry enrich exited 0 but reported: ${silentFailure}`);
+      await markIngestionFailed(app, filePath);
+      return;
+    }
+    // For pending files, verify the rename happened (same no-op check as initial enrichment)
+    if (filePath.includes("pending-")) {
+      const pendingStillExists = await app.vault.adapter.exists(filePath);
+      if (pendingStillExists) {
+        console.warn(
+          `[work-terminal] Retry enrich exited 0 but pending file was not renamed: ${filePath}`,
+        );
+        await markIngestionFailed(app, filePath);
+        return;
+      }
+      // File was renamed by Claude - no cleanup needed at the old path.
+      // We intentionally did not write "retrying" before the run, so the renamed file
+      // will not have a stale background-ingestion flag from us.
+      console.log(`[work-terminal] Retry enrich completed (file renamed): ${filePath}`);
+      return;
+    }
     console.log(`[work-terminal] Retry enrich completed: ${filePath}`);
     // Remove the failed flag entirely on success
     const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;

@@ -66,7 +66,10 @@ describe("BackgroundEnrich", () => {
       let storedContent = fileContent;
       return {
         vault: {
-          adapter: { basePath: "/vault" },
+          adapter: {
+            basePath: "/vault",
+            exists: vi.fn().mockResolvedValue(false),
+          },
           getAbstractFileByPath: (path: string) => ({ path }),
           read: vi.fn(async () => storedContent),
           modify: vi.fn(async (_file: any, content: string) => {
@@ -137,49 +140,242 @@ describe("BackgroundEnrich", () => {
     });
   });
 
-  it("resolves relative Claude wrapper commands from core.defaultTerminalCwd during background enrichment", async () => {
-    const existingPaths = new Set<string>();
-    const createdFolders: string[] = [];
-    const createdFiles: Array<{ path: string; content: string }> = [];
+  describe("handleItemCreated", () => {
+    function makeItemCreatedApp({ fileExistsAfterEnrich = false } = {}) {
+      const existingPaths = new Set<string>();
+      const createdFolders: string[] = [];
+      const createdFiles: Array<{ path: string; content: string }> = [];
+      let storedContent = "";
+      const modifyCalls: Array<{ path: string; content: string }> = [];
 
-    const app = {
-      vault: {
-        adapter: {
-          basePath: "/vault",
+      return {
+        vault: {
+          adapter: {
+            basePath: "/vault",
+            exists: vi.fn().mockResolvedValue(fileExistsAfterEnrich),
+          },
+          getAbstractFileByPath(path: string) {
+            return existingPaths.has(path) ? { path } : null;
+          },
+          async createFolder(path: string) {
+            existingPaths.add(path);
+            createdFolders.push(path);
+            return { path };
+          },
+          async create(path: string, content: string) {
+            existingPaths.add(path);
+            createdFiles.push({ path, content });
+            storedContent = content;
+            return { path, content };
+          },
+          read: vi.fn(async () => storedContent),
+          modify: vi.fn(async (_file: any, content: string) => {
+            storedContent = content;
+            modifyCalls.push({ path: _file.path, content });
+          }),
         },
-        getAbstractFileByPath(path: string) {
-          return existingPaths.has(path) ? { path } : null;
-        },
-        async createFolder(path: string) {
-          existingPaths.add(path);
-          createdFolders.push(path);
-          return { path };
-        },
-        async create(path: string, content: string) {
-          createdFiles.push({ path, content });
-          return { path, content };
-        },
-      },
-    } as any;
+        createdFolders,
+        createdFiles,
+        modifyCalls,
+        getStoredContent: () => storedContent,
+      } as any;
+    }
 
-    const result = await handleItemCreated(app, "Fix relative wrapper launch", {
+    const defaultSettings = {
       _columnId: "todo",
       "adapter.taskBasePath": "2 - Areas/Tasks",
-      "core.claudeCommand": "./bin/claude-wrapper",
-      "core.defaultTerminalCwd": "~/launch-root",
-      "core.claudeExtraArgs": "--allowedTools Edit",
+      "core.claudeCommand": "claude",
+      "core.defaultTerminalCwd": "~/work",
+      "core.claudeExtraArgs": "",
+    };
+
+    it("resolves relative Claude wrapper commands from core.defaultTerminalCwd", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const result = await handleItemCreated(app, "Fix relative wrapper launch", {
+        _columnId: "todo",
+        "adapter.taskBasePath": "2 - Areas/Tasks",
+        "core.claudeCommand": "./bin/claude-wrapper",
+        "core.defaultTerminalCwd": "~/launch-root",
+        "core.claudeExtraArgs": "--allowedTools Edit",
+      });
+
+      await result.enrichmentDone;
+
+      expect(app.createdFolders).toEqual(["2 - Areas/Tasks/todo"]);
+      expect(app.createdFiles).toHaveLength(1);
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalledWith(
+        expect.stringContaining("/vault/2 - Areas/Tasks/todo/"),
+        "/Users/tester/launch-root",
+        "./bin/claude-wrapper",
+        "--allowedTools Edit",
+      );
     });
 
-    await result.enrichmentDone;
+    it("does not use a slash-command skill invocation in the enrich prompt", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
 
-    expect(createdFolders).toEqual(["2 - Areas/Tasks/todo"]);
-    expect(createdFiles).toHaveLength(1);
-    expect(spawnHeadlessClaudeMock).toHaveBeenCalledTimes(1);
-    expect(spawnHeadlessClaudeMock).toHaveBeenCalledWith(
-      expect.stringContaining("/vault/2 - Areas/Tasks/todo/"),
-      "/Users/tester/launch-root",
-      "./bin/claude-wrapper",
-      "--allowedTools Edit",
-    );
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
+      expect(promptArg).not.toMatch(/^\/tc-tasks:/);
+      expect(promptArg).not.toMatch(/^\/task-agent/);
+    });
+
+    it("marks ingestion failed when stdout contains 'Unknown skill' even on exit 0", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: 0,
+        stdout: "Unknown skill: tc-tasks:task-agent\n",
+        stderr: "",
+      });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(app.vault.modify).toHaveBeenCalled();
+      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(finalContent).toContain("background-ingestion: failed");
+    });
+
+    it("marks ingestion failed when pending file is unchanged after exit 0 (no-op enrichment)", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      // fileExistsAfterEnrich: true simulates Claude exiting 0 without renaming the file
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(app.vault.modify).toHaveBeenCalled();
+      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(finalContent).toContain("background-ingestion: failed");
+    });
+
+    it("does not mark ingestion failed when pending file was renamed away on exit 0", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      // fileExistsAfterEnrich: false simulates Claude successfully renaming the file
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      // modify should NOT have been called (no failure marking)
+      expect(app.vault.modify).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("retryEnrichment - silent failure detection", () => {
+    function makeApp(fileContent: string) {
+      let storedContent = fileContent;
+      return {
+        vault: {
+          adapter: {
+            basePath: "/vault",
+            exists: vi.fn().mockResolvedValue(false),
+          },
+          getAbstractFileByPath: (path: string) => ({ path }),
+          read: vi.fn(async () => storedContent),
+          modify: vi.fn(async (_file: any, content: string) => {
+            storedContent = content;
+          }),
+        },
+        getStoredContent: () => storedContent,
+      } as any;
+    }
+
+    const defaultSettings = {
+      "core.claudeCommand": "claude",
+      "core.defaultTerminalCwd": "~/work",
+      "core.claudeExtraArgs": "",
+    };
+
+    it("marks ingestion failed when retry stdout contains 'Unknown skill' on exit 0", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: 0,
+        stdout: "Unknown skill: tc-tasks:task-agent\n",
+        stderr: "",
+      });
+      const app = makeApp(content);
+
+      await retryEnrichment(app, "tasks/test.md", defaultSettings);
+
+      expect(app.vault.modify).toHaveBeenCalled();
+      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(finalContent).toContain("background-ingestion: failed");
+    });
+
+    it("marks ingestion failed when pending file still exists after retry exit 0", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeApp(content);
+      // Simulate the pending file still existing after enrichment
+      app.vault.adapter.exists.mockResolvedValue(true);
+
+      await retryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md", defaultSettings);
+
+      expect(app.vault.modify).toHaveBeenCalled();
+      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(finalContent).toContain("background-ingestion: failed");
+    });
+
+    it("pending path + exit 0 + no silent failure + old path gone: succeeds without stale flag", async () => {
+      // Regression: cleanup used to look up the old pending path (which no longer exists after
+      // Claude renames the file), get null back, and silently no-op - leaving the renamed file
+      // with background-ingestion: retrying and the warning callout.
+      const content =
+        `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n\n` +
+        `> [!warning] Background ingestion incomplete\n` +
+        `> Automatic enrichment was attempted but did not complete successfully.\n`;
+
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeApp(content);
+      // Old pending path no longer exists - Claude renamed it
+      app.vault.adapter.exists.mockResolvedValue(false);
+
+      await retryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md", defaultSettings);
+
+      // No failure marking - enrichment succeeded
+      const allWrittenContents = app.vault.modify.mock.calls.map((c: any[]) => c[1] as string);
+      for (const written of allWrittenContents) {
+        expect(written).not.toContain("background-ingestion: failed");
+      }
+      // The "retrying" transient flag must not be written for pending files, because we cannot
+      // clean it up from the renamed file afterwards.
+      for (const written of allWrittenContents) {
+        expect(written).not.toContain("background-ingestion: retrying");
+      }
+      // Sanity: Claude was still invoked
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalledOnce();
+    });
+
+    it("does not apply pending-file check for non-pending retry paths", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeApp(content);
+      // exists returns true, but the path has no "pending-" so check should be skipped
+      app.vault.adapter.exists.mockResolvedValue(true);
+
+      await retryEnrichment(app, "tasks/TASK-20260403-0126-my-task.md", defaultSettings);
+
+      // Should have succeeded (modify called only for clearIngestionFailedFlag + success cleanup)
+      const lastContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(lastContent).not.toContain("background-ingestion: failed");
+    });
+
+    it("does not use a slash-command skill invocation in the retry prompt", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeApp(content);
+
+      await retryEnrichment(app, "tasks/test.md", defaultSettings);
+
+      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
+      expect(promptArg).not.toMatch(/^\/tc-tasks:/);
+      expect(promptArg).not.toMatch(/^\/task-agent/);
+    });
   });
 });
