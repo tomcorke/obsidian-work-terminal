@@ -483,7 +483,10 @@ export class ListPanel {
     void (async () => {
       try {
         const prompt = await this.adapter.getRetryEnrichPrompt!(item);
-        if (!prompt) return;
+        if (!prompt) {
+          console.warn("[work-terminal] retryEnrichment: adapter returned no prompt for", item.id);
+          return;
+        }
         this.selectItem(item);
         this.terminalPanel.spawnClaudeWithPrompt(prompt, "Enrich");
       } catch (err) {

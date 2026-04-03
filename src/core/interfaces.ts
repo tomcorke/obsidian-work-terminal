@@ -217,8 +217,9 @@ export interface AdapterBundle {
   requestRefresh?: () => void;
   /**
    * Prepare a retry enrichment for an item whose initial enrichment failed.
-   * Clears the failed flag and returns the enrichment prompt to use in a
-   * foreground Claude session. Returns null if retry is not applicable.
+   * Removes the background-ingestion flag and warning callout, then returns
+   * the enrichment prompt to use in a foreground Claude session.
+   * Returns null if retry is not applicable.
    */
   getRetryEnrichPrompt?(item: WorkItem): Promise<string | null>;
   /**

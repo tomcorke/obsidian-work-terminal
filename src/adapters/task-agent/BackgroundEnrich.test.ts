@@ -91,24 +91,34 @@ describe("BackgroundEnrich", () => {
       expect(prompt).toContain("rename the file to match the convention");
     });
 
-    it("clears ingestion flag for non-pending files", async () => {
-      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+    it("fully removes ingestion flag and callout from non-pending files", async () => {
+      const content =
+        `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n\n` +
+        `> [!warning] Background ingestion incomplete\n` +
+        `> Automatic enrichment was attempted but did not complete successfully.\n`;
       const app = makeApp(content);
 
       await prepareRetryEnrichment(app, "tasks/test.md");
 
       expect(app.vault.modify).toHaveBeenCalled();
       const written = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(written).not.toContain("background-ingestion: failed");
+      expect(written).not.toContain("background-ingestion");
+      expect(written).not.toContain("Background ingestion incomplete");
+      expect(written).toContain("---\nid: abc\nstate: todo\n---");
     });
 
-    it("does not modify pending files before enrichment", async () => {
-      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+    it("fully removes ingestion flag and callout from pending files too", async () => {
+      const content =
+        `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n\n` +
+        `> [!warning] Background ingestion incomplete\n`;
       const app = makeApp(content);
 
       await prepareRetryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md");
 
-      expect(app.vault.modify).not.toHaveBeenCalled();
+      expect(app.vault.modify).toHaveBeenCalled();
+      const written = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(written).not.toContain("background-ingestion");
+      expect(written).not.toContain("Background ingestion incomplete");
     });
 
     it("does not spawn headless Claude", async () => {
