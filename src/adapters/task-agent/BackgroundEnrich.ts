@@ -243,7 +243,12 @@ export async function retryEnrichment(
   const claudeCommand = settings["core.claudeCommand"] || "claude";
   const claudeExtraArgs = settings["core.claudeExtraArgs"] || "";
 
-  await clearIngestionFailedFlag(app, filePath);
+  // For pending files, skip writing "retrying" - the file will be renamed by Claude on success
+  // and we cannot look up the new path to clean up afterwards. For non-pending files, marking
+  // "retrying" gives the user a visible signal that a retry is in progress.
+  if (!filePath.includes("pending-")) {
+    await clearIngestionFailedFlag(app, filePath);
+  }
 
   const fullPath = resolveFullPath(app, filePath);
   const enrichPrompt =
@@ -282,6 +287,11 @@ export async function retryEnrichment(
         await markIngestionFailed(app, filePath);
         return;
       }
+      // File was renamed by Claude - no cleanup needed at the old path.
+      // We intentionally did not write "retrying" before the run, so the renamed file
+      // will not have a stale background-ingestion flag from us.
+      console.log(`[work-terminal] Retry enrich completed (file renamed): ${filePath}`);
+      return;
     }
     console.log(`[work-terminal] Retry enrich completed: ${filePath}`);
     // Remove the failed flag entirely on success

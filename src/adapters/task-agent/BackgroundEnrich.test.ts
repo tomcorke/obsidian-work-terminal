@@ -322,6 +322,36 @@ describe("BackgroundEnrich", () => {
       expect(finalContent).toContain("background-ingestion: failed");
     });
 
+    it("pending path + exit 0 + no silent failure + old path gone: succeeds without stale flag", async () => {
+      // Regression: cleanup used to look up the old pending path (which no longer exists after
+      // Claude renames the file), get null back, and silently no-op - leaving the renamed file
+      // with background-ingestion: retrying and the warning callout.
+      const content =
+        `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n\n` +
+        `> [!warning] Background ingestion incomplete\n` +
+        `> Automatic enrichment was attempted but did not complete successfully.\n`;
+
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeApp(content);
+      // Old pending path no longer exists - Claude renamed it
+      app.vault.adapter.exists.mockResolvedValue(false);
+
+      await retryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md", defaultSettings);
+
+      // No failure marking - enrichment succeeded
+      const allWrittenContents = app.vault.modify.mock.calls.map((c: any[]) => c[1] as string);
+      for (const written of allWrittenContents) {
+        expect(written).not.toContain("background-ingestion: failed");
+      }
+      // The "retrying" transient flag must not be written for pending files, because we cannot
+      // clean it up from the renamed file afterwards.
+      for (const written of allWrittenContents) {
+        expect(written).not.toContain("background-ingestion: retrying");
+      }
+      // Sanity: Claude was still invoked
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalledOnce();
+    });
+
     it("does not apply pending-file check for non-pending retry paths", async () => {
       const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
       spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
