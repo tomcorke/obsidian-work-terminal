@@ -475,20 +475,20 @@ export class ListPanel {
   }
 
   private retryEnrichment(item: WorkItem): void {
-    if (!this.adapter.onRetryEnrich) {
-      console.warn("[work-terminal] retryEnrichment: adapter has no onRetryEnrich");
+    if (!this.adapter.getRetryEnrichPrompt) {
+      console.warn("[work-terminal] retryEnrichment: adapter has no getRetryEnrichPrompt");
       return;
     }
 
-    this.setIngesting(item.id);
     void (async () => {
       try {
-        await this.adapter.onRetryEnrich!(item, this.settings);
+        const prompt = await this.adapter.getRetryEnrichPrompt!(item);
+        if (!prompt) return;
+        this.selectItem(item);
+        this.terminalPanel.spawnClaudeWithPrompt(prompt, "Enrich");
       } catch (err) {
         console.error("[work-terminal] retryEnrichment failed:", err);
-        new Notice("Failed to re-run enrichment. See console for details.");
-      } finally {
-        this.clearIngesting(item.id);
+        new Notice("Failed to start enrichment session. See console for details.");
       }
     })();
   }

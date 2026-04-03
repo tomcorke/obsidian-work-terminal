@@ -8,7 +8,7 @@ vi.mock("../../core/claude/HeadlessClaude", () => ({
   spawnHeadlessClaude: spawnHeadlessClaudeMock,
 }));
 
-import { handleItemCreated, insertIngestionFailedFlag, retryEnrichment } from "./BackgroundEnrich";
+import { handleItemCreated, insertIngestionFailedFlag, prepareRetryEnrichment } from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {
   beforeEach(() => {
@@ -61,7 +61,7 @@ describe("BackgroundEnrich", () => {
     });
   });
 
-  describe("retryEnrichment", () => {
+  describe("prepareRetryEnrichment", () => {
     function makeApp(fileContent: string) {
       let storedContent = fileContent;
       return {
@@ -80,63 +80,54 @@ describe("BackgroundEnrich", () => {
       } as any;
     }
 
-    const defaultSettings = {
-      "core.claudeCommand": "claude",
-      "core.defaultTerminalCwd": "~/work",
-      "core.claudeExtraArgs": "",
-    };
-
-    it("clears ingestion flag and callout on success", async () => {
-      const content =
-        `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n\n` +
-        `> [!warning] Background ingestion incomplete\n` +
-        `> Automatic enrichment was attempted but did not complete successfully.\n` +
-        `> To enrich this task, right-click the card and select **Retry Enrichment**,\n` +
-        `> or open a Claude session and use the task-agent skill manually.\n`;
-
-      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    it("returns enrichment prompt containing the full file path", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
       const app = makeApp(content);
 
-      await retryEnrichment(app, "tasks/test.md", defaultSettings);
+      const prompt = await prepareRetryEnrichment(app, "tasks/test.md");
 
-      expect(app.vault.modify).toHaveBeenCalled();
-      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(finalContent).not.toContain("background-ingestion");
-      expect(finalContent).not.toContain("Background ingestion incomplete");
+      expect(prompt).toContain("/vault/tasks/test.md");
+      expect(prompt).toContain("needs enrichment");
+      expect(prompt).toContain("rename the file to match the convention");
     });
 
-    it("marks ingestion failed again on non-zero exit", async () => {
+    it("clears ingestion flag for non-pending files", async () => {
       const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
-      spawnHeadlessClaudeMock.mockResolvedValue({
-        exitCode: 1,
-        stdout: "",
-        stderr: "something went wrong",
-      });
       const app = makeApp(content);
 
-      await retryEnrichment(app, "tasks/test.md", defaultSettings);
+      await prepareRetryEnrichment(app, "tasks/test.md");
 
-      // Should have been called at least twice: once for clearIngestionFailedFlag, once for markIngestionFailed
       expect(app.vault.modify).toHaveBeenCalled();
-      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(finalContent).toContain("background-ingestion: failed");
+      const written = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(written).not.toContain("background-ingestion: failed");
     });
 
-    it("marks ingestion failed when CLI is missing", async () => {
+    it("does not modify pending files before enrichment", async () => {
       const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
-      spawnHeadlessClaudeMock.mockResolvedValue({
-        exitCode: 1,
-        stdout: "",
-        stderr: "claude: command not found",
-        missingCli: true,
-      });
       const app = makeApp(content);
 
-      await retryEnrichment(app, "tasks/test.md", defaultSettings);
+      await prepareRetryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md");
 
-      expect(app.vault.modify).toHaveBeenCalled();
-      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(finalContent).toContain("background-ingestion: failed");
+      expect(app.vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("does not spawn headless Claude", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      const app = makeApp(content);
+
+      await prepareRetryEnrichment(app, "tasks/test.md");
+
+      expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+    });
+
+    it("does not use a slash-command skill invocation in the prompt", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      const app = makeApp(content);
+
+      const prompt = await prepareRetryEnrichment(app, "tasks/test.md");
+
+      expect(prompt).not.toMatch(/^\/tc-tasks:/);
+      expect(prompt).not.toMatch(/^\/task-agent/);
     });
   });
 
@@ -267,115 +258,4 @@ describe("BackgroundEnrich", () => {
     });
   });
 
-  describe("retryEnrichment - silent failure detection", () => {
-    function makeApp(fileContent: string) {
-      let storedContent = fileContent;
-      return {
-        vault: {
-          adapter: {
-            basePath: "/vault",
-            exists: vi.fn().mockResolvedValue(false),
-          },
-          getAbstractFileByPath: (path: string) => ({ path }),
-          read: vi.fn(async () => storedContent),
-          modify: vi.fn(async (_file: any, content: string) => {
-            storedContent = content;
-          }),
-        },
-        getStoredContent: () => storedContent,
-      } as any;
-    }
-
-    const defaultSettings = {
-      "core.claudeCommand": "claude",
-      "core.defaultTerminalCwd": "~/work",
-      "core.claudeExtraArgs": "",
-    };
-
-    it("marks ingestion failed when retry stdout contains 'Unknown skill' on exit 0", async () => {
-      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
-      spawnHeadlessClaudeMock.mockResolvedValue({
-        exitCode: 0,
-        stdout: "Unknown skill: tc-tasks:task-agent\n",
-        stderr: "",
-      });
-      const app = makeApp(content);
-
-      await retryEnrichment(app, "tasks/test.md", defaultSettings);
-
-      expect(app.vault.modify).toHaveBeenCalled();
-      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(finalContent).toContain("background-ingestion: failed");
-    });
-
-    it("marks ingestion failed when pending file still exists after retry exit 0", async () => {
-      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
-      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-      const app = makeApp(content);
-      // Simulate the pending file still existing after enrichment
-      app.vault.adapter.exists.mockResolvedValue(true);
-
-      await retryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md", defaultSettings);
-
-      expect(app.vault.modify).toHaveBeenCalled();
-      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(finalContent).toContain("background-ingestion: failed");
-    });
-
-    it("pending path + exit 0 + no silent failure + old path gone: succeeds without stale flag", async () => {
-      // Regression: cleanup used to look up the old pending path (which no longer exists after
-      // Claude renames the file), get null back, and silently no-op - leaving the renamed file
-      // with background-ingestion: retrying and the warning callout.
-      const content =
-        `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n\n` +
-        `> [!warning] Background ingestion incomplete\n` +
-        `> Automatic enrichment was attempted but did not complete successfully.\n`;
-
-      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-      const app = makeApp(content);
-      // Old pending path no longer exists - Claude renamed it
-      app.vault.adapter.exists.mockResolvedValue(false);
-
-      await retryEnrichment(app, "tasks/TASK-20260403-0126-pending-bf7a0012.md", defaultSettings);
-
-      // No failure marking - enrichment succeeded
-      const allWrittenContents = app.vault.modify.mock.calls.map((c: any[]) => c[1] as string);
-      for (const written of allWrittenContents) {
-        expect(written).not.toContain("background-ingestion: failed");
-      }
-      // The "retrying" transient flag must not be written for pending files, because we cannot
-      // clean it up from the renamed file afterwards.
-      for (const written of allWrittenContents) {
-        expect(written).not.toContain("background-ingestion: retrying");
-      }
-      // Sanity: Claude was still invoked
-      expect(spawnHeadlessClaudeMock).toHaveBeenCalledOnce();
-    });
-
-    it("does not apply pending-file check for non-pending retry paths", async () => {
-      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
-      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-      const app = makeApp(content);
-      // exists returns true, but the path has no "pending-" so check should be skipped
-      app.vault.adapter.exists.mockResolvedValue(true);
-
-      await retryEnrichment(app, "tasks/TASK-20260403-0126-my-task.md", defaultSettings);
-
-      // Should have succeeded (modify called only for clearIngestionFailedFlag + success cleanup)
-      const lastContent = app.vault.modify.mock.calls.at(-1)![1] as string;
-      expect(lastContent).not.toContain("background-ingestion: failed");
-    });
-
-    it("does not use a slash-command skill invocation in the retry prompt", async () => {
-      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
-      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
-      const app = makeApp(content);
-
-      await retryEnrichment(app, "tasks/test.md", defaultSettings);
-
-      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
-      expect(promptArg).not.toMatch(/^\/tc-tasks:/);
-      expect(promptArg).not.toMatch(/^\/task-agent/);
-    });
-  });
 });
