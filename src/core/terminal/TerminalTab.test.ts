@@ -1368,6 +1368,12 @@ describe("TerminalTab auto-scroll on write", () => {
           removeEventListener: vi.fn(),
         }
       : null;
+    const xtermEl = withViewport
+      ? {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }
+      : null;
 
     const terminal = {
       onData: vi.fn((handler: (data: string) => void) => {
@@ -1386,9 +1392,11 @@ describe("TerminalTab auto-scroll on write", () => {
       terminal,
       containerEl: withViewport
         ? {
-            querySelector: vi.fn((selector: string) =>
-              selector === ".xterm-viewport" ? viewportEl : null,
-            ),
+            querySelector: vi.fn((selector: string) => {
+              if (selector === ".xterm-viewport") return viewportEl;
+              if (selector === ".xterm") return xtermEl;
+              return null;
+            }),
             addEventListener: vi.fn(),
             removeEventListener: vi.fn(),
           }
@@ -1421,6 +1429,7 @@ describe("TerminalTab auto-scroll on write", () => {
       pendingCallbacks,
       flushCallbacks,
       viewportEl,
+      xtermEl,
     };
   }
 
@@ -1539,7 +1548,7 @@ describe("TerminalTab auto-scroll on write", () => {
       return rafCallbacks.length;
     }) as typeof requestAnimationFrame);
 
-    const { tab, scrollToBottom, flushCallbacks, bufferActive, viewportEl } =
+    const { tab, scrollToBottom, flushCallbacks, bufferActive, xtermEl } =
       createTabWithMockTerminal({
         deferCallbacks: true,
         withViewport: true,
@@ -1552,9 +1561,7 @@ describe("TerminalTab auto-scroll on write", () => {
 
     proc.emitStdout(Buffer.from("chunk-1"));
 
-    const wheelCall = viewportEl?.addEventListener.mock.calls.find(
-      (c: unknown[]) => c[0] === "wheel",
-    );
+    const wheelCall = xtermEl?.addEventListener.mock.calls.find((c: unknown[]) => c[0] === "wheel");
     expect(wheelCall).toBeDefined();
     const wheelHandler = wheelCall?.[1] as (event: Event) => void;
     wheelHandler({ deltaY: -120 } as WheelEvent);
@@ -1705,10 +1712,16 @@ describe("TerminalTab user scroll detection", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     };
+    const xtermEl = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
     const containerEl = {
-      querySelector: vi.fn((selector: string) =>
-        selector === ".xterm-viewport" ? viewportEl : null,
-      ),
+      querySelector: vi.fn((selector: string) => {
+        if (selector === ".xterm-viewport") return viewportEl;
+        if (selector === ".xterm") return xtermEl;
+        return null;
+      }),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     };
@@ -1727,18 +1740,37 @@ describe("TerminalTab user scroll detection", () => {
       _documentCleanups: [],
     }) as TerminalTab;
 
-    return { tab, viewportEl, bufferActive };
+    return { tab, viewportEl, xtermEl, bufferActive };
   }
 
+  it("attaches wheel and touchmove detection to the xterm container", () => {
+    const { tab, viewportEl, xtermEl } = createTabWithViewport();
+
+    tab._wireUserScrollDetection();
+
+    expect(xtermEl.addEventListener).toHaveBeenCalledWith("wheel", expect.any(Function), {
+      passive: true,
+    });
+    expect(xtermEl.addEventListener).toHaveBeenCalledWith("touchmove", expect.any(Function), {
+      passive: true,
+    });
+    expect(viewportEl.addEventListener).not.toHaveBeenCalledWith("wheel", expect.any(Function), {
+      passive: true,
+    });
+    expect(viewportEl.addEventListener).not.toHaveBeenCalledWith(
+      "touchmove",
+      expect.any(Function),
+      { passive: true },
+    );
+  });
+
   it("sets _userScrolledUp when wheel event fires and viewport is not at bottom", () => {
-    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+    const { tab, xtermEl, bufferActive } = createTabWithViewport();
 
     tab._wireUserScrollDetection();
 
     // Find the wheel listener
-    const wheelCall = viewportEl.addEventListener.mock.calls.find(
-      (c: unknown[]) => c[0] === "wheel",
-    );
+    const wheelCall = xtermEl.addEventListener.mock.calls.find((c: unknown[]) => c[0] === "wheel");
     expect(wheelCall).toBeDefined();
     const wheelHandler = wheelCall[1] as (event: Event) => void;
 
@@ -1767,14 +1799,12 @@ describe("TerminalTab user scroll detection", () => {
   });
 
   it("clears _userScrolledUp when user scrolls back to bottom", () => {
-    const { tab, viewportEl, bufferActive } = createTabWithViewport();
+    const { tab, xtermEl, bufferActive } = createTabWithViewport();
 
     tab._wireUserScrollDetection();
     tab._userScrolledUp = true;
 
-    const wheelCall = viewportEl.addEventListener.mock.calls.find(
-      (c: unknown[]) => c[0] === "wheel",
-    );
+    const wheelCall = xtermEl.addEventListener.mock.calls.find((c: unknown[]) => c[0] === "wheel");
     const wheelHandler = wheelCall[1] as (event: Event) => void;
 
     // User scrolls back to bottom
