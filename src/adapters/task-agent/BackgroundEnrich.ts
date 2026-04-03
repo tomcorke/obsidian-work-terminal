@@ -232,93 +232,36 @@ async function clearIngestionFailedFlag(app: App, filePath: string): Promise<voi
 }
 
 /**
- * Retry background enrichment for an existing task file.
- * Clears the failed flag, runs headless Claude, and marks failed again if it doesn't succeed.
+ * Prepare a retry enrichment: fully remove the background-ingestion flag and
+ * warning callout, then return the enrichment prompt for use in a foreground
+ * Claude session.
  */
-export async function retryEnrichment(
+export async function prepareRetryEnrichment(
   app: App,
   filePath: string,
-  settings: Record<string, any>,
-): Promise<void> {
-  const claudeCommand = settings["core.claudeCommand"] || "claude";
-  const claudeExtraArgs = settings["core.claudeExtraArgs"] || "";
-
-  // For pending files, skip writing "retrying" - the file will be renamed by Claude on success
-  // and we cannot look up the new path to clean up afterwards. For non-pending files, marking
-  // "retrying" gives the user a visible signal that a retry is in progress.
-  if (!filePath.includes("pending-")) {
-    await clearIngestionFailedFlag(app, filePath);
+): Promise<string> {
+  const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
+  if (file) {
+    try {
+      let content = await app.vault.read(file);
+      content = content.replace(/^background-ingestion:[ \t]*[^\r\n]*\r?\n?/m, "");
+      content = content.replace(
+        /> \[!warning\] Background ingestion incomplete[\s\S]*?(?=\n[^>]|\n*$)/g,
+        "",
+      );
+      content = content.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+      await app.vault.modify(file, content);
+    } catch (err) {
+      console.error(`[work-terminal] Failed to clear ingestion markers on ${filePath}:`, err);
+    }
   }
 
   const fullPath = resolveFullPath(app, filePath);
-  const enrichPrompt =
+  return (
     `The task file at ${fullPath} needs enrichment. ` +
     `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
-    RENAME_INSTRUCTION;
-
-  const result = await spawnHeadlessClaude(
-    enrichPrompt,
-    resolveClaudeLaunchCwd(settings),
-    claudeCommand,
-    claudeExtraArgs,
+    RENAME_INSTRUCTION
   );
-
-  if (result.missingCli) {
-    new Notice(result.stderr);
-    console.warn("[work-terminal] Retry enrich skipped:", result.stderr);
-    await markIngestionFailed(app, filePath);
-    return;
-  }
-
-  if (result.exitCode === 0) {
-    const silentFailure = detectSilentFailure(result.stdout);
-    if (silentFailure) {
-      console.error(`[work-terminal] Retry enrich exited 0 but reported: ${silentFailure}`);
-      await markIngestionFailed(app, filePath);
-      return;
-    }
-    // For pending files, verify the rename happened (same no-op check as initial enrichment)
-    if (filePath.includes("pending-")) {
-      const pendingStillExists = await app.vault.adapter.exists(filePath);
-      if (pendingStillExists) {
-        console.warn(
-          `[work-terminal] Retry enrich exited 0 but pending file was not renamed: ${filePath}`,
-        );
-        await markIngestionFailed(app, filePath);
-        return;
-      }
-      // File was renamed by Claude - no cleanup needed at the old path.
-      // We intentionally did not write "retrying" before the run, so the renamed file
-      // will not have a stale background-ingestion flag from us.
-      console.log(`[work-terminal] Retry enrich completed (file renamed): ${filePath}`);
-      return;
-    }
-    console.log(`[work-terminal] Retry enrich completed: ${filePath}`);
-    // Remove the failed flag entirely on success
-    const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
-    if (file) {
-      try {
-        let content = await app.vault.read(file);
-        content = content.replace(/^background-ingestion:[ \t]*[^\r\n]*\r?\n?/m, "");
-        // Remove stale "Background ingestion incomplete" warning callout
-        content = content.replace(
-          /> \[!warning\] Background ingestion incomplete[\s\S]*?(?=\n[^>]|\n*$)/g,
-          "",
-        );
-        // Clean up any leftover double blank lines from removal
-        content = content.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
-        await app.vault.modify(file, content);
-      } catch (err) {
-        console.error("[work-terminal] Failed to clean ingestion flag after success:", err);
-      }
-    }
-  } else {
-    console.error(
-      `[work-terminal] Retry enrich failed (exit ${result.exitCode}):`,
-      result.stderr.slice(0, 500),
-    );
-    await markIngestionFailed(app, filePath);
-  }
 }
 
 export { RENAME_INSTRUCTION, resolveFullPath };

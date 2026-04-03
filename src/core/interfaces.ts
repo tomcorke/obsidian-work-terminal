@@ -216,10 +216,12 @@ export interface AdapterBundle {
    */
   requestRefresh?: () => void;
   /**
-   * Retry background enrichment for an item whose initial enrichment failed.
-   * Returns a promise that resolves when the retry completes (success or failure).
+   * Prepare a retry enrichment for an item whose initial enrichment failed.
+   * Removes the background-ingestion flag and warning callout, then returns
+   * the enrichment prompt to use in a foreground Claude session.
+   * Returns null if retry is not applicable.
    */
-  onRetryEnrich?(item: WorkItem, settings: Record<string, unknown>): Promise<void>;
+  getRetryEnrichPrompt?(item: WorkItem): Promise<string | null>;
   /**
    * Called before deleting an item. Return false to prevent the
    * default vault.trash() behavior (e.g. for API-backed items that
