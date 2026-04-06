@@ -178,8 +178,11 @@ export class AgentProfileEditModal extends Modal {
     argsSetting.settingEl.style.flexWrap = "wrap";
     argsSetting.controlEl.style.width = "100%";
 
-    // Use context
-    new Setting(contentEl)
+    // Container for adapter prompt preview and suppress toggle - gated on useContext
+    const contextDependentEl = contentEl.createDiv();
+
+    // Use context - must be declared after contextDependentEl to avoid temporal dead zone
+    const useContextSetting = new Setting(contentEl)
       .setName("Include context prompt")
       .setDesc("Send the adapter prompt and context template as the initial message")
       .addToggle((toggle) => {
@@ -189,8 +192,8 @@ export class AgentProfileEditModal extends Modal {
         });
       });
 
-    // Container for adapter prompt preview and suppress toggle - gated on useContext
-    const contextDependentEl = contentEl.createDiv();
+    // Reorder DOM: move contextDependentEl after the toggle setting
+    contentEl.insertAfter(contextDependentEl, useContextSetting.settingEl);
     this.renderContextDependentSection(contextDependentEl);
 
     // Context prompt
