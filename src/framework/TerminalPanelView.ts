@@ -2125,6 +2125,10 @@ export class TerminalPanelView {
       (entry) => {
         this.launchAction("restore session", () => this.restoreClosedSession(entry));
       },
+      () => {
+        (this.plugin.app as any).setting.open();
+        (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
+      },
     ).open();
   }
 

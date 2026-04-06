@@ -767,6 +767,16 @@ button.wt-spawn-claude-ctx:hover svg {
   margin-bottom: 16px;
 }
 
+.wt-custom-spawn-settings-link {
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.wt-custom-spawn-settings-link:hover {
+  text-decoration: underline;
+}
+
 .wt-custom-spawn-input,
 .wt-custom-spawn-textarea {
   width: 100%;
