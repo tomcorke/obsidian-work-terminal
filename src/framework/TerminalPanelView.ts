@@ -1384,8 +1384,12 @@ export class TerminalPanelView {
         prompt = await this.getAgentContextPrompt(item, fresh, profile.suppressAdapterPrompt);
       }
       if (!prompt) {
-        new Notice("Could not build a contextual prompt for this item");
-        return;
+        if (!profile.suppressAdapterPrompt) {
+          new Notice("Could not build a contextual prompt for this item");
+          return;
+        }
+        // suppressAdapterPrompt is on but no template exists - launch without context
+        prompt = undefined;
       }
     }
 

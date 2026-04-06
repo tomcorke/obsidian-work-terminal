@@ -3871,6 +3871,42 @@ describe("profile launch", () => {
     expect(callArgs.prompt).not.toContain("adapter prompt");
   });
 
+  it("launches without aborting when suppressAdapterPrompt is true and no template exists", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        useContext: true,
+        suppressAdapterPrompt: true,
+        contextPrompt: "",
+      }),
+    );
+
+    // Should NOT abort - spawnAgentSession should be called
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
+    // prompt should be undefined since there's nothing to pass
+    expect(callArgs.prompt).toBeUndefined();
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+  });
+
   it("passes arguments when paramPassMode is launch-only", async () => {
     const { view } = createView();
     await flushAsync();
