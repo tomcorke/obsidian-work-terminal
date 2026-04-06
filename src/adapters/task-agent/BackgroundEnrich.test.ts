@@ -13,8 +13,6 @@ import {
   insertIngestionFailedFlag,
   prepareRetryEnrichment,
   findFileByUuid,
-  DEFAULT_ENRICHMENT_PROMPT,
-  DEFAULT_RETRY_ENRICHMENT_PROMPT,
 } from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {

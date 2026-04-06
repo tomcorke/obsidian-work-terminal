@@ -29,16 +29,18 @@ export class TaskAgentAdapter extends BaseAdapter {
   private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
 
-  createParser(app: App, basePath: string, settings: Record<string, unknown>): WorkItemParser {
+  createParser(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemParser {
+    const resolvedSettings = settings ?? {};
     this._app = app;
-    this._settings = settings;
-    return new TaskParser(app, basePath, settings);
+    this._settings = resolvedSettings;
+    return new TaskParser(app, basePath, resolvedSettings);
   }
 
-  createMover(app: App, basePath: string, settings: Record<string, unknown>): WorkItemMover {
+  createMover(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemMover {
+    const resolvedSettings = settings ?? {};
     this._app = app;
-    this._settings = settings;
-    return new TaskMover(app, basePath, settings);
+    this._settings = resolvedSettings;
+    return new TaskMover(app, basePath, resolvedSettings);
   }
 
   createCardRenderer(): CardRenderer {
