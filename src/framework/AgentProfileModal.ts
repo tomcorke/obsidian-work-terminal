@@ -188,7 +188,8 @@ export class AgentProfileEditModal extends Modal {
         });
       });
 
-    // Adapter prompt preview (only shown when useContext is enabled)
+    // Adapter prompt preview - always shown when the adapter provides a description,
+    // regardless of useContext state, so users can see what gets prepended.
     if (this.adapterPromptDescription) {
       const previewEl = contentEl.createDiv({ cls: "wt-adapter-prompt-preview" });
       previewEl.createDiv({

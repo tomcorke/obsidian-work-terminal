@@ -290,6 +290,8 @@ export class ListPanel {
       },
       onDelete: () => this.deleteItem(item),
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
+      // Used for "Copy Context Prompt" in the card context menu - a profile-independent
+      // preview, so suppressAdapterPrompt does not apply (always includes adapter prompt).
       getContextPrompt: () => this.terminalPanel.getAgentContextPrompt(item),
       onRetryEnrich: () => this.retryEnrichment(item),
       onClearResumeSessions: () => this.terminalPanel.clearResumeSessionsForItem(item.id),
