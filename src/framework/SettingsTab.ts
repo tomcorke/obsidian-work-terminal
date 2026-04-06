@@ -72,8 +72,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       if (promptBuilder?.describePromptFormat) {
         this.adapterPromptDescription = promptBuilder.describePromptFormat();
       }
-    } catch {
-      // Adapter may not support prompt builder (e.g. stub adapter)
+    } catch (error) {
+      // createPromptBuilder() or describePromptFormat() threw at construction time
+      console.warn("[work-terminal] Failed to get adapter prompt format description", error);
     }
   }
 
