@@ -674,8 +674,17 @@ describe("obsidian automation helpers", () => {
     expect(killed).toEqual([100]);
   });
 
-  it("exports OBSIDIAN_BINARY constant", () => {
-    expect(automation.OBSIDIAN_BINARY).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
+  it("exports OBSIDIAN_BINARY constant matching current platform", () => {
+    const binary = automation.OBSIDIAN_BINARY;
+    expect(typeof binary).toBe("string");
+    expect(binary.length).toBeGreaterThan(0);
+    if (process.platform === "darwin") {
+      expect(binary).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
+    } else if (process.platform === "win32") {
+      expect(binary).toMatch(/Obsidian\.exe$/);
+    } else if (process.platform === "linux") {
+      expect(binary).toMatch(/obsidian$/);
+    }
   });
 
   it("seedUserDataDir creates obsidian.json with vault config", async () => {

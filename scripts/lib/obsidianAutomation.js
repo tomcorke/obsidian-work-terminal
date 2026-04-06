@@ -11,8 +11,41 @@ const ISOLATED_PORT_BASE = 9300;
 const ISOLATED_PORT_RANGE = 100;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_TIMEOUT_MS = 10_000;
-const OBSIDIAN_BINARY =
-  process.env.OBSIDIAN_BINARY || "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
+function getDefaultObsidianBinary() {
+  if (process.env.OBSIDIAN_BINARY) {
+    return process.env.OBSIDIAN_BINARY;
+  }
+  switch (process.platform) {
+    case "darwin":
+      return "/Applications/Obsidian.app/Contents/MacOS/Obsidian";
+    case "linux": {
+      // Check common Linux install locations in order of likelihood
+      const linuxPaths = [
+        "/usr/bin/obsidian",
+        path.join(os.homedir(), ".local/bin/obsidian"),
+        "/opt/Obsidian/obsidian",
+        `/snap/obsidian/current/obsidian`,
+        "/usr/local/bin/obsidian",
+      ];
+      for (const p of linuxPaths) {
+        if (fs.existsSync(p)) return p;
+      }
+      // Default to the most common location even if not found yet
+      return "/usr/bin/obsidian";
+    }
+    case "win32":
+      return path.join(
+        process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+        "Obsidian",
+        "Obsidian.exe",
+      );
+    default:
+      throw new Error(
+        `Unsupported platform "${process.platform}". Set the OBSIDIAN_BINARY environment variable to your Obsidian binary path.`,
+      );
+  }
+}
+const OBSIDIAN_BINARY = getDefaultObsidianBinary();
 const DEFAULT_SELECTOR_PADDING = 12;
 const DEFAULT_VAULT_DIR = path.join(".claude", "testing", "obsidian-vault");
 const DEFAULT_SCREENSHOT_PATH = path.join("output", "obsidian-screenshot.png");
