@@ -341,8 +341,9 @@ export function buildAgentArgs(
   extraArgs?: string,
   prompt?: string,
   additionalAgentContext?: string,
+  resumeConfigOverride?: import("./AgentProfile").AgentResumeConfig,
 ): string[] {
-  const config = getResumeConfig(agentType);
+  const config = resumeConfigOverride ?? getResumeConfig(agentType);
   const args: string[] = [];
 
   if (extraArgs) {

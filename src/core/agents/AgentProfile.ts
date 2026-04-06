@@ -53,7 +53,7 @@ export const BRAND_COLORS: Partial<Record<ProfileIcon, string>> = {
 // Agent types (maps to session type families)
 // ---------------------------------------------------------------------------
 
-export const AGENT_TYPES = ["claude", "copilot", "strands", "shell"] as const;
+export const AGENT_TYPES = ["claude", "copilot", "strands", "shell", "custom"] as const;
 export type AgentType = (typeof AGENT_TYPES)[number];
 
 // ---------------------------------------------------------------------------
@@ -94,6 +94,19 @@ export interface AgentProfile {
   button: ProfileButton;
   /** Order index for sorting in the UI. Lower values first. */
   sortOrder: number;
+  // ---------------------------------------------------------------------------
+  // Resume overrides (custom agent type only)
+  // ---------------------------------------------------------------------------
+  /** Whether this custom profile supports session resume. */
+  resumable?: boolean;
+  /** Resume flag name (e.g. "--session-id"). */
+  resumeFlag?: string;
+  /** Resume flag format: "flag-space" = --flag ID, "flag-equals" = --flag=ID. */
+  resumeFlagFormat?: "flag-space" | "flag-equals";
+  /** How context prompt is passed: "positional" = trailing arg, "flag" = via promptFlag. */
+  promptInjectionMode?: "positional" | "flag";
+  /** CLI flag for injecting context prompt (e.g. "-i"). Used when promptInjectionMode is "flag". */
+  promptFlag?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +124,9 @@ const ProfileButtonSchema = z.object({
 /**
  * Strict schema used for import validation - all fields required.
  */
+const RESUME_FLAG_FORMATS = ["flag-space", "flag-equals"] as const;
+const PROMPT_INJECTION_MODES = ["positional", "flag"] as const;
+
 const AgentProfileSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -124,6 +140,11 @@ const AgentProfileSchema = z.object({
   paramPassMode: z.enum(PARAM_PASS_MODES),
   button: ProfileButtonSchema,
   sortOrder: z.number(),
+  resumable: z.boolean().optional(),
+  resumeFlag: z.string().optional(),
+  resumeFlagFormat: z.enum(RESUME_FLAG_FORMATS).optional(),
+  promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
+  promptFlag: z.string().optional(),
 });
 
 /**
@@ -148,6 +169,11 @@ const StoredProfileSchema = z
       label: "Agent",
     }),
     sortOrder: z.number().default(0),
+    resumable: z.boolean().optional(),
+    resumeFlag: z.string().optional(),
+    resumeFlagFormat: z.enum(RESUME_FLAG_FORMATS).optional(),
+    promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
+    promptFlag: z.string().optional(),
   })
   .passthrough();
 
@@ -189,6 +215,16 @@ interface AgentResumeConfigBase {
   displayLabel: string;
   /** Help text describing session resume behavior for this agent type. */
   helpText: string;
+  /**
+   * Patterns for detecting agent activity in the terminal buffer.
+   * - `activeLinePatterns`: regexes tested per-line against the last 6 screen lines.
+   * - `activeJoinedPatterns`: regexes tested against the joined/compact tail string.
+   * When empty, active indicator detection is skipped (agent stays inactive/idle).
+   */
+  activityPatterns?: {
+    activeLinePatterns: RegExp[];
+    activeJoinedPatterns: RegExp[];
+  };
 }
 
 /**
@@ -231,6 +267,13 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     helpText:
       "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.",
     deferSessionId: false,
+    activityPatterns: {
+      activeLinePatterns: [
+        /^\s*\u2733.*\u2026/, // spinner with ellipsis = in progress
+        /^\s*\u23bf\s+.*\u2026/, // tool output with ellipsis = running
+      ],
+      activeJoinedPatterns: [],
+    },
   },
   copilot: {
     resumable: true,
@@ -251,6 +294,14 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     deferSessionId: true,
     sessionLogDir: "~/.copilot/logs",
     sessionLogPattern: "Workspace initialized: ([0-9a-f-]{36})",
+    activityPatterns: {
+      activeLinePatterns: [
+        /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?:Thinking|Executing|Cancelling)\b/, // known status labels
+      ],
+      activeJoinedPatterns: [
+        /[\u25c9\u25ce\u25cb\u25cf].*\(Esc\s+to\s+cancel(?:\s+\u00b7\s+[^)]*)?\)/, // spinner + cancel hint
+      ],
+    },
   },
   strands: {
     resumable: false,
@@ -283,6 +334,22 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     helpText: "Shell tabs are local terminals only and are not saved for restart resume.",
     deferSessionId: false,
   },
+  custom: {
+    resumable: false,
+    sessionTracking: false,
+    resumeFlagFormat: "flag-space",
+    resumeFlag: "",
+    promptInjectionMode: "positional",
+    commandSettingKey: "",
+    defaultCommand: "",
+    extraArgsSettingKey: "",
+    cliDisplayName: "Custom CLI",
+    installHint: "",
+    displayLabel: "Custom",
+    helpText:
+      "Custom agent profiles let you use any CLI with Work Terminal. Configure resume support in the profile's advanced settings if your CLI supports session IDs.",
+    deferSessionId: false,
+  },
 };
 
 /**
@@ -297,6 +364,25 @@ export function getResumeConfig(agentType: AgentType): AgentResumeConfig {
  */
 export function isResumableAgentType(agentType: AgentType): boolean {
   return AGENT_RESUME_CONFIGS[agentType].resumable;
+}
+
+/**
+ * Build a resume config for a custom profile by merging profile-level overrides
+ * onto the base "custom" agent type config.
+ */
+export function getProfileResumeConfig(profile: AgentProfile): AgentResumeConfig {
+  const base = getResumeConfig(profile.agentType);
+  if (profile.agentType !== "custom") return base;
+  return {
+    ...base,
+    resumable: profile.resumable ?? base.resumable,
+    resumeFlag: profile.resumeFlag ?? base.resumeFlag,
+    resumeFlagFormat: profile.resumeFlagFormat ?? base.resumeFlagFormat,
+    promptInjectionMode: profile.promptInjectionMode ?? base.promptInjectionMode,
+    promptFlag: profile.promptFlag ?? base.promptFlag,
+    cliDisplayName: profile.name || base.cliDisplayName,
+    displayLabel: profile.name || base.displayLabel,
+  };
 }
 
 /**
@@ -325,7 +411,18 @@ export function hasSessionTracking(agentType: AgentType): boolean {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function agentTypeToSessionType(agentType: AgentType, withContext: boolean): SessionType {
+/** Prefix used for profile-based session types (custom agent profiles). */
+export const PROFILE_SESSION_PREFIX = "profile:";
+
+/**
+ * Map an agent type to a session type string.
+ * For custom agents, pass a profileId to get a profile-scoped session type.
+ */
+export function agentTypeToSessionType(
+  agentType: AgentType,
+  withContext: boolean,
+  profileId?: string,
+): SessionType {
   switch (agentType) {
     case "claude":
       return withContext ? "claude-with-context" : "claude";
@@ -335,13 +432,35 @@ export function agentTypeToSessionType(agentType: AgentType, withContext: boolea
       return withContext ? "strands-with-context" : "strands";
     case "shell":
       return "shell";
+    case "custom":
+      return profileId ? `${PROFILE_SESSION_PREFIX}${profileId}` : "custom";
   }
+}
+
+/**
+ * Check whether a session type is a profile-based custom session.
+ */
+export function isProfileSessionType(sessionType: string): boolean {
+  return sessionType.startsWith(PROFILE_SESSION_PREFIX);
+}
+
+/**
+ * Extract the profile ID from a profile-based session type.
+ * Returns undefined if the session type is not profile-based.
+ */
+export function extractProfileId(sessionType: string): string | undefined {
+  if (!sessionType.startsWith(PROFILE_SESSION_PREFIX)) return undefined;
+  return sessionType.slice(PROFILE_SESSION_PREFIX.length);
 }
 
 export function sessionTypeToAgentType(sessionType: SessionType): {
   agentType: AgentType;
   withContext: boolean;
 } {
+  // Profile-based session types are always custom agents
+  if (isProfileSessionType(sessionType)) {
+    return { agentType: "custom", withContext: false };
+  }
   switch (sessionType) {
     case "claude":
       return { agentType: "claude", withContext: false };
@@ -357,6 +476,10 @@ export function sessionTypeToAgentType(sessionType: SessionType): {
       return { agentType: "strands", withContext: true };
     case "shell":
       return { agentType: "shell", withContext: false };
+    case "custom":
+      return { agentType: "custom", withContext: false };
+    default:
+      return { agentType: "custom", withContext: false };
   }
 }
 

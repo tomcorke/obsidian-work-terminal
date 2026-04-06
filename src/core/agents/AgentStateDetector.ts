@@ -117,6 +117,8 @@ export class AgentStateDetector {
   private _prevScreenFingerprint = "";
   private _unchangedPolls = 0;
   onChange?: (state: AgentState) => void;
+  /** Activity patterns from AgentResumeConfig. When set, config-driven detection is used. */
+  activityPatterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] };
 
   constructor(
     private terminal: Terminal,
@@ -212,7 +214,7 @@ export class AgentStateDetector {
       this._unchangedPolls++;
     }
 
-    const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
+    const hasActiveIndicator = hasAgentActiveIndicator(screenLines, this.activityPatterns);
 
     if (hasActiveIndicator || screenChanged) {
       // During post-reload grace period, treat "active" as "idle"
@@ -280,30 +282,41 @@ export function aggregateState(states: AgentState[]): AgentState {
 
 /**
  * Detect whether the visible terminal tail shows an in-progress agent status.
- * Supports Claude's ellipsis-based spinner/tool rows and Copilot's rotating
- * Thinking indicator.
+ *
+ * When `patterns` is provided (from AgentResumeConfig.activityPatterns), only
+ * those patterns are checked. When omitted, falls back to the legacy combined
+ * Claude + Copilot detection for backward compatibility.
  */
-export function hasAgentActiveIndicator(screenLines: string[]): boolean {
-  // Look for structural indicators in the last few lines only (near the status bar).
-  //   \u2733 <text>... - Claude spinner line with ellipsis means work in progress
-  //   \u23bf  <text>... - Claude tool output with ellipsis means tool still running
-  //   \u25c9/\u25ce/\u25cb/\u25cf <status> (Esc to cancel) - Copilot activity indicator
-  //   \u25c9/\u25ce/\u25cb/\u25cf Executing|Cancelling - Copilot fixed activity labels
-  // On narrow terminals these status lines can wrap across multiple visual
-  // rows, so we check both per-line and joined tail strings.
+export function hasAgentActiveIndicator(
+  screenLines: string[],
+  patterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] },
+): boolean {
   const tail = screenLines.slice(-6);
+  if (tail.length === 0) return false;
   const tailJoined = tail.join(" ");
   const tailCompactJoined = tail.map((line) => line.trim()).join("");
+
+  if (patterns) {
+    // Config-driven detection: check per-line patterns then joined patterns
+    if (patterns.activeLinePatterns.length === 0 && patterns.activeJoinedPatterns.length === 0) {
+      return false;
+    }
+    const lineMatch =
+      patterns.activeLinePatterns.length > 0 &&
+      tail.some((line) => patterns.activeLinePatterns.some((p) => p.test(line)));
+    if (lineMatch) return true;
+    const joinedMatch =
+      patterns.activeJoinedPatterns.length > 0 &&
+      patterns.activeJoinedPatterns.some((p) => p.test(tailJoined) || p.test(tailCompactJoined));
+    return !!joinedMatch;
+  }
+
+  // Legacy fallback: combined Claude + Copilot patterns (used when no config provided)
   const copilotSpinnerRowPattern = /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?!\(Esc\b)\S/;
   const copilotKnownStatusPattern = /\b(?:Thinking|Executing|Cancelling)\b/;
   const copilotCancelHintPattern = /\(Esc\s+to\s+cancel(?:\s+\u00b7\s+[^)]*)?\)/;
   const hasClaudeActiveIndicator =
-    tail.some(
-      (line) =>
-        /^\s*\u2733.*\u2026/.test(line) || // spinner with ellipsis = in progress
-        /^\s*\u23bf\s+.*\u2026/.test(line), // tool output with ellipsis = running
-    ) ||
-    // Wrapped lines: spinner char on one visual row, ellipsis on another
+    tail.some((line) => /^\s*\u2733.*\u2026/.test(line) || /^\s*\u23bf\s+.*\u2026/.test(line)) ||
     (/\u2733/.test(tailJoined) &&
       /\u2026/.test(tailJoined) &&
       tail.some((line) => /^\s*\u2733/.test(line)));

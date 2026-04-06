@@ -113,6 +113,8 @@ export class TerminalTab {
   profileId: string | undefined;
   profileColor: string | undefined;
   paramPassMode: import("../agents/AgentProfile").ParamPassMode | undefined;
+  /** Activity detection patterns from resume config. When set, config-driven detection is used. */
+  activityPatterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] };
 
   terminal: Terminal;
   containerEl: HTMLElement;
@@ -1204,7 +1206,7 @@ export class TerminalTab {
       this._unchangedPolls++;
     }
 
-    const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
+    const hasActiveIndicator = hasAgentActiveIndicator(screenLines, this.activityPatterns);
 
     if (hasActiveIndicator || screenChanged) {
       // During post-reload grace period, treat "active" as "idle"

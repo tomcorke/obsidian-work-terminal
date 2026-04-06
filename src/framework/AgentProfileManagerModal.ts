@@ -13,6 +13,7 @@ const AGENT_TYPE_LABELS: Record<string, string> = {
   copilot: "Copilot",
   strands: "Strands",
   shell: "Shell",
+  custom: "Custom",
 };
 
 export class AgentProfileManagerModal extends Modal {

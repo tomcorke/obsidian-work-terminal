@@ -43,7 +43,9 @@ import {
   agentTypeToSessionType,
   sessionTypeToAgentType,
   getResumeConfig,
+  getProfileResumeConfig,
   getAllResumeFlags,
+  type AgentResumeConfig,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
 
@@ -1331,7 +1333,11 @@ export class TerminalPanelView {
   async spawnFromProfile(profile: AgentProfile): Promise<void> {
     if (!this.profileManager) return;
     const fresh = await this.loadFreshSettings();
-    const sessionType = agentTypeToSessionType(profile.agentType, profile.useContext);
+    const sessionType = agentTypeToSessionType(
+      profile.agentType,
+      profile.useContext,
+      profile.agentType === "custom" ? profile.id : undefined,
+    );
     const command = this.profileManager.resolveCommand(profile, fresh);
     const cwd = this.profileManager.resolveCwd(profile, fresh);
     const extraArgs = this.profileManager.resolveArguments(profile, fresh);
@@ -1404,6 +1410,8 @@ export class TerminalPanelView {
 
     // Profile's resolveArguments() already includes global args, so skip the
     // global merge inside spawnAgentSession to avoid doubling them.
+    const resumeConfigOverrides =
+      profile.agentType === "custom" ? getProfileResumeConfig(profile) : undefined;
     await this.spawnAgentSession({
       agentType: profile.agentType,
       sessionType,
@@ -1414,6 +1422,7 @@ export class TerminalPanelView {
       label,
       prompt,
       freshSettings: fresh,
+      resumeConfigOverrides,
     });
 
     // Apply profile metadata to the newly created tab
@@ -1426,6 +1435,11 @@ export class TerminalPanelView {
         if (profile.button.color) lastTab.profileColor = profile.button.color;
         if (profile.paramPassMode !== "launch-only") {
           lastTab.paramPassMode = profile.paramPassMode;
+        }
+        // Set activity patterns from the resolved resume config
+        const resolvedConfig = resumeConfigOverrides ?? getResumeConfig(profile.agentType);
+        if (resolvedConfig.activityPatterns) {
+          lastTab.activityPatterns = resolvedConfig.activityPatterns;
         }
         this.renderTabBar();
       }
@@ -1563,12 +1577,15 @@ export class TerminalPanelView {
     profileId?: string;
   }): TerminalTab | null {
     const { agentType } = sessionTypeToAgentType(options.sessionType);
-    const resumeConfig = getResumeConfig(agentType);
 
     // Look up originating profile if available
     const profile = options.profileId
       ? this.profileManager?.getProfile(options.profileId)
       : undefined;
+    const resumeConfig =
+      profile && profile.agentType === "custom"
+        ? getProfileResumeConfig(profile)
+        : getResumeConfig(agentType);
 
     const configuredCwd = expandTilde(
       this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"),
@@ -1640,12 +1657,14 @@ export class TerminalPanelView {
     const fresh = await this.loadFreshSettings();
     const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     const { agentType } = sessionTypeToAgentType(tab.sessionType);
-    const resumeConfig = getResumeConfig(agentType);
+    const profile = tab.profileId ? this.profileManager?.getProfile(tab.profileId) : undefined;
+    const resumeConfig =
+      profile && profile.agentType === "custom"
+        ? getProfileResumeConfig(profile)
+        : getResumeConfig(agentType);
     let replacement: TerminalTab | null;
     if (tab.agentSessionId) {
-      const fallbackCommand = tab.profileId
-        ? this.profileManager?.getProfile(tab.profileId)?.command?.trim()
-        : undefined;
+      const fallbackCommand = profile?.command?.trim();
       replacement = this.createResumedTab({
         targetItemId,
         sessionType: tab.sessionType,
@@ -2265,8 +2284,10 @@ export class TerminalPanelView {
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
+    /** Override the base resume config (used for custom agent profiles). */
+    resumeConfigOverrides?: AgentResumeConfig;
   }): Promise<TerminalTab | null> {
-    const resumeConfig = getResumeConfig(options.agentType);
+    const resumeConfig = options.resumeConfigOverrides ?? getResumeConfig(options.agentType);
     const { withContext } = sessionTypeToAgentType(options.sessionType);
 
     // Build context prompt on demand if this is a context session without one.
@@ -2323,7 +2344,13 @@ export class TerminalPanelView {
     }
 
     // Build args via the unified buildAgentArgs helper
-    const baseArgs = buildAgentArgs(options.agentType, mergedExtraArgs, prompt);
+    const baseArgs = buildAgentArgs(
+      options.agentType,
+      mergedExtraArgs,
+      prompt,
+      undefined,
+      options.resumeConfigOverrides,
+    );
 
     // Prepend session/resume flag for resumable agents (skip when deferring)
     let args: string[];
