@@ -82,15 +82,18 @@ export function spawnHeadlessClaude(
       stderrChunks.push(data);
     });
 
-    const timeoutSec = Math.round(timeoutMs / 1000);
+    const timeoutSec = Math.ceil(timeoutMs / 1000);
     const timeout = setTimeout(() => {
       if (!settled && !proc.killed) {
         settled = true;
         proc.kill("SIGTERM");
-        // Escalate to SIGKILL if the process does not exit after SIGTERM
+        // Escalate to SIGKILL if the process does not exit after SIGTERM.
+        // Note: proc.killed is set to true immediately after a successful
+        // SIGTERM send, so we check proc.exitCode instead to determine
+        // whether the process has actually exited.
         setTimeout(() => {
           try {
-            if (!proc.killed) proc.kill("SIGKILL");
+            if (proc.exitCode === null) proc.kill("SIGKILL");
           } catch {
             /* already gone */
           }
