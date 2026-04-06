@@ -1187,10 +1187,13 @@ export class TerminalTab {
   private _checkState(): void {
     if (!this._isResumableAgent) return;
 
+    const hidden = !this.isVisible;
+
     const screenLines = this._readTerminalScreen();
 
     // Check for waiting patterns first (highest priority).
-    // Suppress waiting if the tab is currently visible - the user can already see it.
+    // Works for both visible and hidden tabs since it reads buffer content
+    // directly rather than relying on screen diffs.
     if (this._looksLikeWaiting(screenLines)) {
       this._prevScreenFingerprint = "";
       this._unchangedPolls = 0;
@@ -1208,6 +1211,29 @@ export class TerminalTab {
     const screenChanged =
       this._prevScreenFingerprint !== "" && fingerprint !== this._prevScreenFingerprint;
     this._prevScreenFingerprint = fingerprint;
+
+    // For hidden tabs, always reset the fingerprint baseline after each check
+    // so that buffer diffs from hide/show cycles don't accumulate into false
+    // "active" signals. Screen-change detection is unreliable when hidden, but
+    // pattern-based detection (waiting, active indicators) still works. Fixes #334.
+    if (hidden) {
+      this._prevScreenFingerprint = "";
+      this._unchangedPolls = 0;
+
+      const hasActiveIndicator = hasAgentActiveIndicator(screenLines, this.activityPatterns);
+      if (hasActiveIndicator) {
+        if (Date.now() < this._suppressActiveUntil) {
+          this._setAgentState("idle");
+        } else {
+          this._setAgentState("active");
+        }
+      } else {
+        this._suppressActiveUntil = 0;
+        this._setAgentState("idle");
+      }
+      return;
+    }
+
     if (screenChanged) {
       this._unchangedPolls = 0;
     } else {

@@ -130,8 +130,13 @@ export class TabManager {
           targetIdx = remembered;
         }
       }
+      // Reset fingerprints on ALL tabs for this item so hidden tabs don't
+      // false-positive as "active" when background polling detects stale
+      // buffer differences. Fixes #334.
+      for (const tab of tabs) {
+        tab.resetScreenFingerprint();
+      }
       tabs[targetIdx].resumeWebGl();
-      tabs[targetIdx].resetScreenFingerprint();
       tabs[targetIdx].show();
       tabs[targetIdx].clearWaiting();
       this.activeTabIndex = targetIdx;
