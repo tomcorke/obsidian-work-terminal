@@ -178,43 +178,23 @@ export class AgentProfileEditModal extends Modal {
     argsSetting.settingEl.style.flexWrap = "wrap";
     argsSetting.controlEl.style.width = "100%";
 
-    // Use context
-    new Setting(contentEl)
+    // Container for adapter prompt preview and suppress toggle - gated on useContext
+    const contextDependentEl = contentEl.createDiv();
+
+    // Use context - must be declared after contextDependentEl to avoid temporal dead zone
+    const useContextSetting = new Setting(contentEl)
       .setName("Include context prompt")
       .setDesc("Send the adapter prompt and context template as the initial message")
       .addToggle((toggle) => {
         toggle.setValue(this.draft.useContext).onChange((value) => {
           this.draft.useContext = value;
+          this.renderContextDependentSection(contextDependentEl);
         });
       });
 
-    // Adapter prompt preview - always shown when the adapter provides a description,
-    // regardless of useContext state, so users can see what gets prepended.
-    if (this.adapterPromptDescription) {
-      const previewEl = contentEl.createDiv({ cls: "wt-adapter-prompt-preview" });
-      previewEl.createDiv({
-        text: "Adapter base prompt",
-        cls: "wt-adapter-prompt-preview-label",
-      });
-      previewEl.createDiv({
-        text: "When context is enabled, the adapter prepends the following to every context prompt:",
-        cls: "wt-adapter-prompt-preview-help",
-      });
-      const codeEl = previewEl.createEl("pre", { cls: "wt-adapter-prompt-preview-code" });
-      codeEl.createEl("code", { text: this.adapterPromptDescription });
-    }
-
-    // Suppress adapter prompt
-    new Setting(contentEl)
-      .setName("Suppress adapter prompt")
-      .setDesc(
-        "When enabled, the adapter's base prompt is not prepended - your context template is used as the full prompt. Use $title, $state, $filePath, $id placeholders for item data.",
-      )
-      .addToggle((toggle) => {
-        toggle.setValue(this.draft.suppressAdapterPrompt).onChange((value) => {
-          this.draft.suppressAdapterPrompt = value;
-        });
-      });
+    // Reorder DOM: move contextDependentEl after the toggle setting
+    contentEl.insertAfter(contextDependentEl, useContextSetting.settingEl);
+    this.renderContextDependentSection(contextDependentEl);
 
     // Context prompt
     const ctxSetting = new Setting(contentEl)
@@ -359,6 +339,39 @@ export class AgentProfileEditModal extends Modal {
       this.onSave(this.draft);
       this.close();
     });
+  }
+
+  private renderContextDependentSection(containerEl: HTMLElement): void {
+    containerEl.empty();
+
+    if (!this.draft.useContext) return;
+
+    // Adapter prompt preview
+    if (this.adapterPromptDescription) {
+      const previewEl = containerEl.createDiv({ cls: "wt-adapter-prompt-preview" });
+      previewEl.createDiv({
+        text: "Adapter base prompt",
+        cls: "wt-adapter-prompt-preview-label",
+      });
+      previewEl.createDiv({
+        text: "When context is enabled, the adapter prepends the following to every context prompt:",
+        cls: "wt-adapter-prompt-preview-help",
+      });
+      const codeEl = previewEl.createEl("pre", { cls: "wt-adapter-prompt-preview-code" });
+      codeEl.createEl("code", { text: this.adapterPromptDescription });
+    }
+
+    // Suppress adapter prompt
+    new Setting(containerEl)
+      .setName("Suppress adapter prompt")
+      .setDesc(
+        "When enabled, the adapter's base prompt is not prepended - your context template is used as the full prompt. Use $title, $state, $filePath, $id placeholders for item data.",
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.suppressAdapterPrompt).onChange((value) => {
+          this.draft.suppressAdapterPrompt = value;
+        });
+      });
   }
 
   private addColorPreview(controlEl: HTMLElement): void {
