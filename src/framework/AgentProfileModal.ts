@@ -202,22 +202,6 @@ export class AgentProfileEditModal extends Modal {
     contentEl.insertAfter(contextDependentEl, useContextSetting.settingEl);
     this.renderContextDependentSection(contextDependentEl);
 
-    // Context prompt
-    const ctxSetting = new Setting(contentEl)
-      .setName("Context prompt template")
-      .setDesc(
-        "Custom context template for this profile. Leave blank to use the global additional context. Placeholders: $title, $state, $filePath, $id, $sessionId",
-      )
-      .addTextArea((ta) => {
-        ta.setValue(this.draft.contextPrompt).onChange((value) => {
-          this.draft.contextPrompt = value;
-        });
-        ta.inputEl.style.width = "100%";
-        ta.inputEl.style.minHeight = "80px";
-      });
-    ctxSetting.settingEl.style.flexWrap = "wrap";
-    ctxSetting.controlEl.style.width = "100%";
-
     // Parameter pass mode
     new Setting(contentEl)
       .setName("Parameter pass mode")
@@ -469,6 +453,22 @@ export class AgentProfileEditModal extends Modal {
           this.draft.suppressAdapterPrompt = value;
         });
       });
+
+    // Context prompt template
+    const ctxSetting = new Setting(containerEl)
+      .setName("Context prompt template")
+      .setDesc(
+        "Custom context template for this profile. Leave blank to use the global additional context. Placeholders: $title, $state, $filePath, $id, $sessionId",
+      )
+      .addTextArea((ta) => {
+        ta.setValue(this.draft.contextPrompt).onChange((value) => {
+          this.draft.contextPrompt = value;
+        });
+        ta.inputEl.style.width = "100%";
+        ta.inputEl.style.minHeight = "80px";
+      });
+    ctxSetting.settingEl.style.flexWrap = "wrap";
+    ctxSetting.controlEl.style.width = "100%";
   }
 
   private addColorPreview(controlEl: HTMLElement): void {
