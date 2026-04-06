@@ -674,8 +674,100 @@ describe("obsidian automation helpers", () => {
     expect(killed).toEqual([100]);
   });
 
-  it("exports OBSIDIAN_BINARY constant", () => {
-    expect(automation.OBSIDIAN_BINARY).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
+  it("exports OBSIDIAN_BINARY as a lazy getter matching current platform", () => {
+    const binary = automation.OBSIDIAN_BINARY;
+    expect(typeof binary).toBe("string");
+    expect(binary.length).toBeGreaterThan(0);
+    if (process.platform === "darwin") {
+      expect(binary).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
+    } else if (process.platform === "win32") {
+      expect(binary).toMatch(/Obsidian\.exe$/);
+    } else if (process.platform === "linux") {
+      expect(binary).toMatch(/obsidian$/);
+    }
+  });
+
+  it("OBSIDIAN_BINARY env var takes priority over platform detection", () => {
+    const original = process.env.OBSIDIAN_BINARY;
+    try {
+      process.env.OBSIDIAN_BINARY = "/custom/path/to/obsidian";
+      expect(automation.getDefaultObsidianBinary()).toBe("/custom/path/to/obsidian");
+    } finally {
+      if (original === undefined) {
+        delete process.env.OBSIDIAN_BINARY;
+      } else {
+        process.env.OBSIDIAN_BINARY = original;
+      }
+    }
+  });
+
+  it("Linux detection returns the first existing candidate path", () => {
+    const originalPlatform = process.platform;
+    const originalEnv = process.env.OBSIDIAN_BINARY;
+    try {
+      delete process.env.OBSIDIAN_BINARY;
+      Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+
+      // Mock existsSync to say only /opt/Obsidian/obsidian exists
+      const existsSyncSpy = vi
+        .spyOn(require("node:fs"), "existsSync")
+        .mockImplementation((p: string) => {
+          return p === "/opt/Obsidian/obsidian";
+        });
+
+      expect(automation.getDefaultObsidianBinary()).toBe("/opt/Obsidian/obsidian");
+
+      existsSyncSpy.mockRestore();
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+      if (originalEnv === undefined) {
+        delete process.env.OBSIDIAN_BINARY;
+      } else {
+        process.env.OBSIDIAN_BINARY = originalEnv;
+      }
+    }
+  });
+
+  it("Linux detection throws when no candidate path exists", () => {
+    const originalPlatform = process.platform;
+    const originalEnv = process.env.OBSIDIAN_BINARY;
+    try {
+      delete process.env.OBSIDIAN_BINARY;
+      Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+
+      const existsSyncSpy = vi.spyOn(require("node:fs"), "existsSync").mockReturnValue(false);
+
+      expect(() => automation.getDefaultObsidianBinary()).toThrow(
+        "Obsidian binary not found in any standard Linux location",
+      );
+
+      existsSyncSpy.mockRestore();
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+      if (originalEnv === undefined) {
+        delete process.env.OBSIDIAN_BINARY;
+      } else {
+        process.env.OBSIDIAN_BINARY = originalEnv;
+      }
+    }
+  });
+
+  it("unsupported platform throws a descriptive error", () => {
+    const originalPlatform = process.platform;
+    const originalEnv = process.env.OBSIDIAN_BINARY;
+    try {
+      delete process.env.OBSIDIAN_BINARY;
+      Object.defineProperty(process, "platform", { value: "freebsd", configurable: true });
+
+      expect(() => automation.getDefaultObsidianBinary()).toThrow('Unsupported platform "freebsd"');
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+      if (originalEnv === undefined) {
+        delete process.env.OBSIDIAN_BINARY;
+      } else {
+        process.env.OBSIDIAN_BINARY = originalEnv;
+      }
+    }
   });
 
   it("seedUserDataDir creates obsidian.json with vault config", async () => {
