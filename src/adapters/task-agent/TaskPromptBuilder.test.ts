@@ -101,4 +101,13 @@ describe("TaskPromptBuilder", () => {
     expect(prompt).not.toContain("Deadline:");
     expect(prompt).not.toContain("Blocker:");
   });
+
+  it("describes prompt format for settings UI", () => {
+    const description = builder.describePromptFormat();
+    expect(description).toContain("{title}");
+    expect(description).toContain("{state}");
+    expect(description).toContain("{path}");
+    expect(description).toContain("{deadline}");
+    expect(description).toContain("{blocker}");
+  });
 });
