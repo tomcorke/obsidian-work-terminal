@@ -35,7 +35,12 @@ vi.mock("../utils", async () => {
 });
 
 // Import after mock setup
-import { resolveLoginShellPath, getFullPath, _resetLoginShellPathCache } from "./AgentLauncher";
+import {
+  resolveLoginShellPath,
+  getFullPath,
+  getExtraPathDirs,
+  _resetLoginShellPathCache,
+} from "./AgentLauncher";
 import { expandTilde } from "../utils";
 
 describe("resolveLoginShellPath (mocked)", () => {
@@ -184,14 +189,14 @@ describe("getFullPath (mocked)", () => {
       stderr: "",
     };
 
-    const result = getFullPath({ PATH: "/env/bin:/usr/bin" } as NodeJS.ProcessEnv, path, "linux");
+    const env = { PATH: "/env/bin:/usr/bin" } as NodeJS.ProcessEnv;
+    const result = getFullPath(env, path, "linux");
     const dirs = result.split(":");
 
-    // EXTRA_PATH_DIRS come first
-    expect(dirs).toContain(expandTilde("~/.local/bin"));
-    expect(dirs).toContain(expandTilde("~/.nvm/versions/node/current/bin"));
-    expect(dirs).toContain("/usr/local/bin");
-    expect(dirs).toContain("/opt/homebrew/bin");
+    // Platform-appropriate EXTRA_PATH_DIRS come first
+    for (const extraDir of getExtraPathDirs("linux", env)) {
+      expect(dirs).toContain(extraDir);
+    }
 
     // Login shell dirs
     expect(dirs).toContain("/login/bin");
@@ -221,7 +226,7 @@ describe("getFullPath (mocked)", () => {
     );
     const dirs = result.split(":");
 
-    // EXTRA_PATH_DIRS still present
+    // Platform extra path dirs still present
     expect(dirs).toContain(expandTilde("~/.local/bin"));
     // env.PATH entries present
     expect(dirs).toContain("/fallback/bin");
@@ -242,5 +247,88 @@ describe("getFullPath (mocked)", () => {
     expect(dirs).toContain("/usr/local/bin");
     expect(dirs).toContain("/usr/bin");
     expect(dirs).toContain("/bin");
+  });
+
+  it("uses semicolon delimiter and Windows dirs on win32", () => {
+    mockSpawnSyncResult = {
+      status: 1,
+      stdout: "",
+      stderr: "",
+    };
+
+    const env = {
+      PATH: "C:\\Windows\\System32",
+      LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local",
+      APPDATA: "C:\\Users\\Test\\AppData\\Roaming",
+      ProgramFiles: "C:\\Program Files",
+    } as unknown as NodeJS.ProcessEnv;
+
+    const result = getFullPath(env, path, "win32");
+
+    // Must use semicolon delimiter (Windows convention)
+    expect(result).toContain(";");
+    expect(result).not.toMatch(/(?<![A-Za-z]):/);
+
+    const dirs = result.split(";");
+
+    // Windows extra dirs are present (expanded)
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Local\\Programs\\node");
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Roaming\\nvm");
+    expect(dirs).toContain("C:\\Program Files\\nodejs");
+
+    // env.PATH entry is present
+    expect(dirs).toContain("C:\\Windows\\System32");
+
+    // Unix dirs must NOT be present
+    const hasUnixPaths = dirs.some((d) => d.includes("/usr/") || d.includes("/opt/"));
+    expect(hasUnixPaths).toBe(false);
+  });
+});
+
+describe("getExtraPathDirs (platform-aware)", () => {
+  it("returns Unix paths for darwin", () => {
+    const dirs = getExtraPathDirs("darwin", {} as NodeJS.ProcessEnv);
+    expect(dirs).toContain(expandTilde("~/.local/bin"));
+    expect(dirs).toContain(expandTilde("~/.nvm/versions/node/current/bin"));
+    expect(dirs).toContain("/usr/local/bin");
+    expect(dirs).toContain("/opt/homebrew/bin");
+  });
+
+  it("returns Unix paths for linux", () => {
+    const dirs = getExtraPathDirs("linux", {} as NodeJS.ProcessEnv);
+    expect(dirs).toContain(expandTilde("~/.local/bin"));
+    expect(dirs).toContain("/usr/local/bin");
+  });
+
+  it("returns Windows paths for win32 with env var expansion", () => {
+    const env = {
+      LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local",
+      APPDATA: "C:\\Users\\Test\\AppData\\Roaming",
+      ProgramFiles: "C:\\Program Files",
+    } as unknown as NodeJS.ProcessEnv;
+
+    const dirs = getExtraPathDirs("win32", env);
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Local\\Programs\\node");
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Roaming\\nvm");
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Local\\Microsoft\\WinGet\\Links");
+    expect(dirs).toContain("C:\\Program Files\\nodejs");
+  });
+
+  it("preserves unexpanded env vars when variables are missing on Windows", () => {
+    const dirs = getExtraPathDirs("win32", {} as NodeJS.ProcessEnv);
+    // When env vars are undefined, the %VAR% placeholder is preserved as-is
+    expect(dirs).toContain("%LOCALAPPDATA%\\Programs\\node");
+  });
+
+  it("does not include Unix paths for win32", () => {
+    const dirs = getExtraPathDirs("win32", {} as NodeJS.ProcessEnv);
+    const hasUnixPaths = dirs.some((d) => d.includes("/usr/") || d.includes("/opt/"));
+    expect(hasUnixPaths).toBe(false);
+  });
+
+  it("does not include Windows paths for darwin", () => {
+    const dirs = getExtraPathDirs("darwin", {} as NodeJS.ProcessEnv);
+    const hasWindowsPaths = dirs.some((d) => d.includes("LOCALAPPDATA") || d.includes("APPDATA"));
+    expect(hasWindowsPaths).toBe(false);
   });
 });

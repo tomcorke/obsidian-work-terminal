@@ -4,12 +4,30 @@
 import { expandTilde, electronRequire } from "../utils";
 import { type AgentType, getResumeConfig } from "./AgentProfile";
 
-const EXTRA_PATH_DIRS = [
+const UNIX_EXTRA_PATH_DIRS = [
   "~/.local/bin",
   "~/.nvm/versions/node/current/bin",
   "/usr/local/bin",
   "/opt/homebrew/bin",
 ];
+
+const WINDOWS_EXTRA_PATH_DIRS = [
+  "%LOCALAPPDATA%\\Programs\\node",
+  "%APPDATA%\\nvm",
+  "%LOCALAPPDATA%\\Microsoft\\WinGet\\Links",
+  "%ProgramFiles%\\nodejs",
+];
+
+function expandWindowsEnvVars(p: string, env: NodeJS.ProcessEnv): string {
+  return p.replace(/%([^%]+)%/g, (_match, varName: string) => env[varName] ?? `%${varName}%`);
+}
+
+export function getExtraPathDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
+  if (isWindowsPlatform(platform)) {
+    return WINDOWS_EXTRA_PATH_DIRS.map((d) => expandWindowsEnvVars(d, env));
+  }
+  return UNIX_EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+}
 
 const DEFAULT_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
 
@@ -206,7 +224,7 @@ export function resolveLoginShellPath(): string | null {
  * Build the full augmented PATH including the user's login-shell PATH.
  *
  * Merges (in priority order):
- * 1. EXTRA_PATH_DIRS (common tool directories)
+ * 1. getExtraPathDirs() (platform-aware common tool directories)
  * 2. Login shell PATH (nvm, fnm, Homebrew, etc.)
  * 3. Current process.env.PATH (Electron baseline)
  *
@@ -219,7 +237,7 @@ export function getFullPath(
 ): string {
   const delimiter = getPathDelimiter(pathModule, platform);
   const loginPath = resolveLoginShellPath();
-  const extraDirs = EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+  const extraDirs = getExtraPathDirs(platform, env);
   const loginDirs = loginPath ? loginPath.split(delimiter) : [];
   const existingDirs = (
     env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin")
