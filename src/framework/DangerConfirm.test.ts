@@ -78,15 +78,25 @@ describe("DangerConfirm", () => {
     expect(confirmBtn!.textContent).toBe("Confirm");
   });
 
-  it("calls callback on close after confirm", () => {
+  it("calls callback when confirm button is clicked", () => {
     const callback = vi.fn();
     const app = makeApp();
     const modal = new DangerConfirm(app, "Delete item", callback);
     modal.onOpen();
 
-    (modal as any).confirmed = true;
-    modal.onClose();
+    const contentEl = (modal as any).contentEl as HTMLElement;
+    const buttons = Array.from(contentEl.querySelectorAll("button"));
+    const confirmBtn = buttons.find((button) => button.textContent === "Confirm");
+    expect(confirmBtn).toBeDefined();
 
+    // Stub close() to trigger onClose(), since the mock Modal.close() is a no-op
+    const closeSpy = vi.spyOn(modal, "close").mockImplementation(() => {
+      modal.onClose();
+    });
+
+    confirmBtn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
     expect(callback).toHaveBeenCalledTimes(1);
   });
 

@@ -13,47 +13,57 @@ vi.mock("../claude/ClaudeHookManager", () => ({
 import { AgentSessionTracker } from "./AgentSessionTracker";
 
 describe("AgentSessionTracker", () => {
+  let trackers: AgentSessionTracker[] = [];
+
+  /** Create a tracker and register it for automatic cleanup. */
+  function createTracker(cwd: string, sessionId: string): AgentSessionTracker {
+    const tracker = new AgentSessionTracker(cwd, sessionId);
+    trackers.push(tracker);
+    return tracker;
+  }
+
   beforeEach(() => {
+    trackers = [];
     vi.useFakeTimers();
     vi.clearAllMocks();
     readResumeEventMock.mockReturnValue(null);
   });
 
   afterEach(() => {
+    for (const t of trackers) {
+      t.dispose();
+    }
+    trackers = [];
     vi.useRealTimers();
   });
 
   it("starts with the initial session ID", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
     expect(tracker.sessionId).toBe("session-abc");
-    tracker.dispose();
   });
 
   it("polls for hook events on interval", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
 
     vi.advanceTimersByTime(2000);
     expect(readResumeEventMock).toHaveBeenCalledWith("session-abc");
 
     vi.advanceTimersByTime(2000);
     expect(readResumeEventMock).toHaveBeenCalledTimes(2);
-
-    tracker.dispose();
   });
 
   it("updates session ID when hook event is found", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-old");
+    const tracker = createTracker("/cwd", "session-old");
 
     readResumeEventMock.mockReturnValueOnce({ newSessionId: "session-new" });
 
     vi.advanceTimersByTime(2000);
 
     expect(tracker.sessionId).toBe("session-new");
-    tracker.dispose();
   });
 
   it("fires onSessionChange callback when session changes", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-old");
+    const tracker = createTracker("/cwd", "session-old");
     const callback = vi.fn();
     tracker.onSessionChange = callback;
 
@@ -61,21 +71,19 @@ describe("AgentSessionTracker", () => {
     vi.advanceTimersByTime(2000);
 
     expect(callback).toHaveBeenCalledWith("session-new");
-    tracker.dispose();
   });
 
   it("cleans up stale events after finding a hook event", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-old");
+    const tracker = createTracker("/cwd", "session-old");
 
     readResumeEventMock.mockReturnValueOnce({ newSessionId: "session-new" });
     vi.advanceTimersByTime(2000);
 
     expect(cleanupStaleEventsMock).toHaveBeenCalled();
-    tracker.dispose();
   });
 
   it("continues polling even if cleanupStaleEvents throws", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-old");
+    const tracker = createTracker("/cwd", "session-old");
 
     readResumeEventMock.mockReturnValueOnce({ newSessionId: "session-new" });
     cleanupStaleEventsMock.mockImplementationOnce(() => {
@@ -88,12 +96,10 @@ describe("AgentSessionTracker", () => {
     readResumeEventMock.mockReturnValue(null);
     vi.advanceTimersByTime(2000);
     expect(readResumeEventMock).toHaveBeenCalledTimes(2);
-
-    tracker.dispose();
   });
 
   it("stops polling after dispose", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
 
     vi.advanceTimersByTime(2000);
     expect(readResumeEventMock).toHaveBeenCalledTimes(1);
@@ -105,13 +111,13 @@ describe("AgentSessionTracker", () => {
   });
 
   it("dispose is idempotent", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
     tracker.dispose();
     tracker.dispose(); // should not throw
   });
 
   it("stops polling after 5 consecutive errors", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
 
     readResumeEventMock.mockImplementation(() => {
       throw new Error("poll error");
@@ -127,12 +133,10 @@ describe("AgentSessionTracker", () => {
     // 6th tick should not poll (timer stopped)
     vi.advanceTimersByTime(2000);
     expect(readResumeEventMock).toHaveBeenCalledTimes(5);
-
-    tracker.dispose();
   });
 
   it("resets error counter on successful poll", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
 
     // 4 consecutive errors
     readResumeEventMock
@@ -167,19 +171,17 @@ describe("AgentSessionTracker", () => {
     vi.advanceTimersByTime(2000);
 
     expect(readResumeEventMock).toHaveBeenCalledTimes(7);
-    tracker.dispose();
   });
 
   it("feedInput is a no-op", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-abc");
+    const tracker = createTracker("/cwd", "session-abc");
     // Should not throw
     tracker.feedInput("/resume");
     tracker.feedInput("any data");
-    tracker.dispose();
   });
 
   it("survives onSessionChange callback throwing", () => {
-    const tracker = new AgentSessionTracker("/cwd", "session-old");
+    const tracker = createTracker("/cwd", "session-old");
     tracker.onSessionChange = () => {
       throw new Error("callback error");
     };
@@ -194,7 +196,5 @@ describe("AgentSessionTracker", () => {
     readResumeEventMock.mockReturnValue(null);
     vi.advanceTimersByTime(2000);
     expect(readResumeEventMock).toHaveBeenCalledTimes(2);
-
-    tracker.dispose();
   });
 });
