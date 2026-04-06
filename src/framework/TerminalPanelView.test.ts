@@ -3871,6 +3871,90 @@ describe("profile launch", () => {
     expect(callArgs.prompt).not.toContain("adapter prompt");
   });
 
+  it("launches without aborting when suppressAdapterPrompt is true and no template exists", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        useContext: true,
+        suppressAdapterPrompt: true,
+        contextPrompt: "",
+      }),
+    );
+
+    // Should NOT abort - spawnAgentSession should be called
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
+    // prompt should be empty string (not undefined) so spawnAgentSession
+    // won't auto-build a context prompt from the adapter
+    expect(callArgs.prompt).toBe("");
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-build adapter prompt in spawnAgentSession when suppressAdapterPrompt with no template", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+    };
+
+    // Add getButtonProfiles so renderTabBar (called at end of spawnAgentSession) works
+    (view as any).profileManager.getButtonProfiles = () => [];
+
+    // Do NOT mock spawnAgentSession - let it run through to createTab
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ found: true, resolved: "claude" });
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        useContext: true,
+        suppressAdapterPrompt: true,
+        contextPrompt: "",
+      }),
+    );
+
+    // spawnAgentSession should have called createTab
+    expect(mockState.tabManagerCalls).toContain("createTab");
+    // The full command array (6th arg, index 5) should not contain the adapter prompt
+    const cmdArray = mockState.latestCreateTabArgs?.[5] as string[];
+    expect(cmdArray).toBeDefined();
+    const joinedArgs = cmdArray.join(" ");
+    expect(joinedArgs).not.toContain("adapter prompt");
+    // buildPrompt should never have been called
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+
+    resolveStub.mockRestore();
+  });
+
   it("passes arguments when paramPassMode is launch-only", async () => {
     const { view } = createView();
     await flushAsync();

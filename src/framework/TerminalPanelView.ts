@@ -1384,8 +1384,14 @@ export class TerminalPanelView {
         prompt = await this.getAgentContextPrompt(item, fresh, profile.suppressAdapterPrompt);
       }
       if (!prompt) {
-        new Notice("Could not build a contextual prompt for this item");
-        return;
+        if (!profile.suppressAdapterPrompt) {
+          new Notice("Could not build a contextual prompt for this item");
+          return;
+        }
+        // suppressAdapterPrompt is on but no template exists - launch without context.
+        // Use empty string (not undefined) so spawnAgentSession knows prompt was
+        // intentionally omitted and won't auto-build one from the adapter.
+        prompt = "";
       }
     }
 
@@ -2263,9 +2269,11 @@ export class TerminalPanelView {
     const resumeConfig = getResumeConfig(options.agentType);
     const { withContext } = sessionTypeToAgentType(options.sessionType);
 
-    // Build context prompt on demand if this is a context session without one
+    // Build context prompt on demand if this is a context session without one.
+    // Check for undefined (not falsy) so callers can pass "" to explicitly skip
+    // auto-building a context prompt (e.g. when suppressAdapterPrompt is set).
     let prompt = options.prompt;
-    if (withContext && !prompt) {
+    if (withContext && prompt === undefined) {
       const item = this.getActiveItem();
       if (!item) {
         new Notice(
