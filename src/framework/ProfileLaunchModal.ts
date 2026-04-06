@@ -95,7 +95,7 @@ export class ProfileLaunchModal extends Modal {
       const link = helpEl.createEl("a", {
         text: "Manage profiles in settings",
         cls: "wt-custom-spawn-settings-link",
-        href: "#",
+        attr: { href: "#" },
       });
       link.addEventListener("click", (e) => {
         e.preventDefault();

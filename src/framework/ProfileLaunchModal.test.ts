@@ -381,11 +381,13 @@ describe("ProfileLaunchModal settings link", () => {
   it("calls onOpenSettings and closes modal when link is clicked", () => {
     const onOpenSettings = vi.fn();
     const modal = createModalWithSettings([makeProfile()], onOpenSettings);
+    const closeSpy = vi.spyOn(modal, "close");
     const el = (modal as any).contentEl as HTMLElement;
     const link = el.querySelector(".wt-custom-spawn-settings-link") as HTMLElement;
 
     link.click();
 
     expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(closeSpy).toHaveBeenCalledOnce();
   });
 });
