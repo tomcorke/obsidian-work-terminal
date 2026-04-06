@@ -22,6 +22,7 @@ interface CoreSettings {
   "core.claudeExtraArgs": string;
   "core.copilotCommand": string;
   "core.copilotExtraArgs": string;
+  "core.copilotSessionLogDir": string;
   "core.strandsCommand": string;
   "core.strandsExtraArgs": string;
   "core.additionalAgentContext": string;
@@ -39,6 +40,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.claudeExtraArgs": "",
   "core.copilotCommand": "copilot",
   "core.copilotExtraArgs": "",
+  "core.copilotSessionLogDir": "~/.copilot/logs",
   "core.strandsCommand": "strands",
   "core.strandsExtraArgs": "",
   "core.additionalAgentContext": "",
@@ -116,6 +118,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "core.defaultTerminalCwd",
       "Default terminal CWD",
       "Working directory for new terminals (supports ~)",
+    );
+    this.addCoreSetting(
+      containerEl,
+      "core.copilotSessionLogDir",
+      "Copilot session log directory",
+      "Directory where Copilot CLI writes session logs. Used for deferred session ID detection. Supports ~ expansion.",
     );
     this.addCoreToggle(
       containerEl,

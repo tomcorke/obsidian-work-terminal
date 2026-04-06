@@ -1514,6 +1514,12 @@ export class TerminalPanelView {
 
     if (!tab) return;
 
+    // Pass user-configured session log directory override for deferred detection
+    const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
+    if (copilotLogDir) {
+      tab.sessionLogDirOverride = copilotLogDir;
+    }
+
     if (persisted.profileId) {
       tab.profileId = persisted.profileId;
       const profile = this.profileManager?.getProfile(persisted.profileId);
@@ -1717,6 +1723,12 @@ export class TerminalPanelView {
     }
 
     if (!replacement) return;
+
+    // Pass user-configured session log directory override for deferred detection
+    const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
+    if (copilotLogDir) {
+      replacement.sessionLogDirOverride = copilotLogDir;
+    }
 
     // Close the old tab first, then move replacement to the old position
     this.tabManager.closeTabInstance(targetItemId, tab);
@@ -2387,8 +2399,15 @@ export class TerminalPanelView {
       [resolved, ...args],
       sessionId ?? null,
     );
-    if (tab && this.adapter.transformSessionLabel) {
-      tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
+    if (tab) {
+      // Pass user-configured session log directory override for deferred detection
+      const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
+      if (copilotLogDir) {
+        tab.sessionLogDirOverride = copilotLogDir;
+      }
+      if (this.adapter.transformSessionLabel) {
+        tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
+      }
     }
     this.renderTabBar();
     return tab;
