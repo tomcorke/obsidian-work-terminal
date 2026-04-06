@@ -12,6 +12,7 @@ import {
   handleItemCreated,
   insertIngestionFailedFlag,
   prepareRetryEnrichment,
+  findFileByUuid,
 } from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {
@@ -286,6 +287,176 @@ describe("BackgroundEnrich", () => {
 
       // modify should NOT have been called (no failure marking)
       expect(app.vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("marks ingestion failed when task is moved during enrichment", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+      // Simulate: file created at todo/, then moved to active/ during enrichment.
+      // The key is that getAbstractFileByPath must NOT find the original path
+      // after enrichment completes, simulating the move. We track whether
+      // create has been called; after that, the spawned enrichment resolves,
+      // and by that time the file has been "moved".
+      const movedPath = "2 - Areas/Tasks/active/TASK-20260406-1200-pending-abcd1234.md";
+      let createdUuid = "";
+      let originalPath = "";
+      let fileMoved = false;
+      let storedContent = "";
+
+      const app = {
+        vault: {
+          adapter: {
+            basePath: "/vault",
+            exists: vi.fn().mockResolvedValue(false),
+          },
+          getAbstractFileByPath(path: string) {
+            // After the file is "moved", the original path is gone
+            if (fileMoved && path === originalPath) return null;
+            if (path === movedPath) return { path: movedPath };
+            if (path === "2 - Areas/Tasks/todo") return { path };
+            return null;
+          },
+          getMarkdownFiles() {
+            return [{ path: movedPath }];
+          },
+          async createFolder(path: string) {
+            return { path };
+          },
+          async create(path: string, content: string) {
+            originalPath = path;
+            storedContent = content;
+            const idMatch = content.match(/^id:\s*(.+)$/m);
+            if (idMatch) createdUuid = idMatch[1].trim();
+            // Simulate the move happening before enrichment completes
+            fileMoved = true;
+            return { path, content };
+          },
+          read: vi.fn(async () => storedContent),
+          modify: vi.fn(async (_file: any, content: string) => {
+            storedContent = content;
+          }),
+        },
+        metadataCache: {
+          getFileCache(file: any) {
+            if (file.path === movedPath) {
+              return { frontmatter: { id: createdUuid } };
+            }
+            return null;
+          },
+        },
+      } as any;
+
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      // Should have called modify to mark ingestion as failed on the moved file
+      expect(app.vault.modify).toHaveBeenCalled();
+      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(finalContent).toContain("background-ingestion: failed");
+    });
+
+    it("marks ingestion failed at moved path when enrichment errors and file was moved", async () => {
+      spawnHeadlessClaudeMock.mockRejectedValue(new Error("spawn failed"));
+
+      const movedPath = "2 - Areas/Tasks/active/TASK-20260406-1200-pending-abcd1234.md";
+      let createdUuid = "";
+      let originalPath = "";
+      let fileMoved = false;
+
+      const app = {
+        vault: {
+          adapter: { basePath: "/vault" },
+          getAbstractFileByPath(path: string) {
+            if (fileMoved && path === originalPath) return null;
+            if (path === movedPath) return { path: movedPath };
+            if (path === "2 - Areas/Tasks/todo") return { path };
+            return null;
+          },
+          getMarkdownFiles() {
+            return [{ path: movedPath }];
+          },
+          async createFolder(path: string) {
+            return { path };
+          },
+          async create(path: string, content: string) {
+            originalPath = path;
+            const idMatch = content.match(/^id:\s*(.+)$/m);
+            if (idMatch) createdUuid = idMatch[1].trim();
+            fileMoved = true;
+            return { path, content };
+          },
+          read: vi.fn(async () => `---\nid: ${createdUuid}\nstate: active\n---\n# Task\n`),
+          modify: vi.fn(async () => {}),
+        },
+        metadataCache: {
+          getFileCache(file: any) {
+            if (file.path === movedPath) {
+              return { frontmatter: { id: createdUuid } };
+            }
+            return null;
+          },
+        },
+      } as any;
+
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(app.vault.modify).toHaveBeenCalled();
+      // The modify call should target the moved file path
+      const modifyCall = app.vault.modify.mock.calls.at(-1)!;
+      expect(modifyCall[0].path).toBe(movedPath);
+    });
+  });
+
+  describe("findFileByUuid", () => {
+    it("returns the file when UUID matches", () => {
+      const file = { path: "2 - Areas/Tasks/todo/my-task.md" };
+      const app = {
+        vault: {
+          getMarkdownFiles: () => [file],
+        },
+        metadataCache: {
+          getFileCache: () => ({ frontmatter: { id: "test-uuid-123" } }),
+        },
+      } as any;
+
+      const result = findFileByUuid(app, "test-uuid-123", "2 - Areas/Tasks");
+      expect(result).toBe(file);
+    });
+
+    it("returns null when UUID does not match", () => {
+      const file = { path: "2 - Areas/Tasks/todo/my-task.md" };
+      const app = {
+        vault: {
+          getMarkdownFiles: () => [file],
+        },
+        metadataCache: {
+          getFileCache: () => ({ frontmatter: { id: "different-uuid" } }),
+        },
+      } as any;
+
+      const result = findFileByUuid(app, "test-uuid-123", "2 - Areas/Tasks");
+      expect(result).toBeNull();
+    });
+
+    it("only searches files under the base path", () => {
+      const taskFile = { path: "2 - Areas/Tasks/todo/my-task.md" };
+      const otherFile = { path: "3 - Resources/notes.md" };
+      const app = {
+        vault: {
+          getMarkdownFiles: () => [otherFile, taskFile],
+        },
+        metadataCache: {
+          getFileCache: (f: any) => {
+            if (f === taskFile) return { frontmatter: { id: "target-uuid" } };
+            if (f === otherFile) return { frontmatter: { id: "target-uuid" } };
+            return null;
+          },
+        },
+      } as any;
+
+      const result = findFileByUuid(app, "target-uuid", "2 - Areas/Tasks");
+      expect(result).toBe(taskFile);
     });
   });
 });
