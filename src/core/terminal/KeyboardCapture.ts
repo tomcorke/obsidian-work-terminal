@@ -75,6 +75,12 @@ export function attachCapturePhase(
     } else if (e.altKey && e.key === "ArrowRight") {
       // ESC f - word forward
       seq = "\x1bf";
+    } else if (e.altKey && e.key === "ArrowUp") {
+      // CSI 1;3A - Alt+Up (history search / scroll in many terminal apps)
+      seq = "\x1b[1;3A";
+    } else if (e.altKey && e.key === "ArrowDown") {
+      // CSI 1;3B - Alt+Down (history search / scroll in many terminal apps)
+      seq = "\x1b[1;3B";
     } else if (e.altKey && e.key === "Backspace") {
       // ESC DEL - delete word backward
       seq = "\x1b\x7f";

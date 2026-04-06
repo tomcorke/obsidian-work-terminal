@@ -199,6 +199,42 @@ describe("KeyboardCapture", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it("sends Option+Up and Option+Down as CSI sequences with Alt modifier", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const upEvent = new KeyboardEvent("keydown", {
+      key: "ArrowUp",
+      code: "ArrowUp",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(upEvent);
+
+    const downEvent = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      code: "ArrowDown",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(downEvent);
+
+    cleanup();
+
+    expect(write).toHaveBeenNthCalledWith(1, "\x1b[1;3A");
+    expect(write).toHaveBeenNthCalledWith(2, "\x1b[1;3B");
+    expect(upEvent.defaultPrevented).toBe(true);
+    expect(downEvent.defaultPrevented).toBe(true);
+  });
+
   it("does not treat Cmd+Shift+F as plain Cmd+F", () => {
     const onSearch = vi.fn();
     const cleanup = attachCapturePhase(containerEl, () => null, onSearch);
