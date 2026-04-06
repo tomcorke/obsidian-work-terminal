@@ -17,4 +17,8 @@ export class TaskPromptBuilder implements WorkItemPromptBuilder {
 
     return prompt;
   }
+
+  describePromptFormat(): string {
+    return "Task: {title}\nState: {state}\nFile: {path}\nDeadline: {deadline} (if set)\nBlocker: {blocker} (if set)";
+  }
 }

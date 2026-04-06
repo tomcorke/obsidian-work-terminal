@@ -88,6 +88,8 @@ export interface AgentProfile {
   arguments: string;
   contextPrompt: string;
   useContext: boolean;
+  /** When true, the adapter's base prompt is not prepended to the context prompt. */
+  suppressAdapterPrompt: boolean;
   paramPassMode: ParamPassMode;
   button: ProfileButton;
   /** Order index for sorting in the UI. Lower values first. */
@@ -118,6 +120,7 @@ const AgentProfileSchema = z.object({
   arguments: z.string(),
   contextPrompt: z.string(),
   useContext: z.boolean(),
+  suppressAdapterPrompt: z.boolean(),
   paramPassMode: z.enum(PARAM_PASS_MODES),
   button: ProfileButtonSchema,
   sortOrder: z.number(),
@@ -138,6 +141,7 @@ const StoredProfileSchema = z
     arguments: z.string().default(""),
     contextPrompt: z.string().default(""),
     useContext: z.boolean().default(false),
+    suppressAdapterPrompt: z.boolean().default(false),
     paramPassMode: z.enum(PARAM_PASS_MODES).default("launch-only"),
     button: ProfileButtonSchema.default({
       enabled: false,
@@ -366,6 +370,7 @@ export function createDefaultProfile(overrides?: Partial<AgentProfile>): AgentPr
     arguments: "",
     contextPrompt: "",
     useContext: false,
+    suppressAdapterPrompt: false,
     paramPassMode: "launch-only",
     button: {
       enabled: false,
@@ -390,6 +395,7 @@ export function createDefaultClaudeProfile(sortOrder = 0): AgentProfile {
     arguments: "",
     contextPrompt: "",
     useContext: false,
+    suppressAdapterPrompt: false,
     paramPassMode: "launch-only",
     button: {
       enabled: true,
@@ -412,6 +418,7 @@ export function createDefaultClaudeCtxProfile(sortOrder = 1): AgentProfile {
     arguments: "",
     contextPrompt: "",
     useContext: true,
+    suppressAdapterPrompt: false,
     paramPassMode: "launch-only",
     button: {
       enabled: true,
@@ -434,6 +441,7 @@ export function createDefaultCopilotProfile(sortOrder = 2): AgentProfile {
     arguments: "",
     contextPrompt: "",
     useContext: false,
+    suppressAdapterPrompt: false,
     paramPassMode: "launch-only",
     button: {
       enabled: false,

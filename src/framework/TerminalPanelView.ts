@@ -1365,16 +1365,15 @@ export class TerminalPanelView {
       const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
       if (contextTemplate) {
         // Build from adapter prompt + profile context template
-        const adapterPrompt = this.promptBuilder.buildPrompt(
-          item,
-          this.resolveWorkItemPath(item.path),
-        );
+        const adapterPrompt = profile.suppressAdapterPrompt
+          ? null
+          : this.promptBuilder.buildPrompt(item, this.resolveWorkItemPath(item.path));
         // Defer $sessionId in context template too
         const expandedContext = this.expandProfilePlaceholders(contextTemplate, item, "$sessionId");
         prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
       } else {
         // Fall back to standard context prompt building
-        prompt = await this.getAgentContextPrompt(item, fresh);
+        prompt = await this.getAgentContextPrompt(item, fresh, profile.suppressAdapterPrompt);
       }
       if (!prompt) {
         new Notice("Could not build a contextual prompt for this item");
@@ -1888,17 +1887,21 @@ export class TerminalPanelView {
   async getClaudeContextPrompt(
     item: WorkItem,
     freshSettings?: Record<string, unknown>,
+    suppressAdapterPrompt = false,
   ): Promise<string | null> {
-    return this.getAgentContextPrompt(item, freshSettings);
+    return this.getAgentContextPrompt(item, freshSettings, suppressAdapterPrompt);
   }
 
   async getAgentContextPrompt(
     item: WorkItem,
     freshSettings?: Record<string, unknown>,
+    suppressAdapterPrompt = false,
   ): Promise<string | null> {
     const settings = freshSettings ?? (await this.loadFreshSettings());
     const resolvedPath = this.resolveWorkItemPath(item.path);
-    const basePrompt = this.promptBuilder.buildPrompt(item, resolvedPath);
+    const basePrompt = suppressAdapterPrompt
+      ? null
+      : this.promptBuilder.buildPrompt(item, resolvedPath);
     const templatePrompt = buildAgentContextPrompt(item, settings, resolvedPath);
 
     if (!basePrompt && !templatePrompt) {

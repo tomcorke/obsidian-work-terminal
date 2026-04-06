@@ -1646,6 +1646,42 @@ button.wt-spawn-claude-ctx:hover svg {
   flex: 1;
 }
 
+/* Adapter prompt preview in profile edit modal */
+
+.wt-adapter-prompt-preview {
+  margin: 8px 0 4px 0;
+  padding: 10px 12px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.wt-adapter-prompt-preview-label {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-normal);
+}
+
+.wt-adapter-prompt-preview-help {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.wt-adapter-prompt-preview-code {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}
+
 /* =============================================================================
    Profile-driven spawn buttons
    ============================================================================= */

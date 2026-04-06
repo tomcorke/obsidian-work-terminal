@@ -3796,6 +3796,81 @@ describe("profile launch", () => {
     expect(callArgs.prompt).toContain("Context for Task");
   });
 
+  it("excludes adapter base prompt when suppressAdapterPrompt is true", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView(
+      { "core.additionalAgentContext": "Template for $title" },
+      {},
+      promptBuilder,
+    );
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        useContext: true,
+        suppressAdapterPrompt: true,
+        contextPrompt: "",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
+    // Should contain only the template, not the adapter prompt
+    expect(callArgs.prompt).not.toContain("adapter prompt");
+    expect(callArgs.prompt).toContain("Template for Task");
+  });
+
+  it("excludes adapter base prompt from profile context template when suppressAdapterPrompt is true", async () => {
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "adapter prompt"),
+    };
+    const { view } = createView({}, {}, promptBuilder);
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "Custom prompt for $title",
+    };
+
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        useContext: true,
+        suppressAdapterPrompt: true,
+        contextPrompt: "Custom prompt for $title",
+      }),
+    );
+
+    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
+    expect(callArgs.prompt).toBe("Custom prompt for Task");
+    expect(callArgs.prompt).not.toContain("adapter prompt");
+  });
+
   it("passes arguments when paramPassMode is launch-only", async () => {
     const { view } = createView();
     await flushAsync();

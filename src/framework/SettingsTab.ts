@@ -53,6 +53,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   private adapter: AdapterBundle;
   private plugin: Plugin;
   private profileManager: AgentProfileManager;
+  private adapterPromptDescription?: string;
 
   constructor(
     app: App,
@@ -64,6 +65,16 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     this.plugin = plugin;
     this.adapter = adapter;
     this.profileManager = profileManager;
+
+    // Get the adapter's prompt format description for the profile UI
+    try {
+      const promptBuilder = adapter.createPromptBuilder();
+      if (promptBuilder?.describePromptFormat) {
+        this.adapterPromptDescription = promptBuilder.describePromptFormat();
+      }
+    } catch {
+      // Adapter may not support prompt builder (e.g. stub adapter)
+    }
   }
 
   display(): void {
@@ -82,7 +93,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           .setButtonText("Open Profile Manager")
           .setCta()
           .onClick(() => {
-            new AgentProfileManagerModal(this.app, this.profileManager).open();
+            new AgentProfileManagerModal(
+              this.app,
+              this.profileManager,
+              this.adapterPromptDescription,
+            ).open();
           }),
       );
 

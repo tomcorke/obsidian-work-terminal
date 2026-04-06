@@ -19,6 +19,7 @@ export class AgentProfileManagerModal extends Modal {
   constructor(
     app: App,
     private manager: AgentProfileManager,
+    private adapterPromptDescription?: string,
   ) {
     super(app);
   }
@@ -59,12 +60,18 @@ export class AgentProfileManagerModal extends Modal {
 
     const addBtn = actions.createEl("button", { text: "+ Add Profile", cls: "mod-cta" });
     addBtn.addEventListener("click", () => {
-      new AgentProfileEditModal(this.app, null, async (saved) => {
-        const maxOrder = profiles.reduce((max, p) => Math.max(max, p.sortOrder), -1);
-        saved.sortOrder = maxOrder + 1;
-        await this.manager.addProfile(saved);
-        this.render();
-      }).open();
+      new AgentProfileEditModal(
+        this.app,
+        null,
+        async (saved) => {
+          const maxOrder = profiles.reduce((max, p) => Math.max(max, p.sortOrder), -1);
+          saved.sortOrder = maxOrder + 1;
+          await this.manager.addProfile(saved);
+          this.render();
+        },
+        undefined,
+        this.adapterPromptDescription,
+      ).open();
     });
 
     const importBtn = actions.createEl("button", { text: "Import" });
@@ -154,6 +161,7 @@ export class AgentProfileManagerModal extends Modal {
           await this.manager.deleteProfile(id);
           this.render();
         },
+        this.adapterPromptDescription,
       ).open();
     });
   }
