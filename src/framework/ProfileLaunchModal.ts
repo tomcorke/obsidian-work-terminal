@@ -37,6 +37,7 @@ export class ProfileLaunchModal extends Modal {
     private onSubmit: (overrides: ProfileLaunchOverrides) => void,
     private closedSessions: ClosedSessionEntry[] = [],
     private onRestore?: (entry: ClosedSessionEntry) => void,
+    private onOpenSettings?: () => void,
   ) {
     super(app);
     this.selectedProfile = profiles[0];
@@ -84,10 +85,24 @@ export class ProfileLaunchModal extends Modal {
 
   private renderLaunchTab(contentEl: HTMLElement): void {
     contentEl.createEl("h3", { text: "Launch profile" });
-    contentEl.createEl("p", {
-      text: "Pick a profile and optionally override settings for this launch.",
-      cls: "wt-custom-spawn-help",
-    });
+
+    const helpEl = contentEl.createEl("p", { cls: "wt-custom-spawn-help" });
+    helpEl.appendChild(
+      document.createTextNode("Pick a profile and optionally override settings for this launch."),
+    );
+    if (this.onOpenSettings) {
+      helpEl.appendChild(document.createTextNode(" "));
+      const link = helpEl.createEl("a", {
+        text: "Manage profiles in settings",
+        cls: "wt-custom-spawn-settings-link",
+        attr: { href: "#" },
+      });
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.close();
+        this.onOpenSettings?.();
+      });
+    }
 
     new Setting(contentEl)
       .setName("Profile")

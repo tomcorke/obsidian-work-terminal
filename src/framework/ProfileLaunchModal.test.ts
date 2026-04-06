@@ -347,3 +347,47 @@ describe("ProfileLaunchModal placeholders", () => {
     expect((modal as any).argsInput).toBeNull();
   });
 });
+
+describe("ProfileLaunchModal settings link", () => {
+  function createModalWithSettings(profiles: AgentProfile[], onOpenSettings?: () => void) {
+    const modal = new ProfileLaunchModal(
+      {} as any,
+      profiles,
+      "/vault",
+      vi.fn(),
+      [],
+      undefined,
+      onOpenSettings,
+    );
+    modal.open();
+    return modal;
+  }
+
+  it("shows settings link when onOpenSettings callback is provided", () => {
+    const modal = createModalWithSettings([makeProfile()], vi.fn());
+    const el = (modal as any).contentEl as HTMLElement;
+    const link = el.querySelector(".wt-custom-spawn-settings-link");
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toBe("Manage profiles in settings");
+  });
+
+  it("does not show settings link when no onOpenSettings callback", () => {
+    const modal = createModalWithSettings([makeProfile()]);
+    const el = (modal as any).contentEl as HTMLElement;
+    const link = el.querySelector(".wt-custom-spawn-settings-link");
+    expect(link).toBeNull();
+  });
+
+  it("calls onOpenSettings and closes modal when link is clicked", () => {
+    const onOpenSettings = vi.fn();
+    const modal = createModalWithSettings([makeProfile()], onOpenSettings);
+    const closeSpy = vi.spyOn(modal, "close");
+    const el = (modal as any).contentEl as HTMLElement;
+    const link = el.querySelector(".wt-custom-spawn-settings-link") as HTMLElement;
+
+    link.click();
+
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(closeSpy).toHaveBeenCalledOnce();
+  });
+});
