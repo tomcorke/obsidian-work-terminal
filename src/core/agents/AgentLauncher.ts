@@ -4,12 +4,30 @@
 import { expandTilde, electronRequire } from "../utils";
 import { type AgentType, getResumeConfig } from "./AgentProfile";
 
-const EXTRA_PATH_DIRS = [
+const UNIX_EXTRA_PATH_DIRS = [
   "~/.local/bin",
   "~/.nvm/versions/node/current/bin",
   "/usr/local/bin",
   "/opt/homebrew/bin",
 ];
+
+const WINDOWS_EXTRA_PATH_DIRS = [
+  "%LOCALAPPDATA%\\Programs\\node",
+  "%APPDATA%\\nvm",
+  "%LOCALAPPDATA%\\Microsoft\\WinGet\\Links",
+  "%ProgramFiles%\\nodejs",
+];
+
+function expandWindowsEnvVars(p: string, env: NodeJS.ProcessEnv): string {
+  return p.replace(/%([^%]+)%/g, (_match, varName: string) => env[varName] ?? `%${varName}%`);
+}
+
+export function getExtraPathDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
+  if (isWindowsPlatform(platform)) {
+    return WINDOWS_EXTRA_PATH_DIRS.map((d) => expandWindowsEnvVars(d, env));
+  }
+  return UNIX_EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+}
 
 const DEFAULT_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
 
@@ -219,7 +237,7 @@ export function getFullPath(
 ): string {
   const delimiter = getPathDelimiter(pathModule, platform);
   const loginPath = resolveLoginShellPath();
-  const extraDirs = EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+  const extraDirs = getExtraPathDirs(platform, env);
   const loginDirs = loginPath ? loginPath.split(delimiter) : [];
   const existingDirs = (
     env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin")
