@@ -1349,8 +1349,16 @@ export class TerminalPanelView {
       if (item && expandedArgs) {
         expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId");
       }
+      const commandArgs = expandedArgs ? parseExtraArgs(expandedArgs) : [];
       const expandedCwd = expandTilde(cwd);
-      const tab = this.tabManager.createTab(command, expandedCwd, label, "shell");
+      const tab = this.tabManager.createTab(
+        command,
+        expandedCwd,
+        label,
+        "shell",
+        undefined,
+        commandArgs.length > 0 ? commandArgs : undefined,
+      );
       if (tab) {
         tab.profileId = profile.id;
         if (profile.button.color) tab.profileColor = profile.button.color;
@@ -2295,8 +2303,11 @@ export class TerminalPanelView {
           this.getStringSetting(fresh, resumeConfig.extraArgsSettingKey, ""),
           options.extraArgs || "",
         );
-    // Replace or strip deferred $sessionId placeholders
+    // Replace or strip deferred $sessionId placeholders in extra args and prompt
     const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId || "");
+    if (prompt) {
+      prompt = prompt.replace(/\$sessionId/g, sessionId || "");
+    }
 
     // Build args via the unified buildAgentArgs helper
     const baseArgs = buildAgentArgs(options.agentType, mergedExtraArgs, prompt);
