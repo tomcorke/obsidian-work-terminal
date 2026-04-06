@@ -5,6 +5,23 @@ import type { SplitSource } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
 import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
 
+/**
+ * Find a vault file by its frontmatter UUID. Scans all markdown files under
+ * the task base path. Returns null if no file with a matching `id` field is found.
+ */
+function findFileByUuid(app: App, uuid: string, basePath: string): TFile | null {
+  const normalizedBase = basePath.endsWith("/") ? basePath : basePath + "/";
+  const allFiles = app.vault.getMarkdownFiles();
+  for (const file of allFiles) {
+    if (!file.path.startsWith(normalizedBase)) continue;
+    const cache = app.metadataCache.getFileCache(file);
+    if (cache?.frontmatter?.id === uuid) {
+      return file;
+    }
+  }
+  return null;
+}
+
 const RENAME_INSTRUCTION =
   `After updating the task, rename the file to match the convention ` +
   `TASK-YYYYMMDD-HHMM-slugified-title.md (use the existing date prefix, ` +
@@ -81,16 +98,21 @@ export async function handleItemCreated(
     claudeExtraArgs,
   ).then(
     async (result) => {
+      // Resolve current file location: original path may have changed if
+      // the task was moved (e.g. via drag-drop) while enrichment was running.
+      const currentFile = resolveFileByPathOrUuid(app, filePath, id, basePath);
+      const currentPath = currentFile?.path ?? filePath;
+
       if (result.missingCli) {
         new Notice(result.stderr);
         console.warn("[work-terminal] Background enrich skipped:", result.stderr);
-        await markIngestionFailed(app, filePath);
+        await markIngestionFailed(app, currentPath);
         return;
       }
       if (result.timedOut) {
-        console.error(`[work-terminal] Background enrich timed out: ${filePath}`, result.stderr);
+        console.error(`[work-terminal] Background enrich timed out: ${currentPath}`, result.stderr);
         new Notice("Background enrichment timed out. Right-click the card to retry.", 8000);
-        await markIngestionFailed(app, filePath);
+        await markIngestionFailed(app, currentPath);
         return;
       }
       if (result.exitCode === 0) {
@@ -99,9 +121,35 @@ export async function handleItemCreated(
           console.error(
             `[work-terminal] Background enrich exited 0 but reported: ${silentFailure}`,
           );
-          await markIngestionFailed(app, filePath);
+          await markIngestionFailed(app, currentPath);
           return;
         }
+
+        // If the file was moved during enrichment, the headless Claude
+        // process was working on a stale path. Mark as failed so the user
+        // can retry from the correct location.
+        // However, Claude itself renames the pending file as part of
+        // successful enrichment (removing the "-pending-" segment). Only
+        // treat it as a user-initiated move if the UUID-resolved file is
+        // still pending-style OR is in a different folder.
+        if (currentPath !== filePath) {
+          const originalFolder = filePath.substring(0, filePath.lastIndexOf("/"));
+          const currentFolder = currentPath.substring(0, currentPath.lastIndexOf("/"));
+          const currentFilename = currentPath.substring(currentPath.lastIndexOf("/") + 1);
+          const isPendingFilename = /pending-[0-9a-f]+/i.test(currentFilename);
+
+          if (currentFolder !== originalFolder || isPendingFilename) {
+            console.warn(
+              `[work-terminal] Task moved during enrichment: ${filePath} -> ${currentPath}. Marking for retry.`,
+            );
+            new Notice("Task was moved during enrichment. Right-click the card to retry.", 8000);
+            await markIngestionFailed(app, currentPath);
+            return;
+          }
+          // Same folder, no longer pending - normal enrichment rename. Let
+          // the success path proceed.
+        }
+
         // Success requires an observable outcome: the pending file must have been
         // renamed away. If it still exists the enrichment was a no-op.
         const pendingStillExists = await app.vault.adapter.exists(filePath);
@@ -119,12 +167,13 @@ export async function handleItemCreated(
           result.stderr.slice(0, 500),
         );
         new Notice("Background enrichment failed. Right-click the card to retry.", 8000);
-        await markIngestionFailed(app, filePath);
+        await markIngestionFailed(app, currentPath);
       }
     },
     async (err) => {
       console.error("[work-terminal] Background enrich error:", err);
-      await markIngestionFailed(app, filePath);
+      const currentFile = resolveFileByPathOrUuid(app, filePath, id, basePath);
+      await markIngestionFailed(app, currentFile?.path ?? filePath);
     },
   );
 
@@ -268,4 +317,20 @@ export async function prepareRetryEnrichment(app: App, filePath: string): Promis
   );
 }
 
-export { RENAME_INSTRUCTION, resolveFullPath };
+/**
+ * Resolve a task file by its original path first, falling back to UUID-based
+ * lookup if the file has been moved. Returns null only if the file cannot be
+ * found by either method.
+ */
+function resolveFileByPathOrUuid(
+  app: App,
+  originalPath: string,
+  uuid: string,
+  basePath: string,
+): TFile | null {
+  const byPath = app.vault.getAbstractFileByPath(originalPath) as TFile | null;
+  if (byPath) return byPath;
+  return findFileByUuid(app, uuid, basePath);
+}
+
+export { RENAME_INSTRUCTION, resolveFullPath, findFileByUuid };
