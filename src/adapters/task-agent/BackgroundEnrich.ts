@@ -10,9 +10,10 @@ import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
  * the task base path. Returns null if no file with a matching `id` field is found.
  */
 function findFileByUuid(app: App, uuid: string, basePath: string): TFile | null {
+  const normalizedBase = basePath.endsWith("/") ? basePath : basePath + "/";
   const allFiles = app.vault.getMarkdownFiles();
   for (const file of allFiles) {
-    if (!file.path.startsWith(basePath)) continue;
+    if (!file.path.startsWith(normalizedBase)) continue;
     const cache = app.metadataCache.getFileCache(file);
     if (cache?.frontmatter?.id === uuid) {
       return file;
@@ -127,13 +128,26 @@ export async function handleItemCreated(
         // If the file was moved during enrichment, the headless Claude
         // process was working on a stale path. Mark as failed so the user
         // can retry from the correct location.
+        // However, Claude itself renames the pending file as part of
+        // successful enrichment (removing the "-pending-" segment). Only
+        // treat it as a user-initiated move if the UUID-resolved file is
+        // still pending-style OR is in a different folder.
         if (currentPath !== filePath) {
-          console.warn(
-            `[work-terminal] Task moved during enrichment: ${filePath} -> ${currentPath}. Marking for retry.`,
-          );
-          new Notice("Task was moved during enrichment. Right-click the card to retry.", 8000);
-          await markIngestionFailed(app, currentPath);
-          return;
+          const originalFolder = filePath.substring(0, filePath.lastIndexOf("/"));
+          const currentFolder = currentPath.substring(0, currentPath.lastIndexOf("/"));
+          const currentFilename = currentPath.substring(currentPath.lastIndexOf("/") + 1);
+          const isPendingFilename = /pending-[0-9a-f]+/i.test(currentFilename);
+
+          if (currentFolder !== originalFolder || isPendingFilename) {
+            console.warn(
+              `[work-terminal] Task moved during enrichment: ${filePath} -> ${currentPath}. Marking for retry.`,
+            );
+            new Notice("Task was moved during enrichment. Right-click the card to retry.", 8000);
+            await markIngestionFailed(app, currentPath);
+            return;
+          }
+          // Same folder, no longer pending - normal enrichment rename. Let
+          // the success path proceed.
         }
 
         // Success requires an observable outcome: the pending file must have been

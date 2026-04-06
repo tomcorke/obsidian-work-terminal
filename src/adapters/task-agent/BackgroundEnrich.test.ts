@@ -277,6 +277,65 @@ describe("BackgroundEnrich", () => {
       expect(finalContent).toContain("background-ingestion: failed");
     });
 
+    it("succeeds when Claude renames the pending file during enrichment (UUID resolves to new name in same folder)", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+      // Simulate: Claude renames the pending file to a proper slug name in the same folder.
+      // The original path is gone, but UUID lookup finds the renamed file.
+      const renamedPath = "2 - Areas/Tasks/todo/TASK-20260406-1200-fix-the-widget.md";
+      let createdUuid = "";
+      let originalPath = "";
+      let storedContent = "";
+
+      const app = {
+        vault: {
+          adapter: {
+            basePath: "/vault",
+            // Original pending path no longer exists
+            exists: vi.fn().mockResolvedValue(false),
+          },
+          getAbstractFileByPath(path: string) {
+            // Original path is gone (Claude renamed it)
+            if (path === originalPath) return null;
+            if (path === renamedPath) return { path: renamedPath };
+            if (path === "2 - Areas/Tasks/todo") return { path };
+            return null;
+          },
+          getMarkdownFiles() {
+            return [{ path: renamedPath }];
+          },
+          async createFolder(path: string) {
+            return { path };
+          },
+          async create(path: string, content: string) {
+            originalPath = path;
+            storedContent = content;
+            const idMatch = content.match(/^id:\s*(.+)$/m);
+            if (idMatch) createdUuid = idMatch[1].trim();
+            return { path, content };
+          },
+          read: vi.fn(async () => storedContent),
+          modify: vi.fn(async (_file: any, content: string) => {
+            storedContent = content;
+          }),
+        },
+        metadataCache: {
+          getFileCache(file: any) {
+            if (file.path === renamedPath) {
+              return { frontmatter: { id: createdUuid } };
+            }
+            return null;
+          },
+        },
+      } as any;
+
+      const result = await handleItemCreated(app, "Fix the widget", defaultSettings);
+      await result.enrichmentDone;
+
+      // modify should NOT have been called - this is a successful enrichment
+      expect(app.vault.modify).not.toHaveBeenCalled();
+    });
+
     it("does not mark ingestion failed when pending file was renamed away on exit 0", async () => {
       spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
       // fileExistsAfterEnrich: false simulates Claude successfully renaming the file
@@ -351,6 +410,7 @@ describe("BackgroundEnrich", () => {
 
       // Should have called modify to mark ingestion as failed on the moved file
       expect(app.vault.modify).toHaveBeenCalled();
+      expect(app.vault.modify.mock.calls.at(-1)![0].path).toBe(movedPath);
       const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
       expect(finalContent).toContain("background-ingestion: failed");
     });
@@ -436,6 +496,21 @@ describe("BackgroundEnrich", () => {
       } as any;
 
       const result = findFileByUuid(app, "test-uuid-123", "2 - Areas/Tasks");
+      expect(result).toBeNull();
+    });
+
+    it("does not match sibling paths with a shared prefix", () => {
+      const archiveFile = { path: "2 - Areas/Tasks Archive/old-task.md" };
+      const app = {
+        vault: {
+          getMarkdownFiles: () => [archiveFile],
+        },
+        metadataCache: {
+          getFileCache: () => ({ frontmatter: { id: "target-uuid" } }),
+        },
+      } as any;
+
+      const result = findFileByUuid(app, "target-uuid", "2 - Areas/Tasks");
       expect(result).toBeNull();
     });
 
