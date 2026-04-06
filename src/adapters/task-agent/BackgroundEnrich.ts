@@ -87,6 +87,12 @@ export async function handleItemCreated(
         await markIngestionFailed(app, filePath);
         return;
       }
+      if (result.timedOut) {
+        console.error(`[work-terminal] Background enrich timed out: ${filePath}`, result.stderr);
+        new Notice("Background enrichment timed out. Right-click the card to retry.", 8000);
+        await markIngestionFailed(app, filePath);
+        return;
+      }
       if (result.exitCode === 0) {
         const silentFailure = detectSilentFailure(result.stdout);
         if (silentFailure) {
@@ -112,6 +118,7 @@ export async function handleItemCreated(
           `[work-terminal] Background enrich failed (exit ${result.exitCode}):`,
           result.stderr.slice(0, 500),
         );
+        new Notice("Background enrichment failed. Right-click the card to retry.", 8000);
         await markIngestionFailed(app, filePath);
       }
     },
@@ -236,10 +243,7 @@ async function clearIngestionFailedFlag(app: App, filePath: string): Promise<voi
  * warning callout, then return the enrichment prompt for use in a foreground
  * Claude session.
  */
-export async function prepareRetryEnrichment(
-  app: App,
-  filePath: string,
-): Promise<string> {
+export async function prepareRetryEnrichment(app: App, filePath: string): Promise<string> {
   const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
   if (file) {
     try {

@@ -8,7 +8,11 @@ vi.mock("../../core/claude/HeadlessClaude", () => ({
   spawnHeadlessClaude: spawnHeadlessClaudeMock,
 }));
 
-import { handleItemCreated, insertIngestionFailedFlag, prepareRetryEnrichment } from "./BackgroundEnrich";
+import {
+  handleItemCreated,
+  insertIngestionFailedFlag,
+  prepareRetryEnrichment,
+} from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {
   beforeEach(() => {
@@ -255,6 +259,23 @@ describe("BackgroundEnrich", () => {
       expect(finalContent).toContain("background-ingestion: failed");
     });
 
+    it("marks ingestion failed and reports timeout when headless Claude times out", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: -1,
+        stdout: "",
+        stderr: "Headless Claude timed out after 300s",
+        timedOut: true,
+      });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "My task", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(app.vault.modify).toHaveBeenCalled();
+      const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
+      expect(finalContent).toContain("background-ingestion: failed");
+    });
+
     it("does not mark ingestion failed when pending file was renamed away on exit 0", async () => {
       spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
       // fileExistsAfterEnrich: false simulates Claude successfully renaming the file
@@ -267,5 +288,4 @@ describe("BackgroundEnrich", () => {
       expect(app.vault.modify).not.toHaveBeenCalled();
     });
   });
-
 });

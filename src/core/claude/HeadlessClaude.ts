@@ -12,13 +12,21 @@ import {
 } from "../agents/AgentLauncher";
 import { expandTilde, electronRequire } from "../utils";
 
-const TIMEOUT_MS = 120_000;
+/** Default timeout: 5 minutes. Enrichment involves skill loading, duplicate
+ *  checks, goal alignment, related-task detection, and file rename - 2 min
+ *  was consistently too short (see #327). */
+const DEFAULT_TIMEOUT_MS = 300_000;
+
+/** Grace period after SIGTERM before sending SIGKILL. */
+const SIGKILL_GRACE_MS = 5_000;
 
 export interface HeadlessClaudeResult {
   exitCode: number;
   stdout: string;
   stderr: string;
   missingCli?: boolean;
+  /** True when the process was killed due to timeout. */
+  timedOut?: boolean;
 }
 
 export function spawnHeadlessClaude(
@@ -26,6 +34,7 @@ export function spawnHeadlessClaude(
   cwd: string,
   claudeCommand = "claude",
   extraArgs = "",
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<HeadlessClaudeResult> {
   return new Promise((resolve) => {
     const cp = electronRequire("child_process") as typeof import("child_process");
@@ -73,17 +82,27 @@ export function spawnHeadlessClaude(
       stderrChunks.push(data);
     });
 
+    const timeoutSec = Math.round(timeoutMs / 1000);
     const timeout = setTimeout(() => {
       if (!settled && !proc.killed) {
         settled = true;
         proc.kill("SIGTERM");
+        // Escalate to SIGKILL if the process does not exit after SIGTERM
+        setTimeout(() => {
+          try {
+            if (!proc.killed) proc.kill("SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }, SIGKILL_GRACE_MS);
         resolve({
           exitCode: -1,
           stdout: Buffer.concat(stdoutChunks).toString("utf8"),
-          stderr: "Headless Claude timed out after 120s",
+          stderr: `Headless Claude timed out after ${timeoutSec}s`,
+          timedOut: true,
         });
       }
-    }, TIMEOUT_MS);
+    }, timeoutMs);
 
     proc.on("error", (err) => {
       if (settled) return;
