@@ -6,7 +6,7 @@
  * Branded icon sources:
  * - Claude: Simple Icons (https://simpleicons.org/?q=claude), 24x24
  * - Copilot: Simple Icons (https://simpleicons.org/?q=github-copilot), 24x24
- * - AWS: Simplified smile-arrow mark, 24x24
+ * - AWS: Wordmark + smile-arrow (https://simpleicons.org/?q=amazon-aws), 24x24
  * - Skyscanner: Official sunrise mark extracted from Wikimedia Commons SVG
  */
 import type { ProfileIcon } from "../core/agents/AgentProfile";
@@ -88,8 +88,7 @@ function createCopilotIcon(size: number): SVGSVGElement {
 }
 
 function createAwsIcon(size: number): SVGSVGElement {
-  // Simplified AWS smile-arrow mark. The distinctive curved arrow beneath
-  // the "AWS" wordmark is the most recognisable brand element at small sizes.
+  // AWS wordmark + smile-arrow mark (Simple Icons, 24x24)
   const svg = makeSvg(size, "0 0 24 24");
   // "A" letterform (left peak)
   addPath(
