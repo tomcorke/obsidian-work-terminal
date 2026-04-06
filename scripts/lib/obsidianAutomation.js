@@ -30,8 +30,11 @@ function getDefaultObsidianBinary() {
       for (const p of linuxPaths) {
         if (fs.existsSync(p)) return p;
       }
-      // Default to the most common location even if not found yet
-      return "/usr/bin/obsidian";
+      throw new Error(
+        "Obsidian binary not found in any standard Linux location. " +
+          `Searched: ${linuxPaths.join(", ")}. ` +
+          "Set the OBSIDIAN_BINARY environment variable to your Obsidian binary path.",
+      );
     }
     case "win32":
       return path.join(
@@ -45,7 +48,22 @@ function getDefaultObsidianBinary() {
       );
   }
 }
-const OBSIDIAN_BINARY = getDefaultObsidianBinary();
+
+// Lazy evaluation: defer platform detection to first access so that an
+// unsupported platform does not throw during module import.
+let _obsidianBinary;
+Object.defineProperty(module, "_OBSIDIAN_BINARY_LAZY", {
+  get() {
+    if (_obsidianBinary === undefined) {
+      _obsidianBinary = getDefaultObsidianBinary();
+    }
+    return _obsidianBinary;
+  },
+});
+// For internal use within this module, always call the getter function.
+function getObsidianBinary() {
+  return module._OBSIDIAN_BINARY_LAZY;
+}
 const DEFAULT_SELECTOR_PADDING = 12;
 const DEFAULT_VAULT_DIR = path.join(".claude", "testing", "obsidian-vault");
 const DEFAULT_SCREENSHOT_PATH = path.join("output", "obsidian-screenshot.png");
@@ -1184,7 +1202,7 @@ function launchObsidian({ vaultDir, port = getDefaultPort(), userDataDir }) {
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn(OBSIDIAN_BINARY, args, {
+      child = spawn(getObsidianBinary(), args, {
         stdio: "ignore",
         detached: true,
       });
@@ -1259,7 +1277,7 @@ function killIsolatedInstance({ userDataDir, runningProcesses = listRunningObsid
   return matches.length;
 }
 
-module.exports = {
+const _exports = {
   CDPClient,
   DEFAULT_DEBUG_PORT,
   DEFAULT_HOST,
@@ -1269,8 +1287,8 @@ module.exports = {
   DEFAULT_VAULT_DIR,
   ISOLATED_PORT_BASE,
   ISOLATED_PORT_RANGE,
-  OBSIDIAN_BINARY,
   WORK_TERMINAL_COMMAND_IDS,
+  getDefaultObsidianBinary,
   captureScreenshot,
   commandExpression,
   assertDebuggerPortAvailable,
@@ -1296,3 +1314,12 @@ module.exports = {
   verifyObsidianVault,
   waitForDebugger,
 };
+
+// Expose OBSIDIAN_BINARY as a lazy getter on the exports object so that
+// importing this module on an unsupported platform does not throw immediately.
+Object.defineProperty(_exports, "OBSIDIAN_BINARY", {
+  get: getObsidianBinary,
+  enumerable: true,
+});
+
+module.exports = _exports;
