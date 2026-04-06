@@ -14,7 +14,11 @@ import { TaskMover } from "./TaskMover";
 import { TaskCard } from "./TaskCard";
 import { TaskPromptBuilder } from "./TaskPromptBuilder";
 import { TaskDetailView } from "./TaskDetailView";
-import { handleItemCreated, handleSplitTaskCreated, prepareRetryEnrichment } from "./BackgroundEnrich";
+import {
+  handleItemCreated,
+  handleSplitTaskCreated,
+  prepareRetryEnrichment,
+} from "./BackgroundEnrich";
 import type { KanbanColumn } from "./types";
 
 export class TaskAgentAdapter extends BaseAdapter {
@@ -22,15 +26,18 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   // Cached from framework calls - the framework passes app and settings to factory methods
   private _app: App | null = null;
+  private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
 
   createParser(app: App, basePath: string, settings: Record<string, unknown>): WorkItemParser {
     this._app = app;
+    this._settings = settings;
     return new TaskParser(app, basePath, settings);
   }
 
   createMover(app: App, basePath: string, settings: Record<string, unknown>): WorkItemMover {
     this._app = app;
+    this._settings = settings;
     return new TaskMover(app, basePath, settings);
   }
 
@@ -93,7 +100,10 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (!this._app) {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
     }
-    return prepareRetryEnrichment(this._app, item.path);
+    const retryPromptTemplate = this._settings["adapter.retryEnrichmentPrompt"] as
+      | string
+      | undefined;
+    return prepareRetryEnrichment(this._app, item.path, retryPromptTemplate);
   }
 
   transformSessionLabel(_oldLabel: string, detectedLabel: string): string {

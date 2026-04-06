@@ -27,10 +27,37 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       type: "text",
       default: "",
     },
+    {
+      key: "enrichmentEnabled",
+      name: "Enable background enrichment",
+      description:
+        "Automatically enrich new tasks in the background using a headless agent session",
+      type: "toggle",
+      default: true,
+    },
+    {
+      key: "enrichmentPrompt",
+      name: "Enrichment prompt",
+      description:
+        "Prompt sent to the headless agent for background enrichment. Use {{FILE_PATH}} as a placeholder for the task file path. Leave empty for default.",
+      type: "text",
+      default: "",
+    },
+    {
+      key: "retryEnrichmentPrompt",
+      name: "Retry enrichment prompt",
+      description:
+        "Prompt used when retrying enrichment via right-click menu. Use {{FILE_PATH}} as a placeholder. Leave empty for default.",
+      type: "text",
+      default: "",
+    },
   ],
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
     jiraBaseUrl: "",
+    enrichmentEnabled: true,
+    enrichmentPrompt: "",
+    retryEnrichmentPrompt: "",
   },
   itemName: "task",
   terminalStates: ["done", "abandoned"],

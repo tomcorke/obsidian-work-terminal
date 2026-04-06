@@ -13,6 +13,8 @@ import {
   insertIngestionFailedFlag,
   prepareRetryEnrichment,
   findFileByUuid,
+  DEFAULT_ENRICHMENT_PROMPT,
+  DEFAULT_RETRY_ENRICHMENT_PROMPT,
 } from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {
@@ -133,6 +135,29 @@ describe("BackgroundEnrich", () => {
       await prepareRetryEnrichment(app, "tasks/test.md");
 
       expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+    });
+
+    it("uses custom retry prompt template when provided", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      const app = makeApp(content);
+
+      const prompt = await prepareRetryEnrichment(
+        app,
+        "tasks/test.md",
+        "Custom retry for {{FILE_PATH}} with extra instructions",
+      );
+
+      expect(prompt).toBe("Custom retry for /vault/tasks/test.md with extra instructions");
+    });
+
+    it("uses default retry prompt when no template is provided", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      const app = makeApp(content);
+
+      const prompt = await prepareRetryEnrichment(app, "tasks/test.md");
+
+      expect(prompt).toContain("needs enrichment");
+      expect(prompt).toContain("/vault/tasks/test.md");
     });
 
     it("does not use a slash-command skill invocation in the prompt", async () => {
@@ -413,6 +438,59 @@ describe("BackgroundEnrich", () => {
       expect(app.vault.modify.mock.calls.at(-1)![0].path).toBe(movedPath);
       const finalContent = app.vault.modify.mock.calls.at(-1)![1] as string;
       expect(finalContent).toContain("background-ingestion: failed");
+    });
+
+    it("skips enrichment when adapter.enrichmentEnabled is false", async () => {
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "My task", {
+        ...defaultSettings,
+        "adapter.enrichmentEnabled": false,
+      });
+      await result.enrichmentDone;
+
+      expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+      expect(app.vault.modify).not.toHaveBeenCalled();
+    });
+
+    it("uses custom enrichment prompt when adapter.enrichmentPrompt is set", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+      const customPrompt = "Custom enrich: {{FILE_PATH}} please do things";
+
+      const result = await handleItemCreated(app, "My task", {
+        ...defaultSettings,
+        "adapter.enrichmentPrompt": customPrompt,
+      });
+      await result.enrichmentDone;
+
+      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
+      expect(promptArg).toContain("Custom enrich:");
+      expect(promptArg).toContain("/vault/2 - Areas/Tasks/todo/");
+      expect(promptArg).toContain("please do things");
+      expect(promptArg).not.toContain("{{FILE_PATH}}");
+    });
+
+    it("uses default enrichment prompt when adapter.enrichmentPrompt is empty", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const result = await handleItemCreated(app, "My task", {
+        ...defaultSettings,
+        "adapter.enrichmentPrompt": "",
+      });
+      await result.enrichmentDone;
+
+      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
+      expect(promptArg).toContain("was just created with minimal data");
+    });
+
+    it("failure note does not reference environment-specific skills", () => {
+      const content = `---\nid: test-123\nstate: todo\n---\n# My Task\n`;
+      const result = insertIngestionFailedFlag(content);
+
+      expect(result).not.toContain("task-agent skill");
+      expect(result).toContain("enrich the task manually");
     });
 
     it("marks ingestion failed at moved path when enrichment errors and file was moved", async () => {
