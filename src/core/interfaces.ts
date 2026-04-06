@@ -67,6 +67,8 @@ export interface PluginConfig {
   defaultSettings: Record<string, unknown>;
   /** Singular noun for items (e.g. "task", "ticket"). Used in UI labels. */
   itemName: string;
+  /** Column/state IDs considered terminal (completed/archived). Items in these states are excluded from "Move to Item" menus and similar UI elements. */
+  terminalStates?: string[];
 }
 
 /**

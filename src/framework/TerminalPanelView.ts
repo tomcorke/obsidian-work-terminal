@@ -792,7 +792,7 @@ export class TerminalPanelView {
     if (this.allItems.length > 0) {
       menu.addSeparator();
       const activeItemId = this.tabManager.getActiveItemId();
-      const excludedStates = new Set(["done", "abandoned", "archive"]);
+      const excludedStates = new Set(this.adapter.config.terminalStates ?? []);
       const available = this.allItems.filter(
         (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
       );
