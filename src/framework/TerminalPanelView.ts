@@ -31,7 +31,7 @@ import { electronRequire, expandTilde } from "../core/utils";
 import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
-import { buildAgentContextPrompt } from "./AgentContextPrompt";
+import { buildAgentContextPrompt, expandProfilePlaceholders } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
@@ -1341,16 +1341,24 @@ export class TerminalPanelView {
     const passParamsOnLaunch =
       profile.paramPassMode === "launch-only" || profile.paramPassMode === "both";
 
-    // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
     const item = this.getActiveItem();
-    let expandedArgs = passParamsOnLaunch ? extraArgs : "";
-    if (item && expandedArgs) {
-      expandedArgs = this.expandProfilePlaceholders(expandedArgs, item, "$sessionId");
-    }
 
     if (profile.agentType === "shell") {
+      // Expand item placeholders in arguments for shell profiles
+      let expandedArgs = passParamsOnLaunch ? extraArgs : "";
+      if (item && expandedArgs) {
+        expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId");
+      }
+      const commandArgs = expandedArgs ? parseExtraArgs(expandedArgs) : [];
       const expandedCwd = expandTilde(cwd);
-      const tab = this.tabManager.createTab(command, expandedCwd, label, "shell");
+      const tab = this.tabManager.createTab(
+        command,
+        expandedCwd,
+        label,
+        "shell",
+        undefined,
+        commandArgs.length > 0 ? commandArgs : undefined,
+      );
       if (tab) {
         tab.profileId = profile.id;
         if (profile.button.color) tab.profileColor = profile.button.color;
@@ -1359,7 +1367,7 @@ export class TerminalPanelView {
       return;
     }
 
-    // Build context prompt if the profile uses context and params should be passed on launch
+    // Build context prompt first so $workTerminalPrompt can be resolved in args
     let prompt: string | undefined;
     if (passParamsOnLaunch && profile.useContext && item) {
       const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
@@ -1368,8 +1376,8 @@ export class TerminalPanelView {
         const adapterPrompt = profile.suppressAdapterPrompt
           ? null
           : this.promptBuilder.buildPrompt(item, this.resolveWorkItemPath(item.path));
-        // Defer $sessionId in context template too
-        const expandedContext = this.expandProfilePlaceholders(contextTemplate, item, "$sessionId");
+        // Defer $sessionId in context template too (no $workTerminalPrompt in context itself)
+        const expandedContext = expandProfilePlaceholders(contextTemplate, item, "$sessionId");
         prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
       } else {
         // Fall back to standard context prompt building
@@ -1379,6 +1387,13 @@ export class TerminalPanelView {
         new Notice("Could not build a contextual prompt for this item");
         return;
       }
+    }
+
+    // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
+    // $workTerminalPrompt resolves to the assembled context prompt above
+    let expandedArgs = passParamsOnLaunch ? extraArgs : "";
+    if (item && expandedArgs) {
+      expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt);
     }
 
     // Profile's resolveArguments() already includes global args, so skip the
@@ -1409,15 +1424,6 @@ export class TerminalPanelView {
         this.renderTabBar();
       }
     }
-  }
-
-  private expandProfilePlaceholders(template: string, item: WorkItem, sessionId: string): string {
-    return template
-      .replace(/\$title/g, item.title)
-      .replace(/\$state/g, item.state)
-      .replace(/\$filePath/g, item.path)
-      .replace(/\$id/g, item.id)
-      .replace(/\$sessionId/g, sessionId);
   }
 
   private async spawnShell(): Promise<void> {
@@ -2302,8 +2308,11 @@ export class TerminalPanelView {
           this.getStringSetting(fresh, resumeConfig.extraArgsSettingKey, ""),
           options.extraArgs || "",
         );
-    // Replace or strip deferred $sessionId placeholders
+    // Replace or strip deferred $sessionId placeholders in extra args and prompt
     const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId || "");
+    if (prompt) {
+      prompt = prompt.replace(/\$sessionId/g, sessionId || "");
+    }
 
     // Build args via the unified buildAgentArgs helper
     const baseArgs = buildAgentArgs(options.agentType, mergedExtraArgs, prompt);

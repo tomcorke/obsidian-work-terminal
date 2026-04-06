@@ -166,7 +166,7 @@ export class AgentProfileEditModal extends Modal {
     const argsSetting = new Setting(contentEl)
       .setName("Arguments")
       .setDesc(
-        "Extra CLI arguments. Merged with global defaults. Placeholders: $title, $state, $filePath, $id, $sessionId",
+        "Extra CLI arguments. Merged with global defaults. Placeholders: $title, $state, $filePath, $id, $sessionId, $workTerminalPrompt (full assembled context prompt)",
       )
       .addTextArea((ta) => {
         ta.setValue(this.draft.arguments).onChange((value) => {

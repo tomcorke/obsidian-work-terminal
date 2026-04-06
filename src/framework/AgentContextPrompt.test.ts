@@ -3,6 +3,7 @@ import type { WorkItem } from "../core/interfaces";
 import {
   buildAgentContextPrompt,
   buildClaudeContextPrompt,
+  expandProfilePlaceholders,
   getAgentContextTemplate,
   getClaudeContextTemplate,
 } from "./AgentContextPrompt";
@@ -69,5 +70,69 @@ describe("buildAgentContextPrompt", () => {
     const prompt = buildAgentContextPrompt(item, {});
 
     expect(prompt).toBeNull();
+  });
+});
+
+describe("expandProfilePlaceholders", () => {
+  it("expands $title, $state, $filePath, $id", () => {
+    const result = expandProfilePlaceholders(
+      "--title $title --state $state --path $filePath --id $id",
+      item,
+      "sess-abc",
+    );
+    expect(result).toBe(
+      "--title Fix prompt sync --state priority --path 2 - Areas/Tasks/priority/task.md --id task-123",
+    );
+  });
+
+  it("expands $sessionId", () => {
+    const result = expandProfilePlaceholders("--session $sessionId", item, "sess-abc");
+    expect(result).toBe("--session sess-abc");
+  });
+
+  it("expands $workTerminalPrompt to the assembled context prompt", () => {
+    const contextPrompt = "Task: Fix prompt sync\nState: priority";
+    const result = expandProfilePlaceholders(
+      '--prompt "$workTerminalPrompt"',
+      item,
+      "sess-abc",
+      contextPrompt,
+    );
+    expect(result).toBe('--prompt "Task: Fix prompt sync\nState: priority"');
+  });
+
+  it("expands $workTerminalPrompt to empty string when no context provided", () => {
+    const result = expandProfilePlaceholders("--prompt $workTerminalPrompt", item, "sess-abc");
+    expect(result).toBe("--prompt ");
+  });
+
+  it("expands $workTerminalPrompt to empty string when context is undefined", () => {
+    const result = expandProfilePlaceholders(
+      "--prompt $workTerminalPrompt",
+      item,
+      "sess-abc",
+      undefined,
+    );
+    expect(result).toBe("--prompt ");
+  });
+
+  it("handles multiple occurrences of the same placeholder", () => {
+    const result = expandProfilePlaceholders("$title and $title again", item, "sess-abc");
+    expect(result).toBe("Fix prompt sync and Fix prompt sync again");
+  });
+
+  it("expands all placeholders together including $workTerminalPrompt", () => {
+    const result = expandProfilePlaceholders(
+      "--task $title --ctx $workTerminalPrompt --id $id",
+      item,
+      "sess-abc",
+      "full context here",
+    );
+    expect(result).toBe("--task Fix prompt sync --ctx full context here --id task-123");
+  });
+
+  it("returns template unchanged when no placeholders present", () => {
+    const result = expandProfilePlaceholders("--verbose --model opus", item, "sess-abc");
+    expect(result).toBe("--verbose --model opus");
   });
 });
