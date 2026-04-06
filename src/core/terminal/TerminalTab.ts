@@ -180,6 +180,8 @@ export class TerminalTab {
 
   // Deferred session ID detection (Copilot context sessions)
   private _sessionDetector: CopilotSessionDetector | null = null;
+  /** Override the session log directory from agent config (set from user settings). */
+  sessionLogDirOverride?: string;
 
   // Rename detection
   private _renameDecoder = new StringDecoder("utf8");
@@ -1113,16 +1115,13 @@ export class TerminalTab {
   private _initDeferredSessionDetector(): void {
     const { agentType } = sessionTypeToAgentType(this.sessionType);
     const resumeConfig = getResumeConfig(agentType);
-    if (
-      !resumeConfig.deferSessionId ||
-      !resumeConfig.sessionLogDir ||
-      !resumeConfig.sessionLogPattern
-    ) {
+    const sessionLogDir = this.sessionLogDirOverride || resumeConfig.sessionLogDir;
+    if (!resumeConfig.deferSessionId || !sessionLogDir || !resumeConfig.sessionLogPattern) {
       return;
     }
 
     this._sessionDetector = new CopilotSessionDetector({
-      logDir: resumeConfig.sessionLogDir,
+      logDir: sessionLogDir,
       logPattern: resumeConfig.sessionLogPattern,
       spawnTime: this.spawnTime,
     });
