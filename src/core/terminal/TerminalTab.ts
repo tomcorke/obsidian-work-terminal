@@ -113,6 +113,14 @@ export class TerminalTab {
   profileId: string | undefined;
   profileColor: string | undefined;
   paramPassMode: import("../agents/AgentProfile").ParamPassMode | undefined;
+  /** Activity detection patterns from resume config. When set, config-driven detection is used. */
+  activityPatterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] };
+  /**
+   * Explicit resumable override. When set, takes precedence over
+   * `isResumableSessionType()` for custom profiles whose resume
+   * config is profile-level rather than type-level.
+   */
+  isResumableOverride?: boolean;
 
   terminal: Terminal;
   containerEl: HTMLElement;
@@ -1133,7 +1141,9 @@ export class TerminalTab {
   }
 
   private _detectResumableAgent(): boolean {
-    if (!isResumableSessionType(this.sessionType)) return false;
+    // Custom profiles may override resumability at the profile level
+    const resumable = this.isResumableOverride ?? isResumableSessionType(this.sessionType);
+    if (!resumable) return false;
     // Either we already have a session ID, or we're actively detecting one
     return !!this.agentSessionId || !!this._sessionDetector;
   }
@@ -1204,7 +1214,7 @@ export class TerminalTab {
       this._unchangedPolls++;
     }
 
-    const hasActiveIndicator = hasAgentActiveIndicator(screenLines);
+    const hasActiveIndicator = hasAgentActiveIndicator(screenLines, this.activityPatterns);
 
     if (hasActiveIndicator || screenChanged) {
       // During post-reload grace period, treat "active" as "idle"
@@ -1276,6 +1286,8 @@ export class TerminalTab {
       profileId: this.profileId,
       profileColor: this.profileColor,
       paramPassMode: this.paramPassMode,
+      activityPatterns: this.activityPatterns,
+      isResumableOverride: this.isResumableOverride,
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
@@ -1316,6 +1328,8 @@ export class TerminalTab {
     tab.profileId = stored.profileId;
     tab.profileColor = stored.profileColor;
     tab.paramPassMode = stored.paramPassMode;
+    tab.activityPatterns = stored.activityPatterns;
+    tab.isResumableOverride = stored.isResumableOverride;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;

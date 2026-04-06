@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_TYPES,
   AgentProfileArraySchema,
   AgentProfileSchema,
   BRAND_COLORS,
   agentTypeToSessionType,
   sessionTypeToAgentType,
+  isProfileSessionType,
+  extractProfileId,
+  PROFILE_SESSION_PREFIX,
   createDefaultProfile,
   createDefaultClaudeProfile,
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
   getResumeConfig,
+  getProfileResumeConfig,
   isResumableAgentType,
   getAllResumeFlags,
   hasSessionTracking,
@@ -283,5 +288,166 @@ describe("default profile button colors", () => {
   it("does not set a color on the default Copilot profile", () => {
     const profile = createDefaultCopilotProfile();
     expect(profile.button.color).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Custom agent type
+// ---------------------------------------------------------------------------
+
+describe("custom agent type", () => {
+  it("is included in AGENT_TYPES", () => {
+    expect(AGENT_TYPES).toContain("custom");
+  });
+
+  it("has a non-resumable default resume config", () => {
+    const config = getResumeConfig("custom");
+    expect(config.resumable).toBe(false);
+    expect(config.sessionTracking).toBe(false);
+    expect(config.deferSessionId).toBe(false);
+    expect(config.displayLabel).toBe("Custom");
+  });
+
+  it("has no activity patterns by default", () => {
+    const config = getResumeConfig("custom");
+    expect(config.activityPatterns).toBeUndefined();
+  });
+});
+
+describe("activity patterns in resume config", () => {
+  it("provides activity patterns for claude", () => {
+    const config = getResumeConfig("claude");
+    expect(config.activityPatterns).toBeDefined();
+    expect(config.activityPatterns!.activeLinePatterns.length).toBeGreaterThan(0);
+  });
+
+  it("provides activity patterns for copilot", () => {
+    const config = getResumeConfig("copilot");
+    expect(config.activityPatterns).toBeDefined();
+    expect(config.activityPatterns!.activeLinePatterns.length).toBeGreaterThan(0);
+  });
+
+  it("does not provide activity patterns for shell", () => {
+    const config = getResumeConfig("shell");
+    expect(config.activityPatterns).toBeUndefined();
+  });
+});
+
+describe("profile session type helpers", () => {
+  it("agentTypeToSessionType returns profile-prefixed type for custom with profileId", () => {
+    const sessionType = agentTypeToSessionType("custom", false, "abc-123");
+    expect(sessionType).toBe(`${PROFILE_SESSION_PREFIX}abc-123`);
+  });
+
+  it("agentTypeToSessionType returns 'custom' when no profileId", () => {
+    const sessionType = agentTypeToSessionType("custom", false);
+    expect(sessionType).toBe("custom");
+  });
+
+  it("isProfileSessionType detects profile-prefixed session types", () => {
+    expect(isProfileSessionType("profile:abc-123")).toBe(true);
+    expect(isProfileSessionType("claude")).toBe(false);
+    expect(isProfileSessionType("custom")).toBe(false);
+  });
+
+  it("extractProfileId extracts the ID from a profile session type", () => {
+    expect(extractProfileId("profile:abc-123")).toBe("abc-123");
+    expect(extractProfileId("claude")).toBeUndefined();
+  });
+
+  it("sessionTypeToAgentType maps profile session types to custom", () => {
+    const result = sessionTypeToAgentType("profile:abc-123");
+    expect(result.agentType).toBe("custom");
+    expect(result.withContext).toBe(false);
+  });
+
+  it("sessionTypeToAgentType maps 'custom' to custom", () => {
+    const result = sessionTypeToAgentType("custom");
+    expect(result.agentType).toBe("custom");
+  });
+
+  it("sessionTypeToAgentType falls back to custom for unknown types", () => {
+    const result = sessionTypeToAgentType("unknown-type" as any);
+    expect(result.agentType).toBe("custom");
+  });
+});
+
+describe("getProfileResumeConfig", () => {
+  it("returns base config for non-custom profiles", () => {
+    const profile = createDefaultProfile({ agentType: "claude" });
+    const config = getProfileResumeConfig(profile);
+    expect(config).toEqual(getResumeConfig("claude"));
+  });
+
+  it("merges profile overrides for custom profiles", () => {
+    const profile = createDefaultProfile({
+      agentType: "custom",
+      name: "My Agent",
+      resumable: true,
+      resumeFlag: "--session",
+      resumeFlagFormat: "flag-equals",
+      promptInjectionMode: "flag",
+      promptFlag: "-m",
+    });
+    const config = getProfileResumeConfig(profile);
+    expect(config.resumable).toBe(true);
+    expect(config.resumeFlag).toBe("--session");
+    expect(config.resumeFlagFormat).toBe("flag-equals");
+    expect(config.promptInjectionMode).toBe("flag");
+    expect(config.promptFlag).toBe("-m");
+    expect(config.displayLabel).toBe("My Agent");
+    expect(config.cliDisplayName).toBe("My Agent");
+  });
+
+  it("uses base defaults when custom profile has no overrides", () => {
+    const profile = createDefaultProfile({ agentType: "custom", name: "Bare" });
+    const config = getProfileResumeConfig(profile);
+    expect(config.resumable).toBe(false);
+    expect(config.resumeFlag).toBe("");
+    expect(config.promptInjectionMode).toBe("positional");
+  });
+});
+
+describe("Zod schema for custom profiles", () => {
+  it("validates a profile with resume override fields", () => {
+    const raw = {
+      id: "test-1",
+      name: "Pi Agent",
+      agentType: "custom",
+      command: "pi",
+      defaultCwd: "",
+      arguments: "",
+      contextPrompt: "",
+      useContext: false,
+      suppressAdapterPrompt: false,
+      paramPassMode: "launch-only",
+      button: { enabled: true, label: "Pi" },
+      sortOrder: 0,
+      resumable: true,
+      resumeFlag: "--session",
+      resumeFlagFormat: "flag-space",
+      promptInjectionMode: "positional",
+    };
+    const result = AgentProfileSchema.safeParse(raw);
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a custom profile without resume fields", () => {
+    const raw = {
+      id: "test-2",
+      name: "Simple CLI",
+      agentType: "custom",
+      command: "mycli",
+      defaultCwd: "",
+      arguments: "",
+      contextPrompt: "",
+      useContext: false,
+      suppressAdapterPrompt: false,
+      paramPassMode: "launch-only",
+      button: { enabled: false, label: "" },
+      sortOrder: 0,
+    };
+    const result = AgentProfileSchema.safeParse(raw);
+    expect(result.success).toBe(true);
   });
 });

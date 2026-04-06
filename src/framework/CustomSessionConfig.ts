@@ -4,6 +4,7 @@ import {
   sessionTypeToAgentType,
   getResumeConfig,
   hasSessionTracking,
+  isProfileSessionType,
 } from "../core/agents/AgentProfile";
 
 export interface CustomSessionConfig {
@@ -21,6 +22,7 @@ export const CUSTOM_SESSION_TYPE_OPTIONS: Array<{ value: SessionType; label: str
   { value: "copilot-with-context", label: "Copilot (ctx)" },
   { value: "strands", label: "Strands" },
   { value: "strands-with-context", label: "Strands (ctx)" },
+  { value: "custom", label: "Custom" },
 ];
 
 export function createDefaultCustomSessionConfig(defaultCwd: string): CustomSessionConfig {
@@ -86,10 +88,17 @@ export function isStrandsSession(sessionType: SessionType): boolean {
   return isAgentTypeSession(sessionType, "strands");
 }
 
+export function isCustomSession(sessionType: SessionType): boolean {
+  return isAgentTypeSession(sessionType, "custom");
+}
+
 export function supportsExtraArgs(sessionType: SessionType): boolean {
   return sessionTypeToAgentType(sessionType).agentType !== "shell";
 }
 
 function isSessionType(value: unknown): value is SessionType {
-  return CUSTOM_SESSION_TYPE_OPTIONS.some((option) => option.value === value);
+  return (
+    (typeof value === "string" && isProfileSessionType(value)) ||
+    CUSTOM_SESSION_TYPE_OPTIONS.some((option) => option.value === value)
+  );
 }

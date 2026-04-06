@@ -12,9 +12,10 @@ import {
   type ParamPassMode,
   sessionTypeToAgentType,
   isResumableAgentType,
+  isProfileSessionType,
 } from "../agents/AgentProfile";
 
-export const SESSION_TYPES = [
+export const KNOWN_SESSION_TYPES = [
   "shell",
   "claude",
   "claude-with-context",
@@ -22,9 +23,20 @@ export const SESSION_TYPES = [
   "copilot-with-context",
   "strands",
   "strands-with-context",
+  "custom",
 ] as const;
 
-export type SessionType = (typeof SESSION_TYPES)[number];
+/** @deprecated Use KNOWN_SESSION_TYPES instead. */
+export const SESSION_TYPES = KNOWN_SESSION_TYPES;
+
+export type KnownSessionType = (typeof KNOWN_SESSION_TYPES)[number];
+export type ProfileSessionType = `profile:${string}`;
+
+/**
+ * Session type identifier. Known types are the literal strings in KNOWN_SESSION_TYPES.
+ * Custom agent profiles use "profile:<uuid>" session types.
+ */
+export type SessionType = KnownSessionType | ProfileSessionType;
 
 export type DurableRecoveryMode = "resume" | "relaunch";
 
@@ -45,6 +57,10 @@ export interface StoredSession {
   profileId?: string;
   profileColor?: string;
   paramPassMode?: ParamPassMode;
+  /** Activity detection patterns for config-driven state detection. */
+  activityPatterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] };
+  /** Explicit resumable override for custom profiles. */
+  isResumableOverride?: boolean;
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
@@ -162,7 +178,11 @@ export interface StoredState {
 }
 
 export function isSessionType(value: unknown): value is SessionType {
-  return typeof value === "string" && SESSION_TYPES.includes(value as SessionType);
+  return (
+    typeof value === "string" &&
+    (KNOWN_SESSION_TYPES.includes(value as (typeof KNOWN_SESSION_TYPES)[number]) ||
+      isProfileSessionType(value))
+  );
 }
 
 export function isResumableSessionType(sessionType: SessionType): boolean {

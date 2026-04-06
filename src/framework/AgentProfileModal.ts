@@ -31,6 +31,7 @@ const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   copilot: "Copilot",
   strands: "Strands",
   shell: "Shell",
+  custom: "Custom",
 };
 
 const BORDER_STYLE_LABELS: Record<BorderStyle, string> = {
@@ -125,14 +126,19 @@ export class AgentProfileEditModal extends Modal {
         }
         dropdown.setValue(this.draft.agentType).onChange((value) => {
           this.draft.agentType = value as AgentType;
+          // Re-render to show/hide custom-specific sections
+          this.render();
         });
       });
 
     // Command
+    const isCustom = this.draft.agentType === "custom";
     const commandSetting = new Setting(contentEl)
       .setName("Executable path")
       .setDesc(
-        "Path or name of the CLI binary. Leave blank to use the global setting for this agent type.",
+        isCustom
+          ? "Path or name of the CLI binary (required for custom profiles)."
+          : "Path or name of the CLI binary. Leave blank to use the global setting for this agent type.",
       )
       .addText((text) => {
         text
@@ -224,6 +230,14 @@ export class AgentProfileEditModal extends Modal {
           this.draft.paramPassMode = value as ParamPassMode;
         });
       });
+
+    // ---------------------------------------------------------------------------
+    // Advanced: Resume (custom agent type only)
+    // ---------------------------------------------------------------------------
+
+    if (isCustom) {
+      this.renderResumeSection(contentEl);
+    }
 
     // ---------------------------------------------------------------------------
     // Button configuration
@@ -336,9 +350,92 @@ export class AgentProfileEditModal extends Modal {
         new Notice("Profile name is required");
         return;
       }
+      if (this.draft.agentType === "custom" && !this.draft.command.trim()) {
+        new Notice("Executable path is required for custom profiles");
+        return;
+      }
+      if (this.draft.resumable && !this.draft.resumeFlag?.trim()) {
+        new Notice("Resume flag is required when session resume is enabled");
+        return;
+      }
+      if (this.draft.promptInjectionMode === "flag" && !this.draft.promptFlag?.trim()) {
+        new Notice("Prompt flag is required when injection mode is set to flag");
+        return;
+      }
       this.onSave(this.draft);
       this.close();
     });
+  }
+
+  private renderResumeSection(contentEl: HTMLElement): void {
+    const details = contentEl.createEl("details", { cls: "wt-profile-resume-section" });
+    details.createEl("summary", { text: "Advanced: Resume & CLI integration" });
+
+    const inner = details.createDiv({ cls: "wt-profile-resume-inner" });
+
+    // Resumable toggle
+    new Setting(inner)
+      .setName("Session resume")
+      .setDesc("Enable if this CLI supports resuming sessions via a flag (e.g. --session-id)")
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.resumable ?? false).onChange((value) => {
+          this.draft.resumable = value;
+        });
+      });
+
+    // Resume flag
+    new Setting(inner)
+      .setName("Resume flag")
+      .setDesc("CLI flag for passing the session ID (e.g. --session-id, --resume)")
+      .addText((text) => {
+        text
+          .setPlaceholder("--session-id")
+          .setValue(this.draft.resumeFlag ?? "")
+          .onChange((value) => {
+            this.draft.resumeFlag = value.trim() || undefined;
+          });
+        text.inputEl.addClass("wt-profile-input");
+      });
+
+    // Resume flag format
+    new Setting(inner)
+      .setName("Resume flag format")
+      .setDesc("How the session ID is passed: --flag ID (space) or --flag=ID (equals)")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("flag-space", "--flag ID (space-separated)");
+        dropdown.addOption("flag-equals", "--flag=ID (equals-separated)");
+        dropdown.setValue(this.draft.resumeFlagFormat ?? "flag-space").onChange((value) => {
+          this.draft.resumeFlagFormat = value as "flag-space" | "flag-equals";
+        });
+      });
+
+    // Prompt injection mode
+    new Setting(inner)
+      .setName("Prompt injection mode")
+      .setDesc(
+        "How the context prompt is passed: as a trailing argument (positional) or via a CLI flag",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("positional", "Positional (trailing argument)");
+        dropdown.addOption("flag", "Flag (e.g. -i <prompt>)");
+        dropdown.setValue(this.draft.promptInjectionMode ?? "positional").onChange((value) => {
+          this.draft.promptInjectionMode = value as "positional" | "flag";
+        });
+      });
+
+    // Prompt flag
+    new Setting(inner)
+      .setName("Prompt flag")
+      .setDesc("CLI flag for passing the context prompt (only used when injection mode is 'flag')")
+      .addText((text) => {
+        text
+          .setPlaceholder("-i")
+          .setValue(this.draft.promptFlag ?? "")
+          .onChange((value) => {
+            this.draft.promptFlag = value.trim() || undefined;
+          });
+        text.inputEl.addClass("wt-profile-input");
+      });
   }
 
   private renderContextDependentSection(containerEl: HTMLElement): void {

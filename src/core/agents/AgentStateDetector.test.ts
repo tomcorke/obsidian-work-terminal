@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AgentStateDetector, aggregateState, type AgentState } from "./AgentStateDetector";
+import {
+  AgentStateDetector,
+  aggregateState,
+  hasAgentActiveIndicator,
+  type AgentState,
+} from "./AgentStateDetector";
 
 /**
  * Create a minimal mock Terminal with a buffer that returns the given lines.
@@ -859,5 +864,61 @@ describe("aggregateState", () => {
     expect(aggregateState(["waiting"])).toBe("waiting");
     expect(aggregateState(["active", "waiting"])).toBe("waiting");
     expect(aggregateState(["idle", "inactive", "waiting"])).toBe("waiting");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasAgentActiveIndicator with config-driven patterns
+// ---------------------------------------------------------------------------
+
+describe("hasAgentActiveIndicator with patterns", () => {
+  const claudePatterns = {
+    activeLinePatterns: [/^\s*\u2733.*\u2026/, /^\s*\u23bf\s+.*\u2026/],
+    activeJoinedPatterns: [],
+  };
+
+  const emptyPatterns = {
+    activeLinePatterns: [],
+    activeJoinedPatterns: [],
+  };
+
+  const customPatterns = {
+    activeLinePatterns: [/^\[BUSY\]/],
+    activeJoinedPatterns: [/processing\.\.\./i],
+  };
+
+  it("detects Claude spinner with config patterns", () => {
+    const lines = ["some output", "  \u2733 Working on something\u2026"];
+    expect(hasAgentActiveIndicator(lines, claudePatterns)).toBe(true);
+  });
+
+  it("returns false with empty patterns (custom agent default)", () => {
+    const lines = ["some output", "  \u2733 Working on something\u2026"];
+    expect(hasAgentActiveIndicator(lines, emptyPatterns)).toBe(false);
+  });
+
+  it("detects custom line pattern", () => {
+    const lines = ["output", "[BUSY] computing"];
+    expect(hasAgentActiveIndicator(lines, customPatterns)).toBe(true);
+  });
+
+  it("detects custom joined pattern", () => {
+    const lines = ["output", "still", "processing..."];
+    expect(hasAgentActiveIndicator(lines, customPatterns)).toBe(true);
+  });
+
+  it("returns false when custom patterns do not match", () => {
+    const lines = ["idle output", "> ready for input"];
+    expect(hasAgentActiveIndicator(lines, customPatterns)).toBe(false);
+  });
+
+  it("falls back to legacy detection when no patterns provided", () => {
+    const lines = ["  \u2733 Working\u2026"];
+    expect(hasAgentActiveIndicator(lines)).toBe(true);
+  });
+
+  it("returns false for empty screen lines", () => {
+    expect(hasAgentActiveIndicator([], emptyPatterns)).toBe(false);
+    expect(hasAgentActiveIndicator([])).toBe(false);
   });
 });
