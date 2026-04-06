@@ -226,7 +226,7 @@ describe("getFullPath (mocked)", () => {
     );
     const dirs = result.split(":");
 
-    // Platform EXTRA_PATH_DIRS still present
+    // Platform extra path dirs still present
     expect(dirs).toContain(expandTilde("~/.local/bin"));
     // env.PATH entries present
     expect(dirs).toContain("/fallback/bin");
@@ -247,6 +247,41 @@ describe("getFullPath (mocked)", () => {
     expect(dirs).toContain("/usr/local/bin");
     expect(dirs).toContain("/usr/bin");
     expect(dirs).toContain("/bin");
+  });
+
+  it("uses semicolon delimiter and Windows dirs on win32", () => {
+    mockSpawnSyncResult = {
+      status: 1,
+      stdout: "",
+      stderr: "",
+    };
+
+    const env = {
+      PATH: "C:\\Windows\\System32",
+      LOCALAPPDATA: "C:\\Users\\Test\\AppData\\Local",
+      APPDATA: "C:\\Users\\Test\\AppData\\Roaming",
+      ProgramFiles: "C:\\Program Files",
+    } as unknown as NodeJS.ProcessEnv;
+
+    const result = getFullPath(env, path, "win32");
+
+    // Must use semicolon delimiter (Windows convention)
+    expect(result).toContain(";");
+    expect(result).not.toMatch(/(?<![A-Za-z]):/);
+
+    const dirs = result.split(";");
+
+    // Windows extra dirs are present (expanded)
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Local\\Programs\\node");
+    expect(dirs).toContain("C:\\Users\\Test\\AppData\\Roaming\\nvm");
+    expect(dirs).toContain("C:\\Program Files\\nodejs");
+
+    // env.PATH entry is present
+    expect(dirs).toContain("C:\\Windows\\System32");
+
+    // Unix dirs must NOT be present
+    const hasUnixPaths = dirs.some((d) => d.includes("/usr/") || d.includes("/opt/"));
+    expect(hasUnixPaths).toBe(false);
   });
 });
 

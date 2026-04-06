@@ -224,7 +224,7 @@ export function resolveLoginShellPath(): string | null {
  * Build the full augmented PATH including the user's login-shell PATH.
  *
  * Merges (in priority order):
- * 1. EXTRA_PATH_DIRS (common tool directories)
+ * 1. getExtraPathDirs() (platform-aware common tool directories)
  * 2. Login shell PATH (nvm, fnm, Homebrew, etc.)
  * 3. Current process.env.PATH (Electron baseline)
  *
