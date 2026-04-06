@@ -33,4 +33,5 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     jiraBaseUrl: "",
   },
   itemName: "task",
+  terminalStates: ["done", "abandoned"],
 };
