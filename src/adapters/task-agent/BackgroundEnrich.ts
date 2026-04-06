@@ -27,6 +27,23 @@ const RENAME_INSTRUCTION =
   `TASK-YYYYMMDD-HHMM-slugified-title.md (use the existing date prefix, ` +
   `replace the "pending-XXXXXXXX" segment with a slug of the final title).`;
 
+/** Default enrichment prompt template. {{FILE_PATH}} is replaced with the full file path. */
+export const DEFAULT_ENRICHMENT_PROMPT =
+  `The task file at {{FILE_PATH}} was just created with minimal data. ` +
+  `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
+  RENAME_INSTRUCTION;
+
+/** Default retry enrichment prompt template. */
+export const DEFAULT_RETRY_ENRICHMENT_PROMPT =
+  `The task file at {{FILE_PATH}} needs enrichment. ` +
+  `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
+  RENAME_INSTRUCTION;
+
+/** Resolve an enrichment prompt template, replacing {{FILE_PATH}} with the actual path. */
+function resolveEnrichmentPrompt(template: string, filePath: string): string {
+  return template.replace(/\{\{FILE_PATH\}\}/g, filePath);
+}
+
 function resolveVaultPath(app: App): string {
   const adapter = app.vault.adapter as any;
   let vaultPath: string = adapter.basePath || adapter.getBasePath?.() || "";
@@ -84,12 +101,17 @@ export async function handleItemCreated(
   await app.vault.create(filePath, content);
   console.log(`[work-terminal] Task created: ${filePath}`);
 
+  // Skip enrichment if explicitly disabled
+  const enrichmentEnabled = settings["adapter.enrichmentEnabled"] !== false;
+  if (!enrichmentEnabled) {
+    return { id, columnId, enrichmentDone: Promise.resolve() };
+  }
+
   // Background enrichment - returns a promise the caller can track
   const fullPath = resolveFullPath(app, filePath);
-  const enrichPrompt =
-    `The task file at ${fullPath} was just created with minimal data. ` +
-    `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
-    RENAME_INSTRUCTION;
+  const promptTemplate =
+    (settings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
+  const enrichPrompt = resolveEnrichmentPrompt(promptTemplate, fullPath);
 
   const enrichmentDone = spawnHeadlessClaude(
     enrichPrompt,
@@ -209,7 +231,7 @@ const INGESTION_FAILED_NOTE =
   `> [!warning] Background ingestion incomplete\n` +
   `> Automatic enrichment was attempted but did not complete successfully.\n` +
   `> To enrich this task, right-click the card and select **Retry Enrichment**,\n` +
-  `> or open a Claude session and use the task-agent skill manually.\n`;
+  `> or open an agent session and enrich the task manually.\n`;
 
 /**
  * Mark a task file as having failed background ingestion.
@@ -292,7 +314,11 @@ async function clearIngestionFailedFlag(app: App, filePath: string): Promise<voi
  * warning callout, then return the enrichment prompt for use in a foreground
  * Claude session.
  */
-export async function prepareRetryEnrichment(app: App, filePath: string): Promise<string> {
+export async function prepareRetryEnrichment(
+  app: App,
+  filePath: string,
+  retryPromptTemplate?: string,
+): Promise<string> {
   const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
   if (file) {
     try {
@@ -310,11 +336,8 @@ export async function prepareRetryEnrichment(app: App, filePath: string): Promis
   }
 
   const fullPath = resolveFullPath(app, filePath);
-  return (
-    `The task file at ${fullPath} needs enrichment. ` +
-    `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
-    RENAME_INSTRUCTION
-  );
+  const template = retryPromptTemplate || DEFAULT_RETRY_ENRICHMENT_PROMPT;
+  return resolveEnrichmentPrompt(template, fullPath);
 }
 
 /**
