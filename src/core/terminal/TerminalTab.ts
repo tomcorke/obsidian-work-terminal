@@ -1187,6 +1187,11 @@ export class TerminalTab {
   private _checkState(): void {
     if (!this._isResumableAgent) return;
 
+    // Skip polling when the tab is hidden. Hidden tabs can't meaningfully
+    // detect activity from buffer diffs - they retain stale fingerprints
+    // that cause false "active" signals on item switch. Fixes #334.
+    if (!this.isVisible) return;
+
     const screenLines = this._readTerminalScreen();
 
     // Check for waiting patterns first (highest priority).
