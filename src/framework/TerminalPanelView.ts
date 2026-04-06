@@ -1169,7 +1169,7 @@ export class TerminalPanelView {
   } {
     const resolvedCommand = session.commandArgs?.[0] || session.command;
     const extraArgs = session.commandArgs
-      ? this.extractResumeExtraArgs(session.sessionType, session.commandArgs)
+      ? this.extractResumeExtraArgs(session.sessionType, session.commandArgs, session.profileId)
       : resolvedCommand || session.cwd
         ? []
         : undefined;
@@ -1410,8 +1410,8 @@ export class TerminalPanelView {
 
     // Profile's resolveArguments() already includes global args, so skip the
     // global merge inside spawnAgentSession to avoid doubling them.
-    const resumeConfigOverrides =
-      profile.agentType === "custom" ? getProfileResumeConfig(profile) : undefined;
+    const resolvedConfig = this.resolveResumeConfig(profile.agentType, profile);
+    const resumeConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
     await this.spawnAgentSession({
       agentType: profile.agentType,
       sessionType,
@@ -1436,10 +1436,19 @@ export class TerminalPanelView {
         if (profile.paramPassMode !== "launch-only") {
           lastTab.paramPassMode = profile.paramPassMode;
         }
-        // Set activity patterns from the resolved resume config
-        const resolvedConfig = resumeConfigOverrides ?? getResumeConfig(profile.agentType);
-        if (resolvedConfig.activityPatterns) {
-          lastTab.activityPatterns = resolvedConfig.activityPatterns;
+        // Set activity patterns from the resolved resume config.
+        // For custom profiles, explicitly set empty patterns when none are
+        // configured so active-indicator checks don't fall back to legacy
+        // Claude/Copilot detection.
+        lastTab.activityPatterns =
+          resolvedConfig.activityPatterns ??
+          (profile.agentType === "custom"
+            ? { activeLinePatterns: [], activeJoinedPatterns: [] }
+            : undefined);
+        // Set resumable override for custom profiles so the tab knows
+        // whether session tracking should be active
+        if (profile.agentType === "custom") {
+          lastTab.isResumableOverride = resolvedConfig.resumable;
         }
         this.renderTabBar();
       }
@@ -1582,10 +1591,7 @@ export class TerminalPanelView {
     const profile = options.profileId
       ? this.profileManager?.getProfile(options.profileId)
       : undefined;
-    const resumeConfig =
-      profile && profile.agentType === "custom"
-        ? getProfileResumeConfig(profile)
-        : getResumeConfig(agentType);
+    const resumeConfig = this.resolveResumeConfig(agentType, profile);
 
     const configuredCwd = expandTilde(
       this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"),
@@ -1658,10 +1664,7 @@ export class TerminalPanelView {
     const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     const { agentType } = sessionTypeToAgentType(tab.sessionType);
     const profile = tab.profileId ? this.profileManager?.getProfile(tab.profileId) : undefined;
-    const resumeConfig =
-      profile && profile.agentType === "custom"
-        ? getProfileResumeConfig(profile)
-        : getResumeConfig(agentType);
+    const resumeConfig = this.resolveResumeConfig(agentType, profile);
     let replacement: TerminalTab | null;
     if (tab.agentSessionId) {
       const fallbackCommand = profile?.command?.trim();
@@ -1682,7 +1685,11 @@ export class TerminalPanelView {
                 resumeConfig.defaultCommand,
               ),
           ),
-        extraArgs: this.extractResumeExtraArgs(tab.sessionType, tab.launchCommandArgs),
+        extraArgs: this.extractResumeExtraArgs(
+          tab.sessionType,
+          tab.launchCommandArgs,
+          tab.profileId,
+        ),
         paramPassMode: tab.paramPassMode,
         profileId: tab.profileId,
       });
@@ -1737,18 +1744,24 @@ export class TerminalPanelView {
   private extractResumeExtraArgs(
     sessionType: PersistedSession["sessionType"],
     commandArgs?: string[],
+    profileId?: string,
   ): string[] {
     if (!commandArgs?.length) {
       return [];
     }
     const args = commandArgs.slice(1);
-    const { withContext } = sessionTypeToAgentType(sessionType);
-    const resumeConfig = getResumeConfig(sessionTypeToAgentType(sessionType).agentType);
+    const { agentType, withContext } = sessionTypeToAgentType(sessionType);
+    const profile = profileId ? this.profileManager?.getProfile(profileId) : undefined;
+    const resumeConfig = this.resolveResumeConfig(agentType, profile);
     const { promptInjectionMode, promptFlag } = resumeConfig;
 
     // Collect all known resume flags so we strip any that appear in
     // historical command args, regardless of which agent spawned them.
+    // Also include the profile's custom resume flag if not already covered.
     const allResumeFlags = getAllResumeFlags();
+    if (resumeConfig.resumeFlag && !allResumeFlags.includes(resumeConfig.resumeFlag)) {
+      allResumeFlags.push(resumeConfig.resumeFlag);
+    }
     const allResumePrefixes = allResumeFlags.map((f) => f + "=");
 
     const extraArgs: string[] = [];
@@ -2392,6 +2405,20 @@ export class TerminalPanelView {
     }
     new Notice(buildMissingCliNotice(agent, command));
     return null;
+  }
+
+  /**
+   * Resolve the resume config for an agent type, using profile-level overrides
+   * for custom profiles when available.
+   */
+  private resolveResumeConfig(
+    agentType: AgentType,
+    profile?: AgentProfile | null,
+  ): AgentResumeConfig {
+    if (profile && profile.agentType === "custom") {
+      return getProfileResumeConfig(profile);
+    }
+    return getResumeConfig(agentType);
   }
 
   getRecoveredItemId(): string | null {

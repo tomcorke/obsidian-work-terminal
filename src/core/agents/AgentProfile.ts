@@ -272,7 +272,9 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
         /^\s*\u2733.*\u2026/, // spinner with ellipsis = in progress
         /^\s*\u23bf\s+.*\u2026/, // tool output with ellipsis = running
       ],
-      activeJoinedPatterns: [],
+      activeJoinedPatterns: [
+        /\u2733.*\u2026/, // wrapped spinner: char on one row, ellipsis on another
+      ],
     },
   },
   copilot: {
@@ -479,6 +481,7 @@ export function sessionTypeToAgentType(sessionType: SessionType): {
     case "custom":
       return { agentType: "custom", withContext: false };
     default:
+      console.warn(`Unknown session type "${sessionType}", treating as custom`);
       return { agentType: "custom", withContext: false };
   }
 }

@@ -354,6 +354,14 @@ export class AgentProfileEditModal extends Modal {
         new Notice("Executable path is required for custom profiles");
         return;
       }
+      if (this.draft.resumable && !this.draft.resumeFlag?.trim()) {
+        new Notice("Resume flag is required when session resume is enabled");
+        return;
+      }
+      if (this.draft.promptInjectionMode === "flag" && !this.draft.promptFlag?.trim()) {
+        new Notice("Prompt flag is required when injection mode is set to flag");
+        return;
+      }
       this.onSave(this.draft);
       this.close();
     });
