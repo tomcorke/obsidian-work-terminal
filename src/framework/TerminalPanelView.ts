@@ -1368,6 +1368,7 @@ export class TerminalPanelView {
       if (tab) {
         tab.profileId = profile.id;
         if (profile.button.color) tab.profileColor = profile.button.color;
+        if (profile.loginShellWrap) tab.loginShellWrap = true;
       }
       this.renderTabBar();
       return;
@@ -1449,6 +1450,10 @@ export class TerminalPanelView {
         // whether session tracking should be active
         if (profile.agentType === "custom") {
           lastTab.isResumableOverride = resolvedConfig.resumable;
+        }
+        // Launch through login shell when profile requests it
+        if (profile.loginShellWrap) {
+          lastTab.loginShellWrap = true;
         }
         this.renderTabBar();
       }

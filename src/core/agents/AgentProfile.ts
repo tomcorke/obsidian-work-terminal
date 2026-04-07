@@ -109,6 +109,12 @@ export interface AgentProfile {
   promptInjectionMode?: "positional" | "flag";
   /** CLI flag for injecting context prompt (e.g. "-i"). Used when promptInjectionMode is "flag". */
   promptFlag?: string;
+  /**
+   * When true, the command is launched through a login shell even if it
+   * resolves to an absolute path. This preserves shell wrapper functions
+   * (e.g. auto-update wrappers) defined in ~/.zshrc or ~/.bashrc.
+   */
+  loginShellWrap?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +153,7 @@ const AgentProfileSchema = z.object({
   resumeFlagFormat: z.enum(RESUME_FLAG_FORMATS).optional(),
   promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
   promptFlag: z.string().optional(),
+  loginShellWrap: z.boolean().optional(),
 });
 
 /**
@@ -176,6 +183,7 @@ const StoredProfileSchema = z
     resumeFlagFormat: z.enum(RESUME_FLAG_FORMATS).optional(),
     promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
     promptFlag: z.string().optional(),
+    loginShellWrap: z.boolean().optional(),
   })
   .passthrough();
 
