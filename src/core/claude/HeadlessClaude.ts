@@ -15,7 +15,7 @@ import { expandTilde, electronRequire } from "../utils";
 /** Default timeout: 5 minutes. Enrichment involves skill loading, duplicate
  *  checks, goal alignment, related-task detection, and file rename - 2 min
  *  was consistently too short (see #327). */
-const DEFAULT_TIMEOUT_MS = 300_000;
+export const DEFAULT_TIMEOUT_MS = 300_000;
 
 /** Grace period after SIGTERM before sending SIGKILL. */
 const SIGKILL_GRACE_MS = 5_000;

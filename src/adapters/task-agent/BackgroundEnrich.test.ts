@@ -6,6 +6,7 @@ const { spawnHeadlessClaudeMock } = vi.hoisted(() => ({
 
 vi.mock("../../core/claude/HeadlessClaude", () => ({
   spawnHeadlessClaude: spawnHeadlessClaudeMock,
+  DEFAULT_TIMEOUT_MS: 300_000,
 }));
 
 import {
@@ -13,6 +14,7 @@ import {
   insertIngestionFailedFlag,
   prepareRetryEnrichment,
   findFileByUuid,
+  resolveEnrichmentTimeout,
 } from "./BackgroundEnrich";
 
 describe("BackgroundEnrich", () => {
@@ -239,6 +241,7 @@ describe("BackgroundEnrich", () => {
         "/Users/tester/launch-root",
         "./bin/claude-wrapper",
         "--allowedTools Edit",
+        300_000,
       );
     });
 
@@ -542,6 +545,26 @@ describe("BackgroundEnrich", () => {
       const modifyCall = app.vault.modify.mock.calls.at(-1)!;
       expect(modifyCall[0].path).toBe(movedPath);
     });
+
+    it("passes custom enrichment timeout to spawnHeadlessClaude", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+      const settings = {
+        ...defaultSettings,
+        "adapter.enrichmentTimeout": "120",
+      };
+
+      const result = await handleItemCreated(app, "Timeout test", settings);
+      await result.enrichmentDone;
+
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        120_000,
+      );
+    });
   });
 
   describe("findFileByUuid", () => {
@@ -608,6 +631,44 @@ describe("BackgroundEnrich", () => {
 
       const result = findFileByUuid(app, "target-uuid", "2 - Areas/Tasks");
       expect(result).toBe(taskFile);
+    });
+  });
+
+  describe("resolveEnrichmentTimeout", () => {
+    it("returns DEFAULT_TIMEOUT_MS when setting is empty string", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "" })).toBe(300_000);
+    });
+
+    it("returns DEFAULT_TIMEOUT_MS when setting is undefined", () => {
+      expect(resolveEnrichmentTimeout({})).toBe(300_000);
+    });
+
+    it("returns DEFAULT_TIMEOUT_MS when setting is null", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": null })).toBe(300_000);
+    });
+
+    it("converts seconds to milliseconds", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "120" })).toBe(120_000);
+    });
+
+    it("handles string numbers correctly", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "600" })).toBe(600_000);
+    });
+
+    it("returns DEFAULT_TIMEOUT_MS for non-numeric strings", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "abc" })).toBe(300_000);
+    });
+
+    it("returns DEFAULT_TIMEOUT_MS for zero", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "0" })).toBe(300_000);
+    });
+
+    it("returns DEFAULT_TIMEOUT_MS for negative values", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "-10" })).toBe(300_000);
+    });
+
+    it("rounds fractional seconds to whole milliseconds", () => {
+      expect(resolveEnrichmentTimeout({ "adapter.enrichmentTimeout": "1.5" })).toBe(1500);
     });
   });
 });

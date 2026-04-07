@@ -1,5 +1,5 @@
 import { Notice, type App, type TFile } from "obsidian";
-import { spawnHeadlessClaude } from "../../core/claude/HeadlessClaude";
+import { spawnHeadlessClaude, DEFAULT_TIMEOUT_MS } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
@@ -62,6 +62,19 @@ function resolveClaudeLaunchCwd(settings: Record<string, any>): string {
 }
 
 /**
+ * Resolve the enrichment timeout from settings. The setting is stored as a
+ * string representing seconds. Returns the timeout in milliseconds, falling
+ * back to DEFAULT_TIMEOUT_MS if the value is empty or invalid.
+ */
+export function resolveEnrichmentTimeout(settings: Record<string, any>): number {
+  const raw = settings["adapter.enrichmentTimeout"];
+  if (raw == null || raw === "") return DEFAULT_TIMEOUT_MS;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return DEFAULT_TIMEOUT_MS;
+  return Math.round(seconds * 1000);
+}
+
+/**
  * Detect known patterns in Claude stdout that indicate silent failure despite exit code 0.
  * Returns a short description of the failure, or null if none detected.
  */
@@ -112,12 +125,14 @@ export async function handleItemCreated(
   const promptTemplate =
     (settings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
   const enrichPrompt = resolveEnrichmentPrompt(promptTemplate, fullPath);
+  const timeoutMs = resolveEnrichmentTimeout(settings);
 
   const enrichmentDone = spawnHeadlessClaude(
     enrichPrompt,
     resolveClaudeLaunchCwd(settings),
     claudeCommand,
     claudeExtraArgs,
+    timeoutMs,
   ).then(
     async (result) => {
       // Resolve current file location: original path may have changed if
