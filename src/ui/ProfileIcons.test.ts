@@ -34,7 +34,7 @@ describe("ProfileIcons", () => {
   });
 
   describe("branded icons", () => {
-    const brandedIcons: ProfileIcon[] = ["claude", "copilot", "aws", "skyscanner", "bee"];
+    const brandedIcons: ProfileIcon[] = ["claude", "copilot", "aws", "skyscanner", "bee", "pi"];
 
     for (const icon of brandedIcons) {
       it(`creates ${icon} icon with path elements`, () => {
@@ -63,6 +63,23 @@ describe("ProfileIcons", () => {
     it("skyscanner icon uses padded viewBox for original coordinates", () => {
       const svg = createProfileIcon("skyscanner");
       expect(svg!.getAttribute("viewBox")).toBe("91 57 210 210");
+    });
+
+    it("pi icon uses 800x800 viewBox from official logo", () => {
+      const svg = createProfileIcon("pi");
+      expect(svg!.getAttribute("viewBox")).toBe("0 0 800 800");
+    });
+
+    it("pi icon has 2 path elements (P shape with cutout + i dot)", () => {
+      const svg = createProfileIcon("pi");
+      const paths = svg!.querySelectorAll("path");
+      expect(paths.length).toBe(2);
+    });
+
+    it("pi icon P shape uses evenodd fill-rule for cutout", () => {
+      const svg = createProfileIcon("pi");
+      const firstPath = svg!.querySelector("path");
+      expect(firstPath!.getAttribute("fill-rule")).toBe("evenodd");
     });
 
     it("aws icon has 5 path elements (A, W, S, smile, arrowhead)", () => {

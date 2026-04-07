@@ -157,6 +157,24 @@ function createSkyscannerIcon(size: number): SVGSVGElement {
   return svg;
 }
 
+function createPiIcon(size: number): SVGSVGElement {
+  // pi (pi-coding-agent) geometric logo from https://pi.dev/logo.svg
+  // Blocky "P" with inner cutout + square "i" dot, viewBox 0 0 800 800
+  const svg = makeSvg(size, "0 0 800 800");
+  // P shape (outer boundary clockwise, inner hole counter-clockwise via fill-rule)
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("fill", "currentColor");
+  p.setAttribute("fill-rule", "evenodd");
+  p.setAttribute(
+    "d",
+    "M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29Z M282.65 282.65V400H400V282.65Z",
+  );
+  svg.appendChild(p);
+  // i dot
+  addPath(svg, "M517.36 400H634.72V634.72H517.36Z");
+  return svg;
+}
+
 function createBeeIcon(size: number): SVGSVGElement {
   // Literal bee illustration
   const svg = makeSvg(size, "0 0 24 24");
@@ -348,6 +366,7 @@ const ICON_FACTORIES: Record<ProfileIcon, (size: number) => SVGSVGElement> = {
   copilot: createCopilotIcon,
   aws: createAwsIcon,
   skyscanner: createSkyscannerIcon,
+  pi: createPiIcon,
 };
 
 /**
