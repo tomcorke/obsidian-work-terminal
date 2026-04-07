@@ -1424,6 +1424,7 @@ export class TerminalPanelView {
       prompt,
       freshSettings: fresh,
       resumeConfigOverrides,
+      loginShellWrap: profile.loginShellWrap,
     });
 
     // Apply profile metadata to the newly created tab
@@ -1645,6 +1646,9 @@ export class TerminalPanelView {
       args.unshift(...parsedExtraArgs);
     }
 
+    // When the profile uses loginShellWrap, use the unresolved command name
+    // in commandArgs so the login shell can find shell functions/aliases.
+    const cmdForArgs = profile?.loginShellWrap ? configuredCommand : command;
     const tab = this.tabManager.createTabForItem(
       options.targetItemId,
       command,
@@ -1652,12 +1656,15 @@ export class TerminalPanelView {
       options.label,
       options.sessionType,
       undefined,
-      [command, ...args],
+      [cmdForArgs, ...args],
       options.sessionId,
     );
 
-    if (tab && this.adapter.transformSessionLabel) {
-      tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
+    if (tab) {
+      if (profile?.loginShellWrap) tab.loginShellWrap = true;
+      if (this.adapter.transformSessionLabel) {
+        tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
+      }
     }
 
     return tab;
@@ -1716,6 +1723,9 @@ export class TerminalPanelView {
         null,
         tab.durableSessionId,
       );
+      if (replacement && tab.loginShellWrap) {
+        replacement.loginShellWrap = true;
+      }
     } else {
       replacement = await this.spawnAgentSession({
         agentType,
@@ -1724,6 +1734,7 @@ export class TerminalPanelView {
         label: tab.label,
         freshSettings: fresh,
         targetItemId,
+        loginShellWrap: profile?.loginShellWrap,
       });
     }
 
@@ -2316,6 +2327,12 @@ export class TerminalPanelView {
     freshSettings?: Record<string, unknown>;
     /** Override the base resume config (used for custom agent profiles). */
     resumeConfigOverrides?: AgentResumeConfig;
+    /**
+     * When true, use the original unresolved command name in commandArgs
+     * instead of the resolved absolute path, so the login shell can invoke
+     * shell functions/aliases defined in ~/.zshrc etc.
+     */
+    loginShellWrap?: boolean;
   }): Promise<TerminalTab | null> {
     const resumeConfig = options.resumeConfigOverrides ?? getResumeConfig(options.agentType);
     const { withContext } = sessionTypeToAgentType(options.sessionType);
@@ -2395,13 +2412,18 @@ export class TerminalPanelView {
     }
 
     const label = options.label || getDefaultSessionLabel(options.sessionType);
+    // When loginShellWrap is active, use the original unresolved command name
+    // in commandArgs so the login shell can find shell functions/aliases
+    // (e.g. pi() wrapper in ~/.zshrc). The resolved absolute path is still
+    // used as the `shell` parameter for display/fallback purposes.
+    const cmdForArgs = options.loginShellWrap ? agentCmd : resolved;
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
       label,
       options.sessionType,
       undefined,
-      [resolved, ...args],
+      [cmdForArgs, ...args],
       sessionId ?? null,
     );
     if (tab) {
