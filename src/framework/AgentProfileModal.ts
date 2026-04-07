@@ -185,6 +185,19 @@ export class AgentProfileEditModal extends Modal {
     argsSetting.settingEl.style.flexWrap = "wrap";
     argsSetting.controlEl.style.width = "100%";
 
+    // Login shell wrap
+    new Setting(contentEl)
+      .setName("Launch through login shell")
+      .setDesc(
+        "When enabled, the command is launched through a login shell even if it resolves to an absolute path. " +
+          "This preserves shell wrapper functions (e.g. auto-update wrappers) defined in ~/.zshrc or ~/.bashrc.",
+      )
+      .addToggle((toggle) => {
+        toggle.setValue(this.draft.loginShellWrap ?? false).onChange((value) => {
+          this.draft.loginShellWrap = value;
+        });
+      });
+
     // Container for adapter prompt preview and suppress toggle - gated on useContext
     const contextDependentEl = contentEl.createDiv();
 

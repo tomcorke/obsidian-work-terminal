@@ -48,13 +48,17 @@ def main():
             pass
 
         # If the command is already a shell, exec directly (e.g. /bin/zsh -i).
-        # If the command is an absolute path, exec directly to avoid shell
-        # quoting issues with arguments (e.g. multi-line context prompts).
-        # The caller (ClaudeLauncher.ts) resolves commands to absolute paths.
+        # If WT_LOGIN_SHELL_WRAP is set, always wrap in a login shell so that
+        # shell functions/aliases from ~/.zshrc etc. are available.
+        # If the command is an absolute path (and no login-shell-wrap), exec
+        # directly to avoid shell quoting issues with arguments.
         # Otherwise, wrap in a login shell for the full user environment.
+        login_shell_wrap = os.environ.get("WT_LOGIN_SHELL_WRAP") == "1"
         shells = {"/bin/zsh", "/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/bash",
                   "zsh", "bash", "sh"}
-        if args[0] in shells or args[0].startswith("/"):
+        if args[0] in shells:
+            os.execvp(args[0], args)
+        elif args[0].startswith("/") and not login_shell_wrap:
             os.execvp(args[0], args)
         else:
             shell = os.environ.get("SHELL", "/bin/zsh")

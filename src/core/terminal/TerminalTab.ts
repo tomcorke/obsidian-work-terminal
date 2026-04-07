@@ -121,6 +121,11 @@ export class TerminalTab {
    * config is profile-level rather than type-level.
    */
   isResumableOverride?: boolean;
+  /**
+   * When true, the command is launched through a login shell even if it
+   * resolves to an absolute path. Enables shell wrapper functions.
+   */
+  loginShellWrap?: boolean;
 
   terminal: Terminal;
   containerEl: HTMLElement;
@@ -859,16 +864,21 @@ export class TerminalTab {
     console.log("[work-terminal] Spawning via pty-wrapper:", python3Path, args.join(" "));
     console.log("[work-terminal] cwd:", this.cwd);
 
+    const spawnEnv: Record<string, string | undefined> = {
+      ...process.env,
+      TERM: "xterm-256color",
+      COLUMNS: String(cols),
+      LINES: String(rows),
+      PATH: getFullPath(),
+    };
+    if (this.loginShellWrap) {
+      spawnEnv.WT_LOGIN_SHELL_WRAP = "1";
+    }
+
     const proc = cp.spawn(python3Path, args, {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        COLUMNS: String(cols),
-        LINES: String(rows),
-        PATH: getFullPath(),
-      },
+      env: spawnEnv,
     });
 
     console.log("[work-terminal] spawn pid:", proc.pid);
