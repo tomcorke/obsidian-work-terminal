@@ -18,6 +18,7 @@ import {
   handleItemCreated,
   handleSplitTaskCreated,
   prepareRetryEnrichment,
+  type EnrichmentProfileOverride,
 } from "./BackgroundEnrich";
 import type { KanbanColumn } from "./types";
 
@@ -77,7 +78,8 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (!this._app) {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
     }
-    return handleItemCreated(this._app, title, settings);
+    const profileOverride = settings._enrichmentProfile as EnrichmentProfileOverride | undefined;
+    return handleItemCreated(this._app, title, settings, profileOverride);
   }
 
   async onSplitItem(

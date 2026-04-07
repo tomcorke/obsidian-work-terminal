@@ -121,11 +121,25 @@ export class PromptBox {
       // Adapter handles actual file creation
       let hasCardMapping = false;
       if (this.adapter.onItemCreated) {
-        const result = await this.adapter.onItemCreated(title, {
+        // Resolve enrichment profile if one is configured
+        const enrichmentSettings: Record<string, any> = {
           ...this.settings,
           _columnId: columnId,
           _placeholderPath: placeholderPath,
-        });
+        };
+        const profileId = this.settings["adapter.enrichmentProfile"];
+        if (profileId) {
+          const profileMgr = (this.plugin as any).profileManager;
+          const profile = profileMgr?.getProfile?.(profileId);
+          if (profile) {
+            enrichmentSettings._enrichmentProfile = {
+              command: profile.command,
+              args: profile.arguments,
+              cwd: profile.defaultCwd,
+            };
+          }
+        }
+        const result = await this.adapter.onItemCreated(title, enrichmentSettings);
         if (result && result.id) {
           this.onNewItemCreated(result.id, result.columnId, placeholderPath, result.enrichmentDone);
           hasCardMapping = true;

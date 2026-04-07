@@ -50,6 +50,12 @@ export interface SettingField {
   type: "text" | "toggle" | "dropdown";
   /** Default value. */
   default: unknown;
+  /**
+   * Dropdown choices. Either a static map (value -> display label) or the
+   * string `"profiles"` to dynamically populate from agent profiles.
+   * Only used when `type` is `"dropdown"`.
+   */
+  choices?: Record<string, string> | "profiles";
 }
 
 /**

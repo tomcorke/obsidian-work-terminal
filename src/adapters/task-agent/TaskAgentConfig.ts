@@ -52,6 +52,15 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       default: "",
     },
     {
+      key: "enrichmentProfile",
+      name: "Enrichment agent profile",
+      description:
+        "Agent profile to use for background enrichment. The profile's command, arguments, and working directory will be used. Select 'Default' to use the core Claude command settings.",
+      type: "dropdown",
+      default: "",
+      choices: "profiles",
+    },
+    {
       key: "enrichmentTimeout",
       name: "Enrichment timeout (seconds)",
       description:
@@ -66,6 +75,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     enrichmentEnabled: true,
     enrichmentPrompt: "",
     retryEnrichmentPrompt: "",
+    enrichmentProfile: "",
     enrichmentTimeout: "",
   },
   itemName: "task",

@@ -89,15 +89,23 @@ export interface ItemCreatedResult {
   enrichmentDone: Promise<void>;
 }
 
+/** Resolved enrichment profile data passed by the adapter. */
+export interface EnrichmentProfileOverride {
+  command: string;
+  args: string;
+  cwd: string;
+}
+
 export async function handleItemCreated(
   app: App,
   title: string,
   settings: Record<string, any>,
+  profileOverride?: EnrichmentProfileOverride,
 ): Promise<ItemCreatedResult> {
   const columnId = (settings._columnId || "todo") as KanbanColumn;
   const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
-  const claudeCommand = settings["core.claudeCommand"] || "claude";
-  const claudeExtraArgs = settings["core.claudeExtraArgs"] || "";
+  const claudeCommand = profileOverride?.command || settings["core.claudeCommand"] || "claude";
+  const claudeExtraArgs = profileOverride?.args ?? (settings["core.claudeExtraArgs"] || "");
 
   const id = crypto.randomUUID();
   const content = generateTaskContent(title, columnId, undefined, id);
@@ -127,9 +135,13 @@ export async function handleItemCreated(
   const enrichPrompt = resolveEnrichmentPrompt(promptTemplate, fullPath);
   const timeoutMs = resolveEnrichmentTimeout(settings);
 
+  const enrichCwd = profileOverride?.cwd
+    ? expandTilde(profileOverride.cwd)
+    : resolveClaudeLaunchCwd(settings);
+
   const enrichmentDone = spawnHeadlessClaude(
     enrichPrompt,
-    resolveClaudeLaunchCwd(settings),
+    enrichCwd,
     claudeCommand,
     claudeExtraArgs,
     timeoutMs,
