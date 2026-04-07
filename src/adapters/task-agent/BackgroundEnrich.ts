@@ -1,5 +1,10 @@
 import { Notice, type App, type TFile } from "obsidian";
-import { spawnHeadlessClaude, DEFAULT_TIMEOUT_MS } from "../../core/claude/HeadlessClaude";
+import {
+  spawnHeadlessClaude,
+  spawnHeadlessAgent,
+  DEFAULT_TIMEOUT_MS,
+  type HeadlessAgentConfig,
+} from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
@@ -94,6 +99,12 @@ export interface EnrichmentProfileOverride {
   command: string;
   args: string;
   cwd: string;
+  /** Agent name for error messages. */
+  agentName?: string;
+  /** How to inject the prompt - "claude" (default), "flag", or "positional". */
+  promptMode?: "claude" | "flag" | "positional";
+  /** Flag name when promptMode is "flag" (e.g. "-i"). */
+  promptFlag?: string;
 }
 
 export async function handleItemCreated(
@@ -139,13 +150,21 @@ export async function handleItemCreated(
     ? expandTilde(profileOverride.cwd)
     : resolveClaudeLaunchCwd(settings);
 
-  const enrichmentDone = spawnHeadlessClaude(
-    enrichPrompt,
-    enrichCwd,
-    claudeCommand,
-    claudeExtraArgs,
-    timeoutMs,
-  ).then(
+  // Use the generic headless agent when a profile override specifies non-Claude
+  // prompt injection, otherwise fall back to the Claude-specific path.
+  const spawnPromise = profileOverride?.promptMode && profileOverride.promptMode !== "claude"
+    ? spawnHeadlessAgent(enrichPrompt, {
+        command: claudeCommand,
+        extraArgs: claudeExtraArgs,
+        cwd: enrichCwd,
+        promptMode: profileOverride.promptMode,
+        promptFlag: profileOverride.promptFlag,
+        timeoutMs,
+        agentName: profileOverride.agentName,
+      })
+    : spawnHeadlessClaude(enrichPrompt, enrichCwd, claudeCommand, claudeExtraArgs, timeoutMs);
+
+  const enrichmentDone = spawnPromise.then(
     async (result) => {
       // Resolve current file location: original path may have changed if
       // the task was moved (e.g. via drag-drop) while enrichment was running.

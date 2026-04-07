@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { spawnHeadlessClaudeMock } = vi.hoisted(() => ({
+const { spawnHeadlessClaudeMock, spawnHeadlessAgentMock } = vi.hoisted(() => ({
   spawnHeadlessClaudeMock: vi.fn(),
+  spawnHeadlessAgentMock: vi.fn(),
 }));
 
 vi.mock("../../core/claude/HeadlessClaude", () => ({
   spawnHeadlessClaude: spawnHeadlessClaudeMock,
+  spawnHeadlessAgent: spawnHeadlessAgentMock,
   DEFAULT_TIMEOUT_MS: 300_000,
 }));
 
@@ -22,6 +24,11 @@ describe("BackgroundEnrich", () => {
     vi.clearAllMocks();
     process.env.HOME = "/Users/tester";
     spawnHeadlessClaudeMock.mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+    spawnHeadlessAgentMock.mockResolvedValue({
       exitCode: 0,
       stdout: "",
       stderr: "",
@@ -586,6 +593,77 @@ describe("BackgroundEnrich", () => {
         "--model gpt-4",
         expect.any(Number),
       );
+    });
+
+    it("uses spawnHeadlessAgent with flag mode for non-Claude profiles", async () => {
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const profileOverride = {
+        command: "/usr/local/bin/my-agent",
+        args: "--verbose",
+        cwd: "~/work",
+        agentName: "MyAgent",
+        promptMode: "flag" as const,
+        promptFlag: "-i",
+      };
+
+      const result = await handleItemCreated(app, "Flag mode test", defaultSettings, profileOverride);
+      await result.enrichmentDone;
+
+      // Should use spawnHeadlessAgent, not spawnHeadlessClaude
+      expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+      expect(spawnHeadlessAgentMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          command: "/usr/local/bin/my-agent",
+          extraArgs: "--verbose",
+          promptMode: "flag",
+          promptFlag: "-i",
+          agentName: "MyAgent",
+        }),
+      );
+    });
+
+    it("uses spawnHeadlessAgent with positional mode for positional profiles", async () => {
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const profileOverride = {
+        command: "custom-cli",
+        args: "",
+        cwd: "~/work",
+        promptMode: "positional" as const,
+      };
+
+      const result = await handleItemCreated(app, "Positional test", defaultSettings, profileOverride);
+      await result.enrichmentDone;
+
+      expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+      expect(spawnHeadlessAgentMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          command: "custom-cli",
+          promptMode: "positional",
+        }),
+      );
+    });
+
+    it("uses spawnHeadlessClaude for profiles with claude promptMode", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const profileOverride = {
+        command: "pi",
+        args: "--model sonnet",
+        cwd: "~/work",
+        promptMode: "claude" as const,
+      };
+
+      const result = await handleItemCreated(app, "Claude mode profile", defaultSettings, profileOverride);
+      await result.enrichmentDone;
+
+      // Should use spawnHeadlessClaude (Claude-compatible agent)
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalled();
+      expect(spawnHeadlessAgentMock).not.toHaveBeenCalled();
     });
 
     it("falls back to core settings when no profile override is provided", async () => {
