@@ -68,6 +68,7 @@ const ICON_LABELS: Record<ProfileIcon, string> = {
   copilot: "Copilot (branded)",
   aws: "AWS (branded)",
   skyscanner: "Skyscanner (branded)",
+  pi: "pi (branded)",
 };
 
 export class AgentProfileEditModal extends Modal {
