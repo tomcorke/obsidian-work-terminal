@@ -132,10 +132,22 @@ export class PromptBox {
           const profileMgr = (this.plugin as any).profileManager;
           const profile = profileMgr?.getProfile?.(profileId);
           if (profile) {
+            // Resolve prompt injection mode from the profile's agent type
+            let promptMode: "claude" | "flag" | "positional" = "claude";
+            if (profile.promptInjectionMode === "flag") {
+              promptMode = "flag";
+            } else if (profile.promptInjectionMode === "positional") {
+              promptMode = "positional";
+            } else if (profile.agentType === "claude") {
+              promptMode = "claude";
+            }
             enrichmentSettings._enrichmentProfile = {
               command: profile.command,
               args: profile.arguments,
               cwd: profile.defaultCwd,
+              agentName: profile.name,
+              promptMode,
+              promptFlag: profile.promptFlag,
             };
           }
         }

@@ -134,3 +134,145 @@ export function spawnHeadlessClaude(
     proc.stdin?.end();
   });
 }
+
+// ---------------------------------------------------------------------------
+// Generic headless agent spawn
+// ---------------------------------------------------------------------------
+
+/** Configuration for headless agent prompt injection. */
+export interface HeadlessAgentConfig {
+  /** CLI command to run (e.g. "claude", "pi", "/usr/local/bin/copilot"). */
+  command: string;
+  /** Extra arguments string (parsed into array). */
+  extraArgs?: string;
+  /** Working directory. */
+  cwd: string;
+  /** How to inject the prompt. Defaults to "claude" (uses -p <prompt> --output-format text). */
+  promptMode?: "claude" | "flag" | "positional";
+  /** Flag name when promptMode is "flag" (e.g. "-i", "--prompt"). */
+  promptFlag?: string;
+  /** Timeout in milliseconds. */
+  timeoutMs?: number;
+  /** Human-readable agent name for error messages. */
+  agentName?: string;
+}
+
+/**
+ * Generic headless agent spawn. Supports multiple prompt injection modes:
+ * - "claude": -p <prompt> --output-format text (default, backwards-compatible)
+ * - "flag": <promptFlag> <prompt>
+ * - "positional": <prompt> as trailing argument
+ */
+export function spawnHeadlessAgent(
+  prompt: string,
+  config: HeadlessAgentConfig,
+): Promise<HeadlessClaudeResult> {
+  const {
+    command,
+    extraArgs = "",
+    cwd,
+    promptMode = "claude",
+    promptFlag,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    agentName,
+  } = config;
+
+  return new Promise((resolve) => {
+    const cp = electronRequire("child_process") as typeof import("child_process");
+    const resolution = resolveCommandInfo(command, cwd);
+    if (!resolution.found) {
+      resolve({
+        exitCode: -1,
+        stdout: "",
+        stderr: buildMissingCliNotice(agentName || command, command),
+        missingCli: true,
+      });
+      return;
+    }
+    const resolvedCmd = resolution.resolved;
+    const resolvedCwd = expandTilde(cwd);
+
+    const args: string[] = [];
+    if (extraArgs) {
+      args.push(...parseExtraArgs(extraArgs));
+    }
+
+    // Inject prompt based on mode
+    if (promptMode === "flag" && promptFlag) {
+      args.push(promptFlag, prompt);
+    } else if (promptMode === "positional") {
+      args.push(prompt);
+    } else {
+      // "claude" mode (default)
+      args.push("-p", prompt, "--output-format", "text");
+    }
+
+    const proc = cp.spawn(resolvedCmd, args, {
+      cwd: resolvedCwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PATH: getFullPath(),
+        TERM: "dumb",
+      },
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let settled = false;
+
+    proc.stdout?.on("data", (data: Buffer) => {
+      stdoutChunks.push(data);
+    });
+    proc.stderr?.on("data", (data: Buffer) => {
+      stderrChunks.push(data);
+    });
+
+    const label = agentName || command;
+    const timeoutSec = Math.ceil(timeoutMs / 1000);
+    const timeout = setTimeout(() => {
+      if (!settled && !proc.killed) {
+        settled = true;
+        proc.kill("SIGTERM");
+        setTimeout(() => {
+          try {
+            if (proc.exitCode === null) proc.kill("SIGKILL");
+          } catch {
+            /* already gone */
+          }
+        }, SIGKILL_GRACE_MS);
+        resolve({
+          exitCode: -1,
+          stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+          stderr: `Headless ${label} timed out after ${timeoutSec}s`,
+          timedOut: true,
+        });
+      }
+    }, timeoutMs);
+
+    proc.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      console.error(`[work-terminal] Headless ${label} error:`, err);
+      resolve({
+        exitCode: -1,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: err.message,
+      });
+    });
+
+    proc.on("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve({
+        exitCode: code ?? -1,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+      });
+    });
+
+    proc.stdin?.end();
+  });
+}
