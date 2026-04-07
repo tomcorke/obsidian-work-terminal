@@ -34,6 +34,7 @@ export const PROFILE_ICONS = [
   "copilot",
   "aws",
   "skyscanner",
+  "pi",
 ] as const;
 
 export type ProfileIcon = (typeof PROFILE_ICONS)[number];
@@ -47,6 +48,7 @@ export const BRAND_COLORS: Partial<Record<ProfileIcon, string>> = {
   copilot: "#6E40C9",
   aws: "#FF9900",
   skyscanner: "#0770E3",
+  pi: "#00C853",
 };
 
 // ---------------------------------------------------------------------------
