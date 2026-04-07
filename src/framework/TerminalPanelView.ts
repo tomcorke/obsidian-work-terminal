@@ -1648,7 +1648,8 @@ export class TerminalPanelView {
 
     // When the profile uses loginShellWrap, use the unresolved command name
     // in commandArgs so the login shell can find shell functions/aliases.
-    const cmdForArgs = profile?.loginShellWrap ? configuredCommand : command;
+    // Trim to avoid shlex.quote() producing a token with stray whitespace.
+    const cmdForArgs = profile?.loginShellWrap ? configuredCommand.trim() : command;
     const tab = this.tabManager.createTabForItem(
       options.targetItemId,
       command,
@@ -2414,9 +2415,10 @@ export class TerminalPanelView {
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     // When loginShellWrap is active, use the original unresolved command name
     // in commandArgs so the login shell can find shell functions/aliases
-    // (e.g. pi() wrapper in ~/.zshrc). The resolved absolute path is still
-    // used as the `shell` parameter for display/fallback purposes.
-    const cmdForArgs = options.loginShellWrap ? agentCmd : resolved;
+    // (e.g. pi() wrapper in ~/.zshrc). Trim to avoid shlex.quote() producing
+    // a command token with leading/trailing spaces. The resolved absolute path
+    // is still used as the `shell` parameter for display/fallback purposes.
+    const cmdForArgs = options.loginShellWrap ? agentCmd.trim() : resolved;
     const tab = this.tabManager.createTab(
       resolved,
       cwd,
@@ -2427,6 +2429,9 @@ export class TerminalPanelView {
       sessionId ?? null,
     );
     if (tab) {
+      if (options.loginShellWrap) {
+        tab.loginShellWrap = true;
+      }
       // Pass user-configured session log directory override for deferred detection
       const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
       if (copilotLogDir) {
