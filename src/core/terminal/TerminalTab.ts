@@ -16,7 +16,7 @@ import { Notice } from "obsidian";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
-import { attachBubbleCapture, attachCapturePhase } from "./KeyboardCapture";
+import { attachBubbleCapture, attachCapturePhase, attachInputCapture } from "./KeyboardCapture";
 import {
   checkPython3Available,
   hasPython3BeenNotified,
@@ -297,6 +297,11 @@ export class TerminalTab {
       () => this.toggleSearchBar(),
     );
     this._documentCleanups.push(captureCleanup);
+
+    // Input event isolation - prevent Obsidian from processing input/
+    // composition events from xterm's textarea (fixes #354: # corruption)
+    const inputCleanup = attachInputCapture(this.containerEl);
+    this._documentCleanups.push(inputCleanup);
 
     // Ensure clicking the terminal area gives xterm focus
     const clickHandler = () => {
@@ -1412,7 +1417,8 @@ export class TerminalTab {
       () => tab.process,
       () => tab.toggleSearchBar(),
     );
-    tab._documentCleanups = [bubbleCleanup, captureCleanup];
+    const inputCleanup = attachInputCapture(stored.containerEl);
+    tab._documentCleanups = [bubbleCleanup, captureCleanup, inputCleanup];
 
     // Click-to-focus
     const clickHandler = () => {

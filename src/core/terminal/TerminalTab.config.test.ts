@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => {
     attachScrollButton: vi.fn(),
     attachBubbleCapture: vi.fn(),
     attachCapturePhase: vi.fn(() => vi.fn()),
+    attachInputCapture: vi.fn(() => vi.fn()),
     electronShell: { openExternal: vi.fn() },
   };
 });
@@ -59,6 +60,7 @@ vi.mock("./ScrollButton", () => ({
 vi.mock("./KeyboardCapture", () => ({
   attachBubbleCapture: mocks.attachBubbleCapture,
   attachCapturePhase: mocks.attachCapturePhase,
+  attachInputCapture: mocks.attachInputCapture,
 }));
 
 vi.mock("../utils", () => ({

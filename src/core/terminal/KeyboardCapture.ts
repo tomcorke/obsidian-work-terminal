@@ -34,6 +34,41 @@ export function attachBubbleCapture(containerEl: HTMLElement): () => void {
 }
 
 /**
+ * Attach bubble-phase interception for input, beforeinput, and composition
+ * events on a container element.
+ *
+ * Obsidian has document-level handlers that react to input events (e.g.
+ * markdown heading detection when `#` is typed).  When xterm's hidden
+ * textarea emits these events they can bubble up and trigger Obsidian's
+ * processing, corrupting the terminal's rendered output.  Stopping
+ * propagation at the container keeps them inside the terminal tree where
+ * xterm has already handled them.
+ */
+export function attachInputCapture(containerEl: HTMLElement): () => void {
+  const stop = (e: Event) => {
+    e.stopPropagation();
+  };
+
+  const events = [
+    "input",
+    "beforeinput",
+    "compositionstart",
+    "compositionupdate",
+    "compositionend",
+  ] as const;
+
+  for (const evt of events) {
+    containerEl.addEventListener(evt, stop, false);
+  }
+
+  return () => {
+    for (const evt of events) {
+      containerEl.removeEventListener(evt, stop, false);
+    }
+  };
+}
+
+/**
  * Attach capture-phase keyboard interception on document for modifier combos
  * that Obsidian steals in its own capture-phase handlers.
  *
