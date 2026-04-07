@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachCapturePhase } from "./KeyboardCapture";
+import { attachBubbleCapture, attachCapturePhase, attachInputCapture } from "./KeyboardCapture";
 
 describe("KeyboardCapture", () => {
   let containerEl: HTMLDivElement;
@@ -253,5 +253,114 @@ describe("KeyboardCapture", () => {
 
     expect(onSearch).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("attachBubbleCapture", () => {
+  it("stops keydown and keyup propagation on the container", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const parentSpy = vi.fn();
+    document.body.addEventListener("keydown", parentSpy);
+    document.body.addEventListener("keyup", parentSpy);
+
+    const cleanup = attachBubbleCapture(container);
+
+    container.dispatchEvent(new KeyboardEvent("keydown", { key: "#", bubbles: true }));
+    container.dispatchEvent(new KeyboardEvent("keyup", { key: "#", bubbles: true }));
+
+    expect(parentSpy).not.toHaveBeenCalled();
+
+    cleanup();
+    document.body.removeEventListener("keydown", parentSpy);
+    document.body.removeEventListener("keyup", parentSpy);
+  });
+});
+
+describe("attachInputCapture", () => {
+  it("stops input events from propagating outside the container", () => {
+    const container = document.createElement("div");
+    const textarea = document.createElement("textarea");
+    container.appendChild(textarea);
+    document.body.appendChild(container);
+
+    const parentSpy = vi.fn();
+    document.body.addEventListener("input", parentSpy);
+
+    const cleanup = attachInputCapture(container);
+
+    // Simulate an input event originating from the textarea
+    const inputEvent = new Event("input", { bubbles: true });
+    textarea.dispatchEvent(inputEvent);
+
+    expect(parentSpy).not.toHaveBeenCalled();
+
+    cleanup();
+    document.body.removeEventListener("input", parentSpy);
+  });
+
+  it("stops beforeinput events from propagating outside the container", () => {
+    const container = document.createElement("div");
+    const textarea = document.createElement("textarea");
+    container.appendChild(textarea);
+    document.body.appendChild(container);
+
+    const parentSpy = vi.fn();
+    document.body.addEventListener("beforeinput", parentSpy);
+
+    const cleanup = attachInputCapture(container);
+
+    const beforeInputEvent = new Event("beforeinput", { bubbles: true });
+    textarea.dispatchEvent(beforeInputEvent);
+
+    expect(parentSpy).not.toHaveBeenCalled();
+
+    cleanup();
+    document.body.removeEventListener("beforeinput", parentSpy);
+  });
+
+  it("stops composition events from propagating outside the container", () => {
+    const container = document.createElement("div");
+    const textarea = document.createElement("textarea");
+    container.appendChild(textarea);
+    document.body.appendChild(container);
+
+    const parentSpy = vi.fn();
+    const events = ["compositionstart", "compositionupdate", "compositionend"];
+    for (const evt of events) {
+      document.body.addEventListener(evt, parentSpy);
+    }
+
+    const cleanup = attachInputCapture(container);
+
+    for (const evt of events) {
+      textarea.dispatchEvent(new Event(evt, { bubbles: true }));
+    }
+
+    expect(parentSpy).not.toHaveBeenCalled();
+
+    cleanup();
+    for (const evt of events) {
+      document.body.removeEventListener(evt, parentSpy);
+    }
+  });
+
+  it("removes listeners on cleanup", () => {
+    const container = document.createElement("div");
+    const textarea = document.createElement("textarea");
+    container.appendChild(textarea);
+    document.body.appendChild(container);
+
+    const parentSpy = vi.fn();
+    document.body.addEventListener("input", parentSpy);
+
+    const cleanup = attachInputCapture(container);
+    cleanup();
+
+    // After cleanup, events should propagate normally
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(parentSpy).toHaveBeenCalledTimes(1);
+
+    document.body.removeEventListener("input", parentSpy);
   });
 });

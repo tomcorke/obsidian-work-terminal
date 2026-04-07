@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
     attachScrollButton: vi.fn(() => vi.fn()),
     attachBubbleCapture: vi.fn(() => vi.fn()),
     attachCapturePhase: vi.fn(() => vi.fn()),
+    attachInputCapture: vi.fn(() => vi.fn()),
     electronShell: { openExternal: vi.fn() },
     fsModule: {
       existsSync: vi.fn(() => false),
@@ -82,6 +83,7 @@ vi.mock("./ScrollButton", () => ({
 vi.mock("./KeyboardCapture", () => ({
   attachBubbleCapture: mocks.attachBubbleCapture,
   attachCapturePhase: mocks.attachCapturePhase,
+  attachInputCapture: mocks.attachInputCapture,
 }));
 
 vi.mock("../utils", () => ({
@@ -181,6 +183,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     mocks.attachScrollButton.mockClear();
     mocks.attachBubbleCapture.mockClear();
     mocks.attachCapturePhase.mockClear();
+    mocks.attachInputCapture.mockClear();
     mocks.electronShell.openExternal.mockClear();
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
     vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
@@ -1324,6 +1327,7 @@ describe("TerminalTab auto-scroll on write", () => {
     mocks.attachScrollButton.mockClear();
     mocks.attachBubbleCapture.mockClear();
     mocks.attachCapturePhase.mockClear();
+    mocks.attachInputCapture.mockClear();
     vi.stubGlobal(
       "ResizeObserver",
       class {
