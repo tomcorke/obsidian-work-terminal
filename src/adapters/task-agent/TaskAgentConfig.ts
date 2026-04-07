@@ -51,6 +51,14 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       type: "text",
       default: "",
     },
+    {
+      key: "enrichmentTimeout",
+      name: "Enrichment timeout (seconds)",
+      description:
+        "Maximum time in seconds for background enrichment before it is killed. Leave empty for default (300s / 5 min).",
+      type: "text",
+      default: "",
+    },
   ],
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
@@ -58,6 +66,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     enrichmentEnabled: true,
     enrichmentPrompt: "",
     retryEnrichmentPrompt: "",
+    enrichmentTimeout: "",
   },
   itemName: "task",
   terminalStates: ["done", "abandoned"],
