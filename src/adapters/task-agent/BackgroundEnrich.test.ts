@@ -565,6 +565,44 @@ describe("BackgroundEnrich", () => {
         120_000,
       );
     });
+
+    it("uses profile override command, args, and cwd when provided", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const profileOverride = {
+        command: "/custom/agent",
+        args: "--model gpt-4",
+        cwd: "~/projects",
+      };
+
+      const result = await handleItemCreated(app, "Profile test", defaultSettings, profileOverride);
+      await result.enrichmentDone;
+
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining("projects"), // expanded from ~/projects
+        "/custom/agent",
+        "--model gpt-4",
+        expect.any(Number),
+      );
+    });
+
+    it("falls back to core settings when no profile override is provided", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const result = await handleItemCreated(app, "Default test", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(spawnHeadlessClaudeMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        "claude",
+        "",
+        expect.any(Number),
+      );
+    });
   });
 
   describe("findFileByUuid", () => {

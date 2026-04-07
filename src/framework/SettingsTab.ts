@@ -332,6 +332,27 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           });
         }),
       );
+    } else if (field.type === "dropdown") {
+      let choices: Record<string, string>;
+      if (field.choices === "profiles") {
+        // Dynamically populate from agent profiles
+        choices = { "": "Default (core settings)" };
+        for (const profile of this.profileManager.getProfiles()) {
+          choices[profile.id] = profile.name;
+        }
+      } else {
+        choices = (field.choices as Record<string, string>) || {};
+      }
+      setting.addDropdown((dropdown) => {
+        for (const [val, label] of Object.entries(choices)) {
+          dropdown.addOption(val, label);
+        }
+        dropdown.setValue(String(value || "")).onChange(async (newValue) => {
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
+        });
+      });
     }
   }
 }
