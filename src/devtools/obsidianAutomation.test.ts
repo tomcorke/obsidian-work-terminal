@@ -641,14 +641,20 @@ describe("obsidian automation helpers", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
-  it("killIsolatedInstance requires userDataDir", () => {
-    expect(() => automation.killIsolatedInstance({})).toThrow("userDataDir is required");
+  it("killIsolatedInstance requires userDataDir", async () => {
+    await expect(automation.killIsolatedInstance({})).rejects.toThrow("userDataDir is required");
   });
 
-  it("killIsolatedInstance matches processes by user-data-dir path", () => {
-    const killed: number[] = [];
-    vi.spyOn(process, "kill").mockImplementation(((pid: number) => {
-      killed.push(pid);
+  it("killIsolatedInstance matches processes by user-data-dir path", async () => {
+    const killed: Array<{ pid: number; signal: string }> = [];
+    vi.spyOn(process, "kill").mockImplementation(((pid: number, signal?: string) => {
+      killed.push({ pid, signal: signal || "SIGTERM" });
+      // Simulate process exiting after SIGTERM (signal 0 check throws)
+      if (signal === 0 || signal === undefined) {
+        const err = new Error("ESRCH") as NodeJS.ErrnoException;
+        err.code = "ESRCH";
+        throw err;
+      }
     }) as typeof process.kill);
 
     const runningProcesses = [
@@ -666,12 +672,14 @@ describe("obsidian automation helpers", () => {
       },
     ];
 
-    const count = automation.killIsolatedInstance({
+    const count = await automation.killIsolatedInstance({
       userDataDir: "/tmp/vault-a/.user-data",
       runningProcesses,
     });
     expect(count).toBe(1);
-    expect(killed).toEqual([100]);
+    // Should have sent SIGTERM then checked if still running (signal 0)
+    expect(killed.some((k) => k.pid === 100 && k.signal === "SIGTERM")).toBe(true);
+    expect(killed.every((k) => k.pid !== 200)).toBe(true);
   });
 
   it("exports OBSIDIAN_BINARY as a lazy getter matching current platform", () => {

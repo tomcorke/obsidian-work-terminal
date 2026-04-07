@@ -34,7 +34,7 @@ async function main() {
 
   if (config.command === "stop") {
     const userDataDir = path.join(config.vaultDir, ".user-data");
-    const killed = killIsolatedInstance({ userDataDir });
+    const killed = await killIsolatedInstance({ userDataDir });
     console.log(JSON.stringify({ stopped: killed, userDataDir }));
     return;
   }

@@ -1261,20 +1261,57 @@ async function hideObsidianWindow({ host = DEFAULT_HOST, port, timeoutMs = DEFAU
  * Kill an isolated Obsidian instance identified by its --user-data-dir path.
  * Returns the number of processes killed.
  */
-function killIsolatedInstance({ userDataDir, runningProcesses = listRunningObsidianProcesses() }) {
+async function killIsolatedInstance({ userDataDir, runningProcesses = listRunningObsidianProcesses() }) {
   if (!userDataDir) {
     throw new Error("userDataDir is required to identify the isolated instance");
   }
   const resolvedDir = path.resolve(userDataDir);
   const matches = runningProcesses.filter((p) => p.command.includes(`--user-data-dir=${resolvedDir}`));
+
   for (const proc of matches) {
+    // 1. Try graceful CDP close if the process has a debug port
+    if (proc.port) {
+      try {
+        const client = new CDPClient({ host: DEFAULT_HOST, port: proc.port });
+        await client.send("Browser.close");
+        client.destroy();
+        // Give Electron a moment to shut down gracefully
+        await new Promise((r) => setTimeout(r, 1000));
+        if (!isProcessRunning(proc.pid)) continue;
+      } catch {
+        // CDP may not be reachable - fall through to signal-based kill
+      }
+    }
+
+    // 2. Send SIGTERM
     try {
       process.kill(proc.pid, "SIGTERM");
     } catch {
       // Process may have already exited
+      continue;
+    }
+
+    // 3. Wait briefly for graceful exit, then escalate to SIGKILL
+    await new Promise((r) => setTimeout(r, 2000));
+    if (isProcessRunning(proc.pid)) {
+      try {
+        process.kill(proc.pid, "SIGKILL");
+      } catch {
+        // Already gone
+      }
     }
   }
   return matches.length;
+}
+
+/** Check if a process is still running by sending signal 0. */
+function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const _exports = {
