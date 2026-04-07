@@ -4077,6 +4077,153 @@ describe("profile launch", () => {
     expect(callArgs.prompt).toContain("adapter prompt");
     expect(callArgs.prompt).toContain("Context for Task");
   });
+
+  it("passes loginShellWrap to spawnAgentSession when profile has it enabled", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "pi",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        agentType: "custom",
+        command: "pi",
+        loginShellWrap: true,
+      }),
+    );
+
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
+    expect(callArgs.loginShellWrap).toBe(true);
+    expect(callArgs.command).toBe("pi");
+  });
+
+  it("does not pass loginShellWrap when profile has it disabled", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+    };
+
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
+
+    await (view as any).spawnFromProfile(makeProfile({ loginShellWrap: false }));
+
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    const callArgs = spawnAgentSpy.mock.calls[0][0];
+    expect(callArgs.loginShellWrap).toBe(false);
+  });
+
+  it("uses unresolved command name in commandArgs when loginShellWrap is true", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: "pi", found: true, resolved: "/usr/local/bin/pi" });
+
+    const { view } = createView({
+      "core.defaultTerminalCwd": "~/projects",
+    });
+    await flushAsync();
+
+    (view as any).profileManager = {
+      getButtonProfiles: () => [],
+      getProfile: () => null,
+    };
+
+    const tab = await (view as any).spawnAgentSession({
+      agentType: "custom",
+      sessionType: "custom",
+      command: "pi",
+      loginShellWrap: true,
+    });
+
+    expect(mockState.tabManagerCalls).toContain("createTab");
+    const commandArgs = mockState.latestCreateTabArgs?.[5] as string[];
+    expect(commandArgs).toBeDefined();
+    // commandArgs[0] should be the unresolved name, not the absolute path
+    expect(commandArgs[0]).toBe("pi");
+    expect(commandArgs[0]).not.toBe("/usr/local/bin/pi");
+
+    resolveStub.mockRestore();
+  });
+
+  it("uses resolved command in commandArgs when loginShellWrap is false", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: "claude", found: true, resolved: "/usr/local/bin/claude" });
+
+    const { view } = createView({
+      "core.defaultTerminalCwd": "~/projects",
+    });
+    await flushAsync();
+
+    (view as any).profileManager = {
+      getButtonProfiles: () => [],
+      getProfile: () => null,
+    };
+
+    await (view as any).spawnAgentSession({
+      agentType: "claude",
+      sessionType: "claude",
+      command: "claude",
+      loginShellWrap: false,
+    });
+
+    expect(mockState.tabManagerCalls).toContain("createTab");
+    const commandArgs = mockState.latestCreateTabArgs?.[5] as string[];
+    expect(commandArgs).toBeDefined();
+    expect(commandArgs[0]).toBe("/usr/local/bin/claude");
+
+    resolveStub.mockRestore();
+  });
+
+  it("trims whitespace from unresolved command in loginShellWrap mode", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: " pi ", found: true, resolved: "/usr/local/bin/pi" });
+
+    const { view } = createView({
+      "core.defaultTerminalCwd": "~/projects",
+    });
+    await flushAsync();
+
+    (view as any).profileManager = {
+      getButtonProfiles: () => [],
+      getProfile: () => null,
+    };
+
+    await (view as any).spawnAgentSession({
+      agentType: "custom",
+      sessionType: "custom",
+      command: " pi ",
+      loginShellWrap: true,
+    });
+
+    expect(mockState.tabManagerCalls).toContain("createTab");
+    const commandArgs = mockState.latestCreateTabArgs?.[5] as string[];
+    expect(commandArgs).toBeDefined();
+    expect(commandArgs[0]).toBe("pi");
+
+    resolveStub.mockRestore();
+  });
 });
 
 describe("paramPassMode resume behavior", () => {
@@ -4224,6 +4371,85 @@ describe("paramPassMode resume behavior", () => {
     expect(commandArgs).toBeDefined();
     expect(commandArgs.join(" ")).toContain("--model");
     expect(commandArgs.join(" ")).toContain("opus");
+    resolveStub.mockRestore();
+  });
+
+  it("uses unresolved command name in resumed tab commandArgs when profile has loginShellWrap", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: "pi", found: true, resolved: "/usr/local/bin/pi" });
+
+    const { view } = createView({
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    (view as any).profileManager = {
+      getProfile: () => ({
+        id: "profile-pi",
+        command: "pi",
+        loginShellWrap: true,
+        agentType: "custom",
+      }),
+      getButtonProfiles: () => [],
+    };
+
+    const tab = (view as any).createResumedTab({
+      targetItemId: "task-1",
+      sessionType: "custom",
+      label: "Pi",
+      sessionId: "session-pi-1",
+      freshSettings: {},
+      resolvedCommand: "/usr/local/bin/pi",
+      profileId: "profile-pi",
+    });
+
+    expect(tab).not.toBeNull();
+    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
+    expect(commandArgs).toBeDefined();
+    // Should use the unresolved profile command, not the absolute path
+    expect(commandArgs[0]).toBe("pi");
+    expect(commandArgs[0]).not.toBe("/usr/local/bin/pi");
+
+    resolveStub.mockRestore();
+  });
+
+  it("uses resolved command in resumed tab commandArgs when profile does not have loginShellWrap", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: "claude", found: true, resolved: "/usr/local/bin/claude" });
+
+    const { view } = createView({
+      "core.claudeCommand": "/usr/local/bin/claude",
+      "core.defaultTerminalCwd": "~/resume",
+    });
+    await flushAsync();
+
+    (view as any).profileManager = {
+      getProfile: () => ({
+        id: "profile-claude",
+        command: "claude",
+        loginShellWrap: false,
+        agentType: "claude",
+      }),
+      getButtonProfiles: () => [],
+    };
+
+    const tab = (view as any).createResumedTab({
+      targetItemId: "task-1",
+      sessionType: "claude",
+      label: "Claude",
+      sessionId: "session-claude-1",
+      freshSettings: { "core.claudeCommand": "/usr/local/bin/claude" },
+      resolvedCommand: "/usr/local/bin/claude",
+      profileId: "profile-claude",
+    });
+
+    expect(tab).not.toBeNull();
+    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
+    expect(commandArgs).toBeDefined();
+    expect(commandArgs[0]).toBe("/usr/local/bin/claude");
+
     resolveStub.mockRestore();
   });
 });
