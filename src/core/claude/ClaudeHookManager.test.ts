@@ -106,10 +106,16 @@ import {
   removeHooks,
 } from "./ClaudeHookManager";
 
-const MOCK_CWD = "/repo/project";
+const MOCK_CWD = path.join(path.sep, "repo", "project");
 const SETTINGS_PATH = path.join(MOCK_CWD, ".claude", "settings.local.json");
-const SCRIPT_PATH = "/mock-home/.work-terminal/hooks/session-change.sh";
-const EVENTS_DIR = "/mock-home/.work-terminal/events";
+const SCRIPT_PATH = path.join(
+  path.sep,
+  "mock-home",
+  ".work-terminal",
+  "hooks",
+  "session-change.sh",
+);
+const EVENTS_DIR = path.join(path.sep, "mock-home", ".work-terminal", "events");
 
 describe("ClaudeHookManager", () => {
   beforeEach(() => {
