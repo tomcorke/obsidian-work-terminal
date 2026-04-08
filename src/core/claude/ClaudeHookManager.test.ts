@@ -46,8 +46,8 @@ const mockState = vi.hoisted(() => {
     mkdirSync(dirPath: string) {
       ensureDir(dirPath);
     },
-    writeFileSync(filePath: string, content: string, options?: { mode?: number }) {
-      writeFile(filePath, content, options?.mode ?? Date.now());
+    writeFileSync(filePath: string, content: string, _options?: { mode?: number }) {
+      writeFile(filePath, content);
     },
     readFileSync(filePath: string) {
       const normalized = path.normalize(filePath);
