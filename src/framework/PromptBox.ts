@@ -4,6 +4,7 @@
  * Coordinates with adapter.onItemCreated for background enrichment.
  */
 import type { Plugin } from "obsidian";
+import { getProfileResumeConfig, type AgentProfile } from "../core/agents/AgentProfile";
 import type { AdapterBundle } from "../core/interfaces";
 
 export class PromptBox {
@@ -132,22 +133,16 @@ export class PromptBox {
           const profileMgr = (this.plugin as any).profileManager;
           const profile = profileMgr?.getProfile?.(profileId);
           if (profile) {
-            // Resolve prompt injection mode from the profile's agent type
-            let promptMode: "claude" | "flag" | "positional" = "claude";
-            if (profile.promptInjectionMode === "flag") {
-              promptMode = "flag";
-            } else if (profile.promptInjectionMode === "positional") {
-              promptMode = "positional";
-            } else if (profile.agentType === "claude") {
-              promptMode = "claude";
-            }
+            const resumeConfig = getProfileResumeConfig(profile as AgentProfile);
+            const promptMode =
+              profile.agentType === "claude" ? "claude" : resumeConfig.promptInjectionMode;
             enrichmentSettings._enrichmentProfile = {
               command: profile.command,
               args: profile.arguments,
               cwd: profile.defaultCwd,
               agentName: profile.name,
               promptMode,
-              promptFlag: profile.promptFlag,
+              promptFlag: resumeConfig.promptFlag,
             };
           }
         }
