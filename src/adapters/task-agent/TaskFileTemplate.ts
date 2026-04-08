@@ -6,11 +6,21 @@ export interface SplitSource {
   title: string;
 }
 
+/** Enrichment metadata to embed in the task file frontmatter. */
+export interface EnrichmentMeta {
+  profile?: string;
+  command: string;
+  args: string;
+  prompt: string;
+  cwd: string;
+}
+
 export function generateTaskContent(
   title: string,
   state: KanbanColumn,
   splitFrom?: SplitSource,
   existingId?: string,
+  enrichment?: EnrichmentMeta,
 ): string {
   const id = existingId || crypto.randomUUID();
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -24,6 +34,18 @@ export function generateTaskContent(
     : "related: []";
   const activitySuffix = splitFrom
     ? ` (split from [[${splitFrom.filename.replace(/\.md$/, "")}]])`
+    : "";
+
+  // Quote a YAML string value, escaping embedded quotes
+  const yamlQuote = (s: string): string => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
+  const enrichmentBlock = enrichment
+    ? `\nenrichment:\n` +
+      `  profile: ${yamlQuote(enrichment.profile ?? "")}\n` +
+      `  command: ${yamlQuote(enrichment.command)}\n` +
+      `  args: ${yamlQuote(enrichment.args)}\n` +
+      `  prompt: ${yamlQuote(enrichment.prompt)}\n` +
+      `  cwd: ${yamlQuote(enrichment.cwd)}\n`
     : "";
 
   return `---
@@ -54,7 +76,7 @@ agent-actionable: false
 goal: []
 
 ${relatedField}
-
+${enrichmentBlock}
 created: ${now}
 updated: ${now}
 ---
