@@ -235,6 +235,97 @@ describe("KeyboardCapture", () => {
     expect(downEvent.defaultPrevented).toBe(true);
   });
 
+  it("sends Escape as \\x1b to PTY and prevents propagation", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).toHaveBeenCalledWith("\x1b");
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("does not send Escape when PTY stdin is destroyed", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: true, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).not.toHaveBeenCalled();
+    // Event should still be consumed to prevent Obsidian from acting on it
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("does not send Escape when no process is available", () => {
+    const cleanup = attachCapturePhase(containerEl, () => null);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    // Event should still be consumed to prevent Obsidian from acting on it
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("does not intercept Ctrl+Escape (lets modified Escape pass through)", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("does not treat Cmd+Shift+F as plain Cmd+F", () => {
     const onSearch = vi.fn();
     const cleanup = attachCapturePhase(containerEl, () => null, onSearch);
