@@ -173,7 +173,7 @@ describe("ClaudeHookManager", () => {
     });
   });
 
-  it("removes only the managed hooks and deletes the settings file if it becomes empty", async () => {
+  it("removes the managed hook entries and deletes the settings file if nothing else remains", async () => {
     mockState.writeFile(
       SETTINGS_PATH,
       JSON.stringify({
@@ -191,7 +191,7 @@ describe("ClaudeHookManager", () => {
     expect(mockState.files.has(SCRIPT_PATH)).toBe(false);
   });
 
-  it("preserves unrelated settings while removing managed hooks", async () => {
+  it("preserves unrelated settings and other event hooks while removing managed hooks", async () => {
     mockState.writeFile(
       SETTINGS_PATH,
       JSON.stringify({

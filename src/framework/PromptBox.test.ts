@@ -96,10 +96,12 @@ function makeAdapter(
   };
 }
 
-function makePlugin(profile?: Record<string, unknown>) {
+function makePlugin(profileId?: string, profile?: Record<string, unknown>) {
   return {
     profileManager: {
-      getProfile: vi.fn().mockReturnValue(profile),
+      getProfile: vi.fn((requestedProfileId: string) =>
+        requestedProfileId === profileId ? profile : undefined,
+      ),
     },
   } as any;
 }
@@ -197,9 +199,10 @@ describe("PromptBox", () => {
       promptInjectionMode: "flag",
       promptFlag: "--prompt",
     };
+    const plugin = makePlugin("profile-1", profile);
     const { inputEl, sendBtn, adapter } = createPromptBox({
       adapter: makeAdapter(onItemCreated),
-      plugin: makePlugin(profile),
+      plugin,
       settings: { "adapter.enrichmentProfile": "profile-1" },
     });
 
@@ -220,6 +223,7 @@ describe("PromptBox", () => {
         promptFlag: "--prompt",
       },
     });
+    expect(plugin.profileManager.getProfile).toHaveBeenCalledWith("profile-1");
   });
 
   it("notifies the list when the adapter returns a real item mapping", async () => {
