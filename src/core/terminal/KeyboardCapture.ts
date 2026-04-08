@@ -89,6 +89,19 @@ export function attachCapturePhase(
   const handler = (e: KeyboardEvent) => {
     if (!textareaEl || document.activeElement !== textareaEl) return;
 
+    // Plain Escape: send ESC to PTY before Obsidian's capture-phase handler
+    // can intercept it. Required for vi/vim keybindings, TUI apps, and
+    // cancelling shell completions.
+    if (e.key === "Escape") {
+      const proc = getProcess();
+      if (proc?.stdin && !proc.stdin.destroyed) {
+        proc.stdin.write("\x1b");
+      }
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      return;
+    }
+
     // Cmd+F: toggle search bar (intercept before Obsidian's find)
     if (e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyF" && onSearch) {
       e.stopImmediatePropagation();
