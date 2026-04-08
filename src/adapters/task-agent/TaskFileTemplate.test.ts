@@ -75,6 +75,57 @@ describe("generateTaskContent", () => {
     expect(content).not.toContain("\n related:");
     expect(content).not.toContain('related: []\n  - "[[TASK-20260327-1200-source-task]]"');
   });
+
+  it("includes enrichment block when enrichment metadata is provided", () => {
+    const content = generateTaskContent("Test", "todo", undefined, "test-id", {
+      profile: "pi",
+      command: "pi",
+      args: "--model sonnet",
+      prompt: "Enrich the task at /path/to/file",
+      cwd: "/home/user/work",
+    });
+    expect(content).toContain("enrichment:");
+    expect(content).toMatch(/^\s+profile: "pi"$/m);
+    expect(content).toMatch(/^\s+command: "pi"$/m);
+    expect(content).toMatch(/^\s+args: "--model sonnet"$/m);
+    expect(content).toMatch(/^\s+prompt: "Enrich the task at \/path\/to\/file"$/m);
+    expect(content).toMatch(/^\s+cwd: "\/home\/user\/work"$/m);
+  });
+
+  it("omits enrichment block when no enrichment metadata is provided", () => {
+    const content = generateTaskContent("Test", "todo");
+    expect(content).not.toContain("enrichment:");
+  });
+
+  it("escapes quotes in enrichment prompt", () => {
+    const content = generateTaskContent("Test", "todo", undefined, "test-id", {
+      command: "claude",
+      args: "",
+      prompt: 'Review "this" task',
+      cwd: "/home/user",
+    });
+    expect(content).toContain('prompt: "Review \\"this\\" task"');
+  });
+
+  it("escapes newlines in enrichment prompt", () => {
+    const content = generateTaskContent("Test", "todo", undefined, "test-id", {
+      command: "claude",
+      args: "",
+      prompt: "Line one\nLine two\r\nLine three",
+      cwd: "/home/user",
+    });
+    expect(content).toContain('prompt: "Line one\\nLine two\\r\\nLine three"');
+  });
+
+  it("uses empty string for enrichment profile when not provided", () => {
+    const content = generateTaskContent("Test", "todo", undefined, "test-id", {
+      command: "claude",
+      args: "",
+      prompt: "Enrich",
+      cwd: "/home/user",
+    });
+    expect(content).toMatch(/^\s+profile: ""$/m);
+  });
 });
 
 describe("generateTaskFilename", () => {
