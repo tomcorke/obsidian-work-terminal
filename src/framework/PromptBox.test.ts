@@ -192,6 +192,7 @@ describe("PromptBox", () => {
     vi.spyOn(Date, "now").mockReturnValue(42);
     const onItemCreated = vi.fn().mockResolvedValue(undefined);
     const profile = {
+      agentType: "custom",
       name: "Copilot",
       command: "copilot",
       arguments: "--chat",
@@ -224,6 +225,42 @@ describe("PromptBox", () => {
       },
     });
     expect(plugin.profileManager.getProfile).toHaveBeenCalledWith("profile-1");
+  });
+
+  it("defaults custom enrichment profiles without prompt injection mode to positional", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(43);
+    const onItemCreated = vi.fn().mockResolvedValue(undefined);
+    const profile = {
+      agentType: "custom",
+      name: "Pi",
+      command: "pi",
+      arguments: "--mode text",
+      defaultCwd: "~/repo",
+    };
+    const plugin = makePlugin("profile-2", profile);
+    const { inputEl, sendBtn, adapter } = createPromptBox({
+      adapter: makeAdapter(onItemCreated),
+      plugin,
+      settings: { "adapter.enrichmentProfile": "profile-2" },
+    });
+
+    inputEl.value = "Custom enrichment profile test";
+    sendBtn.click();
+    await flushPromises();
+
+    expect(adapter.onItemCreated).toHaveBeenCalledWith("Custom enrichment profile test", {
+      "adapter.enrichmentProfile": "profile-2",
+      _columnId: "todo",
+      _placeholderPath: "__pending_43",
+      _enrichmentProfile: {
+        command: "pi",
+        args: "--mode text",
+        cwd: "~/repo",
+        agentName: "Pi",
+        promptMode: "positional",
+        promptFlag: undefined,
+      },
+    });
   });
 
   it("notifies the list when the adapter returns a real item mapping", async () => {
