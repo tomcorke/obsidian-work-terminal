@@ -6,7 +6,7 @@ import {
   type HeadlessAgentConfig,
 } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
-import type { SplitSource } from "./TaskFileTemplate";
+import type { SplitSource, EnrichmentMeta } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
 import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
 
@@ -32,16 +32,22 @@ const RENAME_INSTRUCTION =
   `TASK-YYYYMMDD-HHMM-slugified-title.md (use the existing date prefix, ` +
   `replace the "pending-XXXXXXXX" segment with a slug of the final title).`;
 
+const PRESERVE_ENRICHMENT_BLOCK = `Preserve the enrichment block in the frontmatter - do not remove or modify it.`;
+
 /** Default enrichment prompt template. {{FILE_PATH}} is replaced with the full file path. */
 export const DEFAULT_ENRICHMENT_PROMPT =
   `The task file at {{FILE_PATH}} was just created with minimal data. ` +
   `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
+  PRESERVE_ENRICHMENT_BLOCK +
+  " " +
   RENAME_INSTRUCTION;
 
 /** Default retry enrichment prompt template. */
 export const DEFAULT_RETRY_ENRICHMENT_PROMPT =
   `The task file at {{FILE_PATH}} needs enrichment. ` +
   `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
+  PRESERVE_ENRICHMENT_BLOCK +
+  " " +
   RENAME_INSTRUCTION;
 
 /** Resolve an enrichment prompt template, replacing {{FILE_PATH}} with the actual path. */
@@ -118,12 +124,40 @@ export async function handleItemCreated(
   const claudeCommand = profileOverride?.command || settings["core.claudeCommand"] || "claude";
   const claudeExtraArgs = profileOverride?.args ?? (settings["core.claudeExtraArgs"] || "");
 
+  const enrichmentEnabled = settings["adapter.enrichmentEnabled"] !== false;
+
   const id = crypto.randomUUID();
-  const content = generateTaskContent(title, columnId, undefined, id);
   const filename = generatePendingFilename();
   const folderName = STATE_FOLDER_MAP[columnId] || "todo";
   const folderPath = `${basePath}/${folderName}`;
   const filePath = `${folderPath}/${filename}`;
+
+  // Resolve enrichment parameters before file creation so metadata can be embedded
+  let enrichmentMeta: EnrichmentMeta | undefined;
+  let enrichPrompt: string | undefined;
+  let enrichCwd: string | undefined;
+  let timeoutMs: number | undefined;
+
+  if (enrichmentEnabled) {
+    const fullPath = resolveFullPath(app, filePath);
+    const promptTemplate =
+      (settings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
+    enrichPrompt = resolveEnrichmentPrompt(promptTemplate, fullPath);
+    timeoutMs = resolveEnrichmentTimeout(settings);
+    enrichCwd = profileOverride?.cwd
+      ? expandTilde(profileOverride.cwd)
+      : resolveClaudeLaunchCwd(settings);
+
+    enrichmentMeta = {
+      profile: profileOverride?.agentName ?? "",
+      command: claudeCommand,
+      args: claudeExtraArgs,
+      prompt: enrichPrompt,
+      cwd: enrichCwd,
+    };
+  }
+
+  const content = generateTaskContent(title, columnId, undefined, id, enrichmentMeta);
 
   const folder = app.vault.getAbstractFileByPath(folderPath);
   if (!folder) {
@@ -134,35 +168,24 @@ export async function handleItemCreated(
   console.log(`[work-terminal] Task created: ${filePath}`);
 
   // Skip enrichment if explicitly disabled
-  const enrichmentEnabled = settings["adapter.enrichmentEnabled"] !== false;
   if (!enrichmentEnabled) {
     return { id, columnId, enrichmentDone: Promise.resolve() };
   }
 
-  // Background enrichment - returns a promise the caller can track
-  const fullPath = resolveFullPath(app, filePath);
-  const promptTemplate =
-    (settings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
-  const enrichPrompt = resolveEnrichmentPrompt(promptTemplate, fullPath);
-  const timeoutMs = resolveEnrichmentTimeout(settings);
-
-  const enrichCwd = profileOverride?.cwd
-    ? expandTilde(profileOverride.cwd)
-    : resolveClaudeLaunchCwd(settings);
-
   // Use the generic headless agent when a profile override specifies non-Claude
   // prompt injection, otherwise fall back to the Claude-specific path.
-  const spawnPromise = profileOverride?.promptMode && profileOverride.promptMode !== "claude"
-    ? spawnHeadlessAgent(enrichPrompt, {
-        command: claudeCommand,
-        extraArgs: claudeExtraArgs,
-        cwd: enrichCwd,
-        promptMode: profileOverride.promptMode,
-        promptFlag: profileOverride.promptFlag,
-        timeoutMs,
-        agentName: profileOverride.agentName,
-      })
-    : spawnHeadlessClaude(enrichPrompt, enrichCwd, claudeCommand, claudeExtraArgs, timeoutMs);
+  const spawnPromise =
+    profileOverride?.promptMode && profileOverride.promptMode !== "claude"
+      ? spawnHeadlessAgent(enrichPrompt!, {
+          command: claudeCommand,
+          extraArgs: claudeExtraArgs,
+          cwd: enrichCwd!,
+          promptMode: profileOverride.promptMode,
+          promptFlag: profileOverride.promptFlag,
+          timeoutMs: timeoutMs!,
+          agentName: profileOverride.agentName,
+        })
+      : spawnHeadlessClaude(enrichPrompt!, enrichCwd!, claudeCommand, claudeExtraArgs, timeoutMs!);
 
   const enrichmentDone = spawnPromise.then(
     async (result) => {

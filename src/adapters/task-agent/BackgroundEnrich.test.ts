@@ -607,7 +607,12 @@ describe("BackgroundEnrich", () => {
         promptFlag: "-i",
       };
 
-      const result = await handleItemCreated(app, "Flag mode test", defaultSettings, profileOverride);
+      const result = await handleItemCreated(
+        app,
+        "Flag mode test",
+        defaultSettings,
+        profileOverride,
+      );
       await result.enrichmentDone;
 
       // Should use spawnHeadlessAgent, not spawnHeadlessClaude
@@ -634,7 +639,12 @@ describe("BackgroundEnrich", () => {
         promptMode: "positional" as const,
       };
 
-      const result = await handleItemCreated(app, "Positional test", defaultSettings, profileOverride);
+      const result = await handleItemCreated(
+        app,
+        "Positional test",
+        defaultSettings,
+        profileOverride,
+      );
       await result.enrichmentDone;
 
       expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
@@ -658,12 +668,72 @@ describe("BackgroundEnrich", () => {
         promptMode: "claude" as const,
       };
 
-      const result = await handleItemCreated(app, "Claude mode profile", defaultSettings, profileOverride);
+      const result = await handleItemCreated(
+        app,
+        "Claude mode profile",
+        defaultSettings,
+        profileOverride,
+      );
       await result.enrichmentDone;
 
       // Should use spawnHeadlessClaude (Claude-compatible agent)
       expect(spawnHeadlessClaudeMock).toHaveBeenCalled();
       expect(spawnHeadlessAgentMock).not.toHaveBeenCalled();
+    });
+
+    it("includes enrichment metadata in the created file content", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const result = await handleItemCreated(app, "Enrich meta test", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(app.createdFiles).toHaveLength(1);
+      const fileContent = app.createdFiles[0].content;
+      expect(fileContent).toContain("enrichment:");
+      expect(fileContent).toMatch(/^\s+command: "claude"$/m);
+      expect(fileContent).toMatch(/^\s+args: ""$/m);
+      expect(fileContent).toMatch(/^\s+prompt: "/m);
+      expect(fileContent).toMatch(/^\s+cwd: "/m);
+    });
+
+    it("includes profile name in enrichment metadata when profile override is provided", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const profileOverride = {
+        command: "pi",
+        args: "--model sonnet",
+        cwd: "~/projects",
+        agentName: "pi",
+      };
+
+      const result = await handleItemCreated(
+        app,
+        "Profile meta test",
+        defaultSettings,
+        profileOverride,
+      );
+      await result.enrichmentDone;
+
+      const fileContent = app.createdFiles[0].content;
+      expect(fileContent).toContain("enrichment:");
+      expect(fileContent).toMatch(/^\s+profile: "pi"$/m);
+      expect(fileContent).toMatch(/^\s+command: "pi"$/m);
+      expect(fileContent).toMatch(/^\s+args: "--model sonnet"$/m);
+    });
+
+    it("omits enrichment metadata when enrichment is disabled", async () => {
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "No enrich", {
+        ...defaultSettings,
+        "adapter.enrichmentEnabled": false,
+      });
+      await result.enrichmentDone;
+
+      const fileContent = app.createdFiles[0].content;
+      expect(fileContent).not.toContain("enrichment:");
     });
 
     it("falls back to core settings when no profile override is provided", async () => {
