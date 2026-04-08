@@ -92,7 +92,7 @@ export function attachCapturePhase(
     // Plain Escape: send ESC to PTY before Obsidian's capture-phase handler
     // can intercept it. Required for vi/vim keybindings, TUI apps, and
     // cancelling shell completions.
-    if (e.key === "Escape") {
+    if (e.key === "Escape" && !e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey) {
       const proc = getProcess();
       if (proc?.stdin && !proc.stdin.destroyed) {
         proc.stdin.write("\x1b");

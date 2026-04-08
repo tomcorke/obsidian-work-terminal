@@ -301,6 +301,31 @@ describe("KeyboardCapture", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("does not intercept Ctrl+Escape (lets modified Escape pass through)", () => {
+    const write = vi.fn();
+    const cleanup = attachCapturePhase(
+      containerEl,
+      () =>
+        ({
+          stdin: { destroyed: false, write },
+        }) as any,
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      code: "Escape",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    cleanup();
+
+    expect(write).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("does not treat Cmd+Shift+F as plain Cmd+F", () => {
     const onSearch = vi.fn();
     const cleanup = attachCapturePhase(containerEl, () => null, onSearch);
