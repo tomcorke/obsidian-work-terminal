@@ -32,7 +32,7 @@ const RENAME_INSTRUCTION =
   `TASK-YYYYMMDD-HHMM-slugified-title.md (use the existing date prefix, ` +
   `replace the "pending-XXXXXXXX" segment with a slug of the final title).`;
 
-const PRESERVE_ENRICHMENT_BLOCK = `Preserve the enrichment block in the frontmatter - do not remove or modify it.`;
+const PRESERVE_ENRICHMENT_BLOCK = `Preserve the \`enrichment:\` block in the YAML frontmatter exactly as-is - do not remove, modify, or reformat it.`;
 
 /** Default enrichment prompt template. {{FILE_PATH}} is replaced with the full file path. */
 export const DEFAULT_ENRICHMENT_PROMPT =
