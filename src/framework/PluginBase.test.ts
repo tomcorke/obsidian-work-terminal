@@ -1,38 +1,66 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoist plain function mocks so vi.mock factories can reference them.
-const { profileManagerLoadMock, saveToDiskMock } = vi.hoisted(() => ({
-  profileManagerLoadMock: vi.fn(() => Promise.resolve()),
-  saveToDiskMock: vi.fn(() => Promise.resolve()),
-}));
+const hoistedMocks = vi.hoisted(() => {
+  const profileManagerLoadMock = vi.fn(() => Promise.resolve([]));
+  const saveToDiskMock = vi.fn(() => Promise.resolve());
+  const registerViewMock = vi.fn();
+  const addRibbonIconMock = vi.fn();
+  const addCommandMock = vi.fn();
+  const addSettingTabMock = vi.fn();
+  const NoticeMock = vi.fn();
+  const AgentProfileManagerMock = vi.fn(function (this: Record<string, unknown>, plugin: unknown) {
+    this.plugin = plugin;
+    this.load = profileManagerLoadMock;
+  });
+  const MainViewMock = vi.fn(function (
+    this: Record<string, unknown>,
+    leaf: unknown,
+    adapter: unknown,
+    plugin: unknown,
+  ) {
+    this.leaf = leaf;
+    this.adapter = adapter;
+    this.plugin = plugin;
+  });
+  const WorkTerminalSettingsTabMock = vi.fn(function (
+    this: Record<string, unknown>,
+    app: unknown,
+    plugin: unknown,
+    adapter: unknown,
+    profileManager: unknown,
+  ) {
+    this.app = app;
+    this.plugin = plugin;
+    this.adapter = adapter;
+    this.profileManager = profileManager;
+  });
+
+  return {
+    AgentProfileManagerMock,
+    MainViewMock,
+    NoticeMock,
+    WorkTerminalSettingsTabMock,
+    addCommandMock,
+    addRibbonIconMock,
+    addSettingTabMock,
+    profileManagerLoadMock,
+    registerViewMock,
+    saveToDiskMock,
+  };
+});
 
 vi.mock("../core/agents/AgentProfileManager", () => ({
-  AgentProfileManager: class {
-    load = profileManagerLoadMock;
-  },
+  AgentProfileManager: hoistedMocks.AgentProfileManagerMock,
 }));
 
 vi.mock("../core/session/SessionPersistence", () => ({
-  SessionPersistence: { saveToDisk: saveToDiskMock },
+  SessionPersistence: { saveToDisk: hoistedMocks.saveToDiskMock },
 }));
 
-// Dynamic imports in onload() are resolved via vi.mock at module graph level.
-vi.mock("./MainView", () => ({ MainView: class {} }));
+vi.mock("./MainView", () => ({ MainView: hoistedMocks.MainViewMock }));
 vi.mock("./SettingsTab", () => ({
-  WorkTerminalSettingsTab: class {
-    constructor(..._args: unknown[]) {}
-  },
+  WorkTerminalSettingsTab: hoistedMocks.WorkTerminalSettingsTabMock,
 }));
-
-// Track Plugin method calls through shared spies defined in vi.hoisted.
-const { registerViewMock, addRibbonIconMock, addCommandMock, addSettingTabMock, NoticeMock } =
-  vi.hoisted(() => ({
-    registerViewMock: vi.fn(),
-    addRibbonIconMock: vi.fn(),
-    addCommandMock: vi.fn(),
-    addSettingTabMock: vi.fn(),
-    NoticeMock: vi.fn(),
-  }));
 
 vi.mock("obsidian", () => {
   class Plugin {
@@ -45,19 +73,32 @@ vi.mock("obsidian", () => {
     constructor(app: unknown, manifest: unknown) {
       this.app = app;
       this.manifest = manifest;
-      this.registerView = registerViewMock;
-      this.addRibbonIcon = addRibbonIconMock;
-      this.addCommand = addCommandMock;
-      this.addSettingTab = addSettingTabMock;
+      this.registerView = hoistedMocks.registerViewMock;
+      this.addRibbonIcon = hoistedMocks.addRibbonIconMock;
+      this.addCommand = hoistedMocks.addCommandMock;
+      this.addSettingTab = hoistedMocks.addSettingTabMock;
     }
   }
   class Notice {
     constructor(msg: string) {
-      NoticeMock(msg);
+      hoistedMocks.NoticeMock(msg);
     }
   }
   return { Plugin, Notice };
 });
+
+const {
+  AgentProfileManagerMock,
+  MainViewMock,
+  NoticeMock,
+  WorkTerminalSettingsTabMock,
+  addCommandMock,
+  addRibbonIconMock,
+  addSettingTabMock,
+  profileManagerLoadMock,
+  registerViewMock,
+  saveToDiskMock,
+} = hoistedMocks;
 
 import { PluginBase, VIEW_TYPE } from "./PluginBase";
 
@@ -125,8 +166,9 @@ describe("PluginBase", () => {
       const app = makeApp();
       const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
       await plugin.onload();
+      expect(AgentProfileManagerMock).toHaveBeenCalledWith(plugin);
       expect(profileManagerLoadMock).toHaveBeenCalledTimes(1);
-      expect(plugin.profileManager).not.toBeNull();
+      expect(plugin.profileManager).toBe(AgentProfileManagerMock.mock.instances[0]);
     });
 
     it("registers the work-terminal view type", async () => {
@@ -138,10 +180,14 @@ describe("PluginBase", () => {
 
     it("view factory constructs a MainView instance without throwing", async () => {
       const app = makeApp();
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
+      const adapter = makeAdapter();
+      const plugin = new TestPlugin(app, makeManifest(), adapter);
       await plugin.onload();
       const [, factory] = registerViewMock.mock.calls[0];
-      expect(() => factory({ view: null })).not.toThrow();
+      const leaf = { view: null };
+      const mainView = factory(leaf);
+      expect(MainViewMock).toHaveBeenCalledWith(leaf, adapter, plugin);
+      expect(mainView).toBe(MainViewMock.mock.instances[0]);
     });
 
     it("adds ribbon icon and three commands", async () => {
@@ -162,9 +208,17 @@ describe("PluginBase", () => {
 
     it("registers the settings tab", async () => {
       const app = makeApp();
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
+      const adapter = makeAdapter();
+      const plugin = new TestPlugin(app, makeManifest(), adapter);
       await plugin.onload();
+      expect(WorkTerminalSettingsTabMock).toHaveBeenCalledWith(
+        app,
+        plugin,
+        adapter,
+        plugin.profileManager,
+      );
       expect(addSettingTabMock).toHaveBeenCalledTimes(1);
+      expect(addSettingTabMock).toHaveBeenCalledWith(WorkTerminalSettingsTabMock.mock.instances[0]);
     });
   });
 
