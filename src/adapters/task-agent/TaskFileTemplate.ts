@@ -37,7 +37,8 @@ export function generateTaskContent(
     : "";
 
   // Quote a YAML string value, escaping embedded quotes
-  const yamlQuote = (s: string): string => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  const yamlQuote = (s: string): string =>
+    `"${s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/"/g, '\\"')}"`;
 
   const enrichmentBlock = enrichment
     ? `\nenrichment:\n` +

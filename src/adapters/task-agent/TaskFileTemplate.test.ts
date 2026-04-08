@@ -107,6 +107,16 @@ describe("generateTaskContent", () => {
     expect(content).toContain('prompt: "Review \\"this\\" task"');
   });
 
+  it("escapes newlines in enrichment prompt", () => {
+    const content = generateTaskContent("Test", "todo", undefined, "test-id", {
+      command: "claude",
+      args: "",
+      prompt: "Line one\nLine two\r\nLine three",
+      cwd: "/home/user",
+    });
+    expect(content).toContain('prompt: "Line one\\nLine two\\r\\nLine three"');
+  });
+
   it("uses empty string for enrichment profile when not provided", () => {
     const content = generateTaskContent("Test", "todo", undefined, "test-id", {
       command: "claude",
