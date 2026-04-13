@@ -15,13 +15,15 @@ export interface TaskPriority {
 
 export type TaskState = "priority" | "todo" | "active" | "done" | "abandoned";
 
+/** Known kanban column IDs. Dynamic columns use arbitrary string IDs. */
 export type KanbanColumn = "priority" | "todo" | "active" | "done";
 
 export interface TaskFile {
   id: string;
   path: string;
   filename: string;
-  state: TaskState;
+  /** Task state - either a known TaskState or a dynamic/custom state string. */
+  state: string;
   title: string;
   tags: string[];
   source: TaskSource;

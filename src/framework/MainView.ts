@@ -594,6 +594,26 @@ export class MainView extends ItemView {
     if (!this.listPanel || !this.parser) return [];
     const items = await this.parser.loadAll();
     const groups = this.parser.groupByColumn(items);
+
+    // Discover dynamic columns (states in items not in configured columns)
+    // and update the adapter config so the SettingsTab column ordering UI
+    // includes them. Dynamic columns appear after configured columns.
+    const configuredIds = new Set(this.adapter.config.columns.map((c) => c.id));
+    const dynamicIds = Object.keys(groups)
+      .filter((id) => !configuredIds.has(id) && (groups[id]?.length ?? 0) > 0)
+      .sort();
+    if (dynamicIds.length > 0) {
+      const dynamicColumns = dynamicIds.map((id) => ({
+        id,
+        label: id.charAt(0).toUpperCase() + id.slice(1),
+      }));
+      // Merge without duplicates - re-add configured columns then dynamic
+      this.adapter.config.columns = [
+        ...this.adapter.config.columns,
+        ...dynamicColumns.filter((dc) => !configuredIds.has(dc.id)),
+      ];
+    }
+
     const data = (await this.pluginRef.loadData()) || {};
     const customOrder = this.pendingCustomOrderOverride || data.customOrder || {};
     this.listPanel.render(groups, customOrder);

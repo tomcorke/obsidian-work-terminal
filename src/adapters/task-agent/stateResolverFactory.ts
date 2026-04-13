@@ -7,8 +7,6 @@ import { STATE_FOLDER_MAP } from "./types";
 /** State resolution strategy identifier. */
 export type StateStrategy = "folder" | "frontmatter" | "composite";
 
-const VALID_TASK_STATES = ["priority", "todo", "active", "done", "abandoned"];
-
 /**
  * Create the default state resolver for the task-agent adapter.
  * Defaults to folder-based resolution for backward compatibility: state is
@@ -22,6 +20,11 @@ export function createDefaultStateResolver(basePath: string): StateResolver {
 
 /**
  * Create a state resolver for the given strategy.
+ *
+ * For frontmatter and composite modes, the FrontmatterStateResolver accepts
+ * any string value (open state set). This means users can write arbitrary
+ * states like `state: amazing` and they will be passed through as-is,
+ * creating dynamic columns in the kanban board.
  */
 export function createStateResolver(strategy: StateStrategy, basePath: string): StateResolver {
   switch (strategy) {
@@ -29,11 +32,14 @@ export function createStateResolver(strategy: StateStrategy, basePath: string): 
       return new FolderStateResolver(STATE_FOLDER_MAP, basePath);
 
     case "frontmatter":
-      return new FrontmatterStateResolver("state", VALID_TASK_STATES);
+      // No valid-state restriction: any frontmatter value is a valid state
+      return new FrontmatterStateResolver("state");
 
     case "composite":
+      // No valid-state restriction on frontmatter: any value is accepted.
+      // Folder resolver still provides fallback for files without frontmatter state.
       return new CompositeStateResolver([
-        new FrontmatterStateResolver("state", VALID_TASK_STATES),
+        new FrontmatterStateResolver("state"),
         new FolderStateResolver(STATE_FOLDER_MAP, basePath),
       ]);
 

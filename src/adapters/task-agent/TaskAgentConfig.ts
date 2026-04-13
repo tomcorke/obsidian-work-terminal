@@ -148,7 +148,9 @@ export function parseColumnOrderJson(json: string | undefined): string[] {
 /**
  * Resolve the effective column list from a custom order setting.
  * Re-orders DEFAULT_COLUMNS to match the provided column IDs.
- * Unknown IDs are ignored; columns missing from the order are appended.
+ * Unknown IDs in the order are preserved as dynamic columns (created from
+ * frontmatter states not in the predefined column list). Default columns
+ * missing from the order are appended at the end.
  */
 export function resolveColumns(columnOrderJson: string | undefined): ListColumn[] {
   const order = parseColumnOrderJson(columnOrderJson);
@@ -159,14 +161,19 @@ export function resolveColumns(columnOrderJson: string | undefined): ListColumn[
   const seen = new Set<string>();
 
   for (const id of order) {
+    if (seen.has(id)) continue;
     const col = columnById.get(id);
-    if (col && !seen.has(id)) {
+    if (col) {
       result.push(col);
-      seen.add(id);
+    } else {
+      // Dynamic column - created from a custom frontmatter state that was
+      // previously reordered in settings. Preserve it with a titlecased label.
+      result.push(makeDynamicColumn(id));
     }
+    seen.add(id);
   }
 
-  // Append any columns not mentioned in the custom order
+  // Append any default columns not mentioned in the custom order
   for (const col of DEFAULT_COLUMNS) {
     if (!seen.has(col.id)) {
       result.push(col);
@@ -177,8 +184,21 @@ export function resolveColumns(columnOrderJson: string | undefined): ListColumn[
 }
 
 /**
+ * Create a ListColumn for a dynamic state ID (not in the predefined list).
+ * Uses a titlecased version of the ID as the display label.
+ * No folderName since dynamic states are frontmatter-only.
+ */
+export function makeDynamicColumn(stateId: string): ListColumn {
+  return {
+    id: stateId,
+    label: stateId.charAt(0).toUpperCase() + stateId.slice(1),
+  };
+}
+
+/**
  * Resolve the effective creation columns from a custom setting.
  * The first column in the list is marked as the default.
+ * Accepts both predefined and dynamic column IDs.
  */
 export function resolveCreationColumns(
   creationColumnIdsJson: string | undefined,
@@ -195,6 +215,11 @@ export function resolveCreationColumns(
     const label = labelById.get(id);
     if (label) {
       result.push({ id, label, ...(result.length === 0 ? { default: true } : {}) });
+      seen.add(id);
+    } else {
+      // Dynamic column - use titlecased ID as label
+      const dynLabel = id.charAt(0).toUpperCase() + id.slice(1);
+      result.push({ id, label: dynLabel, ...(result.length === 0 ? { default: true } : {}) });
       seen.add(id);
     }
   }

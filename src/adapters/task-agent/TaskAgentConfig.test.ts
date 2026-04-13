@@ -66,9 +66,13 @@ describe("TaskAgentConfig column helpers", () => {
       expect(result.map((c) => c.id)).toEqual(["todo", "active", "priority", "done"]);
     });
 
-    it("ignores unknown column IDs", () => {
-      const result = resolveColumns('["todo", "unknown", "active"]');
-      expect(result.map((c) => c.id)).toEqual(["todo", "active", "priority", "done"]);
+    it("preserves unknown column IDs as dynamic columns", () => {
+      const result = resolveColumns('["todo", "amazing", "active"]');
+      expect(result.map((c) => c.id)).toEqual(["todo", "amazing", "active", "priority", "done"]);
+      // Dynamic column has titlecased label and no folderName
+      const dynamicCol = result.find((c) => c.id === "amazing");
+      expect(dynamicCol?.label).toBe("Amazing");
+      expect(dynamicCol?.folderName).toBeUndefined();
     });
 
     it("deduplicates repeated IDs", () => {
@@ -101,13 +105,20 @@ describe("TaskAgentConfig column helpers", () => {
       expect(result[1].default).toBeUndefined();
     });
 
-    it("ignores unknown column IDs", () => {
-      const result = resolveCreationColumns('["unknown", "todo"]');
-      expect(result).toEqual([{ id: "todo", label: "To Do", default: true }]);
+    it("accepts unknown column IDs as dynamic creation columns", () => {
+      const result = resolveCreationColumns('["amazing", "todo"]');
+      expect(result).toEqual([
+        { id: "amazing", label: "Amazing", default: true },
+        { id: "todo", label: "To Do" },
+      ]);
     });
 
-    it("falls back to default when all IDs are invalid", () => {
-      expect(resolveCreationColumns('["x", "y"]')).toEqual(DEFAULT_CREATION_COLUMNS);
+    it("uses dynamic columns when all IDs are custom", () => {
+      const result = resolveCreationColumns('["x", "y"]');
+      expect(result).toEqual([
+        { id: "x", label: "X", default: true },
+        { id: "y", label: "Y" },
+      ]);
     });
 
     it("falls back to default for invalid JSON", () => {

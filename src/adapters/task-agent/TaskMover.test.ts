@@ -147,14 +147,20 @@ created: 2026-03-26T00:00:00Z
     expect(modify).not.toHaveBeenCalled();
   });
 
-  it("returns false for invalid target column", async () => {
-    const { app } = createMockApp();
+  it("succeeds for dynamic state target - updates frontmatter without folder move", async () => {
+    const { app, modify, rename } = createMockApp();
     const mover = new TaskMover(app, "", defaultSettings);
     const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
 
-    const result = await mover.move(file, "nonexistent");
+    const result = await mover.move(file, "amazing");
 
-    expect(result).toBe(false);
+    // Dynamic states update frontmatter but skip folder move (no folder mapping)
+    expect(result).toBe(true);
+    expect(modify).toHaveBeenCalled();
+    const written = modify.mock.calls[0][1] as string;
+    expect(written).toMatch(/^state: amazing$/m);
+    // No folder rename since "amazing" has no STATE_FOLDER_MAP entry
+    expect(rename).not.toHaveBeenCalled();
   });
 
   it("returns false when vault operation fails", async () => {

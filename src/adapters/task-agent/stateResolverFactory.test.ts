@@ -35,13 +35,14 @@ describe("stateResolverFactory", () => {
       expect(resolver.resolveState("Tasks/todo/task.md", undefined)).toBe("todo");
     });
 
-    it("frontmatter resolver validates against task states", () => {
+    it("frontmatter resolver accepts any string state (open state set)", () => {
       const resolver = createStateResolver("frontmatter", "Tasks");
       expect(resolver.resolveState("any.md", { state: "active" })).toBe("active");
       expect(resolver.resolveState("any.md", { state: "done" })).toBe("done");
       expect(resolver.resolveState("any.md", { state: "abandoned" })).toBe("abandoned");
-      // Invalid state
-      expect(resolver.resolveState("any.md", { state: "invalid" })).toBeNull();
+      // Dynamic/custom states are accepted - no validation against a fixed list
+      expect(resolver.resolveState("any.md", { state: "amazing" })).toBe("amazing");
+      expect(resolver.resolveState("any.md", { state: "custom-state" })).toBe("custom-state");
     });
 
     it("composite resolver checks frontmatter first, then folder", () => {

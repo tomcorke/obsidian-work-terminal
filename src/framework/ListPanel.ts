@@ -161,11 +161,25 @@ export class ListPanel {
     }
 
     // Render regular columns, excluding pinned items
+    const configuredColumnIds = new Set(this.adapter.config.columns.map((c) => c.id));
     for (const col of this.adapter.config.columns) {
       const colItems = (groups[col.id] || []).filter((item) => !pinnedSet.has(item.id));
       const sortedItems = this.sortItems(colItems, col.id);
 
       this.renderSection(col.id, col.label, sortedItems, false);
+    }
+
+    // Render dynamic columns: states present in items but not in configured columns.
+    // These appear after the configured columns, sorted alphabetically.
+    const dynamicIds = Object.keys(groups)
+      .filter((id) => !configuredColumnIds.has(id))
+      .sort();
+    for (const id of dynamicIds) {
+      const colItems = (groups[id] || []).filter((item) => !pinnedSet.has(item.id));
+      if (colItems.length === 0) continue;
+      const sortedItems = this.sortItems(colItems, id);
+      const label = id.charAt(0).toUpperCase() + id.slice(1);
+      this.renderSection(id, label, sortedItems, false);
     }
 
     // Auto-resolve placeholders whose real cards have now rendered
@@ -243,18 +257,18 @@ export class ListPanel {
       if (isPinnedSection) {
         cardEl.addClass("wt-card-pinned");
         const realColumn = this.adapter.config.columns.find((c) => c.id === item.state);
-        if (realColumn) {
-          const stateBadge = document.createElement("span");
-          stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${item.state}`);
-          stateBadge.textContent = realColumn.label;
-          stateBadge.title = `Real state: ${realColumn.label}`;
-          // Insert badge into the meta row if available, otherwise into the card
-          const metaRow = cardEl.querySelector(".wt-card-meta");
-          if (metaRow) {
-            metaRow.insertBefore(stateBadge, metaRow.firstChild);
-          } else {
-            cardEl.appendChild(stateBadge);
-          }
+        const stateLabel =
+          realColumn?.label ?? item.state.charAt(0).toUpperCase() + item.state.slice(1);
+        const stateBadge = document.createElement("span");
+        stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${item.state}`);
+        stateBadge.textContent = stateLabel;
+        stateBadge.title = `Real state: ${stateLabel}`;
+        // Insert badge into the meta row if available, otherwise into the card
+        const metaRow = cardEl.querySelector(".wt-card-meta");
+        if (metaRow) {
+          metaRow.insertBefore(stateBadge, metaRow.firstChild);
+        } else {
+          cardEl.appendChild(stateBadge);
         }
       }
 
