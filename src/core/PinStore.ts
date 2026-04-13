@@ -76,7 +76,14 @@ export class PinStore {
   rekey(oldId: string, newId: string): boolean {
     const idx = this.pinnedIds.indexOf(oldId);
     if (idx < 0) return false;
-    this.pinnedIds[idx] = newId;
+    // Remove any existing entry for newId to prevent duplicates
+    const existingNewIdx = this.pinnedIds.indexOf(newId);
+    if (existingNewIdx >= 0) {
+      this.pinnedIds.splice(existingNewIdx, 1);
+    }
+    // Re-locate idx after potential splice (may have shifted)
+    const adjustedIdx = this.pinnedIds.indexOf(oldId);
+    this.pinnedIds[adjustedIdx] = newId;
     // Persist asynchronously - caller is responsible for triggering save
     void this.persist();
     return true;

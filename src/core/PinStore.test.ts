@@ -112,6 +112,20 @@ describe("PinStore", () => {
     expect(store.getPinnedIds()).toEqual(["new-id", "id-2"]);
   });
 
+  it("rekey deduplicates when newId is already pinned", async () => {
+    const plugin = createMockPlugin({ pinnedItems: ["old-id", "new-id", "id-3"] });
+    const store = new PinStore(plugin);
+    await store.load();
+
+    const result = store.rekey("old-id", "new-id");
+
+    expect(result).toBe(true);
+    expect(store.isPinned("new-id")).toBe(true);
+    expect(store.isPinned("old-id")).toBe(false);
+    // new-id should appear exactly once, in old-id's original position
+    expect(store.getPinnedIds()).toEqual(["new-id", "id-3"]);
+  });
+
   it("rekey returns false when the old ID is not pinned", async () => {
     const plugin = createMockPlugin({ pinnedItems: ["id-1"] });
     const store = new PinStore(plugin);
