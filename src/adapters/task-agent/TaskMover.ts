@@ -72,7 +72,16 @@ export class TaskMover implements WorkItemMover {
 
       // Apply the state transition (file move or other mechanism)
       if (this.stateResolver) {
-        await this.stateResolver.applyState(this.app, file, newColumn, oldState, this.basePath);
+        const stateApplied = await this.stateResolver.applyState(
+          this.app,
+          file,
+          newColumn,
+          oldState,
+          this.basePath,
+        );
+        if (!stateApplied) {
+          return false;
+        }
       } else {
         // Legacy fallback: direct folder move using STATE_FOLDER_MAP
         const targetFolder = STATE_FOLDER_MAP[newColumn];

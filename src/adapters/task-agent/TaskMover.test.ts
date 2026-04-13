@@ -189,6 +189,38 @@ created: 2026-03-26T00:00:00Z
     expect(callOrder).toEqual(["modify", "rename"]);
   });
 
+  describe("with stateResolver", () => {
+    it("returns false when stateResolver.applyState fails", async () => {
+      const failingResolver = {
+        applyState: vi.fn().mockResolvedValue(false),
+        resolveState: vi.fn().mockReturnValue("todo"),
+        getFolderForState: vi.fn().mockReturnValue("todo"),
+      };
+      const { app } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings, failingResolver as any);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      const result = await mover.move(file, "active");
+
+      expect(result).toBe(false);
+    });
+
+    it("returns true when stateResolver.applyState succeeds", async () => {
+      const successResolver = {
+        applyState: vi.fn().mockResolvedValue(true),
+        resolveState: vi.fn().mockReturnValue("todo"),
+        getFolderForState: vi.fn().mockReturnValue("active"),
+      };
+      const { app } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings, successResolver as any);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      const result = await mover.move(file, "active");
+
+      expect(result).toBe(true);
+    });
+  });
+
   it("maps done column to archive folder", async () => {
     const { app, rename, getAbstractFileByPath } = createMockApp();
     getAbstractFileByPath.mockReturnValue(null);
