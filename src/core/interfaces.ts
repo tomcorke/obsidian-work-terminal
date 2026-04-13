@@ -58,6 +58,31 @@ export interface SettingField {
   choices?: Record<string, string> | "profiles";
 }
 
+/** Visual treatment style for a card flag. */
+export type CardFlagStyle = "badge" | "accent-border" | "background-tint";
+
+/**
+ * Describes a single flag rule that maps a frontmatter field to a visual
+ * treatment on a work item card. Adapters supply default rules via
+ * `PluginConfig.cardFlags`; end users may override via settings in future.
+ */
+export interface CardFlagRule {
+  /** Dot-path into WorkItem.metadata (e.g. "priority.has-blocker"). */
+  field: string;
+  /** Match when the resolved field equals this value. Mutually exclusive with `contains`. */
+  value?: unknown;
+  /** Match when the resolved field (string or array) contains this value. Mutually exclusive with `value`. */
+  contains?: string;
+  /** Label text rendered on the card (e.g. "BLOCKED", "URGENT"). */
+  label: string;
+  /** Visual treatment to apply. Defaults to "badge". */
+  style?: CardFlagStyle;
+  /** CSS colour value. For badge: background colour; for accent-border: border colour; for background-tint: background colour. */
+  color?: string;
+  /** Optional tooltip text. Supports a dot-path placeholder like `{{priority.blocker-context}}` resolved from metadata. */
+  tooltip?: string;
+}
+
 /**
  * Adapter-provided plugin configuration. Defines the kanban columns,
  * creation options, settings schema, and display name for items.
@@ -75,6 +100,8 @@ export interface PluginConfig {
   itemName: string;
   /** Column/state IDs considered terminal (completed/archived). Items in these states are excluded from "Move to Item" menus and similar UI elements. */
   terminalStates?: string[];
+  /** Flag rules that map frontmatter fields to visual treatments on cards. Evaluated in order; all matching rules are applied. */
+  cardFlags?: CardFlagRule[];
 }
 
 /**
