@@ -233,8 +233,11 @@ function makePlugin(initialSettings: Record<string, unknown>): MockPlugin {
 
 const adapter = {
   config: {
+    columns: [],
+    creationColumns: [],
     settingsSchema: [],
     defaultSettings: {},
+    itemName: "task",
   },
 } as any;
 

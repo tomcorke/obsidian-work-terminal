@@ -169,6 +169,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       }
     }
 
+    // Column management section (shown when the adapter has columns)
+    if (this.adapter.config.columns.length > 0) {
+      containerEl.createEl("h2", { text: "Column Order & Creation" });
+      this.renderColumnOrderControls(containerEl);
+      this.renderCreationColumnControls(containerEl);
+    }
+
     // Card flag rules section (shown when the adapter provides cardFlags)
     if (this.adapter.config.cardFlags !== undefined) {
       containerEl.createEl("h2", { text: "Card Indicators" });
@@ -351,6 +358,199 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
             ).open();
           }),
       );
+  }
+
+  /**
+   * Render column display order controls: a list of columns with up/down
+   * buttons and a reset-to-default action.
+   */
+  private async renderColumnOrderControls(containerEl: HTMLElement): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const orderJson = (settings["adapter.columnOrder"] as string) || "";
+
+    // Resolve effective column order (current config reflects it)
+    const columns = this.adapter.config.columns;
+
+    const desc = new Setting(containerEl)
+      .setName("Column display order")
+      .setDesc(
+        "Drag or use arrow buttons to reorder kanban board columns. Changes take effect immediately.",
+      );
+
+    // Reset button
+    desc.addButton((btn) =>
+      btn.setButtonText("Reset to default").onClick(async () => {
+        await this.saveSettings((settings) => {
+          settings["adapter.columnOrder"] = "";
+        });
+        this.display();
+      }),
+    );
+
+    const listEl = containerEl.createDiv({ cls: "wt-column-order-list" });
+
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i];
+      const rowEl = listEl.createDiv({ cls: "wt-column-order-row" });
+
+      // Column label
+      rowEl.createSpan({ text: col.label, cls: "wt-column-order-label" });
+
+      // Up button
+      const upBtn = rowEl.createEl("button", {
+        text: "\u2191",
+        cls: "wt-column-order-btn",
+        attr: { "aria-label": `Move ${col.label} up` },
+      });
+      if (i === 0) upBtn.setAttribute("disabled", "true");
+      upBtn.addEventListener("click", async () => {
+        if (i === 0) return;
+        const ids = columns.map((c) => c.id);
+        [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
+        await this.saveSettings((settings) => {
+          settings["adapter.columnOrder"] = JSON.stringify(ids);
+        });
+        this.display();
+      });
+
+      // Down button
+      const downBtn = rowEl.createEl("button", {
+        text: "\u2193",
+        cls: "wt-column-order-btn",
+        attr: { "aria-label": `Move ${col.label} down` },
+      });
+      if (i === columns.length - 1) downBtn.setAttribute("disabled", "true");
+      downBtn.addEventListener("click", async () => {
+        if (i === columns.length - 1) return;
+        const ids = columns.map((c) => c.id);
+        [ids[i], ids[i + 1]] = [ids[i + 1], ids[i]];
+        await this.saveSettings((settings) => {
+          settings["adapter.columnOrder"] = JSON.stringify(ids);
+        });
+        this.display();
+      });
+    }
+  }
+
+  /**
+   * Render creation column selection: checkboxes for each column, with
+   * the ability to toggle which columns appear in the new item prompt
+   * and reorder them.
+   */
+  private async renderCreationColumnControls(containerEl: HTMLElement): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+
+    // All available columns from the adapter
+    const allColumns = this.adapter.config.columns;
+    // Current creation columns
+    const creationColumns = this.adapter.config.creationColumns;
+    const creationIds = new Set(creationColumns.map((c) => c.id));
+    const defaultId = creationColumns.find((c) => c.default)?.id || creationColumns[0]?.id;
+
+    const desc = new Setting(containerEl)
+      .setName("New item column selector")
+      .setDesc(
+        `Choose which columns appear in the "${this.adapter.config.itemName}" creation prompt. The first checked column is the default. Uncheck to hide a column from the creation dropdown.`,
+      );
+
+    desc.addButton((btn) =>
+      btn.setButtonText("Reset to default").onClick(async () => {
+        await this.saveSettings((settings) => {
+          settings["adapter.creationColumnIds"] = "";
+        });
+        this.display();
+      }),
+    );
+
+    const listEl = containerEl.createDiv({ cls: "wt-creation-column-list" });
+
+    // Show creation columns first (in order), then unchecked columns
+    const orderedColumns = [
+      ...creationColumns.map((cc) => allColumns.find((ac) => ac.id === cc.id)!).filter(Boolean),
+      ...allColumns.filter((ac) => !creationIds.has(ac.id)),
+    ];
+
+    for (let i = 0; i < orderedColumns.length; i++) {
+      const col = orderedColumns[i];
+      const isChecked = creationIds.has(col.id);
+      const isDefault = col.id === defaultId;
+
+      const rowEl = listEl.createDiv({ cls: "wt-creation-column-row" });
+
+      // Checkbox
+      const checkbox = rowEl.createEl("input", {
+        attr: {
+          type: "checkbox",
+          ...(isChecked ? { checked: "" } : {}),
+        },
+      });
+      checkbox.checked = isChecked;
+
+      // Label with default indicator
+      const labelText = isDefault ? `${col.label} (default)` : col.label;
+      rowEl.createSpan({ text: labelText, cls: "wt-creation-column-label" });
+
+      // Up button (only for checked items)
+      if (isChecked) {
+        const creationIdx = creationColumns.findIndex((c) => c.id === col.id);
+        const upBtn = rowEl.createEl("button", {
+          text: "\u2191",
+          cls: "wt-column-order-btn",
+          attr: { "aria-label": `Move ${col.label} up` },
+        });
+        if (creationIdx === 0) upBtn.setAttribute("disabled", "true");
+        upBtn.addEventListener("click", async () => {
+          if (creationIdx === 0) return;
+          const ids = creationColumns.map((c) => c.id);
+          [ids[creationIdx - 1], ids[creationIdx]] = [ids[creationIdx], ids[creationIdx - 1]];
+          await this.saveSettings((settings) => {
+            settings["adapter.creationColumnIds"] = JSON.stringify(ids);
+          });
+          this.display();
+        });
+
+        const downBtn = rowEl.createEl("button", {
+          text: "\u2193",
+          cls: "wt-column-order-btn",
+          attr: { "aria-label": `Move ${col.label} down` },
+        });
+        if (creationIdx === creationColumns.length - 1) downBtn.setAttribute("disabled", "true");
+        downBtn.addEventListener("click", async () => {
+          if (creationIdx === creationColumns.length - 1) return;
+          const ids = creationColumns.map((c) => c.id);
+          [ids[creationIdx], ids[creationIdx + 1]] = [ids[creationIdx + 1], ids[creationIdx]];
+          await this.saveSettings((settings) => {
+            settings["adapter.creationColumnIds"] = JSON.stringify(ids);
+          });
+          this.display();
+        });
+      }
+
+      // Toggle checkbox handler
+      checkbox.addEventListener("change", async () => {
+        const currentIds = creationColumns.map((c) => c.id);
+        if (checkbox.checked) {
+          // Add this column at the end
+          currentIds.push(col.id);
+        } else {
+          // Remove this column (must keep at least one)
+          const idx = currentIds.indexOf(col.id);
+          if (idx >= 0 && currentIds.length > 1) {
+            currentIds.splice(idx, 1);
+          } else if (currentIds.length <= 1) {
+            checkbox.checked = true; // Prevent unchecking the last one
+            new Notice("At least one creation column must remain selected");
+            return;
+          }
+        }
+        await this.saveSettings((settings) => {
+          settings["adapter.creationColumnIds"] = JSON.stringify(currentIds);
+        });
+        this.display();
+      });
+    }
   }
 
   private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {
