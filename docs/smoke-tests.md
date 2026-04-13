@@ -84,7 +84,7 @@ Options:
 pnpm run test:smoke -- --no-hide --timeout 30000
 ```
 
-The runner creates its own vault at `.claude/testing/smoke-tests/` and cleans up the Obsidian process even on test failure or SIGINT.
+The runner creates and manages its own vault at `.claude/testing/smoke-tests/`. This path is reserved exclusively for smoke tests: if it already exists, the runner will remove and recreate it on each run, so do not store anything there that you want to keep. The runner also cleans up the Obsidian process even on test failure or SIGINT.
 
 For manual step-by-step testing or debugging individual issues, you can still use the isolated instance tooling directly:
 

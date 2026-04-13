@@ -10,7 +10,6 @@
  *
  * Part of #343
  */
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const path = require("node:path");
@@ -51,7 +50,12 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--no-hide") hide = false;
     if (argv[i] === "--timeout" && argv[i + 1]) {
-      timeoutMs = Number.parseInt(argv[i + 1], 10);
+      const parsed = Number.parseInt(argv[i + 1], 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        timeoutMs = parsed;
+      } else {
+        console.warn(`Warning: invalid --timeout value "${argv[i + 1]}", using default ${DEFAULT_TIMEOUT_MS}ms`);
+      }
       i += 1;
     }
   }
@@ -293,8 +297,14 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
               return Array.from(rows).map(r => r.textContent || '').join('\\n');
             })()
           `);
-          // The pwd output should contain /Users/ or /home/ (expanded path)
-          if (!content.includes("/Users/") && !content.includes("/home/") && !content.includes("/root")) {
+          // The pwd output should be an absolute path without a literal "~".
+          // Use os.homedir() for platform-aware validation.
+          const os = require("node:os");
+          const home = os.homedir();
+          const hasAbsolutePath = content.includes(home) ||
+            content.split("\n").some(line => /^\//.test(line.trim()) || /^[A-Z]:\\/.test(line.trim()));
+          const hasLiteralTilde = content.split("\n").some(line => /^\s*~\s*$/.test(line.trim()));
+          if (!hasAbsolutePath || hasLiteralTilde) {
             throw new Error("pwd output does not show expanded home directory path");
           }
         } finally {
@@ -359,22 +369,26 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
       id: "TL-21",
       description: "Filter input",
       run: async () => {
-        // Get card count before filtering
+        // Get visible card count before filtering (visibility-aware)
         const beforeCount = await cdpEval(host, port, `
-          document.querySelectorAll('.wt-task-card').length
+          (() => {
+            const cards = document.querySelectorAll('.wt-task-card');
+            return Array.from(cards).filter(el => getComputedStyle(el).display !== 'none').length;
+          })()
         `, timeoutMs);
 
         // Type a filter term that should match only one seeded task
         await cdpType(host, port, ".wt-filter-input", "Priority smoke", timeoutMs);
         await sleep(500);
 
-        // Check that visible cards are filtered
+        // Check that visible cards are filtered (visibility-aware)
         const afterInfo = await cdpEval(host, port, `
           (() => {
             const input = document.querySelector('.wt-filter-input');
             const visibleSections = Array.from(document.querySelectorAll('.wt-section'))
-              .filter(s => s.style.display !== 'none');
-            const visibleCards = document.querySelectorAll('.wt-task-card');
+              .filter(s => getComputedStyle(s).display !== 'none');
+            const cards = document.querySelectorAll('.wt-task-card');
+            const visibleCards = Array.from(cards).filter(el => getComputedStyle(el).display !== 'none');
             return {
               filterValue: input ? input.value : null,
               visibleSectionCount: visibleSections.length,
@@ -385,6 +399,13 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
 
         if (!afterInfo.filterValue || !afterInfo.filterValue.includes("Priority")) {
           throw new Error("Filter input value not set correctly");
+        }
+
+        // Assert filtering actually reduced visible card count
+        if (beforeCount > 0 && afterInfo.visibleCardCount >= beforeCount) {
+          throw new Error(
+            `Filter did not reduce visible cards: before=${beforeCount}, after=${afterInfo.visibleCardCount}`,
+          );
         }
 
         // Clear the filter for subsequent tests
