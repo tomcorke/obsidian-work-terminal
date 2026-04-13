@@ -159,6 +159,10 @@ export class TaskCard implements CardRenderer {
         if (tooltip) el.title = tooltip;
         break;
       }
+      default: {
+        const _exhaustive: never = flag.style;
+        break;
+      }
     }
   }
 

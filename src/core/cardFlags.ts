@@ -4,6 +4,9 @@
  */
 import type { CardFlagRule, CardFlagStyle } from "./interfaces";
 
+/** Track rules that have already emitted a config warning to avoid spamming on every render. */
+const warnedRules = new Set<string>();
+
 /** A matched flag ready for rendering on a card. */
 export interface MatchedCardFlag {
   label: string;
@@ -52,10 +55,14 @@ export function matchCardFlags(
 
   for (const rule of rules) {
     if (rule.value !== undefined && rule.contains !== undefined) {
-      console.warn(
-        `[work-terminal] Card flag rule "${rule.label}" has both "value" and "contains" set. ` +
-          `Only "contains" will be used. Remove one to silence this warning.`,
-      );
+      const ruleKey = rule.label ?? rule.field;
+      if (!warnedRules.has(ruleKey)) {
+        warnedRules.add(ruleKey);
+        console.warn(
+          `[work-terminal] Card flag rule "${rule.label}" has both "value" and "contains" set. ` +
+            `Only "contains" will be used. Remove one to silence this warning.`,
+        );
+      }
     }
 
     const fieldValue = resolveDotPath(metadata, rule.field);
