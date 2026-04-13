@@ -14,6 +14,14 @@ export const DEFAULT_CARD_FLAGS: CardFlagRule[] = [
     color: "#e5484d",
     tooltip: "{{priority.blocker-context}}",
   },
+  {
+    field: "stateWarning",
+    label: "UNKNOWN STATE",
+    style: "badge",
+    color: "#e5a100",
+    tooltip:
+      'Frontmatter state "{{stateWarning}}" is not a recognized column. Task is shown in its folder-based column instead.',
+  },
 ];
 
 export const TASK_AGENT_CONFIG: PluginConfig = {

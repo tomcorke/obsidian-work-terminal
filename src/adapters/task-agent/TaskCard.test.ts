@@ -396,6 +396,40 @@ describe("TaskCard", () => {
     });
   });
 
+  describe("unknown state warning badge (via card flags)", () => {
+    it("renders UNKNOWN STATE badge when stateWarning is set", () => {
+      const item = makeItem({
+        metadata: {
+          stateWarning: "amazing",
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard(DEFAULT_CARD_FLAGS);
+
+      const el = card.render(item, ctx);
+      const badges = el.querySelectorAll(".wt-card-flag--badge") as NodeListOf<HTMLElement>;
+      const warningBadge = Array.from(badges).find((b) => b.textContent === "UNKNOWN STATE");
+
+      expect(warningBadge).toBeDefined();
+      // jsdom normalizes hex to rgb - #e5a100 = rgb(229, 161, 0)
+      expect(warningBadge!.style.background).toBe("rgb(229, 161, 0)");
+      expect(warningBadge!.title).toContain("amazing");
+      expect(warningBadge!.title).toContain("not a recognized column");
+    });
+
+    it("does not render UNKNOWN STATE badge when stateWarning is absent", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard(DEFAULT_CARD_FLAGS);
+
+      const el = card.render(item, ctx);
+      const badges = el.querySelectorAll(".wt-card-flag--badge") as NodeListOf<HTMLElement>;
+      const warningBadge = Array.from(badges).find((b) => b.textContent === "UNKNOWN STATE");
+
+      expect(warningBadge).toBeUndefined();
+    });
+  });
+
   describe("card flag visual treatments", () => {
     it("renders accent-border style with left border class and CSS variable", () => {
       const rules: CardFlagRule[] = [

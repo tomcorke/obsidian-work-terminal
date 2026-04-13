@@ -30,6 +30,8 @@ export interface TaskFile {
   goal: string[];
   color?: string;
   backgroundIngestion?: "failed" | "retrying";
+  /** Set when frontmatter contains a state value that doesn't match any known column. Holds the unrecognized value for display in the warning badge. */
+  stateWarning?: string;
   created: string;
   updated: string;
 }

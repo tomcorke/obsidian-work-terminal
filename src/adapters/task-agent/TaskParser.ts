@@ -63,6 +63,11 @@ export class TaskParser implements WorkItemParser {
     const backgroundIngestion =
       bgIngestion === "failed" || bgIngestion === "retrying" ? bgIngestion : undefined;
 
+    // Detect frontmatter state mismatch: if frontmatter has a state value
+    // that differs from the resolved state, the user wrote an unrecognized
+    // value and the resolver fell back to folder-based state.
+    const stateWarning = this.detectStateWarning(fm.state, state);
+
     return {
       id: this.resolveTaskId(fm.id, file.path, transientId),
       path: file.path,
@@ -76,6 +81,7 @@ export class TaskParser implements WorkItemParser {
       goal,
       color: fm.color || undefined,
       backgroundIngestion,
+      stateWarning,
       created: fm.created || "",
       updated: fm.updated || "",
     };
@@ -105,6 +111,35 @@ export class TaskParser implements WorkItemParser {
     }
 
     return fallbackState;
+  }
+
+  /**
+   * Detect when frontmatter contains a state value that doesn't match the
+   * resolved state. This indicates the user wrote an unrecognized value and
+   * the resolver silently fell back (e.g. to folder-based state). Returns
+   * the unrecognized frontmatter value for display, or undefined if no
+   * mismatch was detected.
+   */
+  private detectStateWarning(
+    frontmatterState: unknown,
+    resolvedState: TaskState,
+  ): string | undefined {
+    if (typeof frontmatterState !== "string" || !frontmatterState.trim()) {
+      return undefined;
+    }
+    const fmState = frontmatterState.trim();
+    // If the frontmatter state matches the resolved state, no warning needed
+    if (fmState === resolvedState) {
+      return undefined;
+    }
+    // If the frontmatter state is a known valid state, no warning - the
+    // normaliseState logic handled the mapping (e.g. frontmatter says "done"
+    // but file is in priority folder - this is the expected composite behavior)
+    if (VALID_STATES.includes(fmState as TaskState)) {
+      return undefined;
+    }
+    // Frontmatter has an unrecognized state value that was silently overridden
+    return fmState;
   }
 
   private normaliseTags(rawTags: unknown): string[] {
@@ -356,6 +391,7 @@ export class TaskParser implements WorkItemParser {
         goal: task.goal,
         color: task.color,
         backgroundIngestion: task.backgroundIngestion,
+        stateWarning: task.stateWarning,
         created: task.created,
         updated: task.updated,
       },

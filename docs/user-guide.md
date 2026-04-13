@@ -102,7 +102,7 @@ Cards contain:
   - Yellow for medium scores (30-59)
   - Grey for low scores (below 30)
 - **Goal tags** - up to two goal labels shown as subtle tags
-- **Card flags** - configurable indicators like the red `BLOCKED` badge (see [Card indicator rules](#card-indicator-rules))
+- **Card flags** - configurable indicators like the red `BLOCKED` badge or the amber `UNKNOWN STATE` badge (see [Card indicator rules](#card-indicator-rules) and [State resolution strategies](#state-resolution-strategies))
 - **Session indicator** - a small badge showing active terminal sessions for this task
 - **Ingestion indicator** - shows "ingesting..." while background enrichment is running
 
@@ -273,6 +273,8 @@ The adapter determines task state (which column a task appears in) using one of 
 | **Composite** | Checks frontmatter first, falls back to folder. On state transitions, both frontmatter and folder are updated. |
 
 For most users, the default folder strategy works well. Use frontmatter or composite if you need tasks to retain their state independently of folder structure.
+
+**Unknown state warning**: When using frontmatter or composite mode, if the `state` field in a task's frontmatter contains a value that doesn't match any known column (e.g. `state: amazing`), the task falls back to its folder-based column and displays an amber **UNKNOWN STATE** badge on the card. Hover over the badge to see which unrecognized value was found. To fix the warning, edit the frontmatter to use a valid state value (`priority`, `todo`, `active`, `done`, or `abandoned`).
 
 ### Background enrichment
 

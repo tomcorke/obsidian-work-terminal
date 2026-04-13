@@ -167,6 +167,111 @@ describe("TaskParser with StateResolver", () => {
     });
   });
 
+  describe("state warning for unknown frontmatter values", () => {
+    const validStates = ["priority", "todo", "active", "done", "abandoned"];
+    const basePath = "2 - Areas/Tasks";
+    const compositeResolver = new CompositeStateResolver([
+      new FrontmatterStateResolver("state", validStates),
+      new FolderStateResolver(STATE_FOLDER_MAP, basePath),
+    ]);
+
+    it("sets stateWarning when frontmatter has an unrecognized state value", () => {
+      const file = makeFile("2 - Areas/Tasks/priority/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "amazing" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, compositeResolver);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      // Task falls back to folder-based state
+      expect(item!.state).toBe("priority");
+      // But stateWarning is set in metadata
+      expect((item!.metadata as any).stateWarning).toBe("amazing");
+    });
+
+    it("does not set stateWarning when frontmatter has a valid state", () => {
+      const file = makeFile("2 - Areas/Tasks/todo/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "active" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, compositeResolver);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+      expect((item!.metadata as any).stateWarning).toBeUndefined();
+    });
+
+    it("does not set stateWarning when frontmatter state field is missing", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: undefined }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, compositeResolver);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+      expect((item!.metadata as any).stateWarning).toBeUndefined();
+    });
+
+    it("does not set stateWarning when frontmatter state is empty string", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, compositeResolver);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+      expect((item!.metadata as any).stateWarning).toBeUndefined();
+    });
+
+    it("does not set stateWarning when frontmatter state matches resolved state", () => {
+      const file = makeFile("2 - Areas/Tasks/priority/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "priority" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, compositeResolver);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("priority");
+      expect((item!.metadata as any).stateWarning).toBeUndefined();
+    });
+
+    it("sets stateWarning with whitespace-trimmed unknown value", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "  amazing  " }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, compositeResolver);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+      expect((item!.metadata as any).stateWarning).toBe("amazing");
+    });
+
+    it("does not set stateWarning without a resolver (backward compatibility)", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "amazing" }),
+      });
+      // No resolver - legacy mode
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+      // No warning in legacy mode - frontmatter state is simply ignored
+      // via normaliseState which falls back to folder state
+      expect((item!.metadata as any).stateWarning).toBe("amazing");
+    });
+  });
+
   describe("without resolver (backward compatibility)", () => {
     it("still resolves state from folder path", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
