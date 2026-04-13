@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { expandTilde, normalizeObsidianDisplayText, stripAnsi, slugify } from "./utils";
+import {
+  expandTilde,
+  normalizeObsidianDisplayText,
+  stripAnsi,
+  slugify,
+  titleCase,
+  yamlQuoteValue,
+} from "./utils";
 
 describe("expandTilde", () => {
   const originalHome = process.env.HOME;
@@ -103,6 +110,91 @@ describe("slugify", () => {
 
   it("collapses consecutive special characters", () => {
     expect(slugify("hello!!!...world")).toBe("hello-world");
+  });
+});
+
+describe("titleCase", () => {
+  it("capitalizes a single word", () => {
+    expect(titleCase("review")).toBe("Review");
+  });
+
+  it("splits and capitalizes hyphenated words", () => {
+    expect(titleCase("blocked-upstream")).toBe("Blocked Upstream");
+  });
+
+  it("splits and capitalizes underscored words", () => {
+    expect(titleCase("my_custom_state")).toBe("My Custom State");
+  });
+
+  it("handles mixed separators", () => {
+    expect(titleCase("in-progress_now")).toBe("In Progress Now");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(titleCase("")).toBe("");
+  });
+
+  it("handles single character", () => {
+    expect(titleCase("x")).toBe("X");
+  });
+
+  it("preserves already capitalized words", () => {
+    expect(titleCase("API-ready")).toBe("API Ready");
+  });
+});
+
+describe("yamlQuoteValue", () => {
+  it("does not quote simple values", () => {
+    expect(yamlQuoteValue("active")).toBe("active");
+    expect(yamlQuoteValue("review")).toBe("review");
+    expect(yamlQuoteValue("blocked-upstream")).toBe("blocked-upstream");
+  });
+
+  it("quotes YAML boolean literals", () => {
+    expect(yamlQuoteValue("yes")).toBe('"yes"');
+    expect(yamlQuoteValue("true")).toBe('"true"');
+    expect(yamlQuoteValue("on")).toBe('"on"');
+    expect(yamlQuoteValue("no")).toBe('"no"');
+    expect(yamlQuoteValue("false")).toBe('"false"');
+    expect(yamlQuoteValue("off")).toBe('"off"');
+  });
+
+  it("quotes case-insensitive booleans", () => {
+    expect(yamlQuoteValue("Yes")).toBe('"Yes"');
+    expect(yamlQuoteValue("TRUE")).toBe('"TRUE"');
+    expect(yamlQuoteValue("On")).toBe('"On"');
+  });
+
+  it("quotes values with hash character", () => {
+    expect(yamlQuoteValue("state#1")).toBe('"state#1"');
+  });
+
+  it("quotes values with colon", () => {
+    expect(yamlQuoteValue("key: value")).toBe('"key: value"');
+  });
+
+  it("quotes values with leading whitespace", () => {
+    expect(yamlQuoteValue(" leading")).toBe('" leading"');
+  });
+
+  it("quotes values with trailing whitespace", () => {
+    expect(yamlQuoteValue("trailing ")).toBe('"trailing "');
+  });
+
+  it("escapes embedded double quotes", () => {
+    expect(yamlQuoteValue('say "hi"')).toBe('"say \\"hi\\""');
+  });
+
+  it("escapes embedded newlines", () => {
+    expect(yamlQuoteValue("line1\nline2")).toBe('"line1\\nline2"');
+  });
+
+  it("quotes null keyword", () => {
+    expect(yamlQuoteValue("null")).toBe('"null"');
+  });
+
+  it("quotes empty string", () => {
+    expect(yamlQuoteValue("")).toBe('""');
   });
 });
 

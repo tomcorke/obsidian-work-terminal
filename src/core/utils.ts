@@ -45,6 +45,43 @@ declare global {
 }
 
 /**
+ * Title-case a kebab-case or snake_case identifier.
+ * Splits on `-` and `_`, capitalizes each word, joins with spaces.
+ * e.g. "blocked-upstream" -> "Blocked Upstream", "my_custom_state" -> "My Custom State"
+ */
+export function titleCase(text: string): string {
+  if (!text) return "";
+  return text
+    .split(/[-_]/)
+    .map((word) => (word.length > 0 ? word.charAt(0).toUpperCase() + word.slice(1) : ""))
+    .join(" ");
+}
+
+/**
+ * Quote a value for safe embedding in YAML frontmatter.
+ * Wraps in double quotes when the value contains characters that would
+ * break YAML parsing: `#`, `: `, leading/trailing whitespace, or
+ * values that match YAML boolean literals (yes/no/on/off/true/false).
+ * Always escapes embedded backslashes, double quotes, and newlines.
+ */
+export function yamlQuoteValue(value: string): string {
+  const needsQuoting =
+    /[#:{}[\]|>&*!,'"%@`\n\r\\]/.test(value) ||
+    /^\s|\s$/.test(value) ||
+    /^(true|false|yes|no|on|off|null|~)$/i.test(value) ||
+    value.length === 0;
+
+  if (!needsQuoting) return value;
+
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
+  return `"${escaped}"`;
+}
+
+/**
  * Convert text to a URL/filename-safe kebab-case slug.
  * Max 40 characters, no leading/trailing hyphens.
  */

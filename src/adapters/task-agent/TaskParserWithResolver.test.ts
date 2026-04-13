@@ -147,10 +147,10 @@ describe("TaskParser with StateResolver", () => {
     });
   });
 
-  describe("resolver returns unrecognized state", () => {
-    it("falls back to folder path instead of dropping the task", () => {
-      // A resolver that always returns an unrecognized state
-      const badResolver = {
+  describe("resolver returns dynamic/custom state", () => {
+    it("accepts custom state from resolver (open state set)", () => {
+      // A resolver that returns a custom state not in the predefined list
+      const customResolver = {
         resolveState: () => "custom-unknown-state",
         applyState: async () => false,
       };
@@ -158,12 +158,37 @@ describe("TaskParser with StateResolver", () => {
       const app = mockApp([file], {
         [file.path]: makeFrontmatter({ state: "custom-unknown-state" }),
       });
-      const parser = new TaskParser(app, "", defaultSettings, badResolver as any);
+      const parser = new TaskParser(app, "", defaultSettings, customResolver as any);
       const item = parser.parse(file as unknown as TFile);
 
-      // Should fall back to folder-based resolution, not return null
+      // Custom states are now accepted - they create dynamic columns
       expect(item).not.toBeNull();
-      expect(item!.state).toBe("active");
+      expect(item!.state).toBe("custom-unknown-state");
+    });
+
+    it("groups custom state items into dynamic columns", () => {
+      const customResolver = {
+        resolveState: (_path: string, fm: Record<string, unknown> | undefined) => {
+          return (fm as any)?.state ?? null;
+        },
+        applyState: async () => true,
+      };
+      const file1 = makeFile("2 - Areas/Tasks/active/task1.md");
+      const file2 = makeFile("2 - Areas/Tasks/active/task2.md");
+      const app = mockApp([file1, file2], {
+        [file1.path]: makeFrontmatter({ state: "amazing" }),
+        [file2.path]: makeFrontmatter({ state: "active" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, customResolver as any);
+      const item1 = parser.parse(file1 as unknown as TFile);
+      const item2 = parser.parse(file2 as unknown as TFile);
+
+      expect(item1!.state).toBe("amazing");
+      expect(item2!.state).toBe("active");
+
+      const groups = parser.groupByColumn([item1!, item2!]);
+      expect(groups["amazing"]).toHaveLength(1);
+      expect(groups["active"]).toHaveLength(1);
     });
   });
 

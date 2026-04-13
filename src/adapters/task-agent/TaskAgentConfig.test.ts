@@ -3,6 +3,7 @@ import {
   parseColumnOrderJson,
   resolveColumns,
   resolveCreationColumns,
+  makeDynamicColumn,
   DEFAULT_COLUMNS,
   DEFAULT_CREATION_COLUMNS,
   TASK_AGENT_CONFIG,
@@ -66,9 +67,13 @@ describe("TaskAgentConfig column helpers", () => {
       expect(result.map((c) => c.id)).toEqual(["todo", "active", "priority", "done"]);
     });
 
-    it("ignores unknown column IDs", () => {
-      const result = resolveColumns('["todo", "unknown", "active"]');
-      expect(result.map((c) => c.id)).toEqual(["todo", "active", "priority", "done"]);
+    it("preserves unknown column IDs as dynamic columns", () => {
+      const result = resolveColumns('["todo", "amazing", "active"]');
+      expect(result.map((c) => c.id)).toEqual(["todo", "amazing", "active", "priority", "done"]);
+      // Dynamic column has titlecased label and no folderName
+      const dynamicCol = result.find((c) => c.id === "amazing");
+      expect(dynamicCol?.label).toBe("Amazing");
+      expect(dynamicCol?.folderName).toBeUndefined();
     });
 
     it("deduplicates repeated IDs", () => {
@@ -101,13 +106,20 @@ describe("TaskAgentConfig column helpers", () => {
       expect(result[1].default).toBeUndefined();
     });
 
-    it("ignores unknown column IDs", () => {
-      const result = resolveCreationColumns('["unknown", "todo"]');
-      expect(result).toEqual([{ id: "todo", label: "To Do", default: true }]);
+    it("accepts unknown column IDs as dynamic creation columns", () => {
+      const result = resolveCreationColumns('["amazing", "todo"]');
+      expect(result).toEqual([
+        { id: "amazing", label: "Amazing", default: true },
+        { id: "todo", label: "To Do" },
+      ]);
     });
 
-    it("falls back to default when all IDs are invalid", () => {
-      expect(resolveCreationColumns('["x", "y"]')).toEqual(DEFAULT_CREATION_COLUMNS);
+    it("uses dynamic columns when all IDs are custom", () => {
+      const result = resolveCreationColumns('["x", "y"]');
+      expect(result).toEqual([
+        { id: "x", label: "X", default: true },
+        { id: "y", label: "Y" },
+      ]);
     });
 
     it("falls back to default for invalid JSON", () => {
@@ -125,6 +137,56 @@ describe("TaskAgentConfig column helpers", () => {
         { id: "todo", label: "To Do", default: true },
         { id: "active", label: "Active" },
       ]);
+    });
+  });
+
+  describe("makeDynamicColumn", () => {
+    it("creates a column with title-cased label", () => {
+      const col = makeDynamicColumn("review");
+      expect(col).toEqual({ id: "review", label: "Review" });
+    });
+
+    it("has no folderName", () => {
+      const col = makeDynamicColumn("testing");
+      expect(col.folderName).toBeUndefined();
+    });
+
+    it("title-cases hyphenated IDs", () => {
+      const col = makeDynamicColumn("blocked-upstream");
+      expect(col.label).toBe("Blocked Upstream");
+    });
+
+    it("title-cases underscored IDs", () => {
+      const col = makeDynamicColumn("my_custom_state");
+      expect(col.label).toBe("My Custom State");
+    });
+
+    it("handles single character IDs", () => {
+      const col = makeDynamicColumn("x");
+      expect(col.label).toBe("X");
+    });
+  });
+
+  describe("resolveColumns with dynamic columns", () => {
+    it("interleaves dynamic and default columns based on order", () => {
+      const result = resolveColumns('["priority", "review", "active", "testing", "todo", "done"]');
+      expect(result.map((c) => c.id)).toEqual([
+        "priority",
+        "review",
+        "active",
+        "testing",
+        "todo",
+        "done",
+      ]);
+      // Default columns retain their metadata
+      expect(result.find((c) => c.id === "priority")?.folderName).toBe("priority");
+      // Dynamic columns have no folderName
+      expect(result.find((c) => c.id === "review")?.folderName).toBeUndefined();
+    });
+
+    it("appends default columns missing from order that includes dynamic columns", () => {
+      const result = resolveColumns('["review", "active"]');
+      expect(result.map((c) => c.id)).toEqual(["review", "active", "priority", "todo", "done"]);
     });
   });
 

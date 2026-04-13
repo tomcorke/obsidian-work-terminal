@@ -271,6 +271,9 @@ describe("MainView selection ID backfill", () => {
     (view as any).listPanel = listPanel;
     (view as any).parser = parser;
     (view as any).terminalPanel = terminalPanel;
+    (view as any).adapter = {
+      config: { columns: [{ id: "todo", label: "To Do" }] },
+    };
 
     (view as any).handleRename("2 - Areas/Tasks/todo/task-renamed.md", "stale-path");
     await (view as any).refreshList();

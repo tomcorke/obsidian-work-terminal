@@ -1,4 +1,4 @@
-import { slugify } from "../../core/utils";
+import { slugify, yamlQuoteValue } from "../../core/utils";
 import type { KanbanColumn } from "./types";
 
 export interface SplitSource {
@@ -49,13 +49,16 @@ export function generateTaskContent(
       `  cwd: ${yamlQuote(enrichment.cwd)}\n`
     : "";
 
+  const safeState = yamlQuoteValue(state);
+  const safeTagState = yamlQuoteValue(`task/${state}`);
+
   return `---
 id: ${id}
 tags:
   - task
-  - task/${state}
+  - ${safeTagState}
 
-state: ${state}
+state: ${safeState}
 
 title: ${safeTitle}
 

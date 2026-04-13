@@ -17,6 +17,7 @@ import type { PersistedSession } from "../core/session/types";
 import type { TerminalPanelView } from "./TerminalPanelView";
 import type { PinStore } from "../core/PinStore";
 import { DangerConfirm } from "./DangerConfirm";
+import { slugify, titleCase } from "../core/utils";
 
 /** Virtual column ID for the pinned section. Not a real adapter column. */
 const PINNED_COLUMN_ID = "__pinned__";
@@ -160,12 +161,30 @@ export class ListPanel {
       }
     }
 
-    // Render regular columns, excluding pinned items
+    // Render regular columns, excluding pinned items.
+    // Dynamic columns (no folderName) that were persisted via column ordering
+    // are skipped when they have zero items to avoid cluttering the board.
+    const configuredColumnIds = new Set(this.adapter.config.columns.map((c) => c.id));
     for (const col of this.adapter.config.columns) {
       const colItems = (groups[col.id] || []).filter((item) => !pinnedSet.has(item.id));
+      const isDynamic = !col.folderName;
+      if (isDynamic && colItems.length === 0) continue;
       const sortedItems = this.sortItems(colItems, col.id);
 
       this.renderSection(col.id, col.label, sortedItems, false);
+    }
+
+    // Render dynamic columns: states present in items but not in configured columns.
+    // These appear after the configured columns, sorted alphabetically.
+    const dynamicIds = Object.keys(groups)
+      .filter((id) => !configuredColumnIds.has(id))
+      .sort();
+    for (const id of dynamicIds) {
+      const colItems = (groups[id] || []).filter((item) => !pinnedSet.has(item.id));
+      if (colItems.length === 0) continue;
+      const sortedItems = this.sortItems(colItems, id);
+      const label = titleCase(id);
+      this.renderSection(id, label, sortedItems, false);
     }
 
     // Auto-resolve placeholders whose real cards have now rendered
@@ -201,7 +220,8 @@ export class ListPanel {
 
     // Section header
     const headerEl = sectionEl.createDiv({ cls: "wt-section-header" });
-    headerEl.addClass(`wt-section-header-${columnId}`);
+    const safeColumnSlug = slugify(columnId);
+    if (safeColumnSlug) headerEl.addClass(`wt-section-header-${safeColumnSlug}`);
 
     const collapseIcon = headerEl.createSpan({ cls: "wt-collapse-icon" });
     collapseIcon.textContent = this.collapsedSections.has(columnId) ? "\u25b6" : "\u25bc";
@@ -243,18 +263,18 @@ export class ListPanel {
       if (isPinnedSection) {
         cardEl.addClass("wt-card-pinned");
         const realColumn = this.adapter.config.columns.find((c) => c.id === item.state);
-        if (realColumn) {
-          const stateBadge = document.createElement("span");
-          stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${item.state}`);
-          stateBadge.textContent = realColumn.label;
-          stateBadge.title = `Real state: ${realColumn.label}`;
-          // Insert badge into the meta row if available, otherwise into the card
-          const metaRow = cardEl.querySelector(".wt-card-meta");
-          if (metaRow) {
-            metaRow.insertBefore(stateBadge, metaRow.firstChild);
-          } else {
-            cardEl.appendChild(stateBadge);
-          }
+        const stateLabel = realColumn?.label ?? titleCase(item.state);
+        const stateBadge = document.createElement("span");
+        const stateSlug = slugify(item.state);
+        stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${stateSlug}`);
+        stateBadge.textContent = stateLabel;
+        stateBadge.title = `Real state: ${stateLabel}`;
+        // Insert badge into the meta row if available, otherwise into the card
+        const metaRow = cardEl.querySelector(".wt-card-meta");
+        if (metaRow) {
+          metaRow.insertBefore(stateBadge, metaRow.firstChild);
+        } else {
+          cardEl.appendChild(stateBadge);
         }
       }
 

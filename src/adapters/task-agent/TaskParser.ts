@@ -52,7 +52,7 @@ export class TaskParser implements WorkItemParser {
       this.transientIdsByPath.delete(file.path);
     }
 
-    const state = this.normaliseState(fm.state, fallbackState);
+    const state: string | null = this.normaliseState(fm.state, fallbackState);
     if (!state) return null;
 
     const priority = this.resolvePriority(fm);
@@ -93,10 +93,11 @@ export class TaskParser implements WorkItemParser {
     return filePath;
   }
 
-  private normaliseState(
-    frontmatterState: unknown,
-    fallbackState: TaskState | null,
-  ): TaskState | null {
+  private normaliseState(frontmatterState: unknown, fallbackState: string | null): string | null {
+    // When a state resolver is configured, it has already resolved the state
+    // (possibly a dynamic/custom value). Use its result as the fallback.
+    // Direct frontmatter values are still accepted if they match known states
+    // (backward compat for folder-only mode without resolver).
     if (
       typeof frontmatterState === "string" &&
       VALID_STATES.includes(frontmatterState as TaskState)
@@ -266,18 +267,23 @@ export class TaskParser implements WorkItemParser {
   /**
    * Resolve state for a file using the configured StateResolver if available,
    * falling back to the legacy path-based resolution.
+   *
+   * When a resolver is present, any non-null string it returns is accepted -
+   * including dynamic/custom states not in the predefined VALID_STATES list.
+   * This enables the open state set feature where frontmatter can contain
+   * arbitrary state values that create dynamic kanban columns.
    */
   private resolveStateFromFile(
     path: string,
     frontmatter: Record<string, unknown> | undefined,
-  ): TaskState | null {
+  ): string | null {
     if (this.stateResolver) {
       const resolved = this.stateResolver.resolveState(path, frontmatter);
-      if (resolved !== null && VALID_STATES.includes(resolved as TaskState)) {
-        return resolved as TaskState;
+      if (resolved !== null) {
+        return resolved;
       }
-      // If resolver returned null or an unrecognized state, fall back to the
-      // legacy path-based resolution below.
+      // If resolver returned null, fall back to the legacy path-based
+      // resolution below.
     }
     return this.getStateFromPath(path);
   }
@@ -301,7 +307,7 @@ export class TaskParser implements WorkItemParser {
 
   private createFallbackTaskFile(
     file: TFile,
-    state: TaskState | null,
+    state: string | null,
     transientId?: string,
   ): TaskFile | null {
     if (!state) return null;
@@ -396,11 +402,17 @@ export class TaskParser implements WorkItemParser {
       const column = item.state === "done" ? "done" : item.state;
       if (KANBAN_COLUMNS.includes(column as KanbanColumn)) {
         groups[column].push(item);
+      } else {
+        // Dynamic/custom state - create a group for it
+        if (!groups[column]) {
+          groups[column] = [];
+        }
+        groups[column].push(item);
       }
     }
 
     // Sort each column: score desc, then updated desc
-    for (const col of KANBAN_COLUMNS) {
+    for (const col of Object.keys(groups)) {
       groups[col].sort((a, b) => {
         const aPriority = (a.metadata as any)?.priority || { score: 0 };
         const bPriority = (b.metadata as any)?.priority || { score: 0 };
