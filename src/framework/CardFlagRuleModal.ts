@@ -22,6 +22,16 @@ const STYLE_LABELS: Record<CardFlagStyle, string> = {
   "background-tint": "Background tint",
 };
 
+/** Operators that require a non-empty operand to be meaningful. */
+const OPERAND_REQUIRED_OPERATORS: Set<CardFlagOperator> = new Set([
+  "contains",
+  "regex",
+  "gt",
+  "lt",
+  "gte",
+  "lte",
+]);
+
 function createDefaultRule(): CardFlagRule {
   return {
     field: "",
@@ -179,6 +189,12 @@ export class CardFlagRuleModal extends Modal {
         } else {
           contentEl.querySelector<HTMLInputElement>('input[placeholder="HIGH"]')?.focus();
         }
+        return;
+      }
+      // Require non-empty operand for operators that need one
+      const op = this.draft.operator;
+      if (op && OPERAND_REQUIRED_OPERATORS.has(op) && !this.draft.operand?.trim()) {
+        contentEl.querySelector<HTMLInputElement>('input[placeholder="80"]')?.focus();
         return;
       }
       // Clean up empty optional fields
