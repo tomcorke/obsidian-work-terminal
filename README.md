@@ -63,6 +63,7 @@ For a complete, source-verified inventory of every process spawned, every file r
 
 ## Documentation
 
+- **[User Guide](docs/user-guide.md)** - comprehensive guide covering all features with screenshots
 - **[Process Spawning & Filesystem Disclosure](docs/process-spawning.md)** - full inventory of spawned processes, filesystem access, and security properties
 - **[Architecture](docs/architecture.md)** - three-layer design, extension model, key design decisions
 - **[Creating an Adapter](docs/creating-an-adapter.md)** - build your own work item system with code examples

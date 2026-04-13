@@ -101,6 +101,12 @@ When Obsidian is running with remote debugging enabled (check by hitting `http:/
 ### Testing
 Run `pnpm exec vitest run` after changes to verify nothing is broken. Build with `pnpm run build` to catch type/bundle errors.
 
+### UI requirement
+Every user-visible feature must have an appropriate settings UI or interaction surface. Features shipped without UI are incomplete - do not merge PRs that add backend/logic without a corresponding way for users to access or configure the feature.
+
+### Documentation requirement
+Updates to the user guide (`docs/user-guide.md`) are always part of implementing a feature. PRs that add user-visible features or change existing behaviour must include corresponding user guide updates. Treat missing documentation the same as missing tests - the feature is not done.
+
 ## Known constraints
 
 - **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround. Non-negotiable.
