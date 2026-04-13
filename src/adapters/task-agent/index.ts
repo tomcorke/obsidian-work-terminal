@@ -6,6 +6,7 @@ import {
   type WorkItemMover,
   type CardRenderer,
   type WorkItemPromptBuilder,
+  type CardFlagRule,
   type PluginConfig,
 } from "../../core/interfaces";
 import { TASK_AGENT_CONFIG } from "./TaskAgentConfig";
@@ -21,6 +22,7 @@ import {
   type EnrichmentProfileOverride,
 } from "./BackgroundEnrich";
 import type { KanbanColumn } from "./types";
+import { parseCustomCardFlags } from "./customCardFlags";
 
 export class TaskAgentAdapter extends BaseAdapter {
   config: PluginConfig = TASK_AGENT_CONFIG;
@@ -29,6 +31,7 @@ export class TaskAgentAdapter extends BaseAdapter {
   private _app: App | null = null;
   private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
+  private _cardRenderer: TaskCard | null = null;
 
   createParser(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemParser {
     const resolvedSettings = settings ?? {};
@@ -45,7 +48,28 @@ export class TaskAgentAdapter extends BaseAdapter {
   }
 
   createCardRenderer(): CardRenderer {
-    return new TaskCard(this.config.cardFlags);
+    const mergedRules = this.getMergedFlagRules();
+    this._cardRenderer = new TaskCard(mergedRules);
+    return this._cardRenderer;
+  }
+
+  /**
+   * Called by the framework when settings change. Updates the card renderer's
+   * flag rules so the next list refresh picks up user-defined card flags.
+   */
+  onSettingsChanged(settings: Record<string, unknown>): void {
+    this._settings = settings;
+    if (this._cardRenderer) {
+      this._cardRenderer.updateFlagRules(this.getMergedFlagRules());
+    }
+  }
+
+  /** Merge adapter-default card flags with user-defined custom flags from settings. */
+  private getMergedFlagRules(): CardFlagRule[] {
+    const defaults = this.config.cardFlags || [];
+    const customJson = (this._settings["adapter.customCardFlags"] as string) || "[]";
+    const custom = parseCustomCardFlags(customJson);
+    return [...defaults, ...custom];
   }
 
   createPromptBuilder(): WorkItemPromptBuilder {

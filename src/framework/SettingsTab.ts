@@ -9,13 +9,15 @@
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
-import type { AdapterBundle, SettingField } from "../core/interfaces";
+import type { AdapterBundle, CardFlagRule, SettingField } from "../core/interfaces";
 import { checkHookStatus, installHooks, removeHooks } from "../core/claude/ClaudeHookManager";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
 import { expandTilde } from "../core/utils";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
+import { CardFlagManagerModal } from "./CardFlagManagerModal";
+import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -166,6 +168,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         this.addAdapterSetting(containerEl, field);
       }
     }
+
+    // Card flag rules section (shown when the adapter provides cardFlags)
+    if (this.adapter.config.cardFlags !== undefined) {
+      containerEl.createEl("h2", { text: "Card Indicators" });
+      this.addCardFlagRulesButton(containerEl);
+    }
   }
 
   private async saveSettings(update: (settings: Record<string, unknown>) => void): Promise<void> {
@@ -305,6 +313,44 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (tourId) {
       setting.settingEl.setAttribute("data-wt-tour", tourId);
     }
+  }
+
+  private async addCardFlagRulesButton(containerEl: HTMLElement): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const customJson = (settings["adapter.customCardFlags"] as string) || "[]";
+    const customRules = parseCardFlagRulesJson(customJson);
+    const defaultRules = this.adapter.config.cardFlags || [];
+
+    const ruleCount = customRules.length;
+    const description =
+      ruleCount === 0
+        ? "Define custom rules that match frontmatter fields and display visual indicators on task cards."
+        : `${ruleCount} custom rule${ruleCount === 1 ? "" : "s"} defined. Click to manage.`;
+
+    new Setting(containerEl)
+      .setName("Custom card flag rules")
+      .setDesc(description)
+      .addButton((btn) =>
+        btn
+          .setButtonText("Manage Rules")
+          .setCta()
+          .onClick(() => {
+            new CardFlagManagerModal(
+              this.app,
+              customRules,
+              defaultRules,
+              async (updatedRules: CardFlagRule[]) => {
+                const json = serializeCardFlagRules(updatedRules);
+                await this.saveSettings((settings) => {
+                  settings["adapter.customCardFlags"] = json;
+                });
+                // Refresh the settings display to update the rule count
+                this.display();
+              },
+            ).open();
+          }),
+      );
   }
 
   private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {

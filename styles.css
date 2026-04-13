@@ -1749,3 +1749,186 @@ button.wt-spawn-claude-ctx:hover svg {
   align-items: center;
   gap: 2px;
 }
+
+/* =============================================================================
+   Card Flag Manager Modal
+   ============================================================================= */
+
+.wt-card-flag-manager-modal {
+  max-width: 600px;
+}
+
+.wt-card-flag-manager-help p {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 8px;
+}
+
+.wt-card-flag-defaults h4,
+.wt-card-flag-custom h4 {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  margin: 12px 0 6px;
+}
+
+.wt-card-flag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.wt-card-flag-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.wt-card-flag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.wt-card-flag-row:hover {
+  background: var(--background-secondary-alt);
+}
+
+.wt-card-flag-row--default {
+  opacity: 0.7;
+}
+
+.wt-card-flag-reorder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wt-card-flag-reorder-btn {
+  font-size: 10px;
+  padding: 1px 4px;
+  line-height: 1;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 2px;
+  color: var(--text-muted);
+}
+
+.wt-card-flag-reorder-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.wt-card-flag-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wt-card-flag-label-preview {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  font-weight: var(--font-semibold);
+}
+
+.wt-card-flag-condition {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.wt-card-flag-style-tag {
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.wt-card-flag-readonly {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+  flex-shrink: 0;
+}
+
+.wt-card-flag-edit-btn {
+  flex-shrink: 0;
+}
+
+.wt-card-flag-manager-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wt-card-flag-manager-close {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* =============================================================================
+   Card Flag Rule Edit Modal
+   ============================================================================= */
+
+.wt-card-flag-rule-modal .setting-item-control {
+  min-width: 200px;
+}
+
+.wt-card-flag-rule-preview {
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.wt-card-flag-rule-preview h4 {
+  margin: 0 0 8px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.wt-card-flag-rule-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+}
+
+.wt-card-flag-rule-preview-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  font-weight: var(--font-semibold);
+}
+
+.wt-card-flag-rule-preview-desc {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  margin-top: 6px;
+}
+
+.wt-card-flag-rule-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}

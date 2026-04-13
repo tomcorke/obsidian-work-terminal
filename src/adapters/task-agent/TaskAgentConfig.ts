@@ -92,6 +92,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     retryEnrichmentPrompt: "",
     enrichmentProfile: "",
     enrichmentTimeout: "",
+    customCardFlags: "[]",
   },
   itemName: "task",
   terminalStates: ["done", "abandoned"],
