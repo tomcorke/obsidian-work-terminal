@@ -119,6 +119,7 @@ export class CardFlagManagerModal extends Modal {
       const upBtn = reorderEl.createEl("button", {
         text: "\u25B2",
         cls: "wt-card-flag-reorder-btn",
+        attr: { "aria-label": "Move rule up" },
       });
       upBtn.disabled = index === 0;
       upBtn.addEventListener("click", () => {
@@ -131,6 +132,7 @@ export class CardFlagManagerModal extends Modal {
       const downBtn = reorderEl.createEl("button", {
         text: "\u25BC",
         cls: "wt-card-flag-reorder-btn",
+        attr: { "aria-label": "Move rule down" },
       });
       downBtn.disabled = index === this.rules.length - 1;
       downBtn.addEventListener("click", () => {
