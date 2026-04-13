@@ -1,5 +1,20 @@
-import type { PluginConfig } from "../../core/interfaces";
+import type { CardFlagRule, PluginConfig } from "../../core/interfaces";
 import { KANBAN_COLUMNS, COLUMN_LABELS, STATE_FOLDER_MAP } from "./types";
+
+/**
+ * Default card flag rules for the task-agent adapter.
+ * Replicates the previously hard-coded blocker badge behavior.
+ */
+export const DEFAULT_CARD_FLAGS: CardFlagRule[] = [
+  {
+    field: "priority.has-blocker",
+    value: true,
+    label: "BLOCKED",
+    style: "badge",
+    color: "#e5484d",
+    tooltip: "{{priority.blocker-context}}",
+  },
+];
 
 export const TASK_AGENT_CONFIG: PluginConfig = {
   columns: KANBAN_COLUMNS.map((col) => ({
@@ -80,4 +95,5 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
   },
   itemName: "task",
   terminalStates: ["done", "abandoned"],
+  cardFlags: DEFAULT_CARD_FLAGS,
 };
