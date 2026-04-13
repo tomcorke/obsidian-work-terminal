@@ -182,7 +182,7 @@ describe("getFullPath (mocked)", () => {
     _resetLoginShellPathCache();
   });
 
-  it("merges login shell PATH, EXTRA_PATH_DIRS, and env.PATH with deduplication", () => {
+  it("merges login shell PATH, static extra dirs, and env.PATH with deduplication", () => {
     mockSpawnSyncResult = {
       status: 0,
       stdout: "___PATH_START___/login/bin:/usr/bin___PATH_END___",
@@ -193,8 +193,11 @@ describe("getFullPath (mocked)", () => {
     const result = getFullPath(env, path, "linux");
     const dirs = result.split(":");
 
-    // Platform-appropriate EXTRA_PATH_DIRS come first
-    for (const extraDir of getExtraPathDirs("linux", env)) {
+    // Login shell dirs come first (highest priority) when login-shell succeeds
+    expect(dirs.indexOf("/login/bin")).toBeLessThan(dirs.indexOf(expandTilde("~/.local/bin")));
+
+    // Static extra dirs are included as supplements
+    for (const extraDir of getExtraPathDirs("linux", env, false)) {
       expect(dirs).toContain(extraDir);
     }
 

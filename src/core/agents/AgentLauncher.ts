@@ -109,19 +109,65 @@ export function resolveFnmDefaultBin(): string | null {
   return null;
 }
 
-export function getExtraPathDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
+/** Cached nvm/fnm resolution results (process lifetime, like login-shell PATH). */
+let _nvmBinCache: string | null = null;
+let _nvmBinResolved = false;
+let _fnmBinCache: string | null = null;
+let _fnmBinResolved = false;
+
+/** Return cached nvm default bin dir, resolving on first call. */
+function getCachedNvmBin(): string | null {
+  if (!_nvmBinResolved) {
+    _nvmBinResolved = true;
+    _nvmBinCache = resolveNvmDefaultBin();
+  }
+  return _nvmBinCache;
+}
+
+/** Return cached fnm default bin dir, resolving on first call. */
+function getCachedFnmBin(): string | null {
+  if (!_fnmBinResolved) {
+    _fnmBinResolved = true;
+    _fnmBinCache = resolveFnmDefaultBin();
+  }
+  return _fnmBinCache;
+}
+
+/** Reset cached nvm/fnm bin paths (for testing). */
+export function _resetNvmFnmBinCache(): void {
+  _nvmBinCache = null;
+  _nvmBinResolved = false;
+  _fnmBinCache = null;
+  _fnmBinResolved = false;
+}
+
+/**
+ * Return platform-appropriate extra PATH directories.
+ *
+ * When `includeDynamic` is true (default), also resolves nvm/fnm default
+ * version bin directories via cached filesystem probing. Set to false when
+ * login-shell PATH already includes these (to avoid overriding the shell's
+ * own resolution).
+ */
+export function getExtraPathDirs(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  includeDynamic = true,
+): string[] {
   if (isWindowsPlatform(platform)) {
     return WINDOWS_EXTRA_PATH_DIRS.map((d) => expandWindowsEnvVars(d, env));
   }
 
   const dirs = UNIX_STATIC_EXTRA_DIRS.map((d) => expandTilde(d));
 
-  // Dynamically resolve nvm/fnm default version bin directories
-  const nvmBin = resolveNvmDefaultBin();
-  if (nvmBin) dirs.push(nvmBin);
+  if (includeDynamic) {
+    // Dynamically resolve nvm/fnm default version bin directories
+    const nvmBin = getCachedNvmBin();
+    if (nvmBin) dirs.push(nvmBin);
 
-  const fnmBin = resolveFnmDefaultBin();
-  if (fnmBin) dirs.push(fnmBin);
+    const fnmBin = getCachedFnmBin();
+    if (fnmBin) dirs.push(fnmBin);
+  }
 
   return dirs;
 }
@@ -320,10 +366,14 @@ export function resolveLoginShellPath(): string | null {
 /**
  * Build the full augmented PATH including the user's login-shell PATH.
  *
- * Merges (in priority order):
- * 1. getExtraPathDirs() (platform-aware common tool directories)
- * 2. Login shell PATH (nvm, fnm, Homebrew, etc.)
+ * When login-shell PATH resolution succeeds, merges (in priority order):
+ * 1. Login shell PATH (nvm, fnm, Homebrew, etc. - already resolved by shell init)
+ * 2. Static extra dirs (~/.local/bin, /usr/local/bin, /opt/homebrew/bin)
  * 3. Current process.env.PATH (Electron baseline)
+ *
+ * When login-shell PATH resolution fails, falls back to:
+ * 1. Static extra dirs + dynamically resolved nvm/fnm bin dirs
+ * 2. Current process.env.PATH (Electron baseline)
  *
  * Deduplicates while preserving order.
  */
@@ -334,20 +384,31 @@ export function getFullPath(
 ): string {
   const delimiter = getPathDelimiter(pathModule, platform);
   const loginPath = resolveLoginShellPath();
-  const extraDirs = getExtraPathDirs(platform, env);
-  const loginDirs = loginPath ? loginPath.split(delimiter) : [];
   const existingDirs = (
     env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin")
   ).split(delimiter);
 
-  const all = [...extraDirs, ...loginDirs, ...existingDirs].filter(Boolean);
-  return [...new Set(all)].join(delimiter);
+  let all: string[];
+  if (loginPath) {
+    // Login shell succeeded - it already includes nvm/fnm paths from shell init.
+    // Only add static extra dirs as supplements, not dynamic nvm/fnm probing.
+    const staticDirs = getExtraPathDirs(platform, env, /* includeDynamic */ false);
+    const loginDirs = loginPath.split(delimiter);
+    all = [...loginDirs, ...staticDirs, ...existingDirs];
+  } else {
+    // Login shell failed - use dynamic nvm/fnm resolution as fallback.
+    const extraDirs = getExtraPathDirs(platform, env, /* includeDynamic */ true);
+    all = [...extraDirs, ...existingDirs];
+  }
+
+  return [...new Set(all.filter(Boolean))].join(delimiter);
 }
 
-/** Reset cached login-shell PATH (for testing). */
+/** Reset cached login-shell PATH and nvm/fnm caches (for testing). */
 export function _resetLoginShellPathCache(): void {
   _loginShellPathCache = null;
   _loginShellPathResolved = false;
+  _resetNvmFnmBinCache();
 }
 
 /**
