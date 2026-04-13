@@ -419,6 +419,36 @@ describe("TaskParser", () => {
       expect((item!.metadata as any).priority.impact).toBe("critical");
     });
 
+    it("empty flat string values take precedence over non-empty nested values", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          priority: {
+            score: 80,
+            deadline: "2026-12-31",
+            impact: "critical",
+            "has-blocker": true,
+            "blocker-context": "waiting on deploy",
+          },
+          "priority.score": 0,
+          "priority.deadline": "",
+          "priority.impact": "",
+          "priority.has-blocker": false,
+          "priority.blocker-context": "",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).priority).toMatchObject({
+        score: 0,
+        deadline: "",
+        impact: "",
+        "has-blocker": false,
+        "blocker-context": "",
+      });
+    });
+
     it("falls back to nested when flat keys are absent", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {
