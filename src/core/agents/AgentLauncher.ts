@@ -4,12 +4,8 @@
 import { expandTilde, electronRequire } from "../utils";
 import { type AgentType, getResumeConfig } from "./AgentProfile";
 
-const UNIX_EXTRA_PATH_DIRS = [
-  "~/.local/bin",
-  "~/.nvm/versions/node/current/bin",
-  "/usr/local/bin",
-  "/opt/homebrew/bin",
-];
+/** Static directories that are always included in Unix PATH augmentation. */
+const UNIX_STATIC_EXTRA_DIRS = ["~/.local/bin", "/usr/local/bin", "/opt/homebrew/bin"];
 
 const WINDOWS_EXTRA_PATH_DIRS = [
   "%LOCALAPPDATA%\\Programs\\node",
@@ -22,11 +18,158 @@ function expandWindowsEnvVars(p: string, env: NodeJS.ProcessEnv): string {
   return p.replace(/%([^%]+)%/g, (_match, varName: string) => env[varName] ?? `%${varName}%`);
 }
 
-export function getExtraPathDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
+/**
+ * Resolve the nvm default Node.js bin directory by reading ~/.nvm/alias/default.
+ *
+ * nvm does not create a `current` symlink. Instead, the active version is set
+ * via shell init scripts that modify PATH. For GUI-launched processes (like
+ * Obsidian), the shell init hasn't run, so we read the default alias file to
+ * discover which version the user has configured and return its bin directory.
+ *
+ * Returns null if nvm is not installed or the alias cannot be resolved.
+ */
+export function resolveNvmDefaultBin(): string | null {
+  try {
+    const fs = electronRequire("fs") as typeof import("fs");
+    const nvmDir = expandTilde("~/.nvm");
+    const aliasPath = `${nvmDir}/alias/default`;
+
+    if (!fs.existsSync(aliasPath)) return null;
+
+    let version = fs.readFileSync(aliasPath, "utf8").trim();
+    if (!version) return null;
+
+    // The alias may be a named alias (e.g. "lts/*", "node") or a version
+    // string (e.g. "v22.22.0", "22.22.0"). Resolve named aliases by following
+    // the chain.
+    const maxDepth = 5;
+    for (let i = 0; i < maxDepth; i++) {
+      const nextAliasPath = `${nvmDir}/alias/${version}`;
+      if (fs.existsSync(nextAliasPath)) {
+        version = fs.readFileSync(nextAliasPath, "utf8").trim();
+        if (!version) return null;
+      } else {
+        break;
+      }
+    }
+
+    // Ensure version has a "v" prefix for directory lookup
+    if (!version.startsWith("v")) version = `v${version}`;
+
+    const binDir = `${nvmDir}/versions/node/${version}/bin`;
+    if (fs.existsSync(binDir)) return binDir;
+
+    // Try partial version match (e.g. "v22" -> "v22.22.0")
+    const versionsDir = `${nvmDir}/versions/node`;
+    if (fs.existsSync(versionsDir)) {
+      const numericCollator = new Intl.Collator(undefined, { numeric: true });
+      const entries = fs.readdirSync(versionsDir).sort(numericCollator.compare).reverse();
+      const match = entries.find((e) => e.startsWith(version));
+      if (match) {
+        const matchBin = `${versionsDir}/${match}/bin`;
+        if (fs.existsSync(matchBin)) return matchBin;
+      }
+    }
+  } catch {
+    // nvm not installed or alias unreadable - not an error
+  }
+  return null;
+}
+
+/**
+ * Resolve the fnm default Node.js bin directory.
+ *
+ * fnm (Fast Node Manager) stores its versions under FNM_DIR, XDG_DATA_HOME/fnm,
+ * or ~/.local/share/fnm, with an "aliases/default" symlink. Returns the bin
+ * directory of the default version, or null if fnm is not installed.
+ */
+export function resolveFnmDefaultBin(): string | null {
+  try {
+    const fs = electronRequire("fs") as typeof import("fs");
+
+    // fnm stores data in FNM_DIR, XDG_DATA_HOME/fnm, or ~/.local/share/fnm
+    const fnmDir = process.env.FNM_DIR
+      ? expandTilde(process.env.FNM_DIR)
+      : process.env.XDG_DATA_HOME
+        ? expandTilde(`${process.env.XDG_DATA_HOME}/fnm`)
+        : expandTilde("~/.local/share/fnm");
+    const aliasDir = `${fnmDir}/aliases/default`;
+
+    // fnm creates a symlink at aliases/default -> the version directory
+    if (fs.existsSync(aliasDir)) {
+      const binDir = `${aliasDir}/bin`;
+      if (fs.existsSync(binDir)) return binDir;
+      // Some fnm layouts put the binary in installation/bin
+      const installBin = `${aliasDir}/installation/bin`;
+      if (fs.existsSync(installBin)) return installBin;
+    }
+  } catch {
+    // fnm not installed - not an error
+  }
+  return null;
+}
+
+/** Cached nvm/fnm resolution results (process lifetime, like login-shell PATH). */
+let _nvmBinCache: string | null = null;
+let _nvmBinResolved = false;
+let _fnmBinCache: string | null = null;
+let _fnmBinResolved = false;
+
+/** Return cached nvm default bin dir, resolving on first call. */
+function getCachedNvmBin(): string | null {
+  if (!_nvmBinResolved) {
+    _nvmBinResolved = true;
+    _nvmBinCache = resolveNvmDefaultBin();
+  }
+  return _nvmBinCache;
+}
+
+/** Return cached fnm default bin dir, resolving on first call. */
+function getCachedFnmBin(): string | null {
+  if (!_fnmBinResolved) {
+    _fnmBinResolved = true;
+    _fnmBinCache = resolveFnmDefaultBin();
+  }
+  return _fnmBinCache;
+}
+
+/** Reset cached nvm/fnm bin paths (for testing). */
+export function _resetNvmFnmBinCache(): void {
+  _nvmBinCache = null;
+  _nvmBinResolved = false;
+  _fnmBinCache = null;
+  _fnmBinResolved = false;
+}
+
+/**
+ * Return platform-appropriate extra PATH directories.
+ *
+ * When `includeDynamic` is true (default), also resolves nvm/fnm default
+ * version bin directories via cached filesystem probing. Set to false when
+ * login-shell PATH already includes these (to avoid overriding the shell's
+ * own resolution).
+ */
+export function getExtraPathDirs(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  includeDynamic = true,
+): string[] {
   if (isWindowsPlatform(platform)) {
     return WINDOWS_EXTRA_PATH_DIRS.map((d) => expandWindowsEnvVars(d, env));
   }
-  return UNIX_EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+
+  const dirs = UNIX_STATIC_EXTRA_DIRS.map((d) => expandTilde(d));
+
+  if (includeDynamic) {
+    // Dynamically resolve nvm/fnm default version bin directories
+    const nvmBin = getCachedNvmBin();
+    if (nvmBin) dirs.push(nvmBin);
+
+    const fnmBin = getCachedFnmBin();
+    if (fnmBin) dirs.push(fnmBin);
+  }
+
+  return dirs;
 }
 
 const DEFAULT_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
@@ -223,10 +366,14 @@ export function resolveLoginShellPath(): string | null {
 /**
  * Build the full augmented PATH including the user's login-shell PATH.
  *
- * Merges (in priority order):
- * 1. getExtraPathDirs() (platform-aware common tool directories)
- * 2. Login shell PATH (nvm, fnm, Homebrew, etc.)
+ * When login-shell PATH resolution succeeds, merges (in priority order):
+ * 1. Login shell PATH (nvm, fnm, Homebrew, etc. - already resolved by shell init)
+ * 2. Static extra dirs (~/.local/bin, /usr/local/bin, /opt/homebrew/bin)
  * 3. Current process.env.PATH (Electron baseline)
+ *
+ * When login-shell PATH resolution fails, falls back to:
+ * 1. Static extra dirs + dynamically resolved nvm/fnm bin dirs
+ * 2. Current process.env.PATH (Electron baseline)
  *
  * Deduplicates while preserving order.
  */
@@ -237,20 +384,31 @@ export function getFullPath(
 ): string {
   const delimiter = getPathDelimiter(pathModule, platform);
   const loginPath = resolveLoginShellPath();
-  const extraDirs = getExtraPathDirs(platform, env);
-  const loginDirs = loginPath ? loginPath.split(delimiter) : [];
   const existingDirs = (
     env.PATH || (isWindowsPlatform(platform) ? "" : "/usr/local/bin:/usr/bin:/bin")
   ).split(delimiter);
 
-  const all = [...extraDirs, ...loginDirs, ...existingDirs].filter(Boolean);
-  return [...new Set(all)].join(delimiter);
+  let all: string[];
+  if (loginPath) {
+    // Login shell succeeded - it already includes nvm/fnm paths from shell init.
+    // Only add static extra dirs as supplements, not dynamic nvm/fnm probing.
+    const staticDirs = getExtraPathDirs(platform, env, /* includeDynamic */ false);
+    const loginDirs = loginPath.split(delimiter);
+    all = [...loginDirs, ...staticDirs, ...existingDirs];
+  } else {
+    // Login shell failed - use dynamic nvm/fnm resolution as fallback.
+    const extraDirs = getExtraPathDirs(platform, env, /* includeDynamic */ true);
+    all = [...extraDirs, ...existingDirs];
+  }
+
+  return [...new Set(all.filter(Boolean))].join(delimiter);
 }
 
-/** Reset cached login-shell PATH (for testing). */
+/** Reset cached login-shell PATH and nvm/fnm caches (for testing). */
 export function _resetLoginShellPathCache(): void {
   _loginShellPathCache = null;
   _loginShellPathResolved = false;
+  _resetNvmFnmBinCache();
 }
 
 /**
