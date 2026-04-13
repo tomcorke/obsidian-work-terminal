@@ -105,6 +105,33 @@ export class PromptBox {
     sendBtn.addEventListener("click", () => this.submit());
   }
 
+  /**
+   * Rebuild the column selector dropdown to reflect updated creation columns.
+   * Called when settings change and adapter.config.creationColumns is modified.
+   */
+  updateCreationColumns(): void {
+    // Capture current selection so we can restore it after rebuild
+    const previousValue = this.columnSelect.value;
+
+    // Clear existing options
+    while (this.columnSelect.firstChild) {
+      this.columnSelect.removeChild(this.columnSelect.firstChild);
+    }
+    // Rebuild from current adapter config
+    const columns = this.adapter.config.creationColumns;
+    const defaultId = columns.find((c) => c.default)?.id;
+    for (const col of columns) {
+      this.columnSelect.createEl("option", {
+        text: col.label,
+        value: col.id,
+      });
+    }
+
+    // Restore previous selection if still present, otherwise fall back to default
+    const stillExists = columns.some((c) => c.id === previousValue);
+    this.columnSelect.value = stillExists ? previousValue : (defaultId ?? columns[0]?.id ?? "");
+  }
+
   private async submit(): Promise<void> {
     const title = this.inputEl.value.trim();
     if (!title) return;

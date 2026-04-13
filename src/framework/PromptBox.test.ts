@@ -319,6 +319,31 @@ describe("PromptBox", () => {
     expect(parentKeydown).not.toHaveBeenCalled();
   });
 
+  it("updateCreationColumns rebuilds the select options from adapter config", () => {
+    const parentEl = document.createElement("div");
+    document.body.appendChild(parentEl);
+    const adapter = makeAdapter();
+    const pb = new PromptBox(parentEl, adapter, makePlugin(), {}, vi.fn(), vi.fn(), vi.fn());
+
+    const selectEl = parentEl.querySelector(".wt-prompt-column-select") as HTMLSelectElement;
+    expect(selectEl.options.length).toBe(2);
+
+    // Modify adapter config and call update
+    adapter.config.creationColumns = [
+      { id: "priority", label: "Priority", default: true },
+      { id: "done", label: "Done" },
+      { id: "active", label: "Active" },
+    ];
+    pb.updateCreationColumns();
+
+    expect(selectEl.options.length).toBe(3);
+    expect(selectEl.options[0].value).toBe("priority");
+    expect(selectEl.options[0].textContent).toBe("Priority");
+    expect(selectEl.options[0].selected).toBe(true);
+    expect(selectEl.options[1].value).toBe("done");
+    expect(selectEl.options[2].value).toBe("active");
+  });
+
   it("ignores blank titles and resolves failures as unsuccessful placeholders", async () => {
     vi.spyOn(Date, "now").mockReturnValue(555);
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});

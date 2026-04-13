@@ -233,8 +233,11 @@ function makePlugin(initialSettings: Record<string, unknown>): MockPlugin {
 
 const adapter = {
   config: {
+    columns: [],
+    creationColumns: [],
     settingsSchema: [],
     defaultSettings: {},
+    itemName: "task",
   },
 } as any;
 
@@ -316,6 +319,68 @@ describe("WorkTerminalSettingsTab", () => {
     ).toBeNull();
     // But core settings like defaultShell should still be present
     expect(tab.containerEl.querySelector('[data-setting-key="core.defaultShell"]')).not.toBeNull();
+  });
+
+  it("renders column order controls when adapter has columns", async () => {
+    const adapterWithColumns = {
+      config: {
+        columns: [
+          { id: "priority", label: "Priority", folderName: "priority" },
+          { id: "active", label: "Active", folderName: "active" },
+          { id: "todo", label: "To Do", folderName: "todo" },
+          { id: "done", label: "Done", folderName: "archive" },
+        ],
+        creationColumns: [
+          { id: "todo", label: "To Do" },
+          { id: "active", label: "Active", default: true },
+        ],
+        settingsSchema: [],
+        defaultSettings: {},
+        itemName: "task",
+      },
+    } as any;
+
+    const plugin = makePlugin({});
+    const tab = new WorkTerminalSettingsTab(
+      {} as any,
+      plugin as any,
+      adapterWithColumns,
+      mockProfileManager,
+    );
+
+    tab.display();
+    await flushAsyncWork();
+
+    // Should render the "Column Order & Creation" heading
+    const headings = Array.from(tab.containerEl.querySelectorAll("h2"));
+    const columnHeading = headings.find((h) => h.textContent === "Column Order & Creation");
+    expect(columnHeading).toBeDefined();
+
+    // Should render column order rows
+    const orderRows = tab.containerEl.querySelectorAll(".wt-column-order-row");
+    expect(orderRows.length).toBe(4);
+
+    // Should render creation column rows
+    const creationRows = tab.containerEl.querySelectorAll(".wt-creation-column-row");
+    expect(creationRows.length).toBeGreaterThan(0);
+
+    // Column labels should appear
+    expect(tab.containerEl.textContent).toContain("Priority");
+    expect(tab.containerEl.textContent).toContain("Active");
+    expect(tab.containerEl.textContent).toContain("To Do");
+    expect(tab.containerEl.textContent).toContain("Done");
+  });
+
+  it("does not render column controls when adapter has no columns", async () => {
+    const plugin = makePlugin({});
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
+
+    tab.display();
+    await flushAsyncWork();
+
+    const headings = Array.from(tab.containerEl.querySelectorAll("h2"));
+    const columnHeading = headings.find((h) => h.textContent === "Column Order & Creation");
+    expect(columnHeading).toBeUndefined();
   });
 
   it("renders a reset guided tour button that calls resetGuidedTourStatus and shows a Notice", async () => {
