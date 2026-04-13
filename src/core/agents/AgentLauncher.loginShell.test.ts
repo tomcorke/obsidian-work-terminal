@@ -39,8 +39,6 @@ import {
   resolveLoginShellPath,
   getFullPath,
   getExtraPathDirs,
-  resolveNvmDefaultBin,
-  resolveFnmDefaultBin,
   _resetLoginShellPathCache,
 } from "./AgentLauncher";
 import { expandTilde } from "../utils";
@@ -295,13 +293,9 @@ describe("getExtraPathDirs (platform-aware)", () => {
     expect(dirs).toContain("/opt/homebrew/bin");
   });
 
-  it("includes dynamically resolved nvm bin dir when nvm is installed", () => {
-    const nvmBin = resolveNvmDefaultBin();
+  it("does not include the old static nvm current symlink path", () => {
     const dirs = getExtraPathDirs("darwin", {} as NodeJS.ProcessEnv);
-    if (nvmBin) {
-      expect(dirs).toContain(nvmBin);
-    }
-    // Old static path should never be present
+    // Old static path should never be present (nvm does not create a current symlink)
     expect(dirs).not.toContain(expandTilde("~/.nvm/versions/node/current/bin"));
   });
 
@@ -344,34 +338,7 @@ describe("getExtraPathDirs (platform-aware)", () => {
   });
 });
 
-describe("resolveNvmDefaultBin", () => {
-  it("returns a bin dir ending in /bin when nvm is installed with a default alias", () => {
-    const result = resolveNvmDefaultBin();
-    const fs = require("fs") as typeof import("fs");
-    const hasNvm = fs.existsSync(expandTilde("~/.nvm/alias/default"));
-    if (hasNvm) {
-      expect(result).not.toBeNull();
-      expect(result!).toMatch(/\/bin$/);
-      expect(fs.existsSync(result!)).toBe(true);
-    } else {
-      expect(result).toBeNull();
-    }
-  });
-
-  it("returns null when nvm is not installed", () => {
-    // This test uses the real filesystem - if nvm IS installed,
-    // it will return a valid path; we just verify the return type
-    const result = resolveNvmDefaultBin();
-    expect(result === null || typeof result === "string").toBe(true);
-  });
-});
-
-describe("resolveFnmDefaultBin", () => {
-  it("returns null or a valid path", () => {
-    const result = resolveFnmDefaultBin();
-    expect(result === null || typeof result === "string").toBe(true);
-    if (result) {
-      expect(result).toMatch(/\/bin$/);
-    }
-  });
-});
+// Real-FS tests for resolveNvmDefaultBin/resolveFnmDefaultBin removed:
+// they are environment-dependent (CI may have nvm aliases pointing to
+// uninstalled versions). All nvm/fnm resolution is comprehensively tested
+// with mocked fs in AgentLauncher.nvmFnm.test.ts (17 tests).
