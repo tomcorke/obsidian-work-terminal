@@ -371,6 +371,16 @@ describe("evaluateOperator", () => {
     expect(evaluateOperator("anything", "regex", "")).toBe(false);
     expect(evaluateOperator("", "regex", "")).toBe(false);
   });
+
+  it("regex: repeated calls return consistent results (cache path)", () => {
+    const pattern = "^CACHED-\\d+$";
+    expect(evaluateOperator("CACHED-1", "regex", pattern)).toBe(true);
+    expect(evaluateOperator("CACHED-2", "regex", pattern)).toBe(true);
+    expect(evaluateOperator("NOPE", "regex", pattern)).toBe(false);
+    // Invalid pattern also cached
+    expect(evaluateOperator("x", "regex", "[bad(")).toBe(false);
+    expect(evaluateOperator("y", "regex", "[bad(")).toBe(false);
+  });
 });
 
 describe("parseCardFlagRulesJson", () => {

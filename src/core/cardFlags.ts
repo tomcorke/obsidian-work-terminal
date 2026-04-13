@@ -10,6 +10,27 @@ import type { CardFlagRule, CardFlagOperator, CardFlagStyle } from "./interfaces
 /** Track rules that have already emitted a config warning to avoid spamming on every render. */
 const warnedRules = new Set<string>();
 
+/** Cache compiled RegExp objects to avoid re-compilation on every card render. */
+const regexCache = new Map<string, RegExp | null>();
+const REGEX_CACHE_MAX = 100;
+
+function getCachedRegex(pattern: string): RegExp | null {
+  if (regexCache.has(pattern)) return regexCache.get(pattern)!;
+  try {
+    const re = new RegExp(pattern);
+    // Evict oldest entries if cache grows too large
+    if (regexCache.size >= REGEX_CACHE_MAX) {
+      const firstKey = regexCache.keys().next().value as string;
+      regexCache.delete(firstKey);
+    }
+    regexCache.set(pattern, re);
+    return re;
+  } catch {
+    regexCache.set(pattern, null);
+    return null;
+  }
+}
+
 /** A matched flag ready for rendering on a card. */
 export interface MatchedCardFlag {
   label: string;
@@ -87,15 +108,12 @@ export function evaluateOperator(
       }
       return false;
 
-    case "regex":
+    case "regex": {
       // Empty pattern is treated as "no match" to avoid matching everything
       if (!operand) return false;
-      try {
-        const re = new RegExp(operand);
-        return re.test(String(fieldValue ?? ""));
-      } catch {
-        return false;
-      }
+      const re = getCachedRegex(operand);
+      return re ? re.test(String(fieldValue ?? "")) : false;
+    }
 
     default:
       return false;
