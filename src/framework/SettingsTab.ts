@@ -368,10 +368,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Resolve effective column order (current config reflects it)
     const columns = this.adapter.config.columns;
 
+    const hasDynamic = columns.some((c) => !c.folderName);
     const desc = new Setting(containerEl)
       .setName("Column display order")
       .setDesc(
-        "Use arrow buttons to reorder kanban board columns. Changes take effect immediately.",
+        hasDynamic
+          ? "Use arrow buttons to reorder kanban board columns. Dynamic columns (from custom frontmatter states) are shown with a star. Changes take effect immediately."
+          : "Use arrow buttons to reorder kanban board columns. Changes take effect immediately.",
       );
 
     // Reset button
@@ -390,8 +393,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       const col = columns[i];
       const rowEl = listEl.createDiv({ cls: "wt-column-order-row" });
 
-      // Column label
-      rowEl.createSpan({ text: col.label, cls: "wt-column-order-label" });
+      // Column label (with dynamic indicator for custom frontmatter states)
+      const isDynamic = !col.folderName;
+      const labelText = isDynamic ? `${col.label} *` : col.label;
+      rowEl.createSpan({ text: labelText, cls: "wt-column-order-label" });
 
       // Up button
       const upBtn = rowEl.createEl("button", {

@@ -25,6 +25,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Agent profiles](#agent-profiles)
   - [Card indicator rules](#card-indicator-rules)
   - [State resolution strategies](#state-resolution-strategies)
+  - [Dynamic columns](#dynamic-columns)
   - [Background enrichment](#background-enrichment)
   - [Claude /resume hooks](#claude-resume-hooks)
   - [Core settings](#core-settings)
@@ -81,6 +82,8 @@ The board organises tasks into collapsible columns. The default adapter provides
 
 Each column header shows the column name and the count of tasks it contains. Click a column header to collapse or expand that section.
 
+When using the Frontmatter or Composite state strategy, additional **dynamic columns** may appear after the four built-in columns if any tasks have custom state values in their frontmatter. See [Dynamic columns](#dynamic-columns) for details.
+
 Tasks appear as cards within their column. The order within a column can be customised using drag-drop (see [Drag-drop reordering](#drag-drop-reordering)) or the "Move to Top" context menu action.
 
 ### Task card anatomy
@@ -115,7 +118,7 @@ Right-click any task card to open the context menu with these options:
 - **Move to Top** - moves the card to the top of its current column
 - **Retry Enrichment** - re-runs background enrichment (shown only when enrichment previously failed)
 - **Split Task** - creates a new task linked to this one and opens a Claude session to scope it
-- **Move to [column]** - moves the task to a different column (Priority, Active, To Do, or Done)
+- **Move to [column]** - moves the task to a different column (Priority, Active, To Do, Done, or any dynamic columns)
 - **Done & Close Sessions** - moves to Done and closes all terminal sessions for this task
 - **Copy Name** - copies the task title to clipboard
 - **Copy Path** - copies the vault file path to clipboard
@@ -142,7 +145,7 @@ Because the detail panel is a standard Obsidian markdown view, all Obsidian feat
 
 Tasks within a column can be reordered by dragging. Grab a card and drag it to a new position within the same column. The custom sort order is persisted and survives plugin reloads.
 
-You can also drag a task between columns to change its state. Dropping a task from "To Do" into "Active" will move the underlying file to the `active/` folder and update the frontmatter accordingly.
+You can also drag a task between columns to change its state. Dropping a task from "To Do" into "Active" will move the underlying file to the `active/` folder and update the frontmatter accordingly. Dropping a task into a dynamic column (one without a folder mapping) updates the frontmatter `state` field but leaves the file in its current folder.
 
 ### Filtering
 
@@ -268,11 +271,26 @@ The adapter determines task state (which column a task appears in) using one of 
 
 | Strategy | Description |
 |----------|-------------|
-| **Folder** (default) | State is derived from which folder the task file lives in. Moving a file to `active/` makes it an active task. |
-| **Frontmatter** | State is read from the `state` frontmatter field. Falls back to folder location if the field is missing. |
-| **Composite** | Checks frontmatter first, falls back to folder. On state transitions, both frontmatter and folder are updated. |
+| **Folder** (default) | State is derived from which folder the task file lives in. Moving a file to `active/` makes it an active task. Only the predefined states (priority, active, todo, done, abandoned) are supported. |
+| **Frontmatter** | State is read from the `state` frontmatter field. Any string value is valid - custom states create dynamic columns. Falls back to folder location if the field is missing. |
+| **Composite** | Checks frontmatter first, falls back to folder. Any frontmatter value is valid. On state transitions, both frontmatter and folder are updated for known states; dynamic states update frontmatter only. |
 
-For most users, the default folder strategy works well. Use frontmatter or composite if you need tasks to retain their state independently of folder structure.
+For most users, the default folder strategy works well. Use frontmatter or composite if you need tasks to retain their state independently of folder structure, or if you want to use custom states.
+
+### Dynamic columns
+
+When using the **Frontmatter** or **Composite** state strategy, you can set the `state` frontmatter field to any value - not just the predefined columns. For example, setting `state: review` or `state: blocked-upstream` in a task's frontmatter will create a new column on the kanban board for that state.
+
+Dynamic columns:
+
+- **Appear automatically** when any task has a state not in the predefined column list
+- **Are appended after** the configured columns (Priority, Active, To Do, Done)
+- **Can be reordered** using the column display order controls in settings, just like built-in columns. Once reordered, the dynamic column's position is persisted.
+- **Are shown with a star** (\*) in the settings column ordering UI to distinguish them from built-in columns
+- **Do not have folder mappings** - dragging a task into a dynamic column updates its frontmatter `state` field but does not move the file to a different folder
+- **Disappear** when no tasks have that state (they are not shown as empty columns)
+
+This is useful for workflows that need temporary or project-specific states like "review", "waiting", "testing", or any other status that makes sense for your work.
 
 ### Background enrichment
 
@@ -387,7 +405,7 @@ id: <uuid>                    # Unique identifier (survives renames)
 tags:
   - task
   - task/<state>              # State tag for Obsidian queries
-state: <state>                # priority | active | todo | done | abandoned
+state: <state>                # priority | active | todo | done | abandoned | <any custom value>
 title: "<title>"              # Task display name
 source:
   type: prompt|slack|jira|confluence|other # Where the task originated
