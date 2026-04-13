@@ -110,18 +110,26 @@ export class PromptBox {
    * Called when settings change and adapter.config.creationColumns is modified.
    */
   updateCreationColumns(): void {
+    // Capture current selection so we can restore it after rebuild
+    const previousValue = this.columnSelect.value;
+
     // Clear existing options
     while (this.columnSelect.firstChild) {
       this.columnSelect.removeChild(this.columnSelect.firstChild);
     }
     // Rebuild from current adapter config
-    for (const col of this.adapter.config.creationColumns) {
-      const opt = this.columnSelect.createEl("option", {
+    const columns = this.adapter.config.creationColumns;
+    const defaultId = columns.find((c) => c.default)?.id;
+    for (const col of columns) {
+      this.columnSelect.createEl("option", {
         text: col.label,
         value: col.id,
       });
-      if (col.default) opt.selected = true;
     }
+
+    // Restore previous selection if still present, otherwise fall back to default
+    const stillExists = columns.some((c) => c.id === previousValue);
+    this.columnSelect.value = stillExists ? previousValue : (defaultId ?? columns[0]?.id ?? "");
   }
 
   private async submit(): Promise<void> {

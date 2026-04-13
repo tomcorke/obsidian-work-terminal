@@ -74,11 +74,15 @@ export class MainView extends ItemView {
 
   // Settings change handler - keeps this.settings in sync and notifies adapter
   private readonly _handleSettingsChanged = (event: Event) => {
+    const prevCreationColumnIds = this.adapter.config.creationColumns;
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     // Notify adapter so it can update internal state (e.g. card flag rules, column order)
     this.adapter.onSettingsChanged?.(this.settings);
-    // Update PromptBox creation columns if the adapter modified them
-    this.promptBox?.updateCreationColumns();
+    // Only rebuild PromptBox creation columns when they actually changed
+    const newCreationColumnIds = this.adapter.config.creationColumns;
+    if (prevCreationColumnIds !== newCreationColumnIds) {
+      this.promptBox?.updateCreationColumns();
+    }
     this.scheduleRefresh();
   };
 
