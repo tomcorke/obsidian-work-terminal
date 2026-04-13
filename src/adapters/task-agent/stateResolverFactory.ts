@@ -11,14 +11,10 @@ const VALID_TASK_STATES = ["priority", "todo", "active", "done", "abandoned"];
 
 /**
  * Create the default state resolver for the task-agent adapter.
- * Uses a composite that checks frontmatter first, then falls back to folder.
- * This preserves backward compatibility: existing folder-based tasks still
- * work, while tasks with a `state` frontmatter field use that value.
+ * Defaults to folder-based resolution for backward compatibility: state is
+ * derived from folder location and transitions move files between folders.
  *
- * The folder resolver handles file moves on state transition. The frontmatter
- * resolver handles the `state:` field update (which TaskMover also does
- * directly for now - the resolver is used for state *resolution*, the mover
- * handles the full transition including tags, timestamps, and activity log).
+ * Use the `stateStrategy` setting to switch to frontmatter or composite mode.
  */
 export function createDefaultStateResolver(basePath: string): StateResolver {
   return createStateResolver("folder", basePath);
