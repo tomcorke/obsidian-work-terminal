@@ -206,8 +206,8 @@ export class CardFlagManagerModal extends Modal {
     return `${field} is truthy`;
   }
 
-  private saveAndRender(): void {
-    this.onSave(this.rules.map((r) => ({ ...r })));
+  private async saveAndRender(): Promise<void> {
+    await this.onSave(this.rules.map((r) => ({ ...r })));
     this.render();
   }
 
