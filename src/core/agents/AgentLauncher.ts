@@ -62,7 +62,8 @@ export function resolveNvmDefaultBin(): string | null {
     // Try partial version match (e.g. "v22" -> "v22.22.0")
     const versionsDir = `${nvmDir}/versions/node`;
     if (fs.existsSync(versionsDir)) {
-      const entries = fs.readdirSync(versionsDir).sort().reverse();
+      const numericCollator = new Intl.Collator(undefined, { numeric: true });
+      const entries = fs.readdirSync(versionsDir).sort(numericCollator.compare).reverse();
       const match = entries.find((e) => e.startsWith(version));
       if (match) {
         const matchBin = `${versionsDir}/${match}/bin`;

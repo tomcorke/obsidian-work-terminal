@@ -145,6 +145,20 @@ describe("resolveNvmDefaultBin (mocked fs)", () => {
     expect(result).toBe(`${nvmDir}/versions/node/v22.22.0/bin`);
   });
 
+  it("resolves partial version using numeric sort (v22.10.0 > v22.9.0)", () => {
+    setMockFs({
+      [`${nvmDir}/alias/default`]: "v22",
+      [`${nvmDir}/versions/node`]: true,
+      [`${nvmDir}/versions/node/v22.9.0/bin`]: true,
+      [`${nvmDir}/versions/node/v22.10.0/bin`]: true,
+    });
+
+    // Lexicographic sort would pick v22.9.0 (sorts after v22.10.0);
+    // numeric-aware sort correctly picks v22.10.0
+    const result = resolveNvmDefaultBin();
+    expect(result).toBe(`${nvmDir}/versions/node/v22.10.0/bin`);
+  });
+
   it("handles alias chain that leads to empty string gracefully", () => {
     setMockFs({
       [`${nvmDir}/alias/default`]: "node",
