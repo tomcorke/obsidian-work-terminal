@@ -477,6 +477,8 @@ export class ListPanel {
   }
 
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<boolean> {
+    // Guard: the pinned column is virtual - never pass it to the mover
+    if (targetColumnId === PINNED_COLUMN_ID) return false;
     const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
     if (!file) return false;
     const success = await this.mover.move(file, targetColumnId);
@@ -512,6 +514,8 @@ export class ListPanel {
     newItem: WorkItem,
     columnId: string,
   ): Promise<void> {
+    // For pinned items, resolve to the real column for file creation
+    const effectiveColumnId = columnId === PINNED_COLUMN_ID ? newItem.state : columnId;
     if (!this.adapter.onItemCreated) {
       console.warn("[work-terminal] insertAfter: adapter has no onItemCreated");
       return;
@@ -520,7 +524,7 @@ export class ListPanel {
     try {
       await this.adapter.onItemCreated(newItem.title, {
         ...this.settings,
-        _columnId: columnId,
+        _columnId: effectiveColumnId,
         _splitFromId: existingId,
       });
       console.log(`[work-terminal] Split task created: "${newItem.title}" after ${existingId}`);
@@ -530,13 +534,15 @@ export class ListPanel {
   }
 
   private async splitTask(sourceItem: WorkItem, columnId: string): Promise<void> {
+    // For pinned items, use the real state column for the split
+    const effectiveColumnId = columnId === PINNED_COLUMN_ID ? sourceItem.state : columnId;
     if (!this.adapter.onSplitItem) {
       console.warn("[work-terminal] splitTask: adapter has no onSplitItem");
       return;
     }
 
     try {
-      const result = await this.adapter.onSplitItem(sourceItem, columnId, this.settings);
+      const result = await this.adapter.onSplitItem(sourceItem, effectiveColumnId, this.settings);
       if (!result) {
         console.error("[work-terminal] splitTask: adapter returned no result");
         return;
@@ -568,7 +574,7 @@ export class ListPanel {
         id: result.id,
         path: result.path,
         title: `Split from: ${sourceItem.title}`,
-        state: columnId,
+        state: effectiveColumnId,
         metadata: {},
       };
       this.items.push(newItem);
