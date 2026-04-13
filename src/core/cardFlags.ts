@@ -51,6 +51,13 @@ export function matchCardFlags(
   const matched: MatchedCardFlag[] = [];
 
   for (const rule of rules) {
+    if (rule.value !== undefined && rule.contains !== undefined) {
+      console.warn(
+        `[work-terminal] Card flag rule "${rule.label}" has both "value" and "contains" set. ` +
+          `Only "contains" will be used. Remove one to silence this warning.`,
+      );
+    }
+
     const fieldValue = resolveDotPath(metadata, rule.field);
 
     let isMatch = false;

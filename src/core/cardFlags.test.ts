@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveDotPath, resolveTooltipTemplate, matchCardFlags } from "./cardFlags";
 import type { CardFlagRule } from "./interfaces";
 
@@ -145,6 +145,21 @@ describe("matchCardFlags", () => {
     const rule: CardFlagRule = { field: "active", value: true, label: "ACTIVE" };
     const flags = matchCardFlags([rule], { active: true });
     expect(flags[0].style).toBe("badge");
+  });
+
+  it("warns when both value and contains are set on a rule", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const rule: CardFlagRule = {
+      field: "tags",
+      value: "exact",
+      contains: "partial",
+      label: "AMBIGUOUS",
+    };
+    matchCardFlags([rule], { tags: "has partial match" });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("AMBIGUOUS");
+    expect(warnSpy.mock.calls[0][0]).toContain("both");
+    warnSpy.mockRestore();
   });
 
   it("matches truthy when no value or contains is specified", () => {
