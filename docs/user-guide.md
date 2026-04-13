@@ -390,14 +390,14 @@ tags:
 state: <state>                # priority | active | todo | done | abandoned
 title: "<title>"              # Task display name
 source:
-  type: prompt|slack|jira     # Where the task originated
+  type: prompt|slack|jira|confluence|other # Where the task originated
   id: "<id>"                  # Source-specific identifier
   url: "<url>"                # Link back to source
   captured: <iso-date>        # When the task was captured
 priority:
   score: <0-100>              # Numeric priority score
   deadline: "<date>"          # Optional deadline
-  impact: high|medium|low     # Impact assessment
+  impact: critical|high|medium|low # Impact assessment
   has-blocker: true|false     # Whether the task is blocked
   blocker-context: "<text>"   # Description of the blocker
 agent-actionable: true|false  # Whether an agent can work on this
