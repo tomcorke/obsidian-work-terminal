@@ -35,6 +35,19 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       default: "2 - Areas/Tasks",
     },
     {
+      key: "stateStrategy",
+      name: "State resolution strategy",
+      description:
+        "How task state is determined. Folder: derived from folder location (default). Frontmatter: read from the state field. Composite: check frontmatter first, fall back to folder.",
+      type: "dropdown",
+      default: "folder",
+      choices: {
+        folder: "Folder-based (default)",
+        frontmatter: "Frontmatter field",
+        composite: "Composite (frontmatter + folder fallback)",
+      },
+    },
+    {
       key: "jiraBaseUrl",
       name: "Jira base URL",
       description:
@@ -86,6 +99,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
   ],
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
+    stateStrategy: "folder",
     jiraBaseUrl: "",
     enrichmentEnabled: true,
     enrichmentPrompt: "",
