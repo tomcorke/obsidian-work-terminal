@@ -97,6 +97,49 @@ export interface CardFlagRule {
 }
 
 /**
+ * Resolves the state of a work item and applies state transitions.
+ * Adapters provide a StateResolver to decouple state from any particular
+ * storage mechanism (folder location, frontmatter field, tags, etc.).
+ *
+ * The framework calls `resolveState` during parsing to determine an item's
+ * current state, and `applyState` when the user triggers a state transition
+ * (e.g. drag-drop between kanban columns).
+ */
+export interface StateResolver {
+  /**
+   * Determine the current state of a file. Returns null if the file's
+   * state cannot be determined by this resolver (e.g. not in a known folder,
+   * no frontmatter field present).
+   */
+  resolveState(filePath: string, frontmatter: Record<string, unknown> | undefined): string | null;
+
+  /**
+   * Apply a state change to a file. Implementations may update frontmatter,
+   * move the file to a different folder, or both. Returns true on success.
+   */
+  applyState(
+    app: App,
+    file: TFile,
+    newState: string,
+    oldState: string,
+    basePath: string,
+  ): Promise<boolean>;
+
+  /**
+   * Return the folder path (relative to basePath) for a given state, or
+   * null if this resolver does not use folder-based storage.
+   * Used by file creation logic to determine where to place new items.
+   */
+  getFolderForState?(state: string): string | null;
+
+  /**
+   * Return all valid state identifiers this resolver recognises.
+   * Used for validation when parsing items.
+   */
+  getValidStates?(): string[];
+}
+
+/**
  * Adapter-provided plugin configuration. Defines the kanban columns,
  * creation options, settings schema, and display name for items.
  */
