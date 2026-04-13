@@ -155,7 +155,6 @@ export class ListPanel {
           PINNED_COLUMN_ID,
           "Pinned",
           pinnedItems,
-          pinnedSet,
           true, // isPinnedSection
         );
       }
@@ -166,7 +165,7 @@ export class ListPanel {
       const colItems = (groups[col.id] || []).filter((item) => !pinnedSet.has(item.id));
       const sortedItems = this.sortItems(colItems, col.id);
 
-      this.renderSection(col.id, col.label, sortedItems, pinnedSet, false);
+      this.renderSection(col.id, col.label, sortedItems, false);
     }
 
     // Auto-resolve placeholders whose real cards have now rendered
@@ -193,7 +192,6 @@ export class ListPanel {
     columnId: string,
     label: string,
     items: WorkItem[],
-    pinnedSet: Set<string>,
     isPinnedSection: boolean,
   ): void {
     const sectionEl = this.listEl.createDiv({
