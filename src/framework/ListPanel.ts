@@ -991,9 +991,9 @@ export class ListPanel {
       menu.addItem((menuItem) => {
         menuItem.setTitle(pinned ? "Unpin" : "Pin to Top").onClick(() => {
           if (pinned) {
-            ctx.onUnpin();
+            ctx.onUnpin?.();
           } else {
-            ctx.onPin();
+            ctx.onPin?.();
           }
         });
       });

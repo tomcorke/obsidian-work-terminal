@@ -755,7 +755,7 @@ describe("ListPanel", () => {
     const item = makeItem("task-1");
     const ctx = (panel as any).buildCardActionContext(item, "todo");
 
-    expect(ctx.isPinned()).toBe(true);
+    expect(ctx.isPinned?.()).toBe(true);
   });
 
   it("returns isPinned false when item is not pinned", () => {
@@ -766,7 +766,7 @@ describe("ListPanel", () => {
     const item = makeItem("task-1");
     const ctx = (panel as any).buildCardActionContext(item, "todo");
 
-    expect(ctx.isPinned()).toBe(false);
+    expect(ctx.isPinned?.()).toBe(false);
   });
 
   it("rekeys pinned items when rekeyCustomOrder is called", () => {
