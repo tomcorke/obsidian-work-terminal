@@ -1,6 +1,5 @@
 import type { CardFlagRule, CreationColumn, ListColumn, PluginConfig } from "../../core/interfaces";
 import { KANBAN_COLUMNS, COLUMN_LABELS, STATE_FOLDER_MAP } from "./types";
-import type { KanbanColumn } from "./types";
 
 /**
  * Default card flag rules for the task-agent adapter.
@@ -189,11 +188,14 @@ export function resolveCreationColumns(
 
   const labelById = new Map(DEFAULT_COLUMNS.map((col) => [col.id, col.label]));
   const result: CreationColumn[] = [];
+  const seen = new Set<string>();
 
   for (const id of ids) {
+    if (seen.has(id)) continue;
     const label = labelById.get(id);
     if (label) {
       result.push({ id, label, ...(result.length === 0 ? { default: true } : {}) });
+      seen.add(id);
     }
   }
 

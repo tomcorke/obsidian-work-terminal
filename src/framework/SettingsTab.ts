@@ -188,11 +188,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       if (!data.settings) data.settings = {};
       update(data.settings);
     });
-    window.dispatchEvent(
-      new CustomEvent(SETTINGS_CHANGED_EVENT, {
-        detail: await loadAllSettings(this.plugin, this.adapter),
-      }),
-    );
+    const allSettings = await loadAllSettings(this.plugin, this.adapter);
+    // Update adapter config directly so settings UI stays current even when
+    // the Work Terminal view is not open (and thus no MainView listener exists).
+    this.adapter.onSettingsChanged?.(allSettings);
+    window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: allSettings }));
   }
 
   private async renderHookStatus(containerEl: HTMLElement): Promise<void> {
@@ -434,10 +434,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * the ability to toggle which columns appear in the new item prompt
    * and reorder them.
    */
-  private async renderCreationColumnControls(containerEl: HTMLElement): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-
+  private renderCreationColumnControls(containerEl: HTMLElement): void {
     // All available columns from the adapter
     const allColumns = this.adapter.config.columns;
     // Current creation columns

@@ -118,6 +118,14 @@ describe("TaskAgentConfig column helpers", () => {
       const result = resolveCreationColumns('["done"]');
       expect(result).toEqual([{ id: "done", label: "Done", default: true }]);
     });
+
+    it("deduplicates repeated IDs", () => {
+      const result = resolveCreationColumns('["todo", "todo", "active"]');
+      expect(result).toEqual([
+        { id: "todo", label: "To Do", default: true },
+        { id: "active", label: "Active" },
+      ]);
+    });
   });
 
   describe("TASK_AGENT_CONFIG defaults", () => {
