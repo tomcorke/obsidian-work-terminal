@@ -808,4 +808,67 @@ describe("ListPanel", () => {
     expect(sections.length).toBe(1);
     expect(sections[0].getAttribute("data-column")).toBe("todo");
   });
+
+  describe("dynamic columns", () => {
+    it("skips empty dynamic columns persisted in config", () => {
+      // Dynamic columns (no folderName) with zero items should not render
+      const { panel } = createListPanel({
+        columns: [
+          { id: "todo", label: "To Do", folderName: "todo" },
+          { id: "review", label: "Review", folderName: undefined as any },
+        ],
+      });
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const sections = Array.from(document.querySelectorAll(".wt-section"));
+      expect(sections.length).toBe(1);
+      expect(sections[0].getAttribute("data-column")).toBe("todo");
+    });
+
+    it("renders dynamic columns that have items", () => {
+      const { panel } = createListPanel({
+        columns: [
+          { id: "todo", label: "To Do", folderName: "todo" },
+          { id: "review", label: "Review", folderName: undefined as any },
+        ],
+      });
+
+      const reviewItem = { ...makeItem("task-2"), state: "review" };
+      panel.render({ todo: [makeItem("task-1")], review: [reviewItem] }, {});
+
+      const sections = Array.from(document.querySelectorAll(".wt-section"));
+      expect(sections.length).toBe(2);
+      expect(sections[1].getAttribute("data-column")).toBe("review");
+    });
+
+    it("always renders built-in columns even when empty", () => {
+      const { panel } = createListPanel({
+        columns: [
+          { id: "todo", label: "To Do", folderName: "todo" },
+          { id: "active", label: "Active", folderName: "active" },
+        ],
+      });
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const sections = Array.from(document.querySelectorAll(".wt-section"));
+      expect(sections.length).toBe(2);
+      expect(sections[0].getAttribute("data-column")).toBe("todo");
+      expect(sections[1].getAttribute("data-column")).toBe("active");
+    });
+
+    it("sanitizes column IDs in CSS class names", () => {
+      const { panel } = createListPanel({
+        columns: [{ id: "blocked upstream", label: "Blocked Upstream", folderName: "todo" }],
+      });
+
+      panel.render({ "blocked upstream": [makeItem("task-1")] }, {});
+
+      const header = document.querySelector(".wt-section-header");
+      expect(header?.classList.contains("wt-section-header-blocked-upstream")).toBe(true);
+      // Should not contain the raw unsanitized class
+      expect(header?.classList.contains("wt-section-header-blocked upstream")).toBe(false);
+    });
+  });
 });

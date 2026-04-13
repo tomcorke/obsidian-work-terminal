@@ -324,4 +324,61 @@ created: 2026-03-26T00:00:00Z
       expect(resolver.applyState).toHaveBeenCalled();
     });
   });
+
+  describe("YAML quoting of special state values", () => {
+    it("quotes state values that are YAML booleans", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "yes");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/^state: "yes"$/m);
+    });
+
+    it("quotes state values with hash character", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "state#1");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/^state: "state#1"$/m);
+    });
+
+    it("quotes state values with colon", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "blocked: upstream");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/^state: "blocked: upstream"$/m);
+    });
+
+    it("does not quote normal state values", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "review");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/^state: review$/m);
+    });
+
+    it("quotes tag values with special characters", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "state#1");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/- "task\/state#1"/);
+    });
+  });
 });

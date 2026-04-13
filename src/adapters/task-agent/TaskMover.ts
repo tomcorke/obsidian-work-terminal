@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { WorkItemMover, StateResolver } from "../../core/interfaces";
+import { yamlQuoteValue } from "../../core/utils";
 import { type KanbanColumn, STATE_FOLDER_MAP } from "./types";
 
 export class TaskMover implements WorkItemMover {
@@ -30,9 +31,12 @@ export class TaskMover implements WorkItemMover {
 
       let updated = content;
 
+      // Quote the state value to handle YAML-sensitive characters
+      const safeState = yamlQuoteValue(newColumn);
+
       // Update state field (or insert it if missing)
       if (/^state:\s*.+$/m.test(updated)) {
-        updated = updated.replace(/^state:\s*.+$/m, `state: ${newColumn}`);
+        updated = updated.replace(/^state:\s*.+$/m, `state: ${safeState}`);
       } else {
         // Insert state field into frontmatter
         const fmMatch = updated.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
@@ -42,17 +46,21 @@ export class TaskMover implements WorkItemMover {
           const trimmedBody = body.endsWith(eol) ? body : body + eol;
           updated = updated.replace(
             fullMatch,
-            `${openFence}${trimmedBody}state: ${newColumn}${eol}${closeFence}`,
+            `${openFence}${trimmedBody}state: ${safeState}${eol}${closeFence}`,
           );
         }
       }
 
-      // Update task tag - match both known and dynamic state values
+      // Update task tag - match both known and dynamic state values.
+      // Tags are YAML list items where the value follows "task/", so special
+      // characters in the state need the whole tag value quoted.
+      const rawTag = `task/${newColumn}`;
+      const safeTagEntry = yamlQuoteValue(rawTag);
       const oldTagPattern = new RegExp(
-        `(- task/)(?:priority|todo|active|done|abandoned|${this.escapeRegex(oldState)})`,
+        `- (?:task/)(?:priority|todo|active|done|abandoned|${this.escapeRegex(oldState)})`,
         "m",
       );
-      updated = updated.replace(oldTagPattern, `$1${newColumn}`);
+      updated = updated.replace(oldTagPattern, `- ${safeTagEntry}`);
 
       // Update the updated timestamp (no milliseconds)
       const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");

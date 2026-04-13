@@ -1,5 +1,6 @@
 import type { App, TFile } from "obsidian";
 import type { StateResolver } from "../interfaces";
+import { yamlQuoteValue } from "../utils";
 
 /**
  * Resolves state from a frontmatter field. Applies state changes by
@@ -58,15 +59,16 @@ export class FrontmatterStateResolver implements StateResolver {
     const [fullMatch, openFence, body, closeFence] = fmMatch;
     const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
     const fieldPattern = new RegExp(`^${escapeRegex(this.fieldName)}:\\s*.*$`, "m");
+    const safeState = yamlQuoteValue(newState);
 
     let updatedBody: string;
     if (fieldPattern.test(body)) {
       // Field exists (even if blank like `state:`) - replace it
-      updatedBody = body.replace(fieldPattern, `${this.fieldName}: ${newState}`);
+      updatedBody = body.replace(fieldPattern, `${this.fieldName}: ${safeState}`);
     } else {
       // Field missing - append before closing fence
       const trimmedBody = body.endsWith(eol) ? body : body + eol;
-      updatedBody = `${trimmedBody}${this.fieldName}: ${newState}${eol}`;
+      updatedBody = `${trimmedBody}${this.fieldName}: ${safeState}${eol}`;
     }
 
     return content.replace(fullMatch, `${openFence}${updatedBody}${closeFence}`);
