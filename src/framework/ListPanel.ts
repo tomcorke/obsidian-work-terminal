@@ -15,7 +15,11 @@ import type {
 } from "../core/interfaces";
 import type { PersistedSession } from "../core/session/types";
 import type { TerminalPanelView } from "./TerminalPanelView";
+import type { PinStore } from "../core/PinStore";
 import { DangerConfirm } from "./DangerConfirm";
+
+/** Virtual column ID for the pinned section. Not a real adapter column. */
+const PINNED_COLUMN_ID = "__pinned__";
 
 export class ListPanel {
   private containerEl: HTMLElement;
@@ -30,6 +34,7 @@ export class ListPanel {
   private settings: Record<string, any>;
   private onSelect: (item: WorkItem | null) => void;
   private onCustomOrderChange: (order: Record<string, string[]>) => void;
+  private pinStore: PinStore | null = null;
 
   // State
   private selectedId: string | null = null;
@@ -110,6 +115,11 @@ export class ListPanel {
     return null; // Parser is owned by MainView, not ListPanel
   }
 
+  /** Inject a PinStore after construction (created by MainView). */
+  setPinStore(pinStore: PinStore): void {
+    this.pinStore = pinStore;
+  }
+
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
@@ -126,115 +136,37 @@ export class ListPanel {
 
     this.listEl.empty();
 
+    // Collect pinned item IDs and build a lookup of all items by ID
+    const pinnedIds = this.pinStore?.getPinnedIds() ?? [];
+    const pinnedSet = new Set(pinnedIds);
+    const itemById = new Map<string, WorkItem>();
+    for (const item of this.items) {
+      itemById.set(item.id, item);
+    }
+
+    // Render virtual "Pinned" section at the top if there are pinned items
+    if (pinnedIds.length > 0) {
+      const pinnedItems = pinnedIds
+        .map((id) => itemById.get(id))
+        .filter((item): item is WorkItem => item != null);
+
+      if (pinnedItems.length > 0) {
+        this.renderSection(
+          PINNED_COLUMN_ID,
+          "Pinned",
+          pinnedItems,
+          pinnedSet,
+          true, // isPinnedSection
+        );
+      }
+    }
+
+    // Render regular columns, excluding pinned items
     for (const col of this.adapter.config.columns) {
-      const colItems = groups[col.id] || [];
+      const colItems = (groups[col.id] || []).filter((item) => !pinnedSet.has(item.id));
       const sortedItems = this.sortItems(colItems, col.id);
 
-      // Section container
-      const sectionEl = this.listEl.createDiv({
-        cls: "wt-section",
-        attr: { "data-column": col.id },
-      });
-
-      // Section header
-      const headerEl = sectionEl.createDiv({ cls: "wt-section-header" });
-      headerEl.addClass(`wt-section-header-${col.id}`);
-
-      const collapseIcon = headerEl.createSpan({ cls: "wt-collapse-icon" });
-      collapseIcon.textContent = this.collapsedSections.has(col.id) ? "\u25b6" : "\u25bc";
-
-      headerEl.createSpan({
-        text: `${col.label} (${sortedItems.length})`,
-        cls: "wt-section-label",
-      });
-
-      headerEl.addEventListener("click", () => {
-        if (this.collapsedSections.has(col.id)) {
-          this.collapsedSections.delete(col.id);
-        } else {
-          this.collapsedSections.add(col.id);
-        }
-        this.render(this.groups, this.customOrder);
-      });
-
-      // Cards container
-      const cardsEl = sectionEl.createDiv({ cls: "wt-section-cards" });
-      if (this.collapsedSections.has(col.id)) {
-        cardsEl.style.display = "none";
-      }
-
-      // Drop zone for drag-drop
-      this.setupDropZone(cardsEl, sectionEl, headerEl, col.id);
-
-      for (const item of sortedItems) {
-        const ctx = this.buildCardActionContext(item, col.id);
-        const cardEl = this.cardRenderer.render(item, ctx);
-        cardEl.addClass("wt-card-wrapper");
-        cardEl.setAttribute("data-item-id", item.id);
-        cardEl.setAttribute("draggable", "true");
-
-        // Selection
-        if (item.id === this.selectedId) {
-          cardEl.addClass("wt-card-selected");
-        }
-
-        cardEl.addEventListener("click", (e) => {
-          if ((e.target as HTMLElement).closest(".wt-move-to-top")) return;
-          this.selectItem(item);
-        });
-
-        // Context menu
-        cardEl.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          this.showCardContextMenu(item, col.id, e);
-        });
-
-        // Drag source
-        this.setupDragSource(cardEl, item, col.id);
-
-        // Agent state indicators (applied as class on card wrapper)
-        this.renderAgentStateIndicator(cardEl, item);
-
-        // Actions container: session badge + resume badge + move-to-top (top-right)
-        // Order: [session badge] [resume badge] [move-to-top (on hover)]
-        const actionsEl = this.getCardActionsContainer(cardEl);
-        this.renderSessionBadges(actionsEl, item);
-        this.renderResumeBadge(actionsEl, item);
-        this.renderMoveToTop(actionsEl, item);
-
-        // Ingesting shine + badge: card-level class drives the CSS animation
-        if (this.ingestingIds.has(item.id)) {
-          cardEl.addClass("wt-card-is-ingesting");
-          this.ensureIngestingBadge(cardEl);
-        }
-
-        if (this.activeSuccessIds.has(item.id)) {
-          cardEl.addClass("wt-card-new-success");
-        }
-
-        cardsEl.appendChild(cardEl);
-
-        if (this.activeSuccessIds.has(item.id)) {
-          this.appendSuccessBar(cardEl);
-        }
-      }
-
-      // Re-insert any active placeholders for this column, but only those
-      // whose real card has NOT yet appeared in this render cycle.
-      for (const [placeholderPath, placeholderEl] of this.placeholders) {
-        const cardId = this.pendingCreatedIdsByPlaceholder.get(placeholderPath);
-        // If the real card rendered, skip re-inserting the placeholder
-        if (cardId && this.listEl.querySelector(`[data-item-id="${cardId}"]`)) {
-          continue;
-        }
-        // Simple heuristic: add placeholder to first visible column
-        if (
-          cardsEl.children.length === 0 ||
-          col.id === this.adapter.config.creationColumns.find((c) => c.default)?.id
-        ) {
-          cardsEl.appendChild(placeholderEl);
-        }
-      }
+      this.renderSection(col.id, col.label, sortedItems, pinnedSet, false);
     }
 
     // Auto-resolve placeholders whose real cards have now rendered
@@ -251,6 +183,148 @@ export class ListPanel {
     }
 
     this.applyFilter();
+  }
+
+  /**
+   * Render a single section (column) of the kanban board. Used for both
+   * regular columns and the virtual pinned section.
+   */
+  private renderSection(
+    columnId: string,
+    label: string,
+    items: WorkItem[],
+    pinnedSet: Set<string>,
+    isPinnedSection: boolean,
+  ): void {
+    const sectionEl = this.listEl.createDiv({
+      cls: "wt-section",
+      attr: { "data-column": columnId },
+    });
+
+    // Section header
+    const headerEl = sectionEl.createDiv({ cls: "wt-section-header" });
+    headerEl.addClass(`wt-section-header-${columnId}`);
+
+    const collapseIcon = headerEl.createSpan({ cls: "wt-collapse-icon" });
+    collapseIcon.textContent = this.collapsedSections.has(columnId) ? "\u25b6" : "\u25bc";
+
+    headerEl.createSpan({
+      text: `${label} (${items.length})`,
+      cls: "wt-section-label",
+    });
+
+    headerEl.addEventListener("click", () => {
+      if (this.collapsedSections.has(columnId)) {
+        this.collapsedSections.delete(columnId);
+      } else {
+        this.collapsedSections.add(columnId);
+      }
+      this.render(this.groups, this.customOrder);
+    });
+
+    // Cards container
+    const cardsEl = sectionEl.createDiv({ cls: "wt-section-cards" });
+    if (this.collapsedSections.has(columnId)) {
+      cardsEl.style.display = "none";
+    }
+
+    // Drop zone for drag-drop
+    this.setupDropZone(cardsEl, sectionEl, headerEl, columnId);
+
+    for (const item of items) {
+      // For pinned items, use the pinned column as the visual column
+      // but track the real column for move operations
+      const effectiveColumn = isPinnedSection ? PINNED_COLUMN_ID : columnId;
+      const ctx = this.buildCardActionContext(item, effectiveColumn);
+      const cardEl = this.cardRenderer.render(item, ctx);
+      cardEl.addClass("wt-card-wrapper");
+      cardEl.setAttribute("data-item-id", item.id);
+      cardEl.setAttribute("draggable", "true");
+
+      // State badge for pinned items - shows the real column/state
+      if (isPinnedSection) {
+        cardEl.addClass("wt-card-pinned");
+        const realColumn = this.adapter.config.columns.find((c) => c.id === item.state);
+        if (realColumn) {
+          const stateBadge = document.createElement("span");
+          stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${item.state}`);
+          stateBadge.textContent = realColumn.label;
+          stateBadge.title = `Real state: ${realColumn.label}`;
+          // Insert badge into the meta row if available, otherwise into the card
+          const metaRow = cardEl.querySelector(".wt-card-meta");
+          if (metaRow) {
+            metaRow.insertBefore(stateBadge, metaRow.firstChild);
+          } else {
+            cardEl.appendChild(stateBadge);
+          }
+        }
+      }
+
+      // Selection
+      if (item.id === this.selectedId) {
+        cardEl.addClass("wt-card-selected");
+      }
+
+      cardEl.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".wt-move-to-top")) return;
+        this.selectItem(item);
+      });
+
+      // Context menu
+      cardEl.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        this.showCardContextMenu(item, effectiveColumn, e);
+      });
+
+      // Drag source
+      this.setupDragSource(cardEl, item, effectiveColumn);
+
+      // Agent state indicators (applied as class on card wrapper)
+      this.renderAgentStateIndicator(cardEl, item);
+
+      // Actions container: session badge + resume badge + move-to-top (top-right)
+      // Order: [session badge] [resume badge] [move-to-top (on hover)]
+      const actionsEl = this.getCardActionsContainer(cardEl);
+      this.renderSessionBadges(actionsEl, item);
+      this.renderResumeBadge(actionsEl, item);
+      this.renderMoveToTop(actionsEl, item);
+
+      // Ingesting shine + badge: card-level class drives the CSS animation
+      if (this.ingestingIds.has(item.id)) {
+        cardEl.addClass("wt-card-is-ingesting");
+        this.ensureIngestingBadge(cardEl);
+      }
+
+      if (this.activeSuccessIds.has(item.id)) {
+        cardEl.addClass("wt-card-new-success");
+      }
+
+      cardsEl.appendChild(cardEl);
+
+      if (this.activeSuccessIds.has(item.id)) {
+        this.appendSuccessBar(cardEl);
+      }
+    }
+
+    // Re-insert any active placeholders for this column, but only those
+    // whose real card has NOT yet appeared in this render cycle.
+    // (Only for non-pinned sections - placeholders belong to real columns)
+    if (!isPinnedSection) {
+      for (const [placeholderPath, placeholderEl] of this.placeholders) {
+        const cardId = this.pendingCreatedIdsByPlaceholder.get(placeholderPath);
+        // If the real card rendered, skip re-inserting the placeholder
+        if (cardId && this.listEl.querySelector(`[data-item-id="${cardId}"]`)) {
+          continue;
+        }
+        // Simple heuristic: add placeholder to first visible column
+        if (
+          cardsEl.children.length === 0 ||
+          columnId === this.adapter.config.creationColumns.find((c) => c.default)?.id
+        ) {
+          cardsEl.appendChild(placeholderEl);
+        }
+      }
+    }
   }
 
   private sortItems(items: WorkItem[], columnId: string): WorkItem[] {
@@ -296,6 +370,9 @@ export class ListPanel {
       onRetryEnrich: () => this.retryEnrichment(item),
       onClearResumeSessions: () => this.terminalPanel.clearResumeSessionsForItem(item.id),
       hasResumeSessions: () => this.hasVisibleResumeSessions(item.id),
+      onPin: () => this.pinItem(item),
+      onUnpin: () => this.unpinItem(item),
+      isPinned: () => this.pinStore?.isPinned(item.id) ?? false,
     };
   }
 
@@ -324,12 +401,38 @@ export class ListPanel {
   // ---------------------------------------------------------------------------
 
   private moveToTop(item: WorkItem, columnId: string): void {
+    // For pinned section, reorder within pinned list
+    if (columnId === PINNED_COLUMN_ID) {
+      void this.pinStore?.reorder([
+        item.id,
+        ...(this.pinStore?.getPinnedIds().filter((id) => id !== item.id) ?? []),
+      ]);
+      this.render(this.groups, this.customOrder);
+      this.selectItem(item);
+      return;
+    }
     const order = this.customOrder[columnId] || [];
     const filtered = order.filter((id) => id !== item.id);
     this.customOrder[columnId] = [item.id, ...filtered];
     this.onCustomOrderChange(this.customOrder);
     this.render(this.groups, this.customOrder);
     this.selectItem(item);
+  }
+
+  private pinItem(item: WorkItem): void {
+    if (!this.pinStore) return;
+    void this.pinStore.pin(item.id).then(() => {
+      this.render(this.groups, this.customOrder);
+      this.selectItem(item);
+    });
+  }
+
+  private unpinItem(item: WorkItem): void {
+    if (!this.pinStore) return;
+    void this.pinStore.unpin(item.id).then(() => {
+      this.render(this.groups, this.customOrder);
+      this.selectItem(item);
+    });
   }
 
   setIngesting(id: string): void {
@@ -583,13 +686,60 @@ export class ListPanel {
       // Remove drop indicators
       cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
 
+      // Handle drops involving the pinned section
+      const item = this.items.find((i) => i.id === this.dragSourceId);
+      const dragId = this.dragSourceId;
+
+      if (columnId === PINNED_COLUMN_ID) {
+        // Dropping into pinned section
+        if (item && dragId && this.pinStore) {
+          if (sourceColumn === PINNED_COLUMN_ID) {
+            // Reorder within pinned section
+            this.reorderWithinPinnedSection(dragId, dropIndex);
+          } else {
+            // Pin the item
+            await this.pinStore.pin(dragId);
+            // Reorder to drop position
+            const pinnedIds = this.pinStore.getPinnedIds();
+            const filtered = pinnedIds.filter((id) => id !== dragId);
+            filtered.splice(dropIndex, 0, dragId);
+            await this.pinStore.reorder(filtered);
+            this.render(this.groups, this.customOrder);
+          }
+        }
+        return;
+      }
+
+      if (sourceColumn === PINNED_COLUMN_ID) {
+        // Dragging FROM pinned TO a regular column: unpin + move if state differs
+        if (item && dragId && this.pinStore) {
+          await this.pinStore.unpin(dragId);
+          if (item.state !== columnId) {
+            const didMove = await this.moveToColumn(item, columnId);
+            if (!didMove) return;
+          }
+          // Set drop position in the target column
+          setTimeout(
+            () => {
+              const colItems = this.sortItems(this.groups[columnId] || [], columnId);
+              const order = colItems.map((i) => i.id);
+              const filtered = order.filter((id) => id !== dragId);
+              filtered.splice(dropIndex, 0, dragId);
+              this.customOrder[columnId] = filtered;
+              this.onCustomOrderChange(this.customOrder);
+              this.render(this.groups, this.customOrder);
+            },
+            item.state !== columnId ? 200 : 0,
+          );
+        }
+        return;
+      }
+
       if (sourceColumn === columnId) {
         // Within-section reorder
         this.reorderWithinSection(columnId, this.dragSourceId, dropIndex);
       } else {
-        // Cross-section move
-        const item = this.items.find((i) => i.id === this.dragSourceId);
-        const dragId = this.dragSourceId;
+        // Cross-section move between regular columns
         if (item && dragId) {
           const didMove = await this.moveToColumn(item, columnId);
           if (!didMove) return;
@@ -676,6 +826,20 @@ export class ListPanel {
     this.customOrder[columnId] = order;
     this.onCustomOrderChange(this.customOrder);
     this.render(this.groups, this.customOrder);
+  }
+
+  private reorderWithinPinnedSection(itemId: string, targetIndex: number): void {
+    if (!this.pinStore) return;
+    const order = this.pinStore.getPinnedIds();
+    const fromIndex = order.indexOf(itemId);
+    if (fromIndex < 0) return;
+
+    order.splice(fromIndex, 1);
+    order.splice(targetIndex, 0, itemId);
+
+    void this.pinStore.reorder(order).then(() => {
+      this.render(this.groups, this.customOrder);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -814,6 +978,21 @@ export class ListPanel {
   private showCardContextMenu(item: WorkItem, columnId: string, e: MouseEvent): void {
     const menu = new Menu();
     const ctx = this.buildCardActionContext(item, columnId);
+
+    // Framework-injected pin/unpin action at the top of the menu
+    if (this.pinStore) {
+      const pinned = this.pinStore.isPinned(item.id);
+      menu.addItem((menuItem) => {
+        menuItem.setTitle(pinned ? "Unpin" : "Pin to Top").onClick(() => {
+          if (pinned) {
+            ctx.onUnpin();
+          } else {
+            ctx.onPin();
+          }
+        });
+      });
+      menu.addSeparator();
+    }
 
     // Adapter provides the full menu structure. Framework provides
     // CardActionContext so the adapter can call framework primitives.
@@ -1068,6 +1247,11 @@ export class ListPanel {
       changed = true;
     }
 
+    // Rekey pinned items
+    if (this.pinStore?.rekey(oldId, newId)) {
+      changed = true;
+    }
+
     changed = this.rekeyMapEntry(this.agentStates, oldId, newId) || changed;
     changed = this.rekeyMapEntry(this.idleSinceMap, oldId, newId) || changed;
     changed = this.rekeySetEntry(this.ingestingIds, oldId, newId) || changed;
@@ -1124,6 +1308,8 @@ export class ListPanel {
   }
 
   private findItemColumn(itemId: string): string | null {
+    // Check pinned section first
+    if (this.pinStore?.isPinned(itemId)) return PINNED_COLUMN_ID;
     for (const [colId, items] of Object.entries(this.groups)) {
       if (items.some((i) => i.id === itemId)) return colId;
     }
