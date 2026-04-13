@@ -93,7 +93,7 @@ title: "Test Task"
       expect(written).not.toMatch(/^state: todo$/m);
     });
 
-    it("returns false when the field is not found", async () => {
+    it("inserts the field when it is missing from frontmatter", async () => {
       const contentNoState = `---
 id: abc-123
 title: "Test Task"
@@ -106,8 +106,42 @@ title: "Test Task"
 
       const result = await resolver.applyState(app, file, "active", "todo", "");
 
+      expect(result).toBe(true);
+      const written = modify.mock.calls[0][1] as string;
+      expect(written).toMatch(/^state: active$/m);
+      // Field should be inside frontmatter, before closing ---
+      expect(written).toMatch(/state: active\n---/);
+    });
+
+    it("returns false when there is no frontmatter block", async () => {
+      const contentNoFrontmatter = `# Just a heading\nSome content\n`;
+      const { app, modify } = createMockApp(contentNoFrontmatter);
+      const resolver = new FrontmatterStateResolver();
+      const file = { path: "task.md" } as TFile;
+
+      const result = await resolver.applyState(app, file, "active", "todo", "");
+
       expect(result).toBe(false);
       expect(modify).not.toHaveBeenCalled();
+    });
+
+    it("updates a blank field value (e.g. 'state:')", async () => {
+      const contentBlankState = `---
+id: abc-123
+state:
+title: "Test Task"
+---
+# Test Task
+`;
+      const { app, modify } = createMockApp(contentBlankState);
+      const resolver = new FrontmatterStateResolver();
+      const file = { path: "task.md" } as TFile;
+
+      const result = await resolver.applyState(app, file, "active", "todo", "");
+
+      expect(result).toBe(true);
+      const written = modify.mock.calls[0][1] as string;
+      expect(written).toMatch(/^state: active$/m);
     });
 
     it("works with custom field names", async () => {

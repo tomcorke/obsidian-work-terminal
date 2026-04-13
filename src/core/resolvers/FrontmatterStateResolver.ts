@@ -40,12 +40,36 @@ export class FrontmatterStateResolver implements StateResolver {
     _basePath: string,
   ): Promise<boolean> {
     const content = await app.vault.read(file);
-    const fieldPattern = new RegExp(`^${escapeRegex(this.fieldName)}:\\s*.+$`, "m");
-    if (!fieldPattern.test(content)) return false;
-
-    const updated = content.replace(fieldPattern, `${this.fieldName}: ${newState}`);
+    const updated = this.upsertFrontmatterField(content, newState);
+    if (updated === null) return false;
     await app.vault.modify(file, updated);
     return true;
+  }
+
+  /**
+   * Update or insert the field within frontmatter. Only touches content
+   * inside the opening `--- ... ---` block. Returns null if there is no
+   * frontmatter block at all (caller should decide how to handle).
+   */
+  private upsertFrontmatterField(content: string, newState: string): string | null {
+    const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+    if (!fmMatch) return null;
+
+    const [fullMatch, openFence, body, closeFence] = fmMatch;
+    const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
+    const fieldPattern = new RegExp(`^${escapeRegex(this.fieldName)}:\\s*.*$`, "m");
+
+    let updatedBody: string;
+    if (fieldPattern.test(body)) {
+      // Field exists (even if blank like `state:`) - replace it
+      updatedBody = body.replace(fieldPattern, `${this.fieldName}: ${newState}`);
+    } else {
+      // Field missing - append before closing fence
+      const trimmedBody = body.endsWith(eol) ? body : body + eol;
+      updatedBody = `${trimmedBody}${this.fieldName}: ${newState}${eol}`;
+    }
+
+    return content.replace(fullMatch, `${openFence}${updatedBody}${closeFence}`);
   }
 
   getValidStates(): string[] {
