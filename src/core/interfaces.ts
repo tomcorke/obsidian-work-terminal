@@ -175,6 +175,12 @@ export interface CardActionContext {
   onClearResumeSessions(): Promise<void>;
   /** Whether this item currently shows the framework resume indicator. */
   hasResumeSessions(): boolean;
+  /** Pin this item to the top of the kanban board. */
+  onPin(): void;
+  /** Unpin this item, returning it to its real state column. */
+  onUnpin(): void;
+  /** Whether this item is currently pinned. */
+  isPinned(): boolean;
 }
 
 /**
