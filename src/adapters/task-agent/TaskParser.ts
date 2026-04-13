@@ -116,13 +116,14 @@ export class TaskParser implements WorkItemParser {
 
   private resolvePriority(fm: Record<string, any>): TaskPriority {
     // Support flat dot-notation keys (new format) with fallback to nested (old format)
+    // Use ?? (not ||) for string fields so empty strings from flat keys are preserved
     const nested = fm.priority || {};
     return {
       score: fm["priority.score"] ?? nested.score ?? 0,
-      deadline: fm["priority.deadline"] || nested.deadline || "",
-      impact: fm["priority.impact"] || nested.impact || "medium",
+      deadline: fm["priority.deadline"] ?? nested.deadline ?? "",
+      impact: fm["priority.impact"] ?? nested.impact ?? "medium",
       "has-blocker": fm["priority.has-blocker"] ?? nested["has-blocker"] ?? false,
-      "blocker-context": fm["priority.blocker-context"] || nested["blocker-context"] || "",
+      "blocker-context": fm["priority.blocker-context"] ?? nested["blocker-context"] ?? "",
     };
   }
 
