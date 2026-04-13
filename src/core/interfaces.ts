@@ -61,18 +61,31 @@ export interface SettingField {
 /** Visual treatment style for a card flag. */
 export type CardFlagStyle = "badge" | "accent-border" | "background-tint";
 
+/** Comparison operator for numeric/string field matching. */
+export type CardFlagOperator = "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "contains" | "regex";
+
 /**
  * Describes a single flag rule that maps a frontmatter field to a visual
  * treatment on a work item card. Adapters supply default rules via
  * `PluginConfig.cardFlags`; end users may override via settings in future.
+ *
+ * Matching modes (evaluated in this priority order):
+ * 1. `operator` + `operand` - flexible operator-based matching (eq, neq, gt, lt, gte, lte, contains, regex)
+ * 2. `contains` - legacy shorthand for operator: "contains"
+ * 3. `value` - legacy shorthand for operator: "eq"
+ * 4. No match fields - matches on truthy field value
  */
 export interface CardFlagRule {
   /** Dot-path into WorkItem.metadata (e.g. "priority.has-blocker"). */
   field: string;
-  /** Match when the resolved field equals this value. Mutually exclusive with `contains`. */
+  /** Match when the resolved field equals this value. Mutually exclusive with `contains`. Legacy; prefer `operator`+`operand`. */
   value?: unknown;
-  /** Match when the resolved field (string or array) contains this value. Mutually exclusive with `value`. */
+  /** Match when the resolved field (string or array) contains this value. Mutually exclusive with `value`. Legacy; prefer `operator`+`operand`. */
   contains?: string;
+  /** Comparison operator for flexible matching. When set, `operand` provides the comparison value. */
+  operator?: CardFlagOperator;
+  /** The value to compare against when using `operator`. Interpreted as a number for gt/lt/gte/lte, a string for contains/regex/eq/neq. */
+  operand?: string;
   /** Label text rendered on the card (e.g. "BLOCKED", "URGENT"). */
   label: string;
   /** Visual treatment to apply. Defaults to "badge". */
