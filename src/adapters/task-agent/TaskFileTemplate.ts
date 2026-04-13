@@ -59,18 +59,16 @@ state: ${state}
 
 title: ${safeTitle}
 
-source:
-  type: prompt
-  id: "${splitFrom ? `split-${now.replace(/[:.]/g, "")}` : ""}"
-  url: ""
-  captured: ${now}
+source.type: prompt
+source.id: "${splitFrom ? `split-${now.replace(/[:.]/g, "")}` : ""}"
+source.url: ""
+source.captured: ${now}
 
-priority:
-  score: 0
-  deadline: ""
-  impact: medium
-  has-blocker: false
-  blocker-context: ""
+priority.score: 0
+priority.deadline: ""
+priority.impact: medium
+priority.has-blocker: false
+priority.blocker-context: ""
 
 agent-actionable: false
 

@@ -343,6 +343,172 @@ describe("TaskParser", () => {
     });
   });
 
+  describe("flat dot-notation frontmatter (new format)", () => {
+    it("reads flat source fields", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: undefined,
+          "source.type": "slack",
+          "source.id": "SLK-001",
+          "source.url": "https://slack.example.com/msg/001",
+          "source.captured": "2026-04-01",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "slack",
+        id: "SLK-001",
+        url: "https://slack.example.com/msg/001",
+        captured: "2026-04-01",
+      });
+    });
+
+    it("reads flat priority fields", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          priority: undefined,
+          "priority.score": 75,
+          "priority.deadline": "2026-05-01",
+          "priority.impact": "high",
+          "priority.has-blocker": true,
+          "priority.blocker-context": "waiting on API",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).priority).toMatchObject({
+        score: 75,
+        deadline: "2026-05-01",
+        impact: "high",
+        "has-blocker": true,
+        "blocker-context": "waiting on API",
+      });
+    });
+
+    it("flat keys take precedence over nested keys", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: { type: "other", id: "old", url: "", captured: "" },
+          "source.type": "jira",
+          "source.id": "PROJ-999",
+          "source.url": "https://example.atlassian.net/browse/PROJ-999",
+          "source.captured": "PROJ-999",
+          priority: {
+            score: 10,
+            deadline: "",
+            impact: "low",
+            "has-blocker": false,
+            "blocker-context": "",
+          },
+          "priority.score": 90,
+          "priority.impact": "critical",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source.type).toBe("jira");
+      expect((item!.metadata as any).source.id).toBe("PROJ-999");
+      expect((item!.metadata as any).priority.score).toBe(90);
+      expect((item!.metadata as any).priority.impact).toBe("critical");
+    });
+
+    it("empty flat string values take precedence over non-empty nested values", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          priority: {
+            score: 80,
+            deadline: "2026-12-31",
+            impact: "critical",
+            "has-blocker": true,
+            "blocker-context": "waiting on deploy",
+          },
+          "priority.score": 0,
+          "priority.deadline": "",
+          "priority.impact": "",
+          "priority.has-blocker": false,
+          "priority.blocker-context": "",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).priority).toMatchObject({
+        score: 0,
+        deadline: "",
+        impact: "",
+        "has-blocker": false,
+        "blocker-context": "",
+      });
+    });
+
+    it("falls back to nested when flat keys are absent", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: {
+            type: "confluence",
+            id: "C-1",
+            url: "https://wiki.example.com",
+            captured: "2026-01-01",
+          },
+          priority: {
+            score: 42,
+            deadline: "2026-06-01",
+            impact: "high",
+            "has-blocker": true,
+            "blocker-context": "blocked",
+          },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "confluence",
+        id: "C-1",
+        url: "https://wiki.example.com",
+        captured: "2026-01-01",
+      });
+      expect((item!.metadata as any).priority).toMatchObject({
+        score: 42,
+        deadline: "2026-06-01",
+        impact: "high",
+        "has-blocker": true,
+        "blocker-context": "blocked",
+      });
+    });
+
+    it("detects Jira source from flat keys", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const jiraUrl = "https://example.atlassian.net/browse/PROJ-5555";
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({
+          source: undefined,
+          "source.type": "other",
+          "source.id": "",
+          "source.url": jiraUrl,
+          "source.captured": "",
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).source).toMatchObject({
+        type: "jira",
+        id: "PROJ-5555",
+        url: jiraUrl,
+      });
+    });
+  });
+
   describe("goal normalisation", () => {
     it("passes through array goal", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
