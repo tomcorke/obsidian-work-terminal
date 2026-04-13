@@ -683,15 +683,24 @@ describe("obsidian automation helpers", () => {
   });
 
   it("exports OBSIDIAN_BINARY as a lazy getter matching current platform", () => {
-    const binary = automation.OBSIDIAN_BINARY;
-    expect(typeof binary).toBe("string");
-    expect(binary.length).toBeGreaterThan(0);
-    if (process.platform === "darwin") {
-      expect(binary).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
-    } else if (process.platform === "win32") {
-      expect(binary).toMatch(/Obsidian\.exe$/);
-    } else if (process.platform === "linux") {
-      expect(binary).toMatch(/obsidian$/);
+    // On Linux CI without Obsidian installed, the getter throws - that's expected
+    if (process.platform === "linux") {
+      try {
+        const binary = automation.OBSIDIAN_BINARY;
+        expect(typeof binary).toBe("string");
+        expect(binary).toMatch(/obsidian$/);
+      } catch (e: unknown) {
+        expect((e as Error).message).toMatch(/Obsidian binary not found/);
+      }
+    } else {
+      const binary = automation.OBSIDIAN_BINARY;
+      expect(typeof binary).toBe("string");
+      expect(binary.length).toBeGreaterThan(0);
+      if (process.platform === "darwin") {
+        expect(binary).toBe("/Applications/Obsidian.app/Contents/MacOS/Obsidian");
+      } else if (process.platform === "win32") {
+        expect(binary).toMatch(/Obsidian\.exe$/);
+      }
     }
   });
 

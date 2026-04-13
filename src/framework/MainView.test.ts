@@ -299,11 +299,7 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
   });
 
   function makeView(settings: Record<string, unknown> = {}) {
-    const view = new MainView(
-      {} as any,
-      {} as any,
-      { isReloading: false } as any,
-    );
+    const view = new MainView({} as any, {} as any, { isReloading: false } as any);
     (view as any).settings = { "core.keepSessionsAlive": true, ...settings };
     return view;
   }

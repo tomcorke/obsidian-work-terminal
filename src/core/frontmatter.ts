@@ -38,8 +38,6 @@ function extractParsedStringValue(parsed: unknown, key: string): string | null {
 
 function extractFrontmatterLine(frontmatter: string, key: string): string | null {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = frontmatter.match(
-    new RegExp(`^${escapedKey}[ \\t]*:[ \\t]*[^\\r\\n]*$`, "m"),
-  );
+  const match = frontmatter.match(new RegExp(`^${escapedKey}[ \\t]*:[ \\t]*[^\\r\\n]*$`, "m"));
   return match?.[0] ?? null;
 }

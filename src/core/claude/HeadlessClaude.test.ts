@@ -4,7 +4,11 @@ import { spawnHeadlessClaude } from "./HeadlessClaude";
 describe("HeadlessClaude", () => {
   it("returns install guidance when the Claude CLI is unavailable", async () => {
     await expect(
-      spawnHeadlessClaude("Review this task", process.cwd(), "definitely-not-a-real-command-issue-158"),
+      spawnHeadlessClaude(
+        "Review this task",
+        process.cwd(),
+        "definitely-not-a-real-command-issue-158",
+      ),
     ).resolves.toEqual({
       exitCode: -1,
       stdout: "",
