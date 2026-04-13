@@ -45,7 +45,7 @@ export class TaskAgentAdapter extends BaseAdapter {
   }
 
   createCardRenderer(): CardRenderer {
-    return new TaskCard();
+    return new TaskCard(this.config.cardFlags);
   }
 
   createPromptBuilder(): WorkItemPromptBuilder {

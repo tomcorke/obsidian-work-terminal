@@ -1,9 +1,21 @@
 import { Notice, type MenuItem } from "obsidian";
-import type { WorkItem, CardRenderer, CardActionContext } from "../../core/interfaces";
+import type {
+  WorkItem,
+  CardRenderer,
+  CardActionContext,
+  CardFlagRule,
+} from "../../core/interfaces";
+import { matchCardFlags, type MatchedCardFlag } from "../../core/cardFlags";
 import { normalizeObsidianDisplayText } from "../../core/utils";
 import { KANBAN_COLUMNS, COLUMN_LABELS, SOURCE_LABELS } from "./types";
 
 export class TaskCard implements CardRenderer {
+  private flagRules: CardFlagRule[];
+
+  constructor(flagRules: CardFlagRule[] = []) {
+    this.flagRules = flagRules;
+  }
+
   render(item: WorkItem, ctx: CardActionContext): HTMLElement {
     const meta = (item.metadata || {}) as Record<string, any>;
     const source = meta.source || { type: "other" };
@@ -79,15 +91,10 @@ export class TaskCard implements CardRenderer {
       goalEl.title = displayGoal;
     }
 
-    // Blocker indicator
-    if (priority["has-blocker"]) {
-      const blockerEl = metaRow.createSpan({ cls: "wt-card-source" });
-      blockerEl.textContent = "BLOCKED";
-      blockerEl.style.background = "#e5484d";
-      blockerEl.style.color = "white";
-      if (priority["blocker-context"]) {
-        blockerEl.title = normalizeObsidianDisplayText(priority["blocker-context"]);
-      }
+    // Configurable card flags (replaces hard-coded blocker indicator)
+    const matchedFlags = matchCardFlags(this.flagRules, meta);
+    for (const flag of matchedFlags) {
+      this.renderFlag(metaRow, card, flag);
     }
 
     // Click to select
@@ -110,6 +117,53 @@ export class TaskCard implements CardRenderer {
     });
 
     return card;
+  }
+
+  /**
+   * Render a single matched card flag using the appropriate visual treatment.
+   */
+  private renderFlag(metaRow: HTMLElement, card: HTMLElement, flag: MatchedCardFlag): void {
+    const tooltip = flag.tooltip ? normalizeObsidianDisplayText(flag.tooltip) : undefined;
+
+    switch (flag.style) {
+      case "badge": {
+        const el = metaRow.createSpan({ cls: "wt-card-flag wt-card-flag--badge" });
+        el.textContent = flag.label;
+        if (flag.color) {
+          el.style.background = flag.color;
+          el.style.color = "var(--text-on-accent, white)";
+        }
+        if (tooltip) el.title = tooltip;
+        break;
+      }
+      case "accent-border": {
+        card.addClass("wt-card-flag--accent-border");
+        if (flag.color) {
+          card.style.setProperty("--wt-flag-accent-color", flag.color);
+        }
+        // Also add a small label in the meta row
+        const el = metaRow.createSpan({ cls: "wt-card-flag wt-card-flag--accent-label" });
+        el.textContent = flag.label;
+        if (flag.color) el.style.color = flag.color;
+        if (tooltip) el.title = tooltip;
+        break;
+      }
+      case "background-tint": {
+        card.addClass("wt-card-flag--bg-tint");
+        if (flag.color) {
+          card.style.setProperty("--wt-flag-bg-tint", flag.color);
+        }
+        // Also add a small label in the meta row
+        const el = metaRow.createSpan({ cls: "wt-card-flag wt-card-flag--tint-label" });
+        el.textContent = flag.label;
+        if (tooltip) el.title = tooltip;
+        break;
+      }
+      default: {
+        const _exhaustive: never = flag.style;
+        break;
+      }
+    }
   }
 
   getContextMenuItems(item: WorkItem, ctx: CardActionContext): MenuItem[] {

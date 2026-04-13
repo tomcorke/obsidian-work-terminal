@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskCard } from "./TaskCard";
-import type { CardActionContext, WorkItem } from "../../core/interfaces";
+import type { CardActionContext, CardFlagRule, WorkItem } from "../../core/interfaces";
+import { DEFAULT_CARD_FLAGS } from "./TaskAgentConfig";
 
 type CreateChildOptions = { cls?: string; text?: string };
 type ObsidianHTMLElementPrototype = typeof HTMLElement.prototype & {
@@ -335,7 +336,29 @@ describe("TaskCard", () => {
     });
   });
 
-  describe("blocker badge rendering", () => {
+  describe("blocker badge rendering (via card flags)", () => {
+    it("renders BLOCKED badge using default card flag rules", () => {
+      const item = makeItem({
+        metadata: {
+          priority: {
+            "has-blocker": true,
+            "blocker-context": "waiting on deploy",
+          },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard(DEFAULT_CARD_FLAGS);
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-flag--badge") as HTMLElement;
+
+      expect(badge).not.toBeNull();
+      expect(badge.textContent).toBe("BLOCKED");
+      // jsdom normalizes hex colours to rgb()
+      expect(badge.style.background).toBe("rgb(229, 72, 77)");
+      expect(badge.style.color).toBe("var(--text-on-accent, white)");
+    });
+
     it("normalizes Obsidian link aliases in blocker tooltips", () => {
       const item = makeItem({
         metadata: {
@@ -346,16 +369,101 @@ describe("TaskCard", () => {
         },
       });
       const ctx = makeContext();
-      const card = new TaskCard();
+      const card = new TaskCard(DEFAULT_CARD_FLAGS);
 
       const el = card.render(item, ctx);
-      const badges = Array.from(el.querySelectorAll(".wt-card-source")) as HTMLElement[];
-      const badge = badges.find((candidate) => candidate.textContent === "BLOCKED");
+      const badge = el.querySelector(".wt-card-flag--badge") as HTMLElement;
 
       expect(badge).toBeDefined();
       expect(badge?.title).toBe("Alias");
       expect(badge?.title).not.toContain("[[");
       expect(badge?.title).not.toContain("]]");
+    });
+
+    it("does not render BLOCKED badge when has-blocker is false", () => {
+      const item = makeItem({
+        metadata: {
+          priority: { "has-blocker": false },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard(DEFAULT_CARD_FLAGS);
+
+      const el = card.render(item, ctx);
+      const badge = el.querySelector(".wt-card-flag--badge");
+
+      expect(badge).toBeNull();
+    });
+  });
+
+  describe("card flag visual treatments", () => {
+    it("renders accent-border style with left border class and CSS variable", () => {
+      const rules: CardFlagRule[] = [
+        { field: "hot", value: true, label: "HOT", style: "accent-border", color: "orange" },
+      ];
+      const item = makeItem({ metadata: { hot: true } });
+      const ctx = makeContext();
+      const card = new TaskCard(rules);
+
+      const el = card.render(item, ctx);
+
+      expect(el.classList.contains("wt-card-flag--accent-border")).toBe(true);
+      expect(el.style.getPropertyValue("--wt-flag-accent-color")).toBe("orange");
+      const label = el.querySelector(".wt-card-flag--accent-label") as HTMLElement;
+      expect(label).not.toBeNull();
+      expect(label.textContent).toBe("HOT");
+      expect(label.style.color).toBe("orange");
+    });
+
+    it("renders background-tint style with bg class and CSS variable", () => {
+      const rules: CardFlagRule[] = [
+        {
+          field: "priority.impact",
+          value: "critical",
+          label: "CRITICAL",
+          style: "background-tint",
+          color: "rgba(255,0,0,0.08)",
+        },
+      ];
+      const item = makeItem({
+        metadata: { priority: { impact: "critical" } },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard(rules);
+
+      const el = card.render(item, ctx);
+
+      expect(el.classList.contains("wt-card-flag--bg-tint")).toBe(true);
+      expect(el.style.getPropertyValue("--wt-flag-bg-tint")).toBe("rgba(255,0,0,0.08)");
+      const label = el.querySelector(".wt-card-flag--tint-label") as HTMLElement;
+      expect(label).not.toBeNull();
+      expect(label.textContent).toBe("CRITICAL");
+    });
+
+    it("renders multiple flags from different rules", () => {
+      const rules: CardFlagRule[] = [
+        { field: "blocked", value: true, label: "BLOCKED", style: "badge", color: "red" },
+        { field: "hot", value: true, label: "HOT", style: "accent-border", color: "orange" },
+      ];
+      const item = makeItem({ metadata: { blocked: true, hot: true } });
+      const ctx = makeContext();
+      const card = new TaskCard(rules);
+
+      const el = card.render(item, ctx);
+      const badges = el.querySelectorAll(".wt-card-flag");
+
+      expect(badges.length).toBe(2);
+    });
+
+    it("renders no flags when no rules are configured", () => {
+      const item = makeItem({ metadata: { priority: { "has-blocker": true } } });
+      const ctx = makeContext();
+      const card = new TaskCard([]);
+
+      const el = card.render(item, ctx);
+      const flags = el.querySelectorAll(".wt-card-flag");
+
+      expect(flags.length).toBe(0);
     });
   });
 });
