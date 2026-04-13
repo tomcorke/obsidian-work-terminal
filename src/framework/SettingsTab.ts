@@ -17,10 +17,7 @@ import { expandTilde } from "../core/utils";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
-import {
-  parseCustomCardFlags,
-  serializeCustomCardFlags,
-} from "../adapters/task-agent/customCardFlags";
+import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -322,7 +319,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
     const customJson = (settings["adapter.customCardFlags"] as string) || "[]";
-    const customRules = parseCustomCardFlags(customJson);
+    const customRules = parseCardFlagRulesJson(customJson);
     const defaultRules = this.adapter.config.cardFlags || [];
 
     const ruleCount = customRules.length;
@@ -344,7 +341,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
               customRules,
               defaultRules,
               async (updatedRules: CardFlagRule[]) => {
-                const json = serializeCustomCardFlags(updatedRules);
+                const json = serializeCardFlagRules(updatedRules);
                 await this.saveSettings((settings) => {
                   settings["adapter.customCardFlags"] = json;
                 });
