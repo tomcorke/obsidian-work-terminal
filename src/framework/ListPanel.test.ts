@@ -638,4 +638,174 @@ describe("ListPanel", () => {
     expect((panel as any).activeSuccessIds.has(newId)).toBe(false);
     expect((panel as any).successTimeouts.has(newId)).toBe(false);
   });
+
+  // ---------------------------------------------------------------------------
+  // Pinned section
+  // ---------------------------------------------------------------------------
+
+  function createMockPinStore(pinnedIds: string[] = []) {
+    const ids = [...pinnedIds];
+    return {
+      getPinnedIds: vi.fn(() => [...ids]),
+      isPinned: vi.fn((id: string) => ids.includes(id)),
+      pin: vi.fn(async (id: string) => {
+        if (!ids.includes(id)) ids.push(id);
+      }),
+      unpin: vi.fn(async (id: string) => {
+        const idx = ids.indexOf(id);
+        if (idx >= 0) ids.splice(idx, 1);
+      }),
+      toggle: vi.fn(async (id: string) => {
+        const idx = ids.indexOf(id);
+        if (idx >= 0) {
+          ids.splice(idx, 1);
+          return false;
+        }
+        ids.push(id);
+        return true;
+      }),
+      reorder: vi.fn(async (newOrder: string[]) => {
+        ids.length = 0;
+        ids.push(...newOrder);
+      }),
+      rekey: vi.fn((oldId: string, newId: string) => {
+        const idx = ids.indexOf(oldId);
+        if (idx < 0) return false;
+        ids[idx] = newId;
+        return true;
+      }),
+      load: vi.fn(async () => {}),
+    };
+  }
+
+  it("renders a pinned section above regular columns when items are pinned", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore(["task-1"]);
+    panel.setPinStore(pinStore as any);
+
+    const item1 = makeItem("task-1", "Pinned Task");
+    const item2 = makeItem("task-2", "Regular Task");
+
+    panel.render({ todo: [item1, item2] }, {});
+
+    const sections = Array.from(document.querySelectorAll(".wt-section"));
+    expect(sections.length).toBe(2); // pinned + todo
+    expect(sections[0].getAttribute("data-column")).toBe("__pinned__");
+    expect(sections[1].getAttribute("data-column")).toBe("todo");
+
+    // Pinned section has the item
+    const pinnedCards = sections[0].querySelectorAll("[data-item-id]");
+    expect(pinnedCards.length).toBe(1);
+    expect(pinnedCards[0].getAttribute("data-item-id")).toBe("task-1");
+
+    // Regular column excludes the pinned item
+    const todoCards = sections[1].querySelectorAll("[data-item-id]");
+    expect(todoCards.length).toBe(1);
+    expect(todoCards[0].getAttribute("data-item-id")).toBe("task-2");
+  });
+
+  it("does not render pinned section when no items are pinned", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore([]);
+    panel.setPinStore(pinStore as any);
+
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const sections = Array.from(document.querySelectorAll(".wt-section"));
+    expect(sections.length).toBe(1);
+    expect(sections[0].getAttribute("data-column")).toBe("todo");
+  });
+
+  it("adds wt-card-pinned class to pinned cards", () => {
+    const { panel } = createListPanel({ includeMetaRow: true });
+    const pinStore = createMockPinStore(["task-1"]);
+    panel.setPinStore(pinStore as any);
+
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const card = document.querySelector('[data-item-id="task-1"]');
+    expect(card?.classList.contains("wt-card-pinned")).toBe(true);
+  });
+
+  it("shows real state badge on pinned cards", () => {
+    const { panel } = createListPanel({
+      columns: [
+        { id: "priority", label: "Priority", folderName: "priority" },
+        { id: "todo", label: "To Do", folderName: "todo" },
+      ],
+      includeMetaRow: true,
+    });
+    const pinStore = createMockPinStore(["task-1"]);
+    panel.setPinStore(pinStore as any);
+
+    const item = { ...makeItem("task-1"), state: "priority" };
+    panel.render({ priority: [item] }, {});
+
+    const badge = document.querySelector(".wt-card-state-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toBe("Priority");
+    expect(badge?.classList.contains("wt-state-badge-priority")).toBe(true);
+  });
+
+  it("exposes isPinned in card action context", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore(["task-1"]);
+    panel.setPinStore(pinStore as any);
+
+    const item = makeItem("task-1");
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+
+    expect(ctx.isPinned?.()).toBe(true);
+  });
+
+  it("returns isPinned false when item is not pinned", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore([]);
+    panel.setPinStore(pinStore as any);
+
+    const item = makeItem("task-1");
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+
+    expect(ctx.isPinned?.()).toBe(false);
+  });
+
+  it("rekeys pinned items when rekeyCustomOrder is called", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore(["old-id"]);
+    panel.setPinStore(pinStore as any);
+
+    panel.render({ todo: [makeItem("old-id")] }, { todo: ["old-id"] });
+
+    const changed = panel.rekeyCustomOrder("old-id", "new-id");
+
+    expect(changed).toBe(true);
+    expect(pinStore.rekey).toHaveBeenCalledWith("old-id", "new-id");
+  });
+
+  it("renders pinned items in pinned ID order, not by custom column order", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore(["task-2", "task-1"]);
+    panel.setPinStore(pinStore as any);
+
+    const item1 = makeItem("task-1", "First");
+    const item2 = makeItem("task-2", "Second");
+
+    panel.render({ todo: [item1, item2] }, {});
+
+    const pinnedCards = Array.from(
+      document.querySelectorAll('[data-column="__pinned__"] [data-item-id]'),
+    );
+    expect(pinnedCards.map((el) => el.getAttribute("data-item-id"))).toEqual(["task-2", "task-1"]);
+  });
+
+  it("works without a pin store (backward-compatible)", () => {
+    const { panel } = createListPanel();
+    // No pinStore set - should render normally without errors
+
+    panel.render({ todo: [makeItem("task-1")] }, {});
+
+    const sections = Array.from(document.querySelectorAll(".wt-section"));
+    expect(sections.length).toBe(1);
+    expect(sections[0].getAttribute("data-column")).toBe("todo");
+  });
 });

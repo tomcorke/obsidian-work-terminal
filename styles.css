@@ -107,6 +107,7 @@
 }
 
 /* Section header colours per state - bottom border like v1 */
+.wt-section-header-__pinned__ { border-bottom-color: #d69e2e; }
 .wt-section-header-priority { border-bottom-color: #e53e3e; }
 .wt-section-header-active { border-bottom-color: var(--interactive-accent); }
 .wt-section-header-todo { border-bottom-color: var(--text-muted); }
@@ -1453,6 +1454,51 @@ button.wt-spawn-claude-ctx:hover svg {
   letter-spacing: 0.03em;
   white-space: nowrap;
   cursor: help;
+}
+
+/* =============================================================================
+   Pinned items - state badge and visual treatment
+   ============================================================================= */
+
+/* Subtle left-edge accent on pinned cards via inset box-shadow.
+   Uses box-shadow instead of border-left so .wt-card-selected can
+   independently control border-left-color for the selection accent. */
+.wt-card-pinned {
+  box-shadow: inset 2px 0 0 #d69e2e;
+}
+
+/* Real-state badge shown on pinned cards */
+.wt-card-state-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.wt-state-badge-priority {
+  background: rgba(229, 62, 62, 0.15);
+  color: #e53e3e;
+}
+
+.wt-state-badge-active {
+  background: rgba(var(--interactive-accent-rgb, 99, 108, 234), 0.15);
+  color: var(--interactive-accent);
+}
+
+.wt-state-badge-todo {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.wt-state-badge-done {
+  background: rgba(56, 161, 105, 0.15);
+  color: #38a169;
 }
 
 /* =============================================================================

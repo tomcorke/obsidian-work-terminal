@@ -20,6 +20,7 @@ import { PromptBox } from "./PromptBox";
 import { loadAllSettings, SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
+import { PinStore } from "../core/PinStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
@@ -379,6 +380,11 @@ export class MainView extends ItemView {
         await this.persistCustomOrder(order);
       },
     );
+
+    // Initialize PinStore and inject into ListPanel
+    const pinStore = new PinStore(this.pluginRef);
+    await pinStore.load();
+    this.listPanel.setPinStore(pinStore);
   }
 
   // ---------------------------------------------------------------------------
