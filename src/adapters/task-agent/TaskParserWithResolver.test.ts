@@ -147,6 +147,26 @@ describe("TaskParser with StateResolver", () => {
     });
   });
 
+  describe("resolver returns unrecognized state", () => {
+    it("falls back to folder path instead of dropping the task", () => {
+      // A resolver that always returns an unrecognized state
+      const badResolver = {
+        resolveState: () => "custom-unknown-state",
+        applyState: async () => false,
+      };
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ state: "custom-unknown-state" }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings, badResolver as any);
+      const item = parser.parse(file as unknown as TFile);
+
+      // Should fall back to folder-based resolution, not return null
+      expect(item).not.toBeNull();
+      expect(item!.state).toBe("active");
+    });
+  });
+
   describe("without resolver (backward compatibility)", () => {
     it("still resolves state from folder path", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");

@@ -276,8 +276,8 @@ export class TaskParser implements WorkItemParser {
       if (resolved !== null && VALID_STATES.includes(resolved as TaskState)) {
         return resolved as TaskState;
       }
-      // If resolver returned a value but it's not a valid TaskState, fall through
-      if (resolved !== null) return null;
+      // If resolver returned null or an unrecognized state, fall back to the
+      // legacy path-based resolution below.
     }
     return this.getStateFromPath(path);
   }
