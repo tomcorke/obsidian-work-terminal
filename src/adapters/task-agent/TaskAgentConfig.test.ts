@@ -141,7 +141,7 @@ describe("TaskAgentConfig column helpers", () => {
   });
 
   describe("makeDynamicColumn", () => {
-    it("creates a column with titlecased label", () => {
+    it("creates a column with title-cased label", () => {
       const col = makeDynamicColumn("review");
       expect(col).toEqual({ id: "review", label: "Review" });
     });
@@ -151,9 +151,14 @@ describe("TaskAgentConfig column helpers", () => {
       expect(col.folderName).toBeUndefined();
     });
 
-    it("handles hyphenated IDs", () => {
+    it("title-cases hyphenated IDs", () => {
       const col = makeDynamicColumn("blocked-upstream");
-      expect(col.label).toBe("Blocked-upstream");
+      expect(col.label).toBe("Blocked Upstream");
+    });
+
+    it("title-cases underscored IDs", () => {
+      const col = makeDynamicColumn("my_custom_state");
+      expect(col.label).toBe("My Custom State");
     });
 
     it("handles single character IDs", () => {

@@ -284,7 +284,7 @@ When using the **Frontmatter** or **Composite** state strategy, you can set the 
 Dynamic columns:
 
 - **Appear automatically** when any task has a state not in the predefined column list
-- **Are appended after** the configured columns (Priority, Active, To Do, Done)
+- **Initially appear after** the configured columns (Priority, Active, To Do, Done) until you reorder them
 - **Can be reordered** using the column display order controls in settings, just like built-in columns. Once reordered, the dynamic column's position is persisted.
 - **Are shown with a star** (\*) in the settings column ordering UI to distinguish them from built-in columns
 - **Do not have folder mappings** - dragging a task into a dynamic column updates its frontmatter `state` field but does not move the file to a different folder

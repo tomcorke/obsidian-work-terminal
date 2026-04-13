@@ -22,6 +22,7 @@ import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { PinStore } from "../core/PinStore";
 import { extractYamlFrontmatterString } from "../core/frontmatter";
+import { titleCase } from "../core/utils";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 
@@ -605,7 +606,7 @@ export class MainView extends ItemView {
     if (dynamicIds.length > 0) {
       const dynamicColumns = dynamicIds.map((id) => ({
         id,
-        label: id.charAt(0).toUpperCase() + id.slice(1),
+        label: titleCase(id),
       }));
       // Merge without duplicates - re-add configured columns then dynamic
       this.adapter.config.columns = [

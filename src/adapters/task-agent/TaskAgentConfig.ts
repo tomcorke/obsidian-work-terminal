@@ -1,4 +1,5 @@
 import type { CardFlagRule, CreationColumn, ListColumn, PluginConfig } from "../../core/interfaces";
+import { titleCase } from "../../core/utils";
 import { KANBAN_COLUMNS, COLUMN_LABELS, STATE_FOLDER_MAP } from "./types";
 
 /**
@@ -167,7 +168,7 @@ export function resolveColumns(columnOrderJson: string | undefined): ListColumn[
       result.push(col);
     } else {
       // Dynamic column - created from a custom frontmatter state that was
-      // previously reordered in settings. Preserve it with a titlecased label.
+      // previously reordered in settings. Preserve it with a title-cased label.
       result.push(makeDynamicColumn(id));
     }
     seen.add(id);
@@ -185,13 +186,14 @@ export function resolveColumns(columnOrderJson: string | undefined): ListColumn[
 
 /**
  * Create a ListColumn for a dynamic state ID (not in the predefined list).
- * Uses a titlecased version of the ID as the display label.
+ * Uses a title-cased version of the ID as the display label
+ * (splits on `-`/`_` separators, capitalizes each word, joins with spaces).
  * No folderName since dynamic states are frontmatter-only.
  */
 export function makeDynamicColumn(stateId: string): ListColumn {
   return {
     id: stateId,
-    label: stateId.charAt(0).toUpperCase() + stateId.slice(1),
+    label: titleCase(stateId),
   };
 }
 
@@ -217,8 +219,8 @@ export function resolveCreationColumns(
       result.push({ id, label, ...(result.length === 0 ? { default: true } : {}) });
       seen.add(id);
     } else {
-      // Dynamic column - use titlecased ID as label
-      const dynLabel = id.charAt(0).toUpperCase() + id.slice(1);
+      // Dynamic column - use title-cased ID as label
+      const dynLabel = titleCase(id);
       result.push({ id, label: dynLabel, ...(result.length === 0 ? { default: true } : {}) });
       seen.add(id);
     }
