@@ -1412,9 +1412,9 @@ button.wt-spawn-claude-ctx:hover svg {
   white-space: nowrap;
 }
 
-/* Accent border treatment - left border highlight on the card */
+/* Accent border treatment - inset box-shadow so it layers over the existing left border */
 .wt-card-flag--accent-border {
-  border-left: 3px solid var(--wt-flag-accent-color, var(--color-accent));
+  box-shadow: inset 3px 0 0 0 var(--wt-flag-accent-color, var(--color-accent));
 }
 
 /* Accent border label in meta row */
