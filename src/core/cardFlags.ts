@@ -77,6 +77,8 @@ export function evaluateOperator(
     }
 
     case "contains":
+      // Empty operand is treated as "no match" to avoid unintended match-all
+      if (!operand) return false;
       if (Array.isArray(fieldValue)) {
         return fieldValue.includes(operand);
       }
@@ -86,6 +88,8 @@ export function evaluateOperator(
       return false;
 
     case "regex":
+      // Empty pattern is treated as "no match" to avoid matching everything
+      if (!operand) return false;
       try {
         const re = new RegExp(operand);
         return re.test(String(fieldValue ?? ""));

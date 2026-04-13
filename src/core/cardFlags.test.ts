@@ -361,6 +361,16 @@ describe("evaluateOperator", () => {
   it("regex: handles invalid patterns without throwing", () => {
     expect(evaluateOperator("test", "regex", "[bad(")).toBe(false);
   });
+
+  it("contains: empty operand does not match", () => {
+    expect(evaluateOperator("hello", "contains", "")).toBe(false);
+    expect(evaluateOperator(["a", "b"], "contains", "")).toBe(false);
+  });
+
+  it("regex: empty operand does not match", () => {
+    expect(evaluateOperator("anything", "regex", "")).toBe(false);
+    expect(evaluateOperator("", "regex", "")).toBe(false);
+  });
 });
 
 describe("parseCardFlagRulesJson", () => {
