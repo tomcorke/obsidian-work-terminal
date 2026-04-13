@@ -3,6 +3,7 @@ import type { WorkItem, WorkItemParser } from "../../core/interfaces";
 import { extractYamlFrontmatterString } from "../../core/frontmatter";
 import {
   type TaskFile,
+  type TaskPriority,
   type TaskSource,
   type TaskState,
   type KanbanColumn,
@@ -51,7 +52,7 @@ export class TaskParser implements WorkItemParser {
     const state = this.normaliseState(fm.state, fallbackState);
     if (!state) return null;
 
-    const priority = fm.priority || {};
+    const priority = this.resolvePriority(fm);
     const tags = this.normaliseTags(fm.tags);
     const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
 
@@ -67,13 +68,7 @@ export class TaskParser implements WorkItemParser {
       title: fm.title || file.basename,
       tags,
       source: this.resolveSource(fm, tags),
-      priority: {
-        score: priority.score ?? 0,
-        deadline: priority.deadline || "",
-        impact: priority.impact || "medium",
-        "has-blocker": priority["has-blocker"] ?? false,
-        "blocker-context": priority["blocker-context"] || "",
-      },
+      priority,
       agentActionable: fm["agent-actionable"] ?? false,
       goal,
       color: fm.color || undefined,
@@ -119,8 +114,39 @@ export class TaskParser implements WorkItemParser {
     return [];
   }
 
+  private resolvePriority(fm: Record<string, any>): TaskPriority {
+    // Support flat dot-notation keys (new format) with fallback to nested (old format)
+    const nested = fm.priority || {};
+    return {
+      score: fm["priority.score"] ?? nested.score ?? 0,
+      deadline: fm["priority.deadline"] || nested.deadline || "",
+      impact: fm["priority.impact"] || nested.impact || "medium",
+      "has-blocker": fm["priority.has-blocker"] ?? nested["has-blocker"] ?? false,
+      "blocker-context": fm["priority.blocker-context"] || nested["blocker-context"] || "",
+    };
+  }
+
+  private extractSourceFromFrontmatter(fm: Record<string, any>): Record<string, any> {
+    // Support flat dot-notation keys (new format) with fallback to nested (old format)
+    const nested = fm.source || {};
+    const hasFlat =
+      fm["source.type"] !== undefined ||
+      fm["source.id"] !== undefined ||
+      fm["source.url"] !== undefined ||
+      fm["source.captured"] !== undefined;
+    if (hasFlat) {
+      return {
+        type: fm["source.type"] ?? nested.type,
+        id: fm["source.id"] ?? nested.id,
+        url: fm["source.url"] ?? nested.url,
+        captured: fm["source.captured"] ?? nested.captured,
+      };
+    }
+    return nested;
+  }
+
   private resolveSource(frontmatter: Record<string, any>, tags: string[]): TaskSource {
-    const source = frontmatter.source || {};
+    const source = this.extractSourceFromFrontmatter(frontmatter);
     const explicit = this.normaliseSource(source);
     if (explicit.type === "jira") {
       const explicitJira = this.detectJiraSource([explicit.id, explicit.url, explicit.captured]);
