@@ -715,13 +715,15 @@ export class ListPanel {
       }
 
       if (sourceColumn === PINNED_COLUMN_ID) {
-        // Dragging FROM pinned TO a regular column: unpin + move if state differs
+        // Dragging FROM pinned TO a regular column: move first, then unpin.
+        // This avoids a race where a failed move leaves the item unpinned
+        // with no UI re-render.
         if (item && dragId && this.pinStore) {
-          await this.pinStore.unpin(dragId);
           if (item.state !== columnId) {
             const didMove = await this.moveToColumn(item, columnId);
             if (!didMove) return;
           }
+          await this.pinStore.unpin(dragId);
           // Set drop position in the target column
           setTimeout(
             () => {
