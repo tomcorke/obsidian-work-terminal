@@ -1,22 +1,28 @@
 import type { App, TFile } from "obsidian";
-import type { WorkItemMover } from "../../core/interfaces";
+import type { WorkItemMover, StateResolver } from "../../core/interfaces";
 import { type KanbanColumn, STATE_FOLDER_MAP } from "./types";
 
 export class TaskMover implements WorkItemMover {
   private basePath: string;
+  private stateResolver: StateResolver | null;
 
   constructor(
     private app: App,
     _basePath: string,
     private settings: Record<string, any>,
+    stateResolver?: StateResolver,
   ) {
     this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
+    this.stateResolver = stateResolver ?? null;
   }
 
   async move(file: TFile, targetColumnId: string): Promise<boolean> {
     const newColumn = targetColumnId as KanbanColumn;
-    const targetFolder = STATE_FOLDER_MAP[newColumn];
-    if (!targetFolder) return false;
+
+    // Validate target: either the resolver knows it or STATE_FOLDER_MAP does
+    if (!this.stateResolver?.getFolderForState?.(newColumn) && !STATE_FOLDER_MAP[newColumn]) {
+      return false;
+    }
 
     try {
       const content = await this.app.vault.read(file);
@@ -64,17 +70,24 @@ export class TaskMover implements WorkItemMover {
       // Write updated content first (write-then-move pattern)
       await this.app.vault.modify(file, updated);
 
-      // Move file to target folder
-      const newFolderPath = `${this.basePath}/${targetFolder}`;
-      const newPath = `${newFolderPath}/${file.name}`;
+      // Apply the state transition (file move or other mechanism)
+      if (this.stateResolver) {
+        await this.stateResolver.applyState(this.app, file, newColumn, oldState, this.basePath);
+      } else {
+        // Legacy fallback: direct folder move using STATE_FOLDER_MAP
+        const targetFolder = STATE_FOLDER_MAP[newColumn];
+        if (targetFolder) {
+          const newFolderPath = `${this.basePath}/${targetFolder}`;
+          const newPath = `${newFolderPath}/${file.name}`;
 
-      if (file.path !== newPath) {
-        // Ensure target folder exists
-        const folder = this.app.vault.getAbstractFileByPath(newFolderPath);
-        if (!folder) {
-          await this.app.vault.createFolder(newFolderPath);
+          if (file.path !== newPath) {
+            const folder = this.app.vault.getAbstractFileByPath(newFolderPath);
+            if (!folder) {
+              await this.app.vault.createFolder(newFolderPath);
+            }
+            await this.app.vault.rename(file, newPath);
+          }
         }
-        await this.app.vault.rename(file, newPath);
       }
 
       return true;

@@ -21,22 +21,29 @@ export class FolderStateResolver implements StateResolver {
    * Example: { priority: "priority", todo: "todo", active: "active", archive: "done" }
    */
   private folderToState: Record<string, string>;
+  /**
+   * Base path for resolving relative folder positions. Set at construction
+   * time so resolveState() doesn't need extra parameters.
+   */
+  private basePath: string;
 
-  constructor(stateToFolder: Record<string, string>) {
+  constructor(stateToFolder: Record<string, string>, basePath = "") {
     this.stateToFolder = stateToFolder;
+    this.basePath = basePath.replace(/\/+$/, "");
     this.folderToState = {};
     for (const [state, folder] of Object.entries(stateToFolder)) {
       this.folderToState[folder] = state;
     }
   }
 
-  resolveState(
-    filePath: string,
-    _frontmatter: Record<string, unknown> | undefined,
-    basePath?: string,
-  ): string | null {
+  /** Update the base path after construction (e.g. when settings change). */
+  setBasePath(basePath: string): void {
+    this.basePath = basePath.replace(/\/+$/, "");
+  }
+
+  resolveState(filePath: string, _frontmatter: Record<string, unknown> | undefined): string | null {
     // Extract the first folder segment relative to basePath
-    const prefix = basePath ? `${basePath}/` : "";
+    const prefix = this.basePath ? `${this.basePath}/` : "";
     const relativePath =
       prefix && filePath.startsWith(prefix) ? filePath.slice(prefix.length) : filePath;
     const folder = relativePath.split("/")[0];

@@ -1,5 +1,5 @@
 import type { App, TFile } from "obsidian";
-import type { WorkItem, WorkItemParser } from "../../core/interfaces";
+import type { WorkItem, WorkItemParser, StateResolver } from "../../core/interfaces";
 import { extractYamlFrontmatterString } from "../../core/frontmatter";
 import {
   type TaskFile,
@@ -19,15 +19,18 @@ export class TaskParser implements WorkItemParser {
   private static loggedFallbackPaths = new Set<string>();
   private transientIdsByPath = new Map<string, string>();
   private backfillPromisesByPath = new Map<string, Promise<WorkItem | null>>();
+  private stateResolver: StateResolver | null;
 
   constructor(
     private app: App,
     _basePath: string,
     private settings: Record<string, any>,
+    stateResolver?: StateResolver,
   ) {
     this.basePath = this.normaliseBasePath(
       this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks",
     );
+    this.stateResolver = stateResolver ?? null;
   }
 
   parse(file: TFile): WorkItem | null {
@@ -40,7 +43,7 @@ export class TaskParser implements WorkItemParser {
     const cache = this.app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter;
     const transientId = this.transientIdsByPath.get(file.path);
-    const fallbackState = this.getStateFromPath(file.path);
+    const fallbackState = this.resolveStateFromFile(file.path, fm);
     if (!fm) {
       return this.createFallbackTaskFile(file, fallbackState, transientId);
     }
@@ -258,6 +261,25 @@ export class TaskParser implements WorkItemParser {
         ? this.settings["adapter.jiraBaseUrl"].trim()
         : defaultJiraBaseUrl;
     return `${baseUrl.replace(/\/+$/, "")}/${id}`;
+  }
+
+  /**
+   * Resolve state for a file using the configured StateResolver if available,
+   * falling back to the legacy path-based resolution.
+   */
+  private resolveStateFromFile(
+    path: string,
+    frontmatter: Record<string, unknown> | undefined,
+  ): TaskState | null {
+    if (this.stateResolver) {
+      const resolved = this.stateResolver.resolveState(path, frontmatter);
+      if (resolved !== null && VALID_STATES.includes(resolved as TaskState)) {
+        return resolved as TaskState;
+      }
+      // If resolver returned a value but it's not a valid TaskState, fall through
+      if (resolved !== null) return null;
+    }
+    return this.getStateFromPath(path);
   }
 
   private getStateFromPath(path: string): TaskState | null {

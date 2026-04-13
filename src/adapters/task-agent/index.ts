@@ -8,6 +8,7 @@ import {
   type WorkItemPromptBuilder,
   type CardFlagRule,
   type PluginConfig,
+  type StateResolver,
 } from "../../core/interfaces";
 import { TASK_AGENT_CONFIG } from "./TaskAgentConfig";
 import { TaskParser } from "./TaskParser";
@@ -23,6 +24,7 @@ import {
 } from "./BackgroundEnrich";
 import type { KanbanColumn } from "./types";
 import { parseCustomCardFlags } from "./customCardFlags";
+import { createDefaultStateResolver } from "./stateResolverFactory";
 
 export class TaskAgentAdapter extends BaseAdapter {
   config: PluginConfig = TASK_AGENT_CONFIG;
@@ -32,19 +34,32 @@ export class TaskAgentAdapter extends BaseAdapter {
   private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
   private _cardRenderer: TaskCard | null = null;
+  private _stateResolver: StateResolver | null = null;
+
+  /** Get or create the state resolver based on current settings. */
+  private getStateResolver(basePath: string): StateResolver {
+    if (!this._stateResolver) {
+      this._stateResolver = createDefaultStateResolver(basePath);
+    }
+    return this._stateResolver;
+  }
 
   createParser(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemParser {
     const resolvedSettings = settings ?? {};
     this._app = app;
     this._settings = resolvedSettings;
-    return new TaskParser(app, basePath, resolvedSettings);
+    const taskBasePath = (resolvedSettings["adapter.taskBasePath"] as string) || "2 - Areas/Tasks";
+    const resolver = this.getStateResolver(taskBasePath);
+    return new TaskParser(app, basePath, resolvedSettings, resolver);
   }
 
   createMover(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemMover {
     const resolvedSettings = settings ?? {};
     this._app = app;
     this._settings = resolvedSettings;
-    return new TaskMover(app, basePath, resolvedSettings);
+    const taskBasePath = (resolvedSettings["adapter.taskBasePath"] as string) || "2 - Areas/Tasks";
+    const resolver = this.getStateResolver(taskBasePath);
+    return new TaskMover(app, basePath, resolvedSettings, resolver);
   }
 
   createCardRenderer(): CardRenderer {
