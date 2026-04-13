@@ -79,16 +79,20 @@ export function resolveNvmDefaultBin(): string | null {
 /**
  * Resolve the fnm default Node.js bin directory.
  *
- * fnm (Fast Node Manager) stores its versions under ~/.local/share/fnm/node-versions/
- * with an "aliases/default" symlink. Returns the bin directory of the default
- * version, or null if fnm is not installed.
+ * fnm (Fast Node Manager) stores its versions under FNM_DIR, XDG_DATA_HOME/fnm,
+ * or ~/.local/share/fnm, with an "aliases/default" symlink. Returns the bin
+ * directory of the default version, or null if fnm is not installed.
  */
 export function resolveFnmDefaultBin(): string | null {
   try {
     const fs = electronRequire("fs") as typeof import("fs");
 
-    // fnm stores data in XDG_DATA_HOME/fnm or ~/.local/share/fnm
-    const fnmDir = expandTilde("~/.local/share/fnm");
+    // fnm stores data in FNM_DIR, XDG_DATA_HOME/fnm, or ~/.local/share/fnm
+    const fnmDir = process.env.FNM_DIR
+      ? expandTilde(process.env.FNM_DIR)
+      : process.env.XDG_DATA_HOME
+        ? expandTilde(`${process.env.XDG_DATA_HOME}/fnm`)
+        : expandTilde("~/.local/share/fnm");
     const aliasDir = `${fnmDir}/aliases/default`;
 
     // fnm creates a symlink at aliases/default -> the version directory

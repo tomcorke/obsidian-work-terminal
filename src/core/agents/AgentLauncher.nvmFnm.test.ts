@@ -220,6 +220,69 @@ describe("resolveFnmDefaultBin (mocked fs)", () => {
 
     expect(resolveFnmDefaultBin()).toBeNull();
   });
+
+  it("respects FNM_DIR environment variable", () => {
+    const customDir = "/custom/fnm";
+    const origFnmDir = process.env.FNM_DIR;
+    process.env.FNM_DIR = customDir;
+    try {
+      setMockFs({
+        [`${customDir}/aliases/default`]: true,
+        [`${customDir}/aliases/default/bin`]: true,
+      });
+
+      expect(resolveFnmDefaultBin()).toBe(`${customDir}/aliases/default/bin`);
+    } finally {
+      if (origFnmDir === undefined) delete process.env.FNM_DIR;
+      else process.env.FNM_DIR = origFnmDir;
+    }
+  });
+
+  it("respects XDG_DATA_HOME environment variable", () => {
+    const xdgDir = "/custom/xdg-data";
+    const origXdg = process.env.XDG_DATA_HOME;
+    const origFnm = process.env.FNM_DIR;
+    delete process.env.FNM_DIR;
+    process.env.XDG_DATA_HOME = xdgDir;
+    try {
+      setMockFs({
+        [`${xdgDir}/fnm/aliases/default`]: true,
+        [`${xdgDir}/fnm/aliases/default/bin`]: true,
+      });
+
+      expect(resolveFnmDefaultBin()).toBe(`${xdgDir}/fnm/aliases/default/bin`);
+    } finally {
+      if (origXdg === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = origXdg;
+      if (origFnm === undefined) delete process.env.FNM_DIR;
+      else process.env.FNM_DIR = origFnm;
+    }
+  });
+
+  it("prefers FNM_DIR over XDG_DATA_HOME", () => {
+    const fnmDirPath = "/custom/fnm";
+    const xdgDir = "/custom/xdg-data";
+    const origFnm = process.env.FNM_DIR;
+    const origXdg = process.env.XDG_DATA_HOME;
+    process.env.FNM_DIR = fnmDirPath;
+    process.env.XDG_DATA_HOME = xdgDir;
+    try {
+      setMockFs({
+        [`${fnmDirPath}/aliases/default`]: true,
+        [`${fnmDirPath}/aliases/default/bin`]: true,
+        [`${xdgDir}/fnm/aliases/default`]: true,
+        [`${xdgDir}/fnm/aliases/default/bin`]: true,
+      });
+
+      // FNM_DIR takes precedence
+      expect(resolveFnmDefaultBin()).toBe(`${fnmDirPath}/aliases/default/bin`);
+    } finally {
+      if (origFnm === undefined) delete process.env.FNM_DIR;
+      else process.env.FNM_DIR = origFnm;
+      if (origXdg === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = origXdg;
+    }
+  });
 });
 
 describe("getExtraPathDirs with mocked nvm/fnm", () => {
