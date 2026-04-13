@@ -5,6 +5,7 @@
  */
 import { App, Modal, Notice } from "obsidian";
 import type { CardFlagRule, CardFlagOperator, CardFlagStyle } from "../core/interfaces";
+import { parseCardFlagRulesJson } from "../core/cardFlags";
 import { CardFlagRuleModal } from "./CardFlagRuleModal";
 
 const OPERATOR_LABELS: Record<CardFlagOperator, string> = {
@@ -222,21 +223,11 @@ export class CardFlagManagerModal extends Modal {
       if (!file) return;
       try {
         const text = await file.text();
-        const parsed = JSON.parse(text);
-        if (!Array.isArray(parsed)) {
-          new Notice("Import failed: expected a JSON array of rules");
-          return;
-        }
-        // Validate each rule has at minimum field + label
-        let imported = 0;
-        for (const entry of parsed) {
-          if (entry && typeof entry === "object" && entry.field && entry.label) {
-            this.rules.push(entry as CardFlagRule);
-            imported++;
-          }
-        }
-        if (imported > 0) {
-          new Notice(`Imported ${imported} rule(s)`);
+        // Route through parseCardFlagRulesJson for full validation/normalization
+        const validated = parseCardFlagRulesJson(text);
+        if (validated.length > 0) {
+          this.rules.push(...validated);
+          new Notice(`Imported ${validated.length} rule(s)`);
           this.saveAndRender();
         } else {
           new Notice("No valid rules found in import file");
