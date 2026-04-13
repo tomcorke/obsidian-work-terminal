@@ -17,7 +17,8 @@
     "prepare": "husky",
     "obsidian:test:init": "node scripts/obsidian-isolated-instance.js init",
     "obsidian:test:open": "node scripts/obsidian-isolated-instance.js open",
-    "obsidian:test:stop": "node scripts/obsidian-isolated-instance.js stop"
+    "obsidian:test:stop": "node scripts/obsidian-isolated-instance.js stop",
+    "test:smoke": "node scripts/smoke-test-runner.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
