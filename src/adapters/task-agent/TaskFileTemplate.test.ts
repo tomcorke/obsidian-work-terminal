@@ -60,8 +60,29 @@ describe("generateTaskContent", () => {
     expect(content).toContain("agent-actionable: false");
     expect(content).toContain("goal: []");
     expect(content).toContain("related: []");
-    expect(content).toContain("score: 0");
-    expect(content).toContain("has-blocker: false");
+    expect(content).toContain("priority.score: 0");
+    expect(content).toContain("priority.has-blocker: false");
+  });
+
+  it("uses flat dot-notation keys for source fields", () => {
+    const content = generateTaskContent("Test", "todo");
+    expect(content).toMatch(/^source\.type: prompt$/m);
+    expect(content).toMatch(/^source\.id:/m);
+    expect(content).toMatch(/^source\.url:/m);
+    expect(content).toMatch(/^source\.captured:/m);
+    // Must NOT contain nested source block
+    expect(content).not.toMatch(/^source:\n\s+type:/m);
+  });
+
+  it("uses flat dot-notation keys for priority fields", () => {
+    const content = generateTaskContent("Test", "todo");
+    expect(content).toMatch(/^priority\.score: 0$/m);
+    expect(content).toMatch(/^priority\.deadline: ""$/m);
+    expect(content).toMatch(/^priority\.impact: medium$/m);
+    expect(content).toMatch(/^priority\.has-blocker: false$/m);
+    expect(content).toMatch(/^priority\.blocker-context: ""$/m);
+    // Must NOT contain nested priority block
+    expect(content).not.toMatch(/^priority:\n\s+score:/m);
   });
 
   it("uses block list syntax for split task related links", () => {
