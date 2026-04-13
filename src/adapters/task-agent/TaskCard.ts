@@ -16,6 +16,11 @@ export class TaskCard implements CardRenderer {
     this.flagRules = flagRules;
   }
 
+  /** Replace the active flag rules (e.g. after a settings change merges default + user rules). */
+  updateFlagRules(rules: CardFlagRule[]): void {
+    this.flagRules = rules;
+  }
+
   render(item: WorkItem, ctx: CardActionContext): HTMLElement {
     const meta = (item.metadata || {}) as Record<string, any>;
     const source = meta.source || { type: "other" };

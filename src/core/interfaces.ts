@@ -264,6 +264,12 @@ export interface AdapterBundle {
    */
   transformSessionLabel?(oldLabel: string, detectedLabel: string): string;
   /**
+   * Called by the framework when plugin settings change. Adapters can use
+   * this to update internal state that depends on settings (e.g. card flag
+   * rules). The framework triggers a UI refresh after calling this.
+   */
+  onSettingsChanged?(settings: Record<string, unknown>): void;
+  /**
    * Framework-set callback that triggers a debounced UI refresh.
    * API-backed adapters can call this after fetching external data
    * to update the list without relying on vault file events.

@@ -71,9 +71,12 @@ export class MainView extends ItemView {
   private _beforeUnloadHandler: ((e: BeforeUnloadEvent) => void) | null = null;
   private _origLeafDetach: (() => void) | null = null;
 
-  // Settings change handler - keeps this.settings in sync
+  // Settings change handler - keeps this.settings in sync and notifies adapter
   private readonly _handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    // Notify adapter so it can update internal state (e.g. card flag rules)
+    this.adapter.onSettingsChanged?.(this.settings);
+    this.scheduleRefresh();
   };
 
   constructor(
