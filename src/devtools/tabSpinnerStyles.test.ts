@@ -9,7 +9,9 @@ describe("tab spinner styles", () => {
   it("keeps the active tab mask opaque on hover", async () => {
     const styles = await fs.readFile(stylesPath, "utf8");
     const hoverRule = styles.match(/\.wt-tab:hover\s*\{([\s\S]*?)\}/)?.[1];
-    const activeHoverRule = styles.match(/\.wt-tab\.wt-tab-agent-active:hover\s*\{([\s\S]*?)\}/)?.[1];
+    const activeHoverRule = styles.match(
+      /\.wt-tab\.wt-tab-agent-active:hover\s*\{([\s\S]*?)\}/,
+    )?.[1];
     const hoverRuleIndex = styles.indexOf(".wt-tab:hover");
     const activeHoverRuleIndex = styles.indexOf(".wt-tab.wt-tab-agent-active:hover");
 

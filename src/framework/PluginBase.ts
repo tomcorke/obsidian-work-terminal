@@ -60,12 +60,7 @@ export abstract class PluginBase extends Plugin {
       callback: async () => this.copySessionDiagnostics(),
     });
 
-    this._settingsTab = new WorkTerminalSettingsTab(
-      this.app,
-      this,
-      this.adapter,
-      profileManager,
-    );
+    this._settingsTab = new WorkTerminalSettingsTab(this.app, this, this.adapter, profileManager);
     this.addSettingTab(this._settingsTab);
   }
 
