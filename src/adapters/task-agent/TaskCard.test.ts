@@ -356,7 +356,7 @@ describe("TaskCard", () => {
       expect(badge.textContent).toBe("BLOCKED");
       // jsdom normalizes hex colours to rgb()
       expect(badge.style.background).toBe("rgb(229, 72, 77)");
-      expect(badge.style.color).toBe("white");
+      expect(badge.style.color).toBe("var(--text-on-accent, white)");
     });
 
     it("normalizes Obsidian link aliases in blocker tooltips", () => {

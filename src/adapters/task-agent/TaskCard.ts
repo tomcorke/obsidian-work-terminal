@@ -131,7 +131,7 @@ export class TaskCard implements CardRenderer {
         el.textContent = flag.label;
         if (flag.color) {
           el.style.background = flag.color;
-          el.style.color = "white";
+          el.style.color = "var(--text-on-accent, white)";
         }
         if (tooltip) el.title = tooltip;
         break;
