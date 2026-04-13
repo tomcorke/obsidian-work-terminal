@@ -49,22 +49,6 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       },
     },
     {
-      key: "columnOrder",
-      name: "Column display order",
-      description:
-        "JSON array of column IDs defining the display order on the kanban board. Use the reorder controls below to change this, or edit the JSON directly. Default order: priority, active, todo, done.",
-      type: "text",
-      default: "",
-    },
-    {
-      key: "creationColumnIds",
-      name: "New task columns",
-      description:
-        "JSON array of column IDs that appear in the new task column selector, in order. First entry is the default. Empty uses the built-in default (todo, active).",
-      type: "text",
-      default: "",
-    },
-    {
       key: "jiraBaseUrl",
       name: "Jira base URL",
       description:
@@ -206,11 +190,10 @@ export function resolveCreationColumns(
   const labelById = new Map(DEFAULT_COLUMNS.map((col) => [col.id, col.label]));
   const result: CreationColumn[] = [];
 
-  for (let i = 0; i < ids.length; i++) {
-    const id = ids[i];
+  for (const id of ids) {
     const label = labelById.get(id);
     if (label) {
-      result.push({ id, label, ...(i === 0 ? { default: true } : {}) });
+      result.push({ id, label, ...(result.length === 0 ? { default: true } : {}) });
     }
   }
 
