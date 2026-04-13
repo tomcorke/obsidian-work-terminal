@@ -3,6 +3,7 @@ import {
   parseColumnOrderJson,
   resolveColumns,
   resolveCreationColumns,
+  makeDynamicColumn,
   DEFAULT_COLUMNS,
   DEFAULT_CREATION_COLUMNS,
   TASK_AGENT_CONFIG,
@@ -136,6 +137,51 @@ describe("TaskAgentConfig column helpers", () => {
         { id: "todo", label: "To Do", default: true },
         { id: "active", label: "Active" },
       ]);
+    });
+  });
+
+  describe("makeDynamicColumn", () => {
+    it("creates a column with titlecased label", () => {
+      const col = makeDynamicColumn("review");
+      expect(col).toEqual({ id: "review", label: "Review" });
+    });
+
+    it("has no folderName", () => {
+      const col = makeDynamicColumn("testing");
+      expect(col.folderName).toBeUndefined();
+    });
+
+    it("handles hyphenated IDs", () => {
+      const col = makeDynamicColumn("blocked-upstream");
+      expect(col.label).toBe("Blocked-upstream");
+    });
+
+    it("handles single character IDs", () => {
+      const col = makeDynamicColumn("x");
+      expect(col.label).toBe("X");
+    });
+  });
+
+  describe("resolveColumns with dynamic columns", () => {
+    it("interleaves dynamic and default columns based on order", () => {
+      const result = resolveColumns('["priority", "review", "active", "testing", "todo", "done"]');
+      expect(result.map((c) => c.id)).toEqual([
+        "priority",
+        "review",
+        "active",
+        "testing",
+        "todo",
+        "done",
+      ]);
+      // Default columns retain their metadata
+      expect(result.find((c) => c.id === "priority")?.folderName).toBe("priority");
+      // Dynamic columns have no folderName
+      expect(result.find((c) => c.id === "review")?.folderName).toBeUndefined();
+    });
+
+    it("appends default columns missing from order that includes dynamic columns", () => {
+      const result = resolveColumns('["review", "active"]');
+      expect(result.map((c) => c.id)).toEqual(["review", "active", "priority", "todo", "done"]);
     });
   });
 

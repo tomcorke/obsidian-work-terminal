@@ -60,5 +60,32 @@ describe("stateResolverFactory", () => {
       expect(resolver.getFolderForState!("done")).toBe("archive");
       expect(resolver.getFolderForState!("active")).toBe("active");
     });
+
+    it("composite resolver accepts dynamic frontmatter states", () => {
+      const resolver = createStateResolver("composite", "Tasks");
+      // Custom state in frontmatter is returned as-is (open state set)
+      expect(resolver.resolveState("Tasks/active/task.md", { state: "amazing" })).toBe("amazing");
+      expect(resolver.resolveState("Tasks/todo/task.md", { state: "review" })).toBe("review");
+    });
+
+    it("composite resolver returns null folder for dynamic states", () => {
+      const resolver = createStateResolver("composite", "Tasks");
+      expect(resolver.getFolderForState!("amazing")).toBeNull();
+      expect(resolver.getFolderForState!("review")).toBeNull();
+    });
+
+    it("frontmatter resolver accepts dynamic states", () => {
+      const resolver = createStateResolver("frontmatter", "Tasks");
+      expect(resolver.resolveState("any.md", { state: "waiting-on-review" })).toBe(
+        "waiting-on-review",
+      );
+      expect(resolver.resolveState("any.md", { state: "testing" })).toBe("testing");
+    });
+
+    it("folder resolver does not accept dynamic states", () => {
+      const resolver = createStateResolver("folder", "Tasks");
+      // Folder resolver only knows about states that map to folders
+      expect(resolver.resolveState("Tasks/amazing/task.md", undefined)).toBeNull();
+    });
   });
 });

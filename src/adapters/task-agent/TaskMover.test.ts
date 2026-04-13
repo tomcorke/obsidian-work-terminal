@@ -250,4 +250,78 @@ created: 2026-03-26T00:00:00Z
 
     expect(createFolder).toHaveBeenCalledWith("2 - Areas/Tasks/active");
   });
+
+  describe("dynamic/custom state moves", () => {
+    it("updates frontmatter to dynamic state without folder move", async () => {
+      const { app, modify, rename } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      const result = await mover.move(file, "review");
+
+      expect(result).toBe(true);
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/^state: review$/m);
+      // No folder rename for dynamic states
+      expect(rename).not.toHaveBeenCalled();
+    });
+
+    it("updates task tag for dynamic state", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "review");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/- task\/review/);
+    });
+
+    it("appends activity log entry for dynamic state move", async () => {
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      await mover.move(file, "blocked-upstream");
+
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toContain("Moved to blocked-upstream (via kanban board)");
+    });
+
+    it("with resolver: skips applyState for dynamic state (no folder mapping)", async () => {
+      const resolver = {
+        applyState: vi.fn().mockResolvedValue(true),
+        resolveState: vi.fn().mockReturnValue("todo"),
+        getFolderForState: vi.fn().mockReturnValue(null), // No folder for dynamic state
+      };
+      const { app, modify } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings, resolver as any);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      const result = await mover.move(file, "amazing");
+
+      expect(result).toBe(true);
+      // Frontmatter updated
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toMatch(/^state: amazing$/m);
+      // Resolver's applyState NOT called since there's no folder mapping
+      expect(resolver.applyState).not.toHaveBeenCalled();
+    });
+
+    it("with resolver: calls applyState for known state (has folder mapping)", async () => {
+      const resolver = {
+        applyState: vi.fn().mockResolvedValue(true),
+        resolveState: vi.fn().mockReturnValue("todo"),
+        getFolderForState: vi.fn().mockReturnValue("active"),
+      };
+      const { app } = createMockApp();
+      const mover = new TaskMover(app, "", defaultSettings, resolver as any);
+      const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      const result = await mover.move(file, "active");
+
+      expect(result).toBe(true);
+      expect(resolver.applyState).toHaveBeenCalled();
+    });
+  });
 });
