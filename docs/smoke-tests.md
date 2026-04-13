@@ -65,22 +65,38 @@ These involve subjective visual quality or physical input that CDP cannot fully 
 
 ## Running smoke tests locally
 
+The smoke test runner (`scripts/smoke-test-runner.js`) handles the full lifecycle automatically - it creates a clean isolated vault, seeds test data, launches Obsidian, runs all Tier 1 test assertions via CDP, reports pass/fail, and cleans up on exit.
+
 ```bash
-# 1. Build the plugin
+# 1. Build the plugin first
 pnpm run build
 
-# 2. Launch isolated instance
+# 2. Run smoke tests (launches and manages Obsidian automatically)
+pnpm run test:smoke
+```
+
+Options:
+- `--no-hide` - keep the Obsidian window visible during tests (useful for debugging)
+- `--timeout <ms>` - CDP command timeout in milliseconds (default: 15000)
+
+```bash
+# Run with visible window and longer timeout
+pnpm run test:smoke -- --no-hide --timeout 30000
+```
+
+The runner creates its own vault at `.claude/testing/smoke-tests/` and cleans up the Obsidian process even on test failure or SIGINT.
+
+For manual step-by-step testing or debugging individual issues, you can still use the isolated instance tooling directly:
+
+```bash
+# Manual flow (for debugging or Tier 2/3 tests)
 pnpm run obsidian:test:open -- --vault .claude/testing/smoke --clean
-
-# 3. Run smoke tests (using port from launch output)
-# CDP_PORT=<port> pnpm run test:smoke  (not yet implemented)
-
-# 4. Stop the instance
+CDP_PORT=<port> node cdp.js screenshot output/test.png
 pnpm run obsidian:test:stop -- --vault .claude/testing/smoke
 ```
 
 ## Next steps
 
-1. **Implement Tier 1 smoke runner** - a Node.js script that launches an isolated instance, runs CDP-based assertions from a test list, and reports pass/fail. Uses the existing `obsidianAutomation.js` library.
-2. **Screenshot regression** - capture baseline screenshots of key views, compare on subsequent runs using pixel diff.
-3. **Integration test harness** - isolated vault + mock Claude CLI for testing agent launch/resume/state detection flows without a real Claude binary.
+1. **Screenshot regression** - capture baseline screenshots of key views, compare on subsequent runs using pixel diff.
+2. **Integration test harness** - isolated vault + mock Claude CLI for testing agent launch/resume/state detection flows without a real Claude binary.
+3. **Tier 2 tests** - add timing/animation observation tests for double-rAF rendering, hot-reload survival, and state indicators.
