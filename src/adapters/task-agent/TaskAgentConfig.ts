@@ -38,7 +38,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       key: "stateStrategy",
       name: "State resolution strategy",
       description:
-        "How task state is determined. Folder: derived from folder location (default). Frontmatter: read from the state field. Composite: check frontmatter first, fall back to folder.",
+        "How task state is determined. Folder: derived from folder location (default). Frontmatter: reads from the state frontmatter field, falling back to folder location if the field is missing. Composite: check frontmatter first, fall back to folder, and apply both on transition.",
       type: "dropdown",
       default: "folder",
       choices: {
