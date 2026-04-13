@@ -4,12 +4,8 @@
 import { expandTilde, electronRequire } from "../utils";
 import { type AgentType, getResumeConfig } from "./AgentProfile";
 
-const UNIX_EXTRA_PATH_DIRS = [
-  "~/.local/bin",
-  "~/.nvm/versions/node/current/bin",
-  "/usr/local/bin",
-  "/opt/homebrew/bin",
-];
+/** Static directories that are always included in Unix PATH augmentation. */
+const UNIX_STATIC_EXTRA_DIRS = ["~/.local/bin", "/usr/local/bin", "/opt/homebrew/bin"];
 
 const WINDOWS_EXTRA_PATH_DIRS = [
   "%LOCALAPPDATA%\\Programs\\node",
@@ -22,11 +18,107 @@ function expandWindowsEnvVars(p: string, env: NodeJS.ProcessEnv): string {
   return p.replace(/%([^%]+)%/g, (_match, varName: string) => env[varName] ?? `%${varName}%`);
 }
 
+/**
+ * Resolve the nvm default Node.js bin directory by reading ~/.nvm/alias/default.
+ *
+ * nvm does not create a `current` symlink. Instead, the active version is set
+ * via shell init scripts that modify PATH. For GUI-launched processes (like
+ * Obsidian), the shell init hasn't run, so we read the default alias file to
+ * discover which version the user has configured and return its bin directory.
+ *
+ * Returns null if nvm is not installed or the alias cannot be resolved.
+ */
+export function resolveNvmDefaultBin(): string | null {
+  try {
+    const fs = electronRequire("fs") as typeof import("fs");
+    const nvmDir = expandTilde("~/.nvm");
+    const aliasPath = `${nvmDir}/alias/default`;
+
+    if (!fs.existsSync(aliasPath)) return null;
+
+    let version = fs.readFileSync(aliasPath, "utf8").trim();
+    if (!version) return null;
+
+    // The alias may be a named alias (e.g. "lts/*", "node") or a version
+    // string (e.g. "v22.22.0", "22.22.0"). Resolve named aliases by following
+    // the chain.
+    const maxDepth = 5;
+    for (let i = 0; i < maxDepth; i++) {
+      const nextAliasPath = `${nvmDir}/alias/${version}`;
+      if (fs.existsSync(nextAliasPath)) {
+        version = fs.readFileSync(nextAliasPath, "utf8").trim();
+        if (!version) return null;
+      } else {
+        break;
+      }
+    }
+
+    // Ensure version has a "v" prefix for directory lookup
+    if (!version.startsWith("v")) version = `v${version}`;
+
+    const binDir = `${nvmDir}/versions/node/${version}/bin`;
+    if (fs.existsSync(binDir)) return binDir;
+
+    // Try partial version match (e.g. "v22" -> "v22.22.0")
+    const versionsDir = `${nvmDir}/versions/node`;
+    if (fs.existsSync(versionsDir)) {
+      const entries = fs.readdirSync(versionsDir).sort().reverse();
+      const match = entries.find((e) => e.startsWith(version));
+      if (match) {
+        const matchBin = `${versionsDir}/${match}/bin`;
+        if (fs.existsSync(matchBin)) return matchBin;
+      }
+    }
+  } catch {
+    // nvm not installed or alias unreadable - not an error
+  }
+  return null;
+}
+
+/**
+ * Resolve the fnm default Node.js bin directory.
+ *
+ * fnm (Fast Node Manager) stores its versions under ~/.local/share/fnm/node-versions/
+ * with an "aliases/default" symlink. Returns the bin directory of the default
+ * version, or null if fnm is not installed.
+ */
+export function resolveFnmDefaultBin(): string | null {
+  try {
+    const fs = electronRequire("fs") as typeof import("fs");
+
+    // fnm stores data in XDG_DATA_HOME/fnm or ~/.local/share/fnm
+    const fnmDir = expandTilde("~/.local/share/fnm");
+    const aliasDir = `${fnmDir}/aliases/default`;
+
+    // fnm creates a symlink at aliases/default -> the version directory
+    if (fs.existsSync(aliasDir)) {
+      const binDir = `${aliasDir}/bin`;
+      if (fs.existsSync(binDir)) return binDir;
+      // Some fnm layouts put the binary in installation/bin
+      const installBin = `${aliasDir}/installation/bin`;
+      if (fs.existsSync(installBin)) return installBin;
+    }
+  } catch {
+    // fnm not installed - not an error
+  }
+  return null;
+}
+
 export function getExtraPathDirs(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
   if (isWindowsPlatform(platform)) {
     return WINDOWS_EXTRA_PATH_DIRS.map((d) => expandWindowsEnvVars(d, env));
   }
-  return UNIX_EXTRA_PATH_DIRS.map((d) => expandTilde(d));
+
+  const dirs = UNIX_STATIC_EXTRA_DIRS.map((d) => expandTilde(d));
+
+  // Dynamically resolve nvm/fnm default version bin directories
+  const nvmBin = resolveNvmDefaultBin();
+  if (nvmBin) dirs.push(nvmBin);
+
+  const fnmBin = resolveFnmDefaultBin();
+  if (fnmBin) dirs.push(fnmBin);
+
+  return dirs;
 }
 
 const DEFAULT_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";

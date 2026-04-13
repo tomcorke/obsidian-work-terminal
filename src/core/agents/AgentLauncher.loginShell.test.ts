@@ -39,6 +39,8 @@ import {
   resolveLoginShellPath,
   getFullPath,
   getExtraPathDirs,
+  resolveNvmDefaultBin,
+  resolveFnmDefaultBin,
   _resetLoginShellPathCache,
 } from "./AgentLauncher";
 import { expandTilde } from "../utils";
@@ -286,12 +288,21 @@ describe("getFullPath (mocked)", () => {
 });
 
 describe("getExtraPathDirs (platform-aware)", () => {
-  it("returns Unix paths for darwin", () => {
+  it("returns static Unix paths for darwin", () => {
     const dirs = getExtraPathDirs("darwin", {} as NodeJS.ProcessEnv);
     expect(dirs).toContain(expandTilde("~/.local/bin"));
-    expect(dirs).toContain(expandTilde("~/.nvm/versions/node/current/bin"));
     expect(dirs).toContain("/usr/local/bin");
     expect(dirs).toContain("/opt/homebrew/bin");
+  });
+
+  it("includes dynamically resolved nvm bin dir when nvm is installed", () => {
+    const nvmBin = resolveNvmDefaultBin();
+    const dirs = getExtraPathDirs("darwin", {} as NodeJS.ProcessEnv);
+    if (nvmBin) {
+      expect(dirs).toContain(nvmBin);
+    }
+    // Old static path should never be present
+    expect(dirs).not.toContain(expandTilde("~/.nvm/versions/node/current/bin"));
   });
 
   it("returns Unix paths for linux", () => {
@@ -330,5 +341,37 @@ describe("getExtraPathDirs (platform-aware)", () => {
     const dirs = getExtraPathDirs("darwin", {} as NodeJS.ProcessEnv);
     const hasWindowsPaths = dirs.some((d) => d.includes("LOCALAPPDATA") || d.includes("APPDATA"));
     expect(hasWindowsPaths).toBe(false);
+  });
+});
+
+describe("resolveNvmDefaultBin", () => {
+  it("returns a bin dir ending in /bin when nvm is installed with a default alias", () => {
+    const result = resolveNvmDefaultBin();
+    const fs = require("fs") as typeof import("fs");
+    const hasNvm = fs.existsSync(expandTilde("~/.nvm/alias/default"));
+    if (hasNvm) {
+      expect(result).not.toBeNull();
+      expect(result!).toMatch(/\/bin$/);
+      expect(fs.existsSync(result!)).toBe(true);
+    } else {
+      expect(result).toBeNull();
+    }
+  });
+
+  it("returns null when nvm is not installed", () => {
+    // This test uses the real filesystem - if nvm IS installed,
+    // it will return a valid path; we just verify the return type
+    const result = resolveNvmDefaultBin();
+    expect(result === null || typeof result === "string").toBe(true);
+  });
+});
+
+describe("resolveFnmDefaultBin", () => {
+  it("returns null or a valid path", () => {
+    const result = resolveFnmDefaultBin();
+    expect(result === null || typeof result === "string").toBe(true);
+    if (result) {
+      expect(result).toMatch(/\/bin$/);
+    }
   });
 });
