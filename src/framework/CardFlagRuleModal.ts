@@ -36,6 +36,7 @@ function createDefaultRule(): CardFlagRule {
 export class CardFlagRuleModal extends Modal {
   private draft: CardFlagRule;
   private isNew: boolean;
+  private _previewEl: HTMLElement | null = null;
 
   constructor(
     app: App,
@@ -69,6 +70,7 @@ export class CardFlagRuleModal extends Modal {
           .setValue(this.draft.field)
           .onChange((v) => {
             this.draft.field = v.trim();
+            this.refreshPreview();
           }),
       );
 
@@ -83,6 +85,7 @@ export class CardFlagRuleModal extends Modal {
         dropdown.setValue(this.draft.operator || "eq").onChange((v) => {
           this.draft.operator = v as CardFlagOperator;
           this.updateOperandHint();
+          this.refreshPreview();
         });
       });
 
@@ -96,6 +99,7 @@ export class CardFlagRuleModal extends Modal {
           .setValue(this.draft.operand || "")
           .onChange((v) => {
             this.draft.operand = v;
+            this.refreshPreview();
           }),
       );
     this._operandSetting = operandSetting;
@@ -110,6 +114,7 @@ export class CardFlagRuleModal extends Modal {
           .setValue(this.draft.label)
           .onChange((v) => {
             this.draft.label = v.trim();
+            this.refreshPreview();
           }),
       );
 
@@ -125,6 +130,7 @@ export class CardFlagRuleModal extends Modal {
         }
         dropdown.setValue(this.draft.style || "badge").onChange((v) => {
           this.draft.style = v as CardFlagStyle;
+          this.refreshPreview();
         });
       });
 
@@ -138,6 +144,7 @@ export class CardFlagRuleModal extends Modal {
           .setValue(this.draft.color || "")
           .onChange((v) => {
             this.draft.color = v.trim() || undefined;
+            this.refreshPreview();
           }),
       );
 
@@ -156,8 +163,9 @@ export class CardFlagRuleModal extends Modal {
           }),
       );
 
-    // Preview
-    this.renderPreview(contentEl);
+    // Preview (stored for live updates)
+    this._previewEl = contentEl.createDiv();
+    this.refreshPreview();
 
     // Action buttons
     const actions = contentEl.createDiv({ cls: "wt-card-flag-rule-actions" });
@@ -223,7 +231,15 @@ export class CardFlagRuleModal extends Modal {
     }
   }
 
+  /** Re-render only the preview section without rebuilding the entire form. */
+  private refreshPreview(): void {
+    if (!this._previewEl) return;
+    this.renderPreview(this._previewEl);
+  }
+
   private renderPreview(containerEl: HTMLElement): void {
+    containerEl.empty();
+
     const previewSection = containerEl.createDiv({ cls: "wt-card-flag-rule-preview" });
     previewSection.createEl("h4", { text: "Preview" });
 
