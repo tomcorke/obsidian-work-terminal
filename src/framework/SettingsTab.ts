@@ -365,17 +365,13 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * buttons and a reset-to-default action.
    */
   private async renderColumnOrderControls(containerEl: HTMLElement): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-    const orderJson = (settings["adapter.columnOrder"] as string) || "";
-
     // Resolve effective column order (current config reflects it)
     const columns = this.adapter.config.columns;
 
     const desc = new Setting(containerEl)
       .setName("Column display order")
       .setDesc(
-        "Drag or use arrow buttons to reorder kanban board columns. Changes take effect immediately.",
+        "Use arrow buttons to reorder kanban board columns. Changes take effect immediately.",
       );
 
     // Reset button

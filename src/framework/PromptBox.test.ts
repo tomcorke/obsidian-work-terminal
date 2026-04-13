@@ -320,46 +320,28 @@ describe("PromptBox", () => {
   });
 
   it("updateCreationColumns rebuilds the select options from adapter config", () => {
+    const parentEl = document.createElement("div");
+    document.body.appendChild(parentEl);
     const adapter = makeAdapter();
-    const { parentEl } = createPromptBox({ adapter });
+    const pb = new PromptBox(parentEl, adapter, makePlugin(), {}, vi.fn(), vi.fn(), vi.fn());
 
     const selectEl = parentEl.querySelector(".wt-prompt-column-select") as HTMLSelectElement;
     expect(selectEl.options.length).toBe(2);
-    expect(selectEl.options[0].value).toBe("todo");
-    expect(selectEl.options[1].value).toBe("doing");
-
-    // Simulate settings change that modifies adapter config
-    adapter.config.creationColumns = [
-      { id: "active", label: "Active", default: true },
-      { id: "priority", label: "Priority" },
-      { id: "done", label: "Done" },
-    ];
-
-    // Get the PromptBox instance to call updateCreationColumns
-    // Since createPromptBox doesn't return the PromptBox, we need a different approach
-    // Let's create one manually
-    const parentEl2 = document.createElement("div");
-    document.body.appendChild(parentEl2);
-    const adapter2 = makeAdapter();
-    const pb = new PromptBox(parentEl2, adapter2, makePlugin(), {}, vi.fn(), vi.fn(), vi.fn());
-
-    const selectEl2 = parentEl2.querySelector(".wt-prompt-column-select") as HTMLSelectElement;
-    expect(selectEl2.options.length).toBe(2);
 
     // Modify adapter config and call update
-    adapter2.config.creationColumns = [
+    adapter.config.creationColumns = [
       { id: "priority", label: "Priority", default: true },
       { id: "done", label: "Done" },
       { id: "active", label: "Active" },
     ];
     pb.updateCreationColumns();
 
-    expect(selectEl2.options.length).toBe(3);
-    expect(selectEl2.options[0].value).toBe("priority");
-    expect(selectEl2.options[0].textContent).toBe("Priority");
-    expect(selectEl2.options[0].selected).toBe(true);
-    expect(selectEl2.options[1].value).toBe("done");
-    expect(selectEl2.options[2].value).toBe("active");
+    expect(selectEl.options.length).toBe(3);
+    expect(selectEl.options[0].value).toBe("priority");
+    expect(selectEl.options[0].textContent).toBe("Priority");
+    expect(selectEl.options[0].selected).toBe(true);
+    expect(selectEl.options[1].value).toBe("done");
+    expect(selectEl.options[2].value).toBe("active");
   });
 
   it("ignores blank titles and resolves failures as unsuccessful placeholders", async () => {
