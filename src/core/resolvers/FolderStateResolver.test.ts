@@ -127,6 +127,28 @@ describe("FolderStateResolver", () => {
       expect(result).toBe(false);
     });
 
+    it("handles empty basePath without leading slash", async () => {
+      const app = createMockApp();
+      const resolver = new FolderStateResolver(STATE_TO_FOLDER);
+      const file = { path: "todo/task.md", name: "task.md" } as TFile;
+
+      const result = await resolver.applyState(app, file, "active", "todo", "");
+
+      expect(result).toBe(true);
+      expect(app.vault.rename).toHaveBeenCalledWith(file, "active/task.md");
+    });
+
+    it("handles basePath with trailing slash without double slashes", async () => {
+      const app = createMockApp();
+      const resolver = new FolderStateResolver(STATE_TO_FOLDER, "Tasks/");
+      const file = { path: "Tasks/todo/task.md", name: "task.md" } as TFile;
+
+      const result = await resolver.applyState(app, file, "active", "todo", "Tasks/");
+
+      expect(result).toBe(true);
+      expect(app.vault.rename).toHaveBeenCalledWith(file, "Tasks/active/task.md");
+    });
+
     it("does not create folder when it already exists", async () => {
       const app = createMockApp();
       (app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue({

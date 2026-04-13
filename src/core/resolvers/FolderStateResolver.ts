@@ -60,7 +60,8 @@ export class FolderStateResolver implements StateResolver {
     const targetFolder = this.stateToFolder[newState];
     if (!targetFolder) return false;
 
-    const newFolderPath = `${basePath}/${targetFolder}`;
+    const normalizedBase = basePath.replace(/\/+$/, "");
+    const newFolderPath = normalizedBase ? `${normalizedBase}/${targetFolder}` : targetFolder;
     const newPath = `${newFolderPath}/${file.name}`;
 
     if (file.path === newPath) return true;
