@@ -1395,6 +1395,54 @@ button.wt-spawn-claude-ctx:hover svg {
   50% { opacity: 0.6; }
 }
 
+/* =============================================================================
+   Configurable card flags - badge, accent-border, background-tint
+   ============================================================================= */
+
+/* Flag badge pill (default style) */
+.wt-card-flag--badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Accent border treatment - left border highlight on the card */
+.wt-card-flag--accent-border {
+  border-left: 3px solid var(--wt-flag-accent-color, var(--color-accent));
+}
+
+/* Accent border label in meta row */
+.wt-card-flag--accent-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Background tint treatment - subtle fill on the card */
+.wt-card-flag--bg-tint {
+  background-color: var(--wt-flag-bg-tint, rgba(255, 0, 0, 0.06));
+}
+
+/* Background tint label in meta row */
+.wt-card-flag--tint-label {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 5px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
 /* Enrichment failed badge - amber warning */
 .wt-card-enrich-failed {
   font-size: 10px;
