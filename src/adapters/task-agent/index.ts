@@ -10,7 +10,7 @@ import {
   type PluginConfig,
   type StateResolver,
 } from "../../core/interfaces";
-import { TASK_AGENT_CONFIG } from "./TaskAgentConfig";
+import { TASK_AGENT_CONFIG, resolveColumns, resolveCreationColumns } from "./TaskAgentConfig";
 import { TaskParser } from "./TaskParser";
 import { TaskMover } from "./TaskMover";
 import { TaskCard } from "./TaskCard";
@@ -58,6 +58,13 @@ export class TaskAgentAdapter extends BaseAdapter {
     const resolvedSettings = settings ?? {};
     this._app = app;
     this._settings = resolvedSettings;
+    // Apply column settings on first load
+    this.config.columns = resolveColumns(
+      resolvedSettings["adapter.columnOrder"] as string | undefined,
+    );
+    this.config.creationColumns = resolveCreationColumns(
+      resolvedSettings["adapter.creationColumnIds"] as string | undefined,
+    );
     const taskBasePath = (resolvedSettings["adapter.taskBasePath"] as string) || "2 - Areas/Tasks";
     const resolver = this.getStateResolver(taskBasePath, resolvedSettings);
     return new TaskParser(app, basePath, resolvedSettings, resolver);
@@ -80,8 +87,9 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   /**
    * Called by the framework when settings change. Updates the card renderer's
-   * flag rules and invalidates the cached state resolver so it's recreated
-   * with the new strategy on next use.
+   * flag rules, invalidates the cached state resolver so it's recreated
+   * with the new strategy on next use, and applies column order/creation
+   * column overrides from user settings.
    */
   onSettingsChanged(settings: Record<string, unknown>): void {
     this._settings = settings;
@@ -90,6 +98,11 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (this._cardRenderer) {
       this._cardRenderer.updateFlagRules(this.getMergedFlagRules());
     }
+    // Update column order and creation columns from settings
+    this.config.columns = resolveColumns(settings["adapter.columnOrder"] as string | undefined);
+    this.config.creationColumns = resolveCreationColumns(
+      settings["adapter.creationColumnIds"] as string | undefined,
+    );
   }
 
   /** Merge adapter-default card flags with user-defined custom flags from settings. */

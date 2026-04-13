@@ -1,5 +1,6 @@
-import type { CardFlagRule, PluginConfig } from "../../core/interfaces";
+import type { CardFlagRule, CreationColumn, ListColumn, PluginConfig } from "../../core/interfaces";
 import { KANBAN_COLUMNS, COLUMN_LABELS, STATE_FOLDER_MAP } from "./types";
+import type { KanbanColumn } from "./types";
 
 /**
  * Default card flag rules for the task-agent adapter.
@@ -46,6 +47,22 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
         frontmatter: "Frontmatter field",
         composite: "Composite (frontmatter + folder fallback)",
       },
+    },
+    {
+      key: "columnOrder",
+      name: "Column display order",
+      description:
+        "JSON array of column IDs defining the display order on the kanban board. Use the reorder controls below to change this, or edit the JSON directly. Default order: priority, active, todo, done.",
+      type: "text",
+      default: "",
+    },
+    {
+      key: "creationColumnIds",
+      name: "New task columns",
+      description:
+        "JSON array of column IDs that appear in the new task column selector, in order. First entry is the default. Empty uses the built-in default (todo, active).",
+      type: "text",
+      default: "",
     },
     {
       key: "jiraBaseUrl",
@@ -100,6 +117,8 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
     stateStrategy: "folder",
+    columnOrder: "",
+    creationColumnIds: "",
     jiraBaseUrl: "",
     enrichmentEnabled: true,
     enrichmentPrompt: "",
@@ -112,3 +131,88 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
   terminalStates: ["done", "abandoned"],
   cardFlags: DEFAULT_CARD_FLAGS,
 };
+
+/** The built-in default columns before any user customisation. */
+export const DEFAULT_COLUMNS: ListColumn[] = KANBAN_COLUMNS.map((col) => ({
+  id: col,
+  label: COLUMN_LABELS[col],
+  folderName: STATE_FOLDER_MAP[col],
+}));
+
+/** The built-in default creation columns before any user customisation. */
+export const DEFAULT_CREATION_COLUMNS: CreationColumn[] = [
+  { id: "todo", label: "To Do" },
+  { id: "active", label: "Active", default: true },
+];
+
+/**
+ * Parse a JSON string containing an array of column IDs.
+ * Returns an empty array on invalid/empty input.
+ */
+export function parseColumnOrderJson(json: string | undefined): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+      return parsed;
+    }
+  } catch {
+    // Invalid JSON - fall back to empty
+  }
+  return [];
+}
+
+/**
+ * Resolve the effective column list from a custom order setting.
+ * Re-orders DEFAULT_COLUMNS to match the provided column IDs.
+ * Unknown IDs are ignored; columns missing from the order are appended.
+ */
+export function resolveColumns(columnOrderJson: string | undefined): ListColumn[] {
+  const order = parseColumnOrderJson(columnOrderJson);
+  if (order.length === 0) return DEFAULT_COLUMNS;
+
+  const columnById = new Map(DEFAULT_COLUMNS.map((col) => [col.id, col]));
+  const result: ListColumn[] = [];
+  const seen = new Set<string>();
+
+  for (const id of order) {
+    const col = columnById.get(id);
+    if (col && !seen.has(id)) {
+      result.push(col);
+      seen.add(id);
+    }
+  }
+
+  // Append any columns not mentioned in the custom order
+  for (const col of DEFAULT_COLUMNS) {
+    if (!seen.has(col.id)) {
+      result.push(col);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Resolve the effective creation columns from a custom setting.
+ * The first column in the list is marked as the default.
+ */
+export function resolveCreationColumns(
+  creationColumnIdsJson: string | undefined,
+): CreationColumn[] {
+  const ids = parseColumnOrderJson(creationColumnIdsJson);
+  if (ids.length === 0) return DEFAULT_CREATION_COLUMNS;
+
+  const labelById = new Map(DEFAULT_COLUMNS.map((col) => [col.id, col.label]));
+  const result: CreationColumn[] = [];
+
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const label = labelById.get(id);
+    if (label) {
+      result.push({ id, label, ...(i === 0 ? { default: true } : {}) });
+    }
+  }
+
+  return result.length > 0 ? result : DEFAULT_CREATION_COLUMNS;
+}
