@@ -105,18 +105,17 @@ export class ListPanel {
       }, 100);
     });
 
-    // Session filter toggle
+    // Session filter toggle (input wrapped in label to avoid duplicate DOM IDs)
     const sessionFilterContainer = filterContainer.createDiv({ cls: "wt-session-filter" });
-    this.sessionFilterEl = sessionFilterContainer.createEl("input", {
+    const sessionFilterLabel = sessionFilterContainer.createEl("label", {
+      cls: "wt-session-filter-label",
+    });
+    this.sessionFilterEl = sessionFilterLabel.createEl("input", {
       cls: "wt-session-filter-checkbox",
-      attr: { type: "checkbox", id: "wt-session-filter-toggle" },
+      attr: { type: "checkbox" },
     });
     this.sessionFilterEl.checked = this.sessionFilterActive;
-    sessionFilterContainer.createEl("label", {
-      text: "Active sessions only",
-      cls: "wt-session-filter-label",
-      attr: { for: "wt-session-filter-toggle" },
-    });
+    sessionFilterLabel.createSpan({ text: "Active sessions only" });
     this.sessionFilterEl.addEventListener("change", () => {
       this.sessionFilterActive = this.sessionFilterEl.checked;
       this.onSessionFilterChange(this.sessionFilterActive);
