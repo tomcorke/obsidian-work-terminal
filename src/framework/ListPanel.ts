@@ -26,6 +26,7 @@ export class ListPanel {
   private containerEl: HTMLElement;
   private listEl: HTMLElement;
   private filterEl: HTMLInputElement;
+  private sessionFilterEl: HTMLInputElement;
   private adapter: AdapterBundle;
   private cardRenderer: CardRenderer;
   private mover: WorkItemMover;
@@ -35,12 +36,14 @@ export class ListPanel {
   private settings: Record<string, any>;
   private onSelect: (item: WorkItem | null) => void;
   private onCustomOrderChange: (order: Record<string, string[]>) => void;
+  private onSessionFilterChange: (active: boolean) => void;
   private pinStore: PinStore | null = null;
 
   // State
   private selectedId: string | null = null;
   private collapsedSections: Set<string> = new Set();
   private filterTerm = "";
+  private sessionFilterActive = false;
   private filterDebounce: ReturnType<typeof setTimeout> | null = null;
   private items: WorkItem[] = [];
   private groups: Record<string, WorkItem[]> = {};
@@ -73,6 +76,7 @@ export class ListPanel {
     settings: Record<string, any>,
     onSelect: (item: WorkItem | null) => void,
     onCustomOrderChange: (order: Record<string, string[]>) => void,
+    onSessionFilterChange?: (active: boolean) => void,
   ) {
     this.adapter = adapter;
     this.cardRenderer = cardRenderer;
@@ -82,6 +86,10 @@ export class ListPanel {
     this.settings = settings;
     this.onSelect = onSelect;
     this.onCustomOrderChange = onCustomOrderChange;
+    this.onSessionFilterChange = onSessionFilterChange ?? (() => {});
+
+    // Restore session filter state from settings
+    this.sessionFilterActive = !!settings["core.sessionFilterActive"];
 
     // Filter input
     const filterContainer = parentEl.createDiv({ cls: "wt-filter-container" });
@@ -95,6 +103,24 @@ export class ListPanel {
         this.filterTerm = this.filterEl.value.toLowerCase();
         this.applyFilter();
       }, 100);
+    });
+
+    // Session filter toggle
+    const sessionFilterContainer = filterContainer.createDiv({ cls: "wt-session-filter" });
+    this.sessionFilterEl = sessionFilterContainer.createEl("input", {
+      cls: "wt-session-filter-checkbox",
+      attr: { type: "checkbox", id: "wt-session-filter-toggle" },
+    });
+    this.sessionFilterEl.checked = this.sessionFilterActive;
+    sessionFilterContainer.createEl("label", {
+      text: "Active sessions only",
+      cls: "wt-session-filter-label",
+      attr: { for: "wt-session-filter-toggle" },
+    });
+    this.sessionFilterEl.addEventListener("change", () => {
+      this.sessionFilterActive = this.sessionFilterEl.checked;
+      this.onSessionFilterChange(this.sessionFilterActive);
+      this.applyFilter();
     });
 
     // List container
@@ -873,20 +899,29 @@ export class ListPanel {
   // ---------------------------------------------------------------------------
 
   private applyFilter(): void {
+    // Build a set of item IDs with active sessions when session filter is on
+    const sessionItemIds = this.sessionFilterActive
+      ? new Set(this.terminalPanel.getSessionItemIds())
+      : null;
+    const hasAnyFilter = !!this.filterTerm || this.sessionFilterActive;
+
     const sections = this.listEl.querySelectorAll(".wt-section");
     for (const section of Array.from(sections)) {
       const cards = section.querySelectorAll(".wt-card-wrapper");
       let visibleCount = 0;
 
       for (const card of Array.from(cards)) {
-        const text = card.textContent?.toLowerCase() || "";
-        const match = !this.filterTerm || text.includes(this.filterTerm);
+        const textMatch =
+          !this.filterTerm || (card.textContent?.toLowerCase() || "").includes(this.filterTerm);
+        const sessionMatch =
+          !sessionItemIds || sessionItemIds.has(card.getAttribute("data-item-id") || "");
+        const match = textMatch && sessionMatch;
         (card as HTMLElement).style.display = match ? "" : "none";
         if (match) visibleCount++;
       }
 
       // Hide section if all cards filtered out
-      (section as HTMLElement).style.display = visibleCount > 0 || !this.filterTerm ? "" : "none";
+      (section as HTMLElement).style.display = visibleCount > 0 || !hasAnyFilter ? "" : "none";
     }
   }
 
@@ -1090,6 +1125,11 @@ export class ListPanel {
       this.renderSessionBadges(actionsEl, item);
       this.renderResumeBadge(actionsEl, item);
       if (moveBtn) actionsEl.appendChild(moveBtn); // re-append to keep it last
+    }
+
+    // Re-apply filter so session-only toggle reflects current session state
+    if (this.sessionFilterActive) {
+      this.applyFilter();
     }
   }
 
