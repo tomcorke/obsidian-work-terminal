@@ -73,6 +73,25 @@
   border-color: var(--interactive-accent);
 }
 
+.wt-session-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.wt-session-filter-checkbox {
+  margin: 0;
+  cursor: pointer;
+}
+
+.wt-session-filter-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
 /* =============================================================================
    List panel & sections
    ============================================================================= */

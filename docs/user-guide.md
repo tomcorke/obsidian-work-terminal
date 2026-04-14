@@ -151,6 +151,8 @@ You can also drag a task between columns to change its state. Dropping a task fr
 
 The filter input at the top of the kanban board provides instant text filtering across all task titles. Type to narrow the visible cards to only those matching your search text. Clear the filter to show all tasks again.
 
+Below the text filter is an **Active sessions only** checkbox. When enabled, only tasks that have open terminal tabs or agent sessions are shown. This is useful when working with many tasks and you want to focus on just the ones you are actively working on. The toggle combines with the text filter - both conditions must match for a card to be visible. The filter state persists across plugin reloads.
+
 ---
 
 ## Terminal and agent sessions

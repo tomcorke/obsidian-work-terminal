@@ -386,6 +386,13 @@ export class MainView extends ItemView {
       async (order: Record<string, string[]>) => {
         await this.persistCustomOrder(order);
       },
+      // onSessionFilterChange callback - persist toggle state
+      async (active: boolean) => {
+        await mergeAndSavePluginData(this.pluginRef, async (data) => {
+          if (!data.settings) data.settings = {};
+          data.settings["core.sessionFilterActive"] = active;
+        });
+      },
     );
 
     // Initialize PinStore and inject into ListPanel

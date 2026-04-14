@@ -93,9 +93,11 @@ function createListPanel(
     creationColumns?: { id: string; label: string; default?: boolean }[];
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
+    onSessionFilterChange?: ReturnType<typeof vi.fn>;
     cardClasses?: string[];
     includeMetaRow?: boolean;
     itemName?: string;
+    settings?: Record<string, any>;
   } = {},
 ) {
   const parentEl = document.createElement("div") as HTMLElement & {
@@ -149,6 +151,7 @@ function createListPanel(
     closeAllSessions: vi.fn(),
     getAgentContextPrompt: vi.fn(),
     getSessionCounts: vi.fn(() => ({ shells: 0, agents: 0 })),
+    getSessionItemIds: vi.fn(() => [] as string[]),
     hasResumableAgentSessions: vi.fn(() => false),
     getPersistedSessions: vi.fn(() => []),
     getIdleSince: vi.fn(() => null),
@@ -166,6 +169,9 @@ function createListPanel(
     },
   };
 
+  const onSessionFilterChange = options.onSessionFilterChange ?? vi.fn();
+  const settings = options.settings ?? {};
+
   const panel = new ListPanel(
     parentEl,
     adapter as any,
@@ -173,12 +179,21 @@ function createListPanel(
     mover as any,
     plugin as any,
     terminalPanel as any,
-    {},
+    settings,
     vi.fn(),
     onCustomOrderChange,
+    onSessionFilterChange,
   );
 
-  return { panel, parentEl, mover, onCustomOrderChange, plugin, terminalPanel };
+  return {
+    panel,
+    parentEl,
+    mover,
+    onCustomOrderChange,
+    onSessionFilterChange,
+    plugin,
+    terminalPanel,
+  };
 }
 
 describe("ListPanel", () => {
@@ -869,6 +884,170 @@ describe("ListPanel", () => {
       expect(header?.classList.contains("wt-section-header-blocked-upstream")).toBe(true);
       // Should not contain the raw unsanitized class
       expect(header?.classList.contains("wt-section-header-blocked upstream")).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Session filter toggle
+  // ---------------------------------------------------------------------------
+
+  describe("session filter", () => {
+    it("renders the session filter checkbox in the filter container", () => {
+      createListPanel();
+
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      expect(checkbox).not.toBeNull();
+      expect(checkbox.type).toBe("checkbox");
+      expect(checkbox.checked).toBe(false);
+
+      const label = document.querySelector(".wt-session-filter-label");
+      expect(label).not.toBeNull();
+      expect(label?.textContent).toBe("Active sessions only");
+    });
+
+    it("hides cards without active sessions when the toggle is checked", () => {
+      const { panel, terminalPanel } = createListPanel();
+      terminalPanel.getSessionItemIds.mockReturnValue(["task-1"]);
+
+      panel.render({ todo: [makeItem("task-1"), makeItem("task-2")] }, {});
+
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      const card1 = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+      const card2 = document.querySelector('[data-item-id="task-2"]') as HTMLElement;
+      expect(card1.style.display).toBe("");
+      expect(card2.style.display).toBe("none");
+    });
+
+    it("shows all cards when the toggle is unchecked", () => {
+      const { panel, terminalPanel } = createListPanel();
+      terminalPanel.getSessionItemIds.mockReturnValue(["task-1"]);
+
+      panel.render({ todo: [makeItem("task-1"), makeItem("task-2")] }, {});
+
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+
+      // Enable filter
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      // Disable filter
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      const card1 = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+      const card2 = document.querySelector('[data-item-id="task-2"]') as HTMLElement;
+      expect(card1.style.display).toBe("");
+      expect(card2.style.display).toBe("");
+    });
+
+    it("combines session filter with text filter", () => {
+      const { panel, terminalPanel } = createListPanel();
+      terminalPanel.getSessionItemIds.mockReturnValue(["task-1", "task-2"]);
+
+      panel.render(
+        {
+          todo: [
+            makeItem("task-1", "Alpha"),
+            makeItem("task-2", "Beta"),
+            makeItem("task-3", "Alpha Clone"),
+          ],
+        },
+        {},
+      );
+
+      // Enable session filter
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      // Also apply text filter for "Alpha"
+      const filterEl = document.querySelector(".wt-filter-input") as HTMLInputElement;
+      filterEl.value = "alpha";
+      filterEl.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(100);
+
+      // task-1 matches both filters (has session + matches "alpha")
+      const card1 = document.querySelector('[data-item-id="task-1"]') as HTMLElement;
+      expect(card1.style.display).toBe("");
+
+      // task-2 has session but does not match "alpha"
+      const card2 = document.querySelector('[data-item-id="task-2"]') as HTMLElement;
+      expect(card2.style.display).toBe("none");
+
+      // task-3 matches "alpha" but has no session
+      const card3 = document.querySelector('[data-item-id="task-3"]') as HTMLElement;
+      expect(card3.style.display).toBe("none");
+    });
+
+    it("hides sections with no visible cards when session filter is active", () => {
+      const { panel, terminalPanel } = createListPanel({
+        columns: [
+          { id: "todo", label: "To Do", folderName: "todo" },
+          { id: "active", label: "Active", folderName: "active" },
+        ],
+      });
+      terminalPanel.getSessionItemIds.mockReturnValue(["task-2"]);
+
+      const activeItem = { ...makeItem("task-2"), state: "active" };
+      panel.render({ todo: [makeItem("task-1")], active: [activeItem] }, {});
+
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      const todoSection = document.querySelector('[data-column="todo"]') as HTMLElement;
+      const activeSection = document.querySelector('[data-column="active"]') as HTMLElement;
+      expect(todoSection.style.display).toBe("none");
+      expect(activeSection.style.display).toBe("");
+    });
+
+    it("calls onSessionFilterChange when the toggle is clicked", () => {
+      const onSessionFilterChange = vi.fn();
+      createListPanel({ onSessionFilterChange });
+
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      expect(onSessionFilterChange).toHaveBeenCalledWith(true);
+
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      expect(onSessionFilterChange).toHaveBeenCalledWith(false);
+    });
+
+    it("restores session filter state from settings", () => {
+      createListPanel({
+        settings: { "core.sessionFilterActive": true },
+      });
+
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      expect(checkbox.checked).toBe(true);
+    });
+
+    it("re-applies session filter when session badges update", () => {
+      const { panel, terminalPanel } = createListPanel();
+
+      panel.render({ todo: [makeItem("task-1"), makeItem("task-2")] }, {});
+
+      // Enable session filter with task-1 having a session
+      terminalPanel.getSessionItemIds.mockReturnValue(["task-1"]);
+      const checkbox = document.querySelector(".wt-session-filter-checkbox") as HTMLInputElement;
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+      const card2 = document.querySelector('[data-item-id="task-2"]') as HTMLElement;
+      expect(card2.style.display).toBe("none");
+
+      // Now task-2 also gets a session - updateSessionBadges should re-apply filter
+      terminalPanel.getSessionItemIds.mockReturnValue(["task-1", "task-2"]);
+      panel.updateSessionBadges();
+
+      expect(card2.style.display).toBe("");
     });
   });
 });

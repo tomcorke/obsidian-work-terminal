@@ -2496,6 +2496,11 @@ export class TerminalPanelView {
     return this.tabManager.getSessionItemIds().length > 0;
   }
 
+  /** Return item IDs that have active terminal sessions. */
+  getSessionItemIds(): string[] {
+    return this.tabManager.getSessionItemIds();
+  }
+
   getSessionCounts(itemId: string): { shells: number; agents: number } {
     return this.tabManager.getSessionCounts(itemId);
   }
