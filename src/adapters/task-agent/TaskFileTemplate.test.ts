@@ -87,9 +87,11 @@ describe("generateTaskContent", () => {
 
   it("has no blank lines within frontmatter fences", () => {
     const content = generateTaskContent("Test", "todo");
-    const frontmatter = content.split("---")[1];
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
+    expect(fmMatch).not.toBeNull();
+    const frontmatter = fmMatch![1];
     // Every line within the frontmatter block should be non-empty
-    const lines = frontmatter.split("\n").slice(1, -1); // trim leading/trailing from split
+    const lines = frontmatter.split("\n");
     const blankLines = lines.filter((line) => line.trim() === "");
     expect(blankLines).toHaveLength(0);
   });

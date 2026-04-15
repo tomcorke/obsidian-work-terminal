@@ -73,7 +73,7 @@ priority:
 agent-actionable: false
 goal: []
 ${relatedField}
-${enrichmentSection}created: ${now}
+${enrichmentSection ? enrichmentSection + (enrichmentSection.endsWith("\n") ? "" : "\n") : ""}created: ${now}
 updated: ${now}
 ---
 # ${title}
