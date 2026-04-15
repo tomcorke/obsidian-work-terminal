@@ -60,29 +60,38 @@ describe("generateTaskContent", () => {
     expect(content).toContain("agent-actionable: false");
     expect(content).toContain("goal: []");
     expect(content).toContain("related: []");
-    expect(content).toContain("priority.score: 0");
-    expect(content).toContain("priority.has-blocker: false");
+    expect(content).toMatch(/^priority:\n\s+score: 0$/m);
+    expect(content).toMatch(/^priority:[\s\S]*?has-blocker: false$/m);
   });
 
-  it("uses flat dot-notation keys for source fields", () => {
+  it("uses nested YAML for source fields", () => {
     const content = generateTaskContent("Test", "todo");
-    expect(content).toMatch(/^source\.type: prompt$/m);
-    expect(content).toMatch(/^source\.id:/m);
-    expect(content).toMatch(/^source\.url:/m);
-    expect(content).toMatch(/^source\.captured:/m);
-    // Must NOT contain nested source block
-    expect(content).not.toMatch(/^source:\n\s+type:/m);
+    expect(content).toMatch(/^source:\n\s+type: prompt$/m);
+    expect(content).toMatch(/^source:[\s\S]*?\s+id:/m);
+    expect(content).toMatch(/^source:[\s\S]*?\s+url:/m);
+    expect(content).toMatch(/^source:[\s\S]*?\s+captured:/m);
+    // Must NOT contain dot-notation source keys
+    expect(content).not.toMatch(/^source\./m);
   });
 
-  it("uses flat dot-notation keys for priority fields", () => {
+  it("uses nested YAML for priority fields", () => {
     const content = generateTaskContent("Test", "todo");
-    expect(content).toMatch(/^priority\.score: 0$/m);
-    expect(content).toMatch(/^priority\.deadline: ""$/m);
-    expect(content).toMatch(/^priority\.impact: medium$/m);
-    expect(content).toMatch(/^priority\.has-blocker: false$/m);
-    expect(content).toMatch(/^priority\.blocker-context: ""$/m);
-    // Must NOT contain nested priority block
-    expect(content).not.toMatch(/^priority:\n\s+score:/m);
+    expect(content).toMatch(/^priority:\n\s+score: 0$/m);
+    expect(content).toMatch(/^priority:[\s\S]*?\s+deadline: ""$/m);
+    expect(content).toMatch(/^priority:[\s\S]*?\s+impact: medium$/m);
+    expect(content).toMatch(/^priority:[\s\S]*?\s+has-blocker: false$/m);
+    expect(content).toMatch(/^priority:[\s\S]*?\s+blocker-context: ""$/m);
+    // Must NOT contain dot-notation priority keys
+    expect(content).not.toMatch(/^priority\./m);
+  });
+
+  it("has no blank lines within frontmatter fences", () => {
+    const content = generateTaskContent("Test", "todo");
+    const frontmatter = content.split("---")[1];
+    // Every line within the frontmatter block should be non-empty
+    const lines = frontmatter.split("\n").slice(1, -1); // trim leading/trailing from split
+    const blankLines = lines.filter((line) => line.trim() === "");
+    expect(blankLines).toHaveLength(0);
   });
 
   it("uses block list syntax for split task related links", () => {
