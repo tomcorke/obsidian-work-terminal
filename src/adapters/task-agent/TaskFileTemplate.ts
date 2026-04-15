@@ -40,8 +40,11 @@ export function generateTaskContent(
   const yamlQuote = (s: string): string =>
     `"${s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/"/g, '\\"')}"`;
 
-  const enrichmentBlock = enrichment
-    ? `\nenrichment:\n` +
+  const safeState = yamlQuoteValue(state);
+  const safeTagState = yamlQuoteValue(`task/${state}`);
+
+  const enrichmentSection = enrichment
+    ? `enrichment:\n` +
       `  profile: ${yamlQuote(enrichment.profile ?? "")}\n` +
       `  command: ${yamlQuote(enrichment.command)}\n` +
       `  args: ${yamlQuote(enrichment.args)}\n` +
@@ -49,37 +52,28 @@ export function generateTaskContent(
       `  cwd: ${yamlQuote(enrichment.cwd)}\n`
     : "";
 
-  const safeState = yamlQuoteValue(state);
-  const safeTagState = yamlQuoteValue(`task/${state}`);
-
   return `---
 id: ${id}
 tags:
   - task
   - ${safeTagState}
-
 state: ${safeState}
-
 title: ${safeTitle}
-
-source.type: prompt
-source.id: "${splitFrom ? `split-${now.replace(/[:.]/g, "")}` : ""}"
-source.url: ""
-source.captured: ${now}
-
-priority.score: 0
-priority.deadline: ""
-priority.impact: medium
-priority.has-blocker: false
-priority.blocker-context: ""
-
+source:
+  type: prompt
+  id: "${splitFrom ? `split-${now.replace(/[:.]/g, "")}` : ""}"
+  url: ""
+  captured: ${now}
+priority:
+  score: 0
+  deadline: ""
+  impact: medium
+  has-blocker: false
+  blocker-context: ""
 agent-actionable: false
-
 goal: []
-
 ${relatedField}
-${enrichmentBlock}
-created: ${now}
+${enrichmentSection ? enrichmentSection + (enrichmentSection.endsWith("\n") ? "" : "\n") : ""}created: ${now}
 updated: ${now}
 ---
 # ${title}
