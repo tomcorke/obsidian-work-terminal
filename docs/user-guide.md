@@ -11,11 +11,12 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Creating tasks](#creating-tasks)
   - [Kanban board](#kanban-board)
   - [Task card anatomy](#task-card-anatomy)
-  - [Card display modes](#card-display-modes)
+  - [Compact card mode](#compact-card-mode)
   - [Context menu](#context-menu)
   - [Detail panel](#detail-panel)
   - [Drag-drop reordering](#drag-drop-reordering)
   - [Filtering](#filtering)
+  - [Activity view](#activity-view)
 - [Terminal and agent sessions](#terminal-and-agent-sessions)
   - [Shell tabs](#shell-tabs)
   - [Agent sessions](#agent-sessions)
@@ -111,19 +112,13 @@ Cards contain:
 
 When a task has an active terminal session, a small indicator appears on the card showing the session count and type.
 
-### Card display modes
+### Compact card mode
 
-Work Terminal offers three card display modes, configurable under **Settings > Core > Card display mode**:
+Work Terminal offers an optional **compact display mode** that collapses each task card into a single horizontal line. This is useful when you have many tasks and want to see more of them at once without scrolling.
 
-| Mode | Description |
-|------|-------------|
-| **Standard** | The default multi-line card layout with full badges, goal tags, and flag labels. |
-| **Comfortable** | Same layout as Standard but with more padding within cards, larger gaps between cards, and more visual breathing room overall. Useful when you prefer a less dense board that is easier to scan visually. |
-| **Compact** | Collapses each card into a single horizontal line with indicator dots replacing verbose badges. Useful when you have many tasks and want to see more at once without scrolling. |
+To enable compact mode, go to **Settings > Core > Card display mode** and select **Compact**.
 
-**Comfortable mode** uses the same card structure as Standard - title, source badges, priority scores, goal tags, and card flags all remain visible. The difference is purely spacing: cards have more internal padding, larger margins between them, slightly larger text, and more gap between meta badges. Section headers and the cards container also get extra breathing room.
-
-**Compact mode** replaces the full card layout with a single row containing:
+In compact mode, each card becomes a single row containing:
 
 - **Title** - single line, truncated with ellipsis if it overflows
 - **Indicator dots** - small coloured dots that replace the verbose meta badges:
@@ -133,16 +128,16 @@ Work Terminal offers three card display modes, configurable under **Settings > C
   - Coloured dot for each active card flag (hover to see the flag label or context)
 - **Session badge** - the session count badge remains visible, slightly smaller
 
-All three modes share the same interactive behaviour:
+Everything else works identically in compact mode:
 
 - **Drag-drop** reordering and cross-column moves
 - **Selection** and detail panel opening
 - **Context menu** with all the same actions
 - **Agent state indicators** (active/waiting/idle border and glow animations)
-- **Pinned section** with state badges
+- **Pinned section** with state badges (adapted to the compact height)
 - **Filtering** by text and active sessions
 
-Switch between modes at any time from the settings dropdown.
+Switch back to **Standard** mode at any time to restore the full multi-line card layout with verbose badges, goal tags, and flag labels.
 
 ### Context menu
 
@@ -184,6 +179,46 @@ You can also drag a task between columns to change its state. Dropping a task fr
 The filter input at the top of the kanban board provides instant text filtering across all task titles. Type to narrow the visible cards to only those matching your search text. Clear the filter to show all tasks again.
 
 Below the text filter is an **Active sessions only** checkbox. When enabled, only tasks that have open terminal tabs or agent sessions are shown. This is useful when working with many tasks and you want to focus on just the ones you are actively working on. The toggle combines with the text filter - both conditions must match for a card to be visible. The filter state persists across plugin reloads.
+
+### Activity view
+
+Work Terminal offers an alternative view mode that groups and orders tasks by recent activity instead of by state columns. This is useful when you want to see what you have been working on recently, regardless of task state.
+
+To switch, go to **Settings > Core > View mode** and select **Activity (by recency)**.
+
+In activity mode, the kanban board is replaced with four recency sections:
+
+| Section | Includes |
+|---------|----------|
+| **Recent** | Today, or the last N hours (configurable), whichever is longer |
+| **Last 7 Days** | Activity within the past week |
+| **Last 30 Days** | Activity within the past month |
+| **Older** | Everything else, or tasks with no recorded activity |
+
+**Activity tracking** works as follows:
+
+- Any tab creation, agent session launch, or agent state change refreshes the activity timestamp for the associated task
+- Timestamps are maintained in memory for accurate within-session ordering
+- A `last-active` field is written to task frontmatter (at most once per minute) so timestamps survive plugin/Obsidian restarts
+- On load, the plugin reads `last-active` from frontmatter to seed the initial ordering
+
+**Configurable threshold**: The "Recent" section threshold can be adjusted in **Settings > Core > Recent activity threshold**:
+
+- Last hour
+- Last 3 hours (default)
+- Last 24 hours
+
+The "Recent" section always includes at minimum all of today's activity, even if the threshold is shorter than the time since midnight.
+
+**Ordering rules**: Tasks do not continuously reorder within a section based on exact timestamps. This avoids disruptive UI churn when multiple sessions are active simultaneously. Instead:
+
+- Tasks only move between sections when they cross a section boundary (e.g. from "Recent" to "Last 7 Days")
+- When a task ages out of its current section, it appears at the top of the next section
+- Manual reordering within sections is supported via drag-drop and is persisted
+
+**Drag-drop in activity mode**: Dragging a task within a section reorders it manually, just like in kanban mode. Dragging a task between sections is treated as a reorder within the destination section - it does not change the task's state or activity timestamp, since sections are time-based.
+
+**Task states are ignored** while activity view is enabled. All tasks from every state column appear in the recency sections. This is a separate view mode, not a replacement for the state-based kanban - switch back to kanban mode at any time to see the familiar column layout.
 
 ---
 
@@ -336,7 +371,9 @@ The core settings section covers:
 
 | Setting | Description |
 |---------|-------------|
-| **Card display mode** | Choose between **Standard** (full card details), **Comfortable** (spacious layout with more padding and gaps), and **Compact** (single-line cards with indicator dots). See [Card display modes](#card-display-modes). |
+| **Card display mode** | Choose between **Standard** (full card details with badges and tags) and **Compact** (single-line cards with indicator dots). See [Compact card mode](#compact-card-mode). |
+| **View mode** | Choose between **Kanban** (group by state columns) and **Activity** (group by recency). See [Activity view](#activity-view). |
+| **Recent activity threshold** | How far back the "Recent" section extends in activity view: Last hour, Last 3 hours (default), or Last 24 hours. |
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
 | **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |
