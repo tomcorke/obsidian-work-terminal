@@ -427,3 +427,71 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
     expect(origDetach).toHaveBeenCalled();
   });
 });
+
+describe("MainView writeLastActive", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function makeWriteView() {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const file = new TFile();
+    const modifyFn = vi.fn().mockResolvedValue(undefined);
+    (view as any).allItems = [makeItem({ id: "item-1", path: "tasks/test.md" })];
+    (view as any).app = {
+      vault: {
+        getAbstractFileByPath: vi.fn(() => file),
+        read: vi.fn(),
+        modify: modifyFn,
+      },
+    };
+    return { view, file, modifyFn, readFn: (view as any).app.vault.read };
+  }
+
+  it("does not create a blank line when frontmatter body is empty", async () => {
+    const { view, modifyFn, readFn } = makeWriteView();
+    readFn.mockResolvedValue("---\n---\nBody content");
+
+    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
+
+    expect(modifyFn).toHaveBeenCalledTimes(1);
+    const written = modifyFn.mock.calls[0][1] as string;
+    // Should not have a blank line between opening --- and last-active
+    expect(written).toBe("---\nlast-active: 2026-04-16T10:00:00Z\n---\nBody content");
+  });
+
+  it("preserves existing frontmatter fields when inserting last-active", async () => {
+    const { view, modifyFn, readFn } = makeWriteView();
+    readFn.mockResolvedValue("---\nid: uuid-123\nstate: active\n---\nBody");
+
+    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
+
+    const written = modifyFn.mock.calls[0][1] as string;
+    expect(written).toBe(
+      "---\nid: uuid-123\nstate: active\nlast-active: 2026-04-16T10:00:00Z\n---\nBody",
+    );
+  });
+
+  it("updates existing last-active field", async () => {
+    const { view, modifyFn, readFn } = makeWriteView();
+    readFn.mockResolvedValue("---\nid: uuid-123\nlast-active: 2026-04-15T08:00:00Z\n---\nBody");
+
+    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
+
+    const written = modifyFn.mock.calls[0][1] as string;
+    expect(written).toBe("---\nid: uuid-123\nlast-active: 2026-04-16T10:00:00Z\n---\nBody");
+  });
+});

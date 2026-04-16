@@ -639,10 +639,10 @@ export class MainView extends ItemView {
         if (fmMatch) {
           const [fullMatch, openFence, body, closeFence] = fmMatch;
           const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
-          const trimmedBody = body.endsWith(eol) ? body : body + eol;
+          const bodyPrefix = body.length === 0 ? "" : body.endsWith(eol) ? body : body + eol;
           updated = content.replace(
             fullMatch,
-            `${openFence}${trimmedBody}last-active: ${isoTimestamp}${eol}${closeFence}`,
+            `${openFence}${bodyPrefix}last-active: ${isoTimestamp}${eol}${closeFence}`,
           );
         } else {
           // No frontmatter block - can't write
