@@ -18,6 +18,14 @@ import type { TerminalPanelView } from "./TerminalPanelView";
 import type { PinStore } from "../core/PinStore";
 import { DangerConfirm } from "./DangerConfirm";
 import { slugify, titleCase } from "../core/utils";
+import {
+  type ActivityTracker,
+  type ViewMode,
+  type RecentThreshold,
+  type ActivityBucket,
+  ACTIVITY_BUCKETS,
+  ACTIVITY_BUCKET_LABELS,
+} from "./ActivityTracker";
 
 /** Virtual column ID for the pinned section. Not a real adapter column. */
 const PINNED_COLUMN_ID = "__pinned__";
@@ -38,6 +46,7 @@ export class ListPanel {
   private onCustomOrderChange: (order: Record<string, string[]>) => void;
   private onSessionFilterChange: (active: boolean) => void;
   private pinStore: PinStore | null = null;
+  private activityTracker: ActivityTracker | null = null;
 
   // State
   private selectedId: string | null = null;
@@ -151,6 +160,11 @@ export class ListPanel {
     this.pinStore = pinStore;
   }
 
+  /** Inject an ActivityTracker after construction (created by MainView). */
+  setActivityTracker(tracker: ActivityTracker): void {
+    this.activityTracker = tracker;
+  }
+
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
@@ -161,6 +175,19 @@ export class ListPanel {
     if (value === "compact") return "compact";
     if (value === "comfortable") return "comfortable";
     return "standard";
+  }
+
+  /** Resolve the current view mode from settings. */
+  private getViewMode(): ViewMode {
+    const value = this.settings["core.viewMode"];
+    return value === "activity" ? "activity" : "kanban";
+  }
+
+  /** Resolve the recent threshold from settings. */
+  private getRecentThreshold(): RecentThreshold {
+    const value = this.settings["core.recentThreshold"];
+    if (value === "1h" || value === "3h" || value === "24h") return value;
+    return "3h";
   }
 
   render(groups: Record<string, WorkItem[]>, customOrder: Record<string, string[]>): void {
@@ -184,6 +211,36 @@ export class ListPanel {
       this.listEl.addClass("wt-comfortable");
     }
 
+    // Branch on view mode
+    const viewMode = this.getViewMode();
+    if (viewMode === "activity") {
+      this.listEl.addClass("wt-activity-view");
+      this.listEl.removeClass("wt-kanban-view");
+      this.renderActivityMode();
+    } else {
+      this.listEl.addClass("wt-kanban-view");
+      this.listEl.removeClass("wt-activity-view");
+      this.renderKanbanMode(groups);
+    }
+
+    // Auto-resolve placeholders whose real cards have now rendered
+    for (const [placeholderPath, cardId] of this.pendingCreatedIdsByPlaceholder) {
+      if (this.listEl.querySelector(`[data-item-id="${cardId}"]`)) {
+        const placeholderEl = this.placeholders.get(placeholderPath);
+        if (placeholderEl) {
+          placeholderEl.remove();
+          this.placeholders.delete(placeholderPath);
+        }
+        this.pendingCreatedIdsByPlaceholder.delete(placeholderPath);
+        this.applyNewSuccessAnimation(cardId);
+      }
+    }
+
+    this.applyFilter();
+  }
+
+  /** Render the standard kanban view (groups by state columns). */
+  private renderKanbanMode(groups: Record<string, WorkItem[]>): void {
     // Collect pinned item IDs and build a lookup of all items by ID
     const pinnedIds = this.pinStore?.getPinnedIds() ?? [];
     const pinnedSet = new Set(pinnedIds);
@@ -233,21 +290,40 @@ export class ListPanel {
       const label = titleCase(id);
       this.renderSection(id, label, sortedItems, false);
     }
+  }
 
-    // Auto-resolve placeholders whose real cards have now rendered
-    for (const [placeholderPath, cardId] of this.pendingCreatedIdsByPlaceholder) {
-      if (this.listEl.querySelector(`[data-item-id="${cardId}"]`)) {
-        const placeholderEl = this.placeholders.get(placeholderPath);
-        if (placeholderEl) {
-          placeholderEl.remove();
-          this.placeholders.delete(placeholderPath);
-        }
-        this.pendingCreatedIdsByPlaceholder.delete(placeholderPath);
-        this.applyNewSuccessAnimation(cardId);
-      }
+  /**
+   * Render the activity view (groups by recency buckets).
+   * Task states in frontmatter are ignored - all items are grouped by
+   * their last-activity timestamp.
+   */
+  private renderActivityMode(): void {
+    const now = Date.now();
+    const threshold = this.getRecentThreshold();
+    const tracker = this.activityTracker;
+
+    // Classify all items into buckets
+    const bucketItems: Record<ActivityBucket, WorkItem[]> = {
+      recent: [],
+      "last-7-days": [],
+      "last-30-days": [],
+      older: [],
+    };
+
+    for (const item of this.items) {
+      const bucket = tracker ? tracker.getBucket(item.id, now, threshold) : "older";
+      bucketItems[bucket].push(item);
     }
 
-    this.applyFilter();
+    // Render each non-empty bucket as a section.
+    // Within each bucket, respect custom order (manual ordering).
+    for (const bucketId of ACTIVITY_BUCKETS) {
+      const items = bucketItems[bucketId];
+      if (items.length === 0) continue;
+
+      const sortedItems = this.sortItems(items, bucketId);
+      this.renderSection(bucketId, ACTIVITY_BUCKET_LABELS[bucketId], sortedItems, false);
+    }
   }
 
   /**
@@ -812,8 +888,14 @@ export class ListPanel {
       if (sourceColumn === columnId) {
         // Within-section reorder
         this.reorderWithinSection(columnId, this.dragSourceId, dropIndex);
+      } else if (this.getViewMode() === "activity") {
+        // Activity mode: cross-section drag = reorder within destination section.
+        // Sections are time-based, not user-controlled, so we never change state.
+        if (dragId) {
+          this.reorderWithinSection(columnId, dragId, dropIndex);
+        }
       } else {
-        // Cross-section move between regular columns
+        // Cross-section move between regular columns (kanban mode)
         if (item && dragId) {
           const didMove = await this.moveToColumn(item, columnId);
           if (!didMove) return;
