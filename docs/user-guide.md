@@ -27,7 +27,6 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [State resolution strategies](#state-resolution-strategies)
   - [Dynamic columns](#dynamic-columns)
   - [Background enrichment](#background-enrichment)
-  - [Claude /resume hooks](#claude-resume-hooks)
   - [Core settings](#core-settings)
 - [Advanced features](#advanced-features)
   - [Pinning tasks](#pinning-tasks)
@@ -123,7 +122,6 @@ Right-click any task card to open the context menu with these options:
 - **Copy Name** - copies the task title to clipboard
 - **Copy Path** - copies the vault file path to clipboard
 - **Copy Context Prompt** - copies the generated context prompt for this task
-- **Clear Resume Sessions** - removes stored resume session data (shown when resume sessions exist)
 - **Delete Task** - permanently deletes the task file (shown in red as a destructive action)
 
 ### Detail panel
@@ -197,17 +195,7 @@ When a task has multiple sessions, the tab bar shows all of them. Tabs are label
 
 ### Session persistence
 
-Work Terminal uses a two-tier persistence model:
-
-1. **Hot-reload stash** (window-global) - when the plugin reloads (e.g. during development with `pnpm run dev`), all terminal sessions are stashed to a window-global store. They are fully restored on reload with their PTY state intact. This is invisible to the user - sessions just keep working.
-
-2. **Disk persistence** (restart survival) - session metadata is periodically saved to the plugin's data file. When Obsidian restarts, sessions can be resumed:
-   - Claude sessions resume via `claude --resume` (requires hooks - see [Claude /resume hooks](#claude-resume-hooks))
-   - Copilot sessions resume via Copilot's native `--resume[=sessionId]` support
-   - Shell sessions start fresh (PTY state cannot survive process exit)
-   - Persisted sessions have a 7-day retention period
-
-A resume badge appears on task cards that have persisted sessions available for resumption.
+Work Terminal preserves terminal sessions across plugin hot-reloads (e.g. during development with `pnpm run dev`). All terminal sessions are stashed to a window-global store. They are fully restored on reload with their PTY state intact. This is invisible to the user - sessions just keep working.
 
 ### Agent state detection
 
@@ -308,22 +296,6 @@ Configure under **Adapter** in settings:
 
 Tasks being enriched show an "ingesting..." indicator on their card. If enrichment fails, a red "enrichment failed" badge appears, and the context menu offers a "Retry Enrichment" option.
 
-### Claude /resume hooks
-
-Claude /resume hooks enable Work Terminal to track Claude session IDs when users run `/resume` inside a Claude session. This is only needed for Claude CLI - Copilot uses its native `--resume` support.
-
-The settings tab shows the current hook status:
-
-- **Configured** (green) - hooks are installed and working
-- **Partial** (yellow) - some components are installed but not all
-- **Not configured** (grey) - hooks are not installed
-
-Actions available:
-
-- **Install** - installs the hook script and adds entries to `.claude/settings.local.json`
-- **Remove** - removes hook entries and deletes the hook script
-- **Accept reduced functionality** - check this to dismiss the warning banner without installing hooks. Claude session tracking after `/resume` will not work, but everything else functions normally.
-
 ### Core settings
 
 The core settings section covers:
@@ -332,7 +304,6 @@ The core settings section covers:
 |---------|-------------|
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
 | **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
-| **Copilot session log directory** | Where Copilot CLI writes session logs, used for deferred session ID detection |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |
 | **Expose debug API** | Publishes `window.__workTerminalDebug` for CDP inspection (see [Debug API](#debug-api)) |
 | **Reset guided tour** | Clears the guided tour completion status so it starts again on next open |
@@ -467,5 +438,4 @@ These settings appear under the **Adapter** section and are specific to the task
 - **Multiple agents**: Create separate profiles for different agent configurations - one for code review, another for implementation, a third for documentation.
 - **Quick triage**: Use the Priority column for items needing immediate attention. The score badge gives a visual ranking.
 - **Blocker visibility**: The default BLOCKED flag rule makes blockers immediately visible. Add custom rules for other states you want to track (e.g. "waiting for review", "needs design input").
-- **Session resume**: After an Obsidian restart, tasks with resumable sessions show a resume badge. Click to restore the session.
 - **Keyboard workflow**: Use the filter input to quickly find tasks, then click to select and use keyboard shortcuts in the terminal.

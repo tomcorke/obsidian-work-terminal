@@ -10,10 +10,8 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
 import type { AdapterBundle, CardFlagRule, SettingField } from "../core/interfaces";
-import { checkHookStatus, installHooks, removeHooks } from "../core/claude/ClaudeHookManager";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
-import { expandTilde } from "../core/utils";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
@@ -24,7 +22,6 @@ interface CoreSettings {
   "core.claudeExtraArgs": string;
   "core.copilotCommand": string;
   "core.copilotExtraArgs": string;
-  "core.copilotSessionLogDir": string;
   "core.strandsCommand": string;
   "core.strandsExtraArgs": string;
   "core.additionalAgentContext": string;
@@ -32,7 +29,6 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
-  "core.acceptNoResumeHooks": boolean;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -42,7 +38,6 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.claudeExtraArgs": "",
   "core.copilotCommand": "copilot",
   "core.copilotExtraArgs": "",
-  "core.copilotSessionLogDir": "~/.copilot/logs",
   "core.strandsCommand": "strands",
   "core.strandsExtraArgs": "",
   "core.additionalAgentContext": "",
@@ -50,7 +45,6 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.defaultTerminalCwd": "~",
   "core.exposeDebugApi": false,
   "core.keepSessionsAlive": true,
-  "core.acceptNoResumeHooks": false,
 };
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
@@ -121,17 +115,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Default terminal CWD",
       "Working directory for new terminals (supports ~)",
     );
-    this.addCoreSetting(
-      containerEl,
-      "core.copilotSessionLogDir",
-      "Copilot session log directory",
-      "Directory where Copilot CLI writes session logs. Used for deferred session ID detection. Supports ~ expansion.",
-    );
     this.addCoreToggle(
       containerEl,
       "core.keepSessionsAlive",
       "Keep sessions alive when tab is closed",
-      "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state. Sessions are also persisted to disk as a fallback.",
+      "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state.",
     );
     this.addCoreToggle(
       containerEl,
@@ -151,14 +139,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           new Notice("Guided tour will start next time you open Work Terminal");
         }),
       );
-
-    // Session Resume Tracking section
-    containerEl.createEl("h2", { text: "Claude /resume hooks" });
-    containerEl.createEl("p", {
-      text: "These hooks are only for Claude CLI. Copilot restart resume uses Copilot's native --resume[=sessionId] support and does not require hooks. If you switch sessions manually inside Copilot, Work Terminal keeps tracking the original session ID.",
-      cls: "wt-custom-spawn-help",
-    });
-    this.renderHookStatus(containerEl);
 
     // Adapter settings section
     const schema = this.adapter.config.settingsSchema;
@@ -193,80 +173,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // the Work Terminal view is not open (and thus no MainView listener exists).
     this.adapter.onSettingsChanged?.(allSettings);
     window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: allSettings }));
-  }
-
-  private async renderHookStatus(containerEl: HTMLElement): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-    const cwd = expandTilde(
-      settings["core.defaultTerminalCwd"] || CORE_DEFAULTS["core.defaultTerminalCwd"],
-    );
-    const status = checkHookStatus(cwd);
-
-    // Status indicator
-    const statusContainer = containerEl.createDiv({ cls: "wt-hook-status" });
-
-    const badgeEl = statusContainer.createSpan({ cls: "wt-hook-status-badge" });
-    if (status.scriptExists && status.hooksConfigured) {
-      badgeEl.addClass("wt-hook-status-ok");
-      badgeEl.textContent = "Configured";
-    } else if (status.scriptExists || status.hooksConfigured) {
-      badgeEl.addClass("wt-hook-status-partial");
-      badgeEl.textContent = "Partial";
-    } else {
-      badgeEl.addClass("wt-hook-status-missing");
-      badgeEl.textContent = "Not configured";
-    }
-
-    // Install button (shown when not fully configured)
-    if (!(status.scriptExists && status.hooksConfigured)) {
-      new Setting(containerEl)
-        .setName("Install hooks")
-        .setDesc(
-          "Install the Claude session-change hook script and add entries to .claude/settings.local.json",
-        )
-        .addButton((btn) =>
-          btn
-            .setButtonText("Install")
-            .setCta()
-            .onClick(async () => {
-              await installHooks(cwd);
-              this.display(); // refresh
-            }),
-        );
-    }
-
-    // Remove button (shown when any hooks are installed)
-    if (status.scriptExists || status.hooksConfigured) {
-      new Setting(containerEl)
-        .setName("Remove hooks")
-        .setDesc("Remove Claude hook entries from settings and delete the hook script")
-        .addButton((btn) =>
-          btn
-            .setButtonText("Remove")
-            .setWarning()
-            .onClick(async () => {
-              await removeHooks(cwd);
-              this.display(); // refresh
-            }),
-        );
-    }
-
-    // Accept reduced functionality checkbox
-    const acceptValue =
-      settings["core.acceptNoResumeHooks"] ?? CORE_DEFAULTS["core.acceptNoResumeHooks"];
-    new Setting(containerEl)
-      .setName("I accept reduced functionality")
-      .setDesc(
-        "Check this to dismiss the warning banner without installing Claude hooks. Claude session tracking after /resume will not work.",
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(!!acceptValue).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings["core.acceptNoResumeHooks"] = newValue;
-          });
-        }),
-      );
   }
 
   private async addCoreSetting(

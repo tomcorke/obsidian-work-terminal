@@ -62,7 +62,7 @@ export type AgentType = (typeof AGENT_TYPES)[number];
 // Placeholder options for launch vs resume
 // ---------------------------------------------------------------------------
 
-export const PARAM_PASS_MODES = ["launch-only", "resume-only", "both"] as const;
+export const PARAM_PASS_MODES = ["launch-only", "both"] as const;
 export type ParamPassMode = (typeof PARAM_PASS_MODES)[number];
 
 // ---------------------------------------------------------------------------
@@ -96,15 +96,6 @@ export interface AgentProfile {
   button: ProfileButton;
   /** Order index for sorting in the UI. Lower values first. */
   sortOrder: number;
-  // ---------------------------------------------------------------------------
-  // Resume overrides (custom agent type only)
-  // ---------------------------------------------------------------------------
-  /** Whether this custom profile supports session resume. */
-  resumable?: boolean;
-  /** Resume flag name (e.g. "--session-id"). */
-  resumeFlag?: string;
-  /** Resume flag format: "flag-space" = --flag ID, "flag-equals" = --flag=ID. */
-  resumeFlagFormat?: "flag-space" | "flag-equals";
   /** How context prompt is passed: "positional" = trailing arg, "flag" = via promptFlag. */
   promptInjectionMode?: "positional" | "flag";
   /** CLI flag for injecting context prompt (e.g. "-i"). Used when promptInjectionMode is "flag". */
@@ -132,7 +123,6 @@ const ProfileButtonSchema = z.object({
 /**
  * Strict schema used for import validation - all fields required.
  */
-const RESUME_FLAG_FORMATS = ["flag-space", "flag-equals"] as const;
 const PROMPT_INJECTION_MODES = ["positional", "flag"] as const;
 
 const AgentProfileSchema = z.object({
@@ -148,9 +138,6 @@ const AgentProfileSchema = z.object({
   paramPassMode: z.enum(PARAM_PASS_MODES),
   button: ProfileButtonSchema,
   sortOrder: z.number(),
-  resumable: z.boolean().optional(),
-  resumeFlag: z.string().optional(),
-  resumeFlagFormat: z.enum(RESUME_FLAG_FORMATS).optional(),
   promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
   promptFlag: z.string().optional(),
   loginShellWrap: z.boolean().optional(),
@@ -178,9 +165,6 @@ const StoredProfileSchema = z
       label: "Agent",
     }),
     sortOrder: z.number().default(0),
-    resumable: z.boolean().optional(),
-    resumeFlag: z.string().optional(),
-    resumeFlagFormat: z.enum(RESUME_FLAG_FORMATS).optional(),
     promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
     promptFlag: z.string().optional(),
     loginShellWrap: z.boolean().optional(),
@@ -194,19 +178,10 @@ export const AgentProfileArraySchema = z.array(AgentProfileSchema);
 export { AgentProfileSchema };
 
 // ---------------------------------------------------------------------------
-// Resume configuration per agent type
+// Launch configuration per agent type
 // ---------------------------------------------------------------------------
 
-/** Shared fields for all agent resume configurations. */
-interface AgentResumeConfigBase {
-  /** Whether this agent type supports session resume. */
-  resumable: boolean;
-  /** Whether this agent type supports session ID tracking (watching for /resume). */
-  sessionTracking: boolean;
-  /** How the resume flag is formatted: "flag-space" = --resume ID, "flag-equals" = --resume=ID */
-  resumeFlagFormat: "flag-space" | "flag-equals";
-  /** The resume flag name (e.g. "--session-id"). */
-  resumeFlag: string;
+export interface AgentLaunchConfig {
   /** How the context prompt is passed to the CLI: "positional" = trailing arg, "flag" = via promptFlag. */
   promptInjectionMode: "positional" | "flag";
   /** CLI flag for injecting the context prompt (e.g. "-i"). Only used when promptInjectionMode is "flag". */
@@ -223,8 +198,6 @@ interface AgentResumeConfigBase {
   installHint: string;
   /** Human-readable label for the agent type (e.g. "Claude"). */
   displayLabel: string;
-  /** Help text describing session resume behavior for this agent type. */
-  helpText: string;
   /**
    * Patterns for detecting agent activity in the terminal buffer.
    * - `activeLinePatterns`: regexes tested per-line against the last 6 screen lines.
@@ -237,35 +210,8 @@ interface AgentResumeConfigBase {
   };
 }
 
-/**
- * Discriminated union for deferSessionId:
- * - When false, log fields are absent.
- * - When true, sessionLogDir and sessionLogPattern are required.
- */
-type DeferredSessionConfig =
-  | { deferSessionId: false; sessionLogDir?: undefined; sessionLogPattern?: undefined }
-  | {
-      /**
-       * When true, the resume flag conflicts with the prompt flag on fresh launch.
-       * Fresh context sessions should omit the resume flag and discover the session
-       * ID from the agent's log files after spawn. The detected ID is then stored
-       * for future resume.
-       */
-      deferSessionId: true;
-      /** Log directory pattern for deferred session ID detection (e.g. "~/.copilot/logs"). */
-      sessionLogDir: string;
-      /** Regex pattern to extract session UUID from log lines. Must have a capture group. */
-      sessionLogPattern: string;
-    };
-
-export type AgentResumeConfig = AgentResumeConfigBase & DeferredSessionConfig;
-
-const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
+const AGENT_LAUNCH_CONFIGS: Record<AgentType, AgentLaunchConfig> = {
   claude: {
-    resumable: true,
-    sessionTracking: true,
-    resumeFlagFormat: "flag-space",
-    resumeFlag: "--session-id",
     promptInjectionMode: "positional",
     commandSettingKey: "core.claudeCommand",
     defaultCommand: "claude",
@@ -274,9 +220,6 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     installHint:
       "Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.",
     displayLabel: "Claude",
-    helpText:
-      "Claude starts new sessions with --session-id. Restart resume works from the stored session ID, but if you run /resume inside Claude you should install the Claude hooks in settings so Work Terminal can follow the new session ID.",
-    deferSessionId: false,
     activityPatterns: {
       activeLinePatterns: [
         /^\s*\u2733.*\u2026/, // spinner with ellipsis = in progress
@@ -288,10 +231,6 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     },
   },
   copilot: {
-    resumable: true,
-    sessionTracking: false,
-    resumeFlagFormat: "flag-equals",
-    resumeFlag: "--resume",
     promptInjectionMode: "flag",
     promptFlag: "-i",
     commandSettingKey: "core.copilotCommand",
@@ -301,11 +240,6 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     installHint:
       "Install it first, for example with brew install copilot-cli, then update Work Terminal's Copilot command setting if needed.",
     displayLabel: "Copilot",
-    helpText:
-      "Copilot resumes sessions with --resume[=sessionId]. For context sessions launched from Work Terminal, --resume is omitted on fresh launch and the session ID is discovered from Copilot logs. Restart resume works without hooks.",
-    deferSessionId: true,
-    sessionLogDir: "~/.copilot/logs",
-    sessionLogPattern: "Workspace initialized: ([0-9a-f-]{36})",
     activityPatterns: {
       activeLinePatterns: [
         /^\s*[\u25c9\u25ce\u25cb\u25cf]\s+(?:Thinking|Executing|Cancelling)\b/, // known status labels
@@ -316,10 +250,6 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     },
   },
   strands: {
-    resumable: false,
-    sessionTracking: false,
-    resumeFlagFormat: "flag-space",
-    resumeFlag: "--resume",
     promptInjectionMode: "positional",
     commandSettingKey: "core.strandsCommand",
     defaultCommand: "strands",
@@ -327,15 +257,8 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     cliDisplayName: "Strands agent",
     installHint: "Point the Strands command to a wrapper script in Work Terminal settings.",
     displayLabel: "Strands",
-    helpText:
-      "Strands sessions start fresh each time. Work Terminal does not persist restart-resume metadata for them.",
-    deferSessionId: false,
   },
   shell: {
-    resumable: false,
-    sessionTracking: false,
-    resumeFlagFormat: "flag-space",
-    resumeFlag: "",
     promptInjectionMode: "positional",
     commandSettingKey: "core.defaultShell",
     defaultCommand: "",
@@ -343,14 +266,8 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     cliDisplayName: "Shell",
     installHint: "",
     displayLabel: "Shell",
-    helpText: "Shell tabs are local terminals only and are not saved for restart resume.",
-    deferSessionId: false,
   },
   custom: {
-    resumable: false,
-    sessionTracking: false,
-    resumeFlagFormat: "flag-space",
-    resumeFlag: "",
     promptInjectionMode: "positional",
     commandSettingKey: "",
     defaultCommand: "",
@@ -358,65 +275,30 @@ const AGENT_RESUME_CONFIGS: Record<AgentType, AgentResumeConfig> = {
     cliDisplayName: "Custom CLI",
     installHint: "",
     displayLabel: "Custom",
-    helpText:
-      "Custom agent profiles let you use any CLI with Work Terminal. Configure resume support in the profile's advanced settings if your CLI supports session IDs.",
-    deferSessionId: false,
   },
 };
 
 /**
- * Get resume configuration for an agent type.
+ * Get launch configuration for an agent type.
  */
-export function getResumeConfig(agentType: AgentType): AgentResumeConfig {
-  return AGENT_RESUME_CONFIGS[agentType];
+export function getLaunchConfig(agentType: AgentType): AgentLaunchConfig {
+  return AGENT_LAUNCH_CONFIGS[agentType];
 }
 
 /**
- * Check whether an agent type supports session resume.
- */
-export function isResumableAgentType(agentType: AgentType): boolean {
-  return AGENT_RESUME_CONFIGS[agentType].resumable;
-}
-
-/**
- * Build a resume config for a custom profile by merging profile-level overrides
+ * Build a launch config for a custom profile by merging profile-level overrides
  * onto the base "custom" agent type config.
  */
-export function getProfileResumeConfig(profile: AgentProfile): AgentResumeConfig {
-  const base = getResumeConfig(profile.agentType);
+export function getProfileLaunchConfig(profile: AgentProfile): AgentLaunchConfig {
+  const base = getLaunchConfig(profile.agentType);
   if (profile.agentType !== "custom") return base;
   return {
     ...base,
-    resumable: profile.resumable ?? base.resumable,
-    resumeFlag: profile.resumeFlag ?? base.resumeFlag,
-    resumeFlagFormat: profile.resumeFlagFormat ?? base.resumeFlagFormat,
     promptInjectionMode: profile.promptInjectionMode ?? base.promptInjectionMode,
     promptFlag: profile.promptFlag ?? base.promptFlag,
     cliDisplayName: profile.name || base.cliDisplayName,
     displayLabel: profile.name || base.displayLabel,
   };
-}
-
-/**
- * Collect all unique resume flags across all agent types.
- * Used when stripping resume-related args from persisted command args,
- * since historical sessions may contain flags from any agent type.
- */
-export function getAllResumeFlags(): string[] {
-  const flags = new Set<string>();
-  for (const config of Object.values(AGENT_RESUME_CONFIGS)) {
-    if (config.resumeFlag) {
-      flags.add(config.resumeFlag);
-    }
-  }
-  return [...flags];
-}
-
-/**
- * Check whether an agent type uses session tracking (e.g. Claude hooks).
- */
-export function hasSessionTracking(agentType: AgentType): boolean {
-  return AGENT_RESUME_CONFIGS[agentType].sessionTracking;
 }
 
 // ---------------------------------------------------------------------------

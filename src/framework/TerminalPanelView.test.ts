@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import * as path from "node:path";
-import type { ActiveTabInfo, PersistedSession, TabDiagnostics } from "../core/session/types";
-import { SessionPersistence } from "../core/session/SessionPersistence";
+import type { ActiveTabInfo, TabDiagnostics } from "../core/session/types";
 import type { WorkItemPromptBuilder } from "../core/interfaces";
 import { electronRequire, expandTilde } from "../core/utils";
 import * as AgentLauncher from "../core/agents/AgentLauncher";
@@ -16,7 +15,6 @@ const mockState = vi.hoisted(() => ({
   activeItemId: null as string | null,
   tabsByItem: new Map<string, any[]>(),
   activeTabIndex: 0,
-  persistedSessions: [] as PersistedSession[],
   tabDiagnostics: [] as TabDiagnostics[],
   idleSinceByItem: new Map<string, number>(),
   menuTitles: [] as string[],
@@ -25,10 +23,6 @@ const mockState = vi.hoisted(() => ({
   clipboardWriteText: vi.fn(),
   latestCreateTabArgs: null as unknown[] | null,
   tabManagerCalls: [] as string[],
-  hookStatus: {
-    scriptExists: false,
-    hooksConfigured: false,
-  },
   openExternal: vi.fn(),
   latestTabManager: null as {
     onSessionChange?: () => void;
@@ -37,7 +31,6 @@ const mockState = vi.hoisted(() => ({
     onTabClosed?: (itemId: string, tab: unknown) => void;
   } | null,
   latestTabManagerCtorArgs: null as unknown[] | null,
-  stopPeriodicPersist: vi.fn(),
 }));
 
 vi.mock("../core/utils", async () => {
@@ -212,10 +205,6 @@ vi.mock("../core/terminal/TabManager", () => ({
       );
     }
 
-    getActiveSessionIds() {
-      return new Set(mockState.activeTabs.flatMap((tab) => (tab.sessionId ? [tab.sessionId] : [])));
-    }
-
     getAgentState() {
       return "inactive";
     }
@@ -236,6 +225,8 @@ vi.mock("../core/terminal/TabManager", () => ({
 
     disposeAll() {}
 
+    stashAll() {}
+
     rekeyItem(_oldId: string, _newId: string) {}
 
     closeTab(_index: number) {
@@ -250,101 +241,25 @@ vi.mock("../core/terminal/TabManager", () => ({
       mockState.activeTabIndex = index;
       mockState.tabManagerCalls.push(`switchToTab:${index}`);
     }
-  },
-}));
 
-vi.mock("../core/session/SessionPersistence", () => ({
-  PERSIST_INTERVAL_MS: 30000,
-  SessionPersistence: {
-    startPeriodicPersist: vi.fn(() => mockState.stopPeriodicPersist),
-    loadFromDisk: vi.fn(async () =>
-      mockState.persistedSessions.map((session) => ({
-        ...session,
-        claudeSessionId: session.claudeSessionId ?? session.agentSessionId ?? null,
-        recoveryMode:
-          session.recoveryMode ??
-          ((session.claudeSessionId ?? session.agentSessionId) ? "resume" : "relaunch"),
-        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-      })),
-    ),
-    buildPersistedSessions: vi.fn((sessions: Map<string, any[]>) =>
-      Array.from(sessions.entries()).flatMap(([taskPath, tabs]) =>
-        tabs.map((tab) => ({
-          version: 2 as const,
-          taskPath,
-          claudeSessionId: tab.claudeSessionId ?? tab.agentSessionId ?? null,
-          durableSessionId:
-            tab.recoveryMode === "relaunch" || !(tab.claudeSessionId ?? tab.agentSessionId)
-              ? (tab.durableSessionId ?? `durable-${taskPath}-${tab.label}`)
-              : undefined,
-          label: tab.label,
-          sessionType: tab.sessionType,
-          savedAt: "2026-03-28T20:00:00.000Z",
-          recoveryMode:
-            tab.recoveryMode ??
-            ((tab.claudeSessionId ?? tab.agentSessionId) ? "resume" : "relaunch"),
-          cwd: tab.launchCwd ?? "/vault",
-          command: tab.launchCommandArgs?.[0] ?? tab.launchShell ?? "/bin/zsh",
-          commandArgs: tab.launchCommandArgs,
-        })),
-      ),
-    ),
-    mergePersistedSessions: vi.fn((existing: PersistedSession[], sessions: Map<string, any[]>) => {
-      const active = Array.from(sessions.entries()).flatMap(([taskPath, tabs]) =>
-        tabs.map((tab) => ({
-          version: 2 as const,
-          taskPath,
-          claudeSessionId: tab.claudeSessionId ?? tab.agentSessionId ?? null,
-          durableSessionId:
-            tab.recoveryMode === "relaunch" || !(tab.claudeSessionId ?? tab.agentSessionId)
-              ? (tab.durableSessionId ?? `durable-${taskPath}-${tab.label}`)
-              : undefined,
-          label: tab.label,
-          sessionType: tab.sessionType,
-          savedAt: "2026-03-28T20:00:00.000Z",
-          recoveryMode:
-            tab.recoveryMode ??
-            ((tab.claudeSessionId ?? tab.agentSessionId) ? "resume" : "relaunch"),
-          cwd: tab.launchCwd ?? "/vault",
-          command: tab.launchCommandArgs?.[0] ?? tab.launchShell ?? "/bin/zsh",
-          commandArgs: tab.launchCommandArgs,
-        })),
-      );
-      const activeKeys = new Set(
-        active.map((session) =>
-          session.recoveryMode === "resume"
-            ? `resume:${session.claudeSessionId ?? ""}`
-            : session.durableSessionId
-              ? `relaunch:${session.taskPath}${session.durableSessionId}`
-              : `legacy:${session.taskPath}${session.label}${session.command ?? ""}${JSON.stringify(session.commandArgs ?? [])}`,
-        ),
-      );
-      return [
-        ...active,
-        ...existing.filter((session) => {
-          const key =
-            session.recoveryMode === "resume"
-              ? `resume:${session.claudeSessionId ?? ""}`
-              : session.durableSessionId
-                ? `relaunch:${session.taskPath}${session.durableSessionId}`
-                : `legacy:${session.taskPath}${session.label}${session.command ?? ""}${JSON.stringify(session.commandArgs ?? [])}`;
-          return !activeKeys.has(key);
-        }),
-      ];
-    }),
-    setPersistedSessions: vi.fn(
-      (data: Record<string, unknown>, persistedSessions: PersistedSession[]) => {
-        data.persistedSessions = persistedSessions.map((session) => ({
-          ...session,
-          commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-        }));
-      },
-    ),
-  },
-}));
+    getRecoveredItemId() {
+      return null;
+    }
 
-vi.mock("../core/claude/ClaudeHookManager", () => ({
-  checkHookStatus: vi.fn(() => mockState.hookStatus),
+    setDragSourceIndex() {}
+
+    getDragSourceIndex() {
+      return null;
+    }
+
+    refitActive() {}
+
+    hasSessions() {
+      return false;
+    }
+
+    broadcastAgentStates() {}
+  },
 }));
 
 type DomGlobals = {
@@ -463,31 +378,7 @@ async function flushAsync(ticks = 3) {
   }
 }
 
-function makePersistedSession(
-  sessionType: PersistedSession["sessionType"],
-  overrides: Partial<PersistedSession> = {},
-): PersistedSession {
-  return {
-    version: 2,
-    taskPath: "Tasks/task-1.md",
-    claudeSessionId: sessionType === "shell" ? null : "session-1",
-    durableSessionId:
-      overrides.durableSessionId ??
-      ((overrides.recoveryMode ?? (sessionType === "shell" ? "relaunch" : "resume")) === "relaunch"
-        ? "durable-shell-1"
-        : undefined),
-    label: "Session",
-    sessionType,
-    savedAt: "2026-03-28T20:00:00.000Z",
-    recoveryMode: sessionType === "shell" ? "relaunch" : "resume",
-    cwd: "/vault",
-    command: sessionType === "shell" ? "/bin/zsh" : "agent",
-    commandArgs: sessionType === "shell" ? undefined : ["agent", "--resume", "session-1"],
-    ...overrides,
-  };
-}
-
-describe("TerminalPanelView hook warning", () => {
+describe("TerminalPanelView", () => {
   let dom: JSDOM;
 
   beforeEach(() => {
@@ -518,7 +409,6 @@ describe("TerminalPanelView hook warning", () => {
     mockState.activeItemId = null;
     mockState.tabsByItem = new Map();
     mockState.activeTabIndex = 0;
-    mockState.persistedSessions = [];
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
@@ -527,11 +417,9 @@ describe("TerminalPanelView hook warning", () => {
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
     mockState.tabManagerCalls = [];
-    mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
     mockState.latestTabManagerCtorArgs = null;
-    mockState.stopPeriodicPersist.mockClear();
   });
 
   afterEach(() => {
@@ -540,86 +428,6 @@ describe("TerminalPanelView hook warning", () => {
     }
     vi.unstubAllGlobals();
     dom.window.close();
-  });
-
-  it("hides the warning when only Copilot sessions exist", async () => {
-    mockState.activeSessions.set("task-1", [{ sessionType: "copilot" }]);
-
-    const { panelEl } = createView();
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).toBeNull();
-  });
-
-  it("shows the warning when an active Claude session exists", async () => {
-    mockState.activeSessions.set("task-1", [{ sessionType: "claude" }]);
-
-    const { panelEl } = createView();
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")?.textContent).toContain(
-      "Claude /resume tracking requires Claude hooks",
-    );
-  });
-
-  it("shows the warning when persisted Claude resume state exists", async () => {
-    mockState.persistedSessions = [makePersistedSession("claude")];
-
-    const { panelEl } = createView();
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
-  });
-
-  it("hides the warning when persisted sessions are Copilot-only", async () => {
-    mockState.persistedSessions = [makePersistedSession("copilot")];
-
-    const { panelEl } = createView();
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).toBeNull();
-  });
-
-  it("re-checks when session mix changes so Claude usage starts warning immediately", async () => {
-    const { panelEl } = createView();
-    await flushAsync();
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).toBeNull();
-
-    mockState.activeSessions.set("task-1", [{ sessionType: "claude-with-context" }]);
-    mockState.latestTabManager?.onSessionChange?.();
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
-  });
-
-  it("keeps the warning hidden after dismissal even with Claude sessions", async () => {
-    mockState.activeSessions.set("task-1", [{ sessionType: "claude" }]);
-
-    const { panelEl } = createView({ "core.acceptNoResumeHooks": true });
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).toBeNull();
-  });
-
-  it("replays a skipped startup check after persisted Claude sessions finish loading", async () => {
-    mockState.persistedSessions = [makePersistedSession("claude")];
-
-    let resolveLoadData: ((value: { settings: Record<string, unknown> }) => void) | null = null;
-    const loadData = vi.fn(
-      () =>
-        new Promise<{ settings: Record<string, unknown> }>((resolve) => {
-          resolveLoadData = resolve;
-        }),
-    );
-
-    const { panelEl } = createView({}, { loadData });
-    await Promise.resolve();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).toBeNull();
-    resolveLoadData?.({ settings: {} });
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
   });
 
   it("keeps the debug global disabled by default", async () => {
@@ -636,27 +444,21 @@ describe("TerminalPanelView hook warning", () => {
         tabId: "tab-1",
         itemId: "task-1",
         label: "Shell",
-        sessionId: null,
         sessionType: "shell",
-        isResumableAgent: false,
       },
       {
         tabId: "tab-2",
         itemId: "task-2",
         label: "Automatic Issues",
-        sessionId: "copilot-123",
         sessionType: "copilot",
-        isResumableAgent: true,
       },
     ];
-    mockState.persistedSessions = [makePersistedSession("copilot")];
 
     createView({ "core.exposeDebugApi": true });
     await flushAsync();
 
     expect(window.__workTerminalDebug?.activeItemId).toBe("task-2");
     expect(window.__workTerminalDebug?.activeTabs).toEqual(mockState.activeTabs);
-    expect(window.__workTerminalDebug?.activeSessionIds).toEqual(["copilot-123"]);
     expect(window.__workTerminalDebug?.findTabsByLabel("automatic issues")).toEqual([
       mockState.activeTabs[1],
     ]);
@@ -677,9 +479,7 @@ describe("TerminalPanelView hook warning", () => {
         tabId: "tab-2",
         itemId: "task-9",
         label: "Automatic Issues",
-        sessionId: "session-9",
         sessionType: "claude",
-        isResumableAgent: true,
       },
     ];
     mockState.activeItemId = "task-9";
@@ -706,105 +506,6 @@ describe("TerminalPanelView hook warning", () => {
       }),
     );
     await flushAsync();
-
-    expect(window.__workTerminalDebug).toBeUndefined();
-  });
-
-  it("revokes captured debug references when the setting is disabled", async () => {
-    mockState.activeItemId = "task-2";
-    mockState.activeTabs = [
-      {
-        tabId: "tab-2",
-        itemId: "task-2",
-        label: "Automatic Issues",
-        sessionId: "copilot-123",
-        sessionType: "copilot",
-        isResumableAgent: true,
-      },
-    ];
-
-    createView({ "core.exposeDebugApi": true });
-    await flushAsync();
-
-    const debugRef = window.__workTerminalDebug;
-    expect(debugRef?.activeItemId).toBe("task-2");
-
-    window.dispatchEvent(
-      new window.CustomEvent("work-terminal:settings-changed", {
-        detail: {
-          "core.defaultTerminalCwd": "~",
-          "core.exposeDebugApi": false,
-        },
-      }),
-    );
-    await flushAsync();
-
-    mockState.activeItemId = "task-9";
-    mockState.activeTabs = [
-      {
-        tabId: "tab-9",
-        itemId: "task-9",
-        label: "Claude",
-        sessionId: "claude-9",
-        sessionType: "claude",
-        isResumableAgent: true,
-      },
-    ];
-
-    expect(debugRef?.activeItemId).toBeNull();
-    expect(debugRef?.activeTabs).toEqual([]);
-    expect(debugRef?.getSnapshot()).toMatchObject({
-      activeItemId: null,
-      activeSessionIds: [],
-      persistedSessions: [],
-    });
-  });
-
-  it("does not republish the debug global after disposal when persisted sessions finish loading", async () => {
-    let resolvePersistedSessions: ((value: PersistedSession[]) => void) | null = null;
-    vi.mocked(SessionPersistence.loadFromDisk).mockImplementationOnce(
-      () =>
-        new Promise<PersistedSession[]>((resolve) => {
-          resolvePersistedSessions = resolve;
-        }),
-    );
-
-    const { view } = createView({ "core.exposeDebugApi": true });
-    await Promise.resolve();
-
-    expect(window.__workTerminalDebug).toBeDefined();
-
-    view.disposeAll();
-    expect(window.__workTerminalDebug).toBeUndefined();
-
-    resolvePersistedSessions?.([makePersistedSession("copilot")]);
-    await flushAsync();
-
-    expect(window.__workTerminalDebug).toBeUndefined();
-  });
-
-  it("does not republish the debug global after disposal when persistence finishes", async () => {
-    let resolveSaveData: (() => void) | null = null;
-    const saveData = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveSaveData = resolve;
-        }),
-    );
-
-    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
-    const persistPromise = view.persistSessions();
-    await flushAsync();
-
-    expect(saveData).toHaveBeenCalledTimes(1);
-
-    expect(window.__workTerminalDebug).toBeDefined();
-
-    view.disposeAll();
-    expect(window.__workTerminalDebug).toBeUndefined();
-
-    resolveSaveData?.();
-    await persistPromise;
 
     expect(window.__workTerminalDebug).toBeUndefined();
   });
@@ -845,1765 +546,6 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(window.__workTerminalDebug).toBeDefined();
     expect(window.__workTerminalDebug).not.toBe(secondDebugRef);
-  });
-
-  it("refreshes persisted-session state from the latest active sessions on save", async () => {
-    mockState.activeSessions = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            sessionType: "copilot",
-            label: "Session",
-            claudeSessionId: "session-1",
-            launchShell: "agent",
-            launchCwd: "/vault",
-            launchCommandArgs: ["agent", "--resume", "session-1"],
-          },
-        ],
-      ],
-    ]);
-
-    const saveData = vi.fn(async () => {});
-    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
-    await flushAsync();
-
-    await view.persistSessions();
-
-    expect(window.__workTerminalDebug?.persistedSessions).toEqual([
-      expect.objectContaining({
-        taskPath: "Tasks/task-1.md",
-        recoveryMode: "resume",
-      }),
-    ]);
-    expect(saveData.mock.calls.at(-1)?.[0].persistedSessions).toEqual(
-      window.__workTerminalDebug?.persistedSessions,
-    );
-  });
-
-  it("preserves cold-start persisted sessions until they are resumed or removed", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-cold-shell",
-      }),
-    ];
-    mockState.activeSessions = new Map();
-
-    const saveData = vi.fn(async () => {});
-    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
-    await flushAsync();
-
-    await view.persistSessions();
-
-    expect(window.__workTerminalDebug?.persistedSessions).toEqual([
-      expect.objectContaining({
-        label: "Shell",
-        durableSessionId: "durable-cold-shell",
-      }),
-    ]);
-    expect(saveData.mock.calls.at(-1)?.[0].persistedSessions).toEqual(
-      window.__workTerminalDebug?.persistedSessions,
-    );
-  });
-
-  it("filters persisted sessions that already match a recovered active tab", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("copilot", { label: "Original label" }),
-      makePersistedSession("shell"),
-    ];
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            sessionType: "copilot",
-            label: "Renamed label",
-            claudeSessionId: "session-1",
-            launchShell: "agent",
-            launchCwd: "/vault",
-            launchCommandArgs: ["agent", "--resume", "session-1"],
-          },
-          {
-            sessionType: "shell",
-            label: "Session",
-            launchShell: "/bin/zsh",
-            launchCwd: "/vault",
-            launchCommandArgs: undefined,
-          },
-        ],
-      ],
-    ]);
-
-    const { view } = createView();
-    await flushAsync();
-
-    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
-  });
-
-  it("keeps distinct relaunch sessions recoverable when only labels differ", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("shell", { label: "Shell A" }),
-      makePersistedSession("shell", { label: "Shell B" }),
-    ];
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            sessionType: "shell",
-            label: "Shell A",
-            launchShell: "/bin/zsh",
-            launchCwd: "/vault",
-            launchCommandArgs: undefined,
-          },
-        ],
-      ],
-    ]);
-
-    const { view } = createView();
-    await flushAsync();
-
-    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([
-      expect.objectContaining({ label: "Shell B" }),
-    ]);
-  });
-
-  it("keeps identical relaunch sessions recoverable when only durable identities differ", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-shell-1",
-      }),
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-shell-2",
-      }),
-    ];
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            sessionType: "shell",
-            label: "Shell",
-            durableSessionId: "durable-shell-1",
-            launchShell: "/bin/zsh",
-            launchCwd: "/vault",
-            launchCommandArgs: undefined,
-          },
-        ],
-      ],
-    ]);
-
-    const { view } = createView();
-    await flushAsync();
-
-    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([
-      expect.objectContaining({ durableSessionId: "durable-shell-2" }),
-    ]);
-  });
-
-  it("falls back to legacy relaunch matching when durable identities were synthesized during migration", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-from-disk",
-        durableSessionIdGenerated: true,
-      }),
-    ];
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            sessionType: "shell",
-            label: "Shell",
-            durableSessionId: "durable-from-hot-reload",
-            launchShell: "/bin/zsh",
-            launchCwd: "/vault",
-            launchCommandArgs: undefined,
-          },
-        ],
-      ],
-    ]);
-
-    const { view } = createView();
-    await flushAsync();
-
-    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
-  });
-
-  it("adopts synthesized durable identities before persisting legacy relaunch recoveries", async () => {
-    const activeShell = {
-      sessionType: "shell",
-      label: "Shell",
-      durableSessionId: "durable-from-hot-reload",
-      launchShell: "/bin/zsh",
-      launchCwd: "/vault",
-      launchCommandArgs: undefined,
-    };
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-from-disk",
-        durableSessionIdGenerated: true,
-      }),
-    ];
-    mockState.activeSessions = new Map([["Tasks/task-1.md", [activeShell]]]);
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([["Tasks/task-1.md", [activeShell]]]);
-
-    const saveData = vi.fn(async () => {});
-    const { view } = createView({}, { saveData });
-    await flushAsync();
-
-    await view.persistSessions();
-
-    expect(saveData.mock.calls.at(-1)?.[0].persistedSessions).toEqual([
-      expect.objectContaining({
-        durableSessionId: "durable-from-disk",
-      }),
-    ]);
-  });
-
-  it("keeps failed legacy relaunch recoveries hidden after another view reopens the same session", async () => {
-    const loadData = vi.fn(async () => ({
-      settings: {},
-      recentlyClosedSessions: [
-        {
-          sessionType: "shell",
-          label: "Shell",
-          claudeSessionId: null,
-          closedAt: Date.now(),
-          itemId: "Tasks/task-1.md",
-          recoveryMode: "relaunch",
-          cwd: "/vault",
-          command: "/bin/zsh",
-        },
-      ],
-    }));
-
-    const failedRestoreTab: { onProcessExit?: (code?: number, signal?: number) => void } = {};
-    const { view: firstView } = createView({}, { loadData });
-    const { view: secondView } = createView({}, { loadData });
-    await flushAsync();
-
-    const [legacyEntry] = (firstView as any).recentlyClosedStore.serialize();
-    expect(legacyEntry).toMatchObject({
-      durableSessionId: expect.any(String),
-      durableSessionIdGenerated: true,
-    });
-
-    (firstView as any).tabManager.createTabForItem = vi.fn(() => failedRestoreTab);
-    await (firstView as any).restoreClosedSession(legacyEntry);
-    failedRestoreTab.onProcessExit?.(1, 0);
-    await flushAsync();
-
-    const [readdedEntry] = (secondView as any).recentlyClosedStore.serialize();
-    expect(readdedEntry).toMatchObject({
-      durableSessionId: legacyEntry.durableSessionId,
-      durableSessionIdGenerated: true,
-    });
-
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabsByItem = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            id: "live-shell",
-            sessionType: "shell",
-            label: "Shell",
-            durableSessionId: "durable-manual-reopen",
-            launchShell: "/bin/zsh",
-            launchCwd: "/vault",
-            launchCommandArgs: undefined,
-          },
-        ],
-      ],
-    ]);
-
-    const hiddenEntries = (secondView as any).recentlyClosedStore.getEntries(
-      new Set(),
-      5,
-      (entry: any) => (secondView as any).isClosedSessionActiveAcrossViews(entry),
-    );
-    expect(hiddenEntries).toEqual([]);
-  });
-
-  it("drops stale migrated relaunch aliases before persisting a manual reopen", async () => {
-    const saveData = vi.fn(async () => {});
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-from-migration",
-        durableSessionIdGenerated: true,
-      }),
-    ];
-
-    const { view } = createView({}, { saveData });
-    await flushAsync();
-
-    const liveShell = {
-      sessionType: "shell",
-      label: "Shell",
-      durableSessionId: "durable-manual-reopen",
-      launchShell: "/bin/zsh",
-      launchCwd: "/vault",
-      launchCommandArgs: undefined,
-    };
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.activeSessions = new Map([["Tasks/task-1.md", [liveShell]]]);
-    mockState.tabsByItem = new Map([["Tasks/task-1.md", [liveShell]]]);
-
-    await view.persistSessions();
-
-    const persistedSessions = saveData.mock.calls.at(-1)?.[0].persistedSessions;
-    expect(persistedSessions).toHaveLength(1);
-    expect(persistedSessions[0]).toMatchObject({
-      durableSessionId: "durable-manual-reopen",
-    });
-    expect(persistedSessions[0]).not.toHaveProperty("durableSessionIdGenerated");
-  });
-
-  it("keeps one migrated relaunch alias pending when identical aliases are reopened one at a time", async () => {
-    const saveData = vi.fn(async () => {});
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-from-migration-1",
-        durableSessionIdGenerated: true,
-      }),
-      makePersistedSession("shell", {
-        label: "Shell",
-        durableSessionId: "durable-from-migration-2",
-        durableSessionIdGenerated: true,
-      }),
-    ];
-
-    const { view } = createView({}, { saveData });
-    await flushAsync();
-
-    const liveShell = {
-      id: "live-shell",
-      sessionType: "shell",
-      label: "Shell",
-      durableSessionId: "durable-manual-reopen",
-      launchShell: "/bin/zsh",
-      launchCwd: "/vault",
-      launchCommandArgs: undefined,
-    };
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.activeSessions = new Map([["Tasks/task-1.md", [liveShell]]]);
-    mockState.tabsByItem = new Map([["Tasks/task-1.md", [liveShell]]]);
-
-    await view.persistSessions();
-
-    const pendingSessions = view.getPersistedSessions("Tasks/task-1.md");
-    expect(pendingSessions).toHaveLength(1);
-    expect(pendingSessions[0]).toMatchObject({
-      durableSessionIdGenerated: true,
-    });
-    expect(["durable-from-migration-1", "durable-from-migration-2"]).toContain(
-      pendingSessions[0].durableSessionId,
-    );
-
-    const persistedSessions = saveData.mock.calls.at(-1)?.[0].persistedSessions;
-    expect(persistedSessions).toHaveLength(2);
-    expect(
-      persistedSessions.filter((session: PersistedSession) => session.durableSessionIdGenerated),
-    ).toHaveLength(1);
-    expect(persistedSessions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          durableSessionId: "durable-manual-reopen",
-        }),
-      ]),
-    );
-  });
-
-  it("rekeys pending durable recovery entries when an item path changes", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("shell", {
-        taskPath: "Tasks/old-task.md",
-        durableSessionId: "durable-shell-1",
-      }),
-    ];
-
-    const { view } = createView({ "core.exposeDebugApi": true });
-    await flushAsync();
-
-    view.rekeyItem("Tasks/old-task.md", "Tasks/new-task.md");
-
-    expect(window.__workTerminalDebug?.persistedSessions).toEqual([
-      expect.objectContaining({
-        taskPath: "Tasks/new-task.md",
-        durableSessionId: "durable-shell-1",
-      }),
-    ]);
-    expect(view.getPersistedSessions("Tasks/new-task.md")).toEqual([
-      expect.objectContaining({
-        taskPath: "Tasks/new-task.md",
-        durableSessionId: "durable-shell-1",
-      }),
-    ]);
-  });
-
-  it("shows the hook warning for recently closed Claude resume entries", async () => {
-    const loadData = vi.fn(async () => ({
-      settings: {},
-      recentlyClosedSessions: [
-        {
-          sessionType: "claude",
-          label: "Claude",
-          claudeSessionId: "recent-session",
-          closedAt: Date.now(),
-          itemId: "Tasks/task-1.md",
-          recoveryMode: "resume",
-          cwd: "/vault",
-          command: "claude",
-          commandArgs: ["claude", "--resume", "recent-session"],
-        },
-      ],
-    }));
-
-    const { panelEl } = createView({}, { loadData });
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-hook-warning-banner")).not.toBeNull();
-  });
-
-  it("persists recently closed sessions with durable relaunch metadata", async () => {
-    const saveData = vi.fn(async () => {});
-    createView({}, { saveData });
-    await flushAsync();
-
-    mockState.latestTabManager?.onTabClosed?.("Tasks/task-1.md", {
-      sessionType: "shell",
-      label: "Shell",
-      claudeSessionId: null,
-      launchShell: "/bin/zsh",
-      launchCwd: "/vault",
-      launchCommandArgs: undefined,
-      isResumableAgent: false,
-    } as any);
-    await flushAsync();
-
-    expect(saveData).toHaveBeenCalled();
-    const payload = saveData.mock.calls.at(-1)?.[0];
-    expect(payload.recentlyClosedSessions).toEqual([
-      expect.objectContaining({
-        itemId: "Tasks/task-1.md",
-        recoveryMode: "relaunch",
-        command: "/bin/zsh",
-        cwd: "/vault",
-      }),
-    ]);
-  });
-
-  it("clears resume state for one item and persists the remaining sessions", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("claude", {
-        taskPath: "Tasks/task-1.md",
-        label: "Claude 1",
-        claudeSessionId: "session-1",
-        commandArgs: ["claude", "--resume", "session-1"],
-      }),
-      makePersistedSession("claude", {
-        taskPath: "Tasks/task-2.md",
-        label: "Claude 2",
-        claudeSessionId: "session-2",
-        commandArgs: ["claude", "--resume", "session-2"],
-      }),
-    ];
-
-    let storedData: Record<string, any> = {
-      settings: {},
-      persistedSessions: mockState.persistedSessions.map((session) => ({
-        ...session,
-        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-      })),
-      recentlyClosedSessions: [
-        {
-          sessionType: "claude",
-          label: "Recovered Claude 1",
-          claudeSessionId: "closed-1",
-          closedAt: Date.now(),
-          itemId: "Tasks/task-1.md",
-          recoveryMode: "resume",
-          cwd: "/vault",
-          command: "claude",
-          commandArgs: ["claude", "--resume", "closed-1"],
-        },
-        {
-          sessionType: "claude",
-          label: "Recovered Claude 2",
-          claudeSessionId: "closed-2",
-          closedAt: Date.now(),
-          itemId: "Tasks/task-2.md",
-          recoveryMode: "resume",
-          cwd: "/vault",
-          command: "claude",
-          commandArgs: ["claude", "--resume", "closed-2"],
-        },
-      ],
-    };
-    const loadData = vi.fn(async () => JSON.parse(JSON.stringify(storedData)));
-    const saveData = vi.fn(async (data: Record<string, any>) => {
-      storedData = JSON.parse(JSON.stringify(data));
-    });
-    const { view } = createView({}, { loadData, saveData });
-    const onSessionChange = vi.fn();
-    (view as any).onSessionChange = onSessionChange;
-    await flushAsync(10);
-
-    await view.clearResumeSessionsForItem("Tasks/task-1.md");
-
-    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
-    expect(view.getPersistedSessions("Tasks/task-2.md")).toEqual([
-      expect.objectContaining({
-        taskPath: "Tasks/task-2.md",
-        claudeSessionId: "session-2",
-      }),
-    ]);
-    expect((view as any).recentlyClosedStore.serialize()).toEqual([
-      expect.objectContaining({
-        itemId: "Tasks/task-2.md",
-        claudeSessionId: "closed-2",
-      }),
-    ]);
-    expect(saveData.mock.calls.at(-1)?.[0]).toMatchObject({
-      persistedSessions: [
-        expect.objectContaining({
-          taskPath: "Tasks/task-2.md",
-          claudeSessionId: "session-2",
-        }),
-      ],
-      recentlyClosedSessions: [
-        expect.objectContaining({
-          itemId: "Tasks/task-2.md",
-          claudeSessionId: "closed-2",
-        }),
-      ],
-    });
-    expect(onSessionChange).toHaveBeenCalledTimes(1);
-    expect(mockState.notices).toEqual([]);
-  });
-
-  it("refreshes the UI and shows a notice when clearing resume state fails to persist", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("claude", {
-        taskPath: "Tasks/task-1.md",
-        label: "Claude 1",
-        claudeSessionId: "session-1",
-        commandArgs: ["claude", "--resume", "session-1"],
-      }),
-    ];
-
-    const storedData: Record<string, any> = {
-      settings: {},
-      persistedSessions: mockState.persistedSessions.map((session) => ({
-        ...session,
-        commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-      })),
-      recentlyClosedSessions: [
-        {
-          sessionType: "claude",
-          label: "Recovered Claude 1",
-          claudeSessionId: "closed-1",
-          closedAt: Date.now(),
-          itemId: "Tasks/task-1.md",
-          recoveryMode: "resume",
-          cwd: "/vault",
-          command: "claude",
-          commandArgs: ["claude", "--resume", "closed-1"],
-        },
-      ],
-    };
-    const loadData = vi.fn(async () => JSON.parse(JSON.stringify(storedData)));
-    const saveData = vi.fn(async (data: Record<string, any>) => {
-      throw new Error(`disk full: ${JSON.stringify(data.persistedSessions ?? [])}`);
-    });
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { view } = createView({}, { loadData, saveData });
-    const onSessionChange = vi.fn();
-    (view as any).onSessionChange = onSessionChange;
-    await flushAsync(10);
-
-    await expect(view.clearResumeSessionsForItem("Tasks/task-1.md")).resolves.toBeUndefined();
-
-    expect(view.getPersistedSessions("Tasks/task-1.md")).toEqual([]);
-    expect((view as any).recentlyClosedStore.serialize()).toEqual([]);
-    expect(onSessionChange).toHaveBeenCalledTimes(1);
-    expect(mockState.notices).toContain(
-      "Cleared resume sessions in the UI, but failed to save the updated resume state.",
-    );
-    expect(consoleError).toHaveBeenCalledWith(
-      "[work-terminal] Failed to persist cleared resume sessions:",
-      expect.any(Error),
-    );
-    expect(storedData.persistedSessions).toEqual([
-      expect.objectContaining({
-        taskPath: "Tasks/task-1.md",
-      }),
-    ]);
-    expect(storedData.recentlyClosedSessions).toEqual([
-      expect.objectContaining({
-        itemId: "Tasks/task-1.md",
-      }),
-    ]);
-  });
-
-  it("removes a closed resume session from persisted sessions to prevent auto-restore", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("claude", { claudeSessionId: "agent-session-1" }),
-      makePersistedSession("shell", { durableSessionId: "durable-shell-1" }),
-    ];
-
-    const saveData = vi.fn(async () => {});
-    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
-    await flushAsync();
-
-    // Simulate user explicitly closing the Claude tab
-    mockState.latestTabManager?.onTabClosed?.("Tasks/task-1.md", {
-      sessionType: "claude",
-      label: "Session",
-      claudeSessionId: "agent-session-1",
-      agentSessionId: "agent-session-1",
-      launchShell: "agent",
-      launchCwd: "/vault",
-      launchCommandArgs: ["agent", "--resume", "agent-session-1"],
-      isResumableAgent: true,
-    } as any);
-    await flushAsync();
-
-    // The closed session should be removed from persisted sessions
-    const persisted = window.__workTerminalDebug?.persistedSessions ?? [];
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0]).toMatchObject({
-      sessionType: "shell",
-      durableSessionId: "durable-shell-1",
-    });
-  });
-
-  it("removes a closed relaunch session from persisted sessions to prevent auto-restore", async () => {
-    mockState.persistedSessions = [
-      makePersistedSession("shell", { durableSessionId: "durable-shell-1" }),
-      makePersistedSession("claude", { claudeSessionId: "agent-session-1" }),
-    ];
-
-    const saveData = vi.fn(async () => {});
-    const { view } = createView({ "core.exposeDebugApi": true }, { saveData });
-    await flushAsync();
-
-    // Simulate user explicitly closing the shell tab
-    mockState.latestTabManager?.onTabClosed?.("Tasks/task-1.md", {
-      sessionType: "shell",
-      label: "Session",
-      claudeSessionId: null,
-      durableSessionId: "durable-shell-1",
-      launchShell: "/bin/zsh",
-      launchCwd: "/vault",
-      launchCommandArgs: undefined,
-      isResumableAgent: false,
-    } as any);
-    await flushAsync();
-
-    // The closed session should be removed from persisted sessions
-    const persisted = window.__workTerminalDebug?.persistedSessions ?? [];
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0]).toMatchObject({
-      sessionType: "claude",
-      claudeSessionId: "agent-session-1",
-    });
-  });
-
-  it("restores relaunchable persisted sessions with their saved command metadata", async () => {
-    const { view } = createView();
-    await flushAsync();
-
-    await view.resumeSession(
-      makePersistedSession("shell", { durableSessionId: "durable-shell-1" }),
-      "Tasks/task-1.md",
-    );
-
-    expect(mockState.tabManagerCalls).toContain("createTabForItem");
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/zsh",
-      "/vault",
-      "Session",
-      "shell",
-      undefined,
-      undefined,
-      null,
-      "durable-shell-1",
-    ]);
-  });
-
-  it("preserves durable relaunch identity when restoring recently closed sessions", async () => {
-    const { view } = createView();
-    await flushAsync();
-
-    const entry = {
-      sessionType: "shell",
-      label: "Shell",
-      claudeSessionId: null,
-      durableSessionId: "durable-shell-1",
-      closedAt: Date.now(),
-      itemId: "Tasks/task-1.md",
-      recoveryMode: "relaunch",
-      cwd: "/vault",
-      command: "/bin/zsh",
-      commandArgs: undefined,
-    };
-    (view as any).recentlyClosedStore.add(entry);
-
-    await (view as any).restoreClosedSession(entry);
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/zsh",
-      "/vault",
-      "Shell",
-      "shell",
-      undefined,
-      undefined,
-      null,
-      "durable-shell-1",
-    ]);
-  });
-
-  it("hydrates recently closed sessions from disk only once across live views", async () => {
-    const loadData = vi.fn(async () => ({
-      settings: {},
-      recentlyClosedSessions: [
-        {
-          sessionType: "shell",
-          label: "Shell",
-          claudeSessionId: null,
-          closedAt: Date.now(),
-          itemId: "Tasks/task-1.md",
-          recoveryMode: "relaunch",
-          cwd: "/vault",
-          command: "/bin/zsh",
-        },
-      ],
-    }));
-
-    const { view: firstView } = createView({}, { loadData });
-    const { view: secondView } = createView({}, { loadData });
-    await flushAsync();
-
-    expect((firstView as any).recentlyClosedStore.serialize()).toHaveLength(1);
-    expect((secondView as any).recentlyClosedStore.serialize()).toHaveLength(1);
-  });
-
-  it("claims recently closed entries once across concurrent live views", async () => {
-    const entry = {
-      sessionType: "shell",
-      label: "Shell",
-      claudeSessionId: null,
-      durableSessionId: "durable-shell-1",
-      closedAt: Date.now(),
-      itemId: "Tasks/task-1.md",
-      recoveryMode: "relaunch" as const,
-      cwd: "/vault",
-      command: "/bin/zsh",
-      commandArgs: undefined,
-    };
-    const loadData = vi.fn(async () => ({
-      settings: {},
-      recentlyClosedSessions: [entry],
-    }));
-
-    const { view: firstView } = createView({}, { loadData });
-    const { view: secondView } = createView({}, { loadData });
-    await flushAsync(10);
-    mockState.tabManagerCalls = [];
-
-    await Promise.all([
-      (firstView as any).restoreClosedSession(entry),
-      (secondView as any).restoreClosedSession(entry),
-    ]);
-
-    expect(mockState.tabManagerCalls.filter((call) => call === "createTabForItem")).toHaveLength(1);
-    expect((firstView as any).recentlyClosedStore.serialize()).toEqual([]);
-    expect((secondView as any).recentlyClosedStore.serialize()).toEqual([]);
-  });
-
-  it("claims recently closed resumable entries once across concurrent live views", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ found: true, resolved: "claude" });
-
-    const entry = {
-      sessionType: "claude",
-      label: "Claude",
-      claudeSessionId: "session-1",
-      closedAt: Date.now(),
-      itemId: "Tasks/task-1.md",
-      recoveryMode: "resume" as const,
-      cwd: "/vault",
-      command: "claude",
-      commandArgs: ["claude", "--resume", "session-1"],
-    };
-    const loadData = vi.fn(async () => ({
-      settings: {},
-      recentlyClosedSessions: [entry],
-    }));
-
-    const { view: firstView } = createView({}, { loadData });
-    const { view: secondView } = createView({}, { loadData });
-    await flushAsync(10);
-    mockState.tabManagerCalls = [];
-
-    await Promise.all([
-      (firstView as any).restoreClosedSession(entry),
-      (secondView as any).restoreClosedSession(entry),
-    ]);
-
-    expect(mockState.tabManagerCalls.filter((call) => call === "createTabForItem")).toHaveLength(1);
-    expect((firstView as any).recentlyClosedStore.serialize()).toEqual([]);
-    expect((secondView as any).recentlyClosedStore.serialize()).toEqual([]);
-    resolveStub.mockRestore();
-  });
-
-  it("restores persisted resumable sessions with their saved launch context", async () => {
-    const { view } = createView({
-      "core.copilotCommand": "copilot-current",
-      "core.copilotExtraArgs": "--current-default",
-      "core.defaultTerminalCwd": "~/current-default",
-    });
-    await flushAsync();
-
-    await view.resumeSession(
-      makePersistedSession("copilot", {
-        label: "Copilot",
-        cwd: "/saved-cwd",
-        command: "/bin/echo",
-        commandArgs: [
-          "/bin/echo",
-          "--saved-flag",
-          "value",
-          "--resume=old-session",
-          "--another=saved",
-        ],
-        claudeSessionId: "saved-session",
-        paramPassMode: "both",
-      }),
-      "Tasks/task-1.md",
-    );
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/echo",
-      "/saved-cwd",
-      "Copilot",
-      "copilot",
-      undefined,
-      ["/bin/echo", "--saved-flag", "value", "--another=saved", "--resume=saved-session"],
-      "saved-session",
-    ]);
-  });
-
-  it("falls back to the current configured command when a saved Copilot path is stale", async () => {
-    const { view } = createView({
-      "core.copilotCommand": "/bin/echo",
-      "core.copilotExtraArgs": "--current-default",
-      "core.defaultTerminalCwd": "~/current-default",
-    });
-    await flushAsync();
-
-    await view.resumeSession(
-      makePersistedSession("copilot", {
-        label: "Copilot",
-        cwd: "/saved-cwd",
-        command: "/definitely/not/here/copilot",
-        commandArgs: [
-          "/definitely/not/here/copilot",
-          "--saved-flag",
-          "value",
-          "--resume=old-session",
-        ],
-        claudeSessionId: "saved-session",
-        paramPassMode: "both",
-      }),
-      "Tasks/task-1.md",
-    );
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/echo",
-      "/saved-cwd",
-      "Copilot",
-      "copilot",
-      undefined,
-      ["/bin/echo", "--saved-flag", "value", "--resume=saved-session"],
-      "saved-session",
-    ]);
-    expect(mockState.notices).toEqual([]);
-  });
-
-  it("falls back to the current configured command when a saved relative Copilot wrapper path is stale", async () => {
-    const { view } = createView({
-      "core.copilotCommand": "/bin/echo",
-      "core.copilotExtraArgs": "--current-default",
-      "core.defaultTerminalCwd": "~/current-default",
-    });
-    await flushAsync();
-
-    await view.resumeSession(
-      makePersistedSession("copilot", {
-        label: "Copilot",
-        cwd: "/saved-cwd",
-        command: "./missing/copilot-wrapper",
-        commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
-        claudeSessionId: "saved-session",
-        paramPassMode: "both",
-      }),
-      "Tasks/task-1.md",
-    );
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/echo",
-      "/saved-cwd",
-      "Copilot",
-      "copilot",
-      undefined,
-      ["/bin/echo", "--saved-flag", "value", "--resume=saved-session"],
-      "saved-session",
-    ]);
-    expect(mockState.notices).toEqual([]);
-  });
-
-  it("resolves the current relative Copilot command against the current configured cwd after a stale saved wrapper path", async () => {
-    const { view } = createView({
-      "core.copilotCommand": "./sh",
-      "core.defaultTerminalCwd": "/bin",
-    });
-    await flushAsync();
-
-    await view.resumeSession(
-      makePersistedSession("copilot", {
-        label: "Copilot",
-        cwd: "/saved-cwd",
-        command: "./missing/copilot-wrapper",
-        commandArgs: ["./missing/copilot-wrapper", "--saved-flag", "value", "--resume=old-session"],
-        claudeSessionId: "saved-session",
-        paramPassMode: "both",
-      }),
-      "Tasks/task-1.md",
-    );
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/sh",
-      "/saved-cwd",
-      "Copilot",
-      "copilot",
-      undefined,
-      ["/bin/sh", "--saved-flag", "value", "--resume=saved-session"],
-      "saved-session",
-    ]);
-    expect(mockState.notices).toEqual([]);
-  });
-
-  it("restores recently closed resumable sessions with their saved launch context", async () => {
-    const { view } = createView({
-      "core.claudeCommand": "claude-current",
-      "core.claudeExtraArgs": "--current-default",
-      "core.defaultTerminalCwd": "~/current-default",
-    });
-    await flushAsync();
-
-    const entry = {
-      sessionType: "claude",
-      label: "Claude",
-      claudeSessionId: "saved-session",
-      closedAt: Date.now(),
-      itemId: "Tasks/task-1.md",
-      recoveryMode: "resume",
-      cwd: "/saved-cwd",
-      command: "/bin/echo",
-      commandArgs: [
-        "/bin/echo",
-        "--saved-flag",
-        "value",
-        "--resume",
-        "old-session",
-        "--session-id=legacy",
-      ],
-      paramPassMode: "both" as const,
-    };
-    (view as any).recentlyClosedStore.add(entry);
-
-    await (view as any).restoreClosedSession(entry);
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/echo",
-      "/saved-cwd",
-      "Claude",
-      "claude",
-      undefined,
-      ["/bin/echo", "--saved-flag", "value", "--session-id", "saved-session"],
-      "saved-session",
-    ]);
-  });
-
-  it("does not replay Claude context prompts when resuming persisted sessions", async () => {
-    const { view } = createView({
-      "core.claudeCommand": "claude-current",
-      "core.claudeExtraArgs": "--current-default",
-      "core.defaultTerminalCwd": "~/current-default",
-    });
-    await flushAsync();
-
-    await view.resumeSession(
-      makePersistedSession("claude-with-context", {
-        label: "Claude (ctx)",
-        cwd: "/saved-cwd",
-        command: "/bin/echo",
-        commandArgs: [
-          "/bin/echo",
-          "--model",
-          "sonnet",
-          "--session-id",
-          "old-session",
-          "Prompt that should not replay",
-        ],
-        claudeSessionId: "saved-session",
-        paramPassMode: "both",
-      }),
-      "Tasks/task-1.md",
-    );
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/echo",
-      "/saved-cwd",
-      "Claude (ctx)",
-      "claude-with-context",
-      undefined,
-      ["/bin/echo", "--model", "sonnet", "--session-id", "saved-session"],
-      "saved-session",
-    ]);
-  });
-
-  it("does not replay Copilot context prompts when restoring recently closed sessions", async () => {
-    const { view } = createView({
-      "core.copilotCommand": "copilot-current",
-      "core.copilotExtraArgs": "--current-default",
-      "core.defaultTerminalCwd": "~/current-default",
-    });
-    await flushAsync();
-
-    const entry = {
-      sessionType: "copilot-with-context",
-      label: "Copilot (ctx)",
-      claudeSessionId: "saved-session",
-      closedAt: Date.now(),
-      itemId: "Tasks/task-1.md",
-      recoveryMode: "resume",
-      cwd: "/saved-cwd",
-      command: "/bin/echo",
-      commandArgs: [
-        "/bin/echo",
-        "--resume=old-session",
-        "--model",
-        "gpt-5.4",
-        "-i",
-        "Prompt that should not replay",
-      ],
-      paramPassMode: "both" as const,
-    };
-    (view as any).recentlyClosedStore.add(entry);
-
-    await (view as any).restoreClosedSession(entry);
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "Tasks/task-1.md",
-      "/bin/echo",
-      "/saved-cwd",
-      "Copilot (ctx)",
-      "copilot-with-context",
-      undefined,
-      ["/bin/echo", "--model", "gpt-5.4", "--resume=saved-session"],
-      "saved-session",
-    ]);
-  });
-
-  it("refreshes persisted diagnostics immediately after saving active sessions", async () => {
-    mockState.activeSessions = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            label: "Automatic Issues",
-            taskPath: "Tasks/task-1.md",
-            agentSessionId: "copilot-123",
-            isResumableAgent: true,
-            sessionType: "copilot",
-          },
-        ],
-      ],
-    ]) as any;
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabDiagnostics = [
-      {
-        tabId: "tab-1",
-        itemId: "Tasks/task-1.md",
-        tabIndex: 0,
-        label: "Automatic Issues",
-        sessionId: "copilot-123",
-        sessionType: "copilot",
-        claudeState: "idle",
-        isResumableAgent: true,
-        isVisible: true,
-        isDisposed: false,
-        isSelected: true,
-        process: {
-          pid: 100,
-          status: "alive",
-          killed: false,
-          exitCode: null,
-          signalCode: null,
-          spawnTime: 1000,
-          uptimeMs: 1000,
-        },
-        renderer: {
-          canvasCount: 1,
-          hasRenderableContent: true,
-          hasBlankRenderSurface: false,
-          trackedWebglAddonPresent: false,
-          trackedWebglAddonDisposed: false,
-          staleDisposedWebglOwnership: false,
-        },
-        buffer: {
-          screenLineCount: 1,
-          screenTail: ["[redacted:5 chars]"],
-        },
-        recovery: {
-          resumable: true,
-          relaunchable: false,
-          hasPersistedSession: false,
-          canResumeAfterRestart: false,
-          missingPersistedMetadata: true,
-          wouldBeLostOnFullClose: false,
-          lifecycle: "live",
-        },
-        derived: {
-          blankButLiveRenderer: false,
-          staleDisposedWebglOwnership: false,
-          disposedTabStillSelected: false,
-        },
-      },
-    ];
-
-    const { view } = createView({ "core.exposeDebugApi": true });
-    await flushAsync();
-
-    await view.persistSessions();
-    const snapshot = view.getSessionDiagnosticsSnapshot();
-
-    expect(snapshot.persistedSessions).toHaveLength(1);
-    expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
-      hasPersistedSession: true,
-      canResumeAfterRestart: true,
-      missingPersistedMetadata: false,
-    });
-  });
-
-  it("dedupes loaded legacy persisted sessions against fresh agent session ids", async () => {
-    mockState.persistedSessions = [
-      {
-        version: 1,
-        taskPath: "Tasks/task-1.md",
-        claudeSessionId: "copilot-123",
-        label: "Automatic Issues",
-        sessionType: "copilot",
-        savedAt: "2026-03-28T20:00:00.000Z",
-      } as PersistedSession,
-    ];
-    mockState.activeSessions = new Map([
-      [
-        "Tasks/task-1.md",
-        [
-          {
-            label: "Automatic Issues",
-            taskPath: "Tasks/task-1.md",
-            agentSessionId: "copilot-123",
-            isResumableAgent: true,
-            sessionType: "copilot",
-          },
-        ],
-      ],
-    ]) as any;
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabDiagnostics = [
-      {
-        tabId: "tab-1",
-        itemId: "Tasks/task-1.md",
-        tabIndex: 0,
-        label: "Automatic Issues",
-        sessionId: "copilot-123",
-        sessionType: "copilot",
-        claudeState: "idle",
-        isResumableAgent: true,
-        isVisible: true,
-        isDisposed: false,
-        isSelected: true,
-        process: {
-          pid: 100,
-          status: "alive",
-          killed: false,
-          exitCode: null,
-          signalCode: null,
-          spawnTime: 1000,
-          uptimeMs: 1000,
-        },
-        renderer: {
-          canvasCount: 1,
-          hasRenderableContent: true,
-          hasBlankRenderSurface: false,
-          trackedWebglAddonPresent: false,
-          trackedWebglAddonDisposed: false,
-          staleDisposedWebglOwnership: false,
-        },
-        buffer: {
-          screenLineCount: 1,
-          screenTail: ["[redacted:5 chars]"],
-        },
-        recovery: {
-          resumable: true,
-          relaunchable: false,
-          hasPersistedSession: false,
-          canResumeAfterRestart: false,
-          missingPersistedMetadata: true,
-          wouldBeLostOnFullClose: false,
-          lifecycle: "live",
-        },
-        derived: {
-          blankButLiveRenderer: false,
-          staleDisposedWebglOwnership: false,
-          disposedTabStillSelected: false,
-        },
-      },
-    ];
-
-    const { view } = createView({ "core.exposeDebugApi": true });
-    await flushAsync();
-
-    await view.persistSessions();
-    const persisted = view.getPersistedSessions("Tasks/task-1.md");
-    const snapshot = view.getSessionDiagnosticsSnapshot();
-
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0]).toMatchObject({ claudeSessionId: "copilot-123" });
-    expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
-      hasPersistedSession: true,
-      canResumeAfterRestart: true,
-      missingPersistedMetadata: false,
-    });
-  });
-
-  it("builds session diagnostics with renderer and recovery flags", async () => {
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.activeTabIndex = 0;
-    mockState.idleSinceByItem.set("Tasks/task-1.md", 1234);
-    mockState.tabDiagnostics = [
-      {
-        tabId: "tab-1",
-        itemId: "Tasks/task-1.md",
-        tabIndex: 0,
-        label: "Automatic Issues",
-        sessionId: "copilot-123",
-        sessionType: "copilot",
-        claudeState: "idle",
-        isResumableAgent: true,
-        isVisible: true,
-        isDisposed: false,
-        isSelected: true,
-        process: {
-          pid: 123,
-          status: "alive",
-          killed: false,
-          exitCode: null,
-          signalCode: null,
-          spawnTime: 1000,
-          uptimeMs: 5000,
-        },
-        renderer: {
-          canvasCount: 0,
-          hasRenderableContent: true,
-          hasBlankRenderSurface: true,
-          trackedWebglAddonPresent: true,
-          trackedWebglAddonDisposed: true,
-          staleDisposedWebglOwnership: true,
-        },
-        buffer: {
-          screenLineCount: 2,
-          screenTail: ["ready", "waiting"],
-        },
-        recovery: {
-          resumable: true,
-          relaunchable: false,
-          hasPersistedSession: false,
-          canResumeAfterRestart: false,
-          missingPersistedMetadata: false,
-          wouldBeLostOnFullClose: false,
-          lifecycle: "live",
-        },
-        derived: {
-          blankButLiveRenderer: true,
-          staleDisposedWebglOwnership: true,
-          disposedTabStillSelected: false,
-        },
-      },
-    ];
-
-    const { view } = createView({ "core.exposeDebugApi": true });
-    await flushAsync();
-
-    const snapshot = view.getSessionDiagnosticsSnapshot();
-    expect(snapshot.summary).toMatchObject({
-      activeItemId: "Tasks/task-1.md",
-      activeTabCount: 1,
-      activeItemCount: 1,
-      persistedSessionCount: 0,
-      derivedCounts: {
-        blankButLiveRenderer: 1,
-        staleDisposedWebglOwnership: 1,
-        missingPersistedMetadata: 1,
-        liveNonResumableSessions: 0,
-      },
-    });
-    expect(snapshot.items).toHaveLength(1);
-    expect(snapshot.items[0]).toMatchObject({
-      itemId: "Tasks/task-1.md",
-      activeTabIndex: 0,
-      idleSince: 1234,
-      sessionCounts: { shells: 0, agents: 1 },
-    });
-    expect(snapshot.items[0].tabs[0].recovery).toMatchObject({
-      resumable: true,
-      hasPersistedSession: false,
-      missingPersistedMetadata: true,
-      lifecycle: "live",
-    });
-    expect(window.__workTerminalDebug?.getSessionDiagnostics().summary.activeTabCount).toBe(1);
-  });
-
-  it("copies session diagnostics to the clipboard", async () => {
-    mockState.activeItemId = "Tasks/task-1.md";
-    mockState.tabDiagnostics = [
-      {
-        tabId: "tab-1",
-        itemId: "Tasks/task-1.md",
-        tabIndex: 0,
-        label: "Shell",
-        sessionId: null,
-        sessionType: "shell",
-        claudeState: "inactive",
-        isResumableAgent: false,
-        isVisible: true,
-        isDisposed: false,
-        isSelected: true,
-        process: {
-          pid: 50,
-          status: "alive",
-          killed: false,
-          exitCode: null,
-          signalCode: null,
-          spawnTime: 1000,
-          uptimeMs: 1000,
-        },
-        renderer: {
-          canvasCount: 1,
-          hasRenderableContent: true,
-          hasBlankRenderSurface: false,
-          trackedWebglAddonPresent: false,
-          trackedWebglAddonDisposed: false,
-          staleDisposedWebglOwnership: false,
-        },
-        buffer: {
-          screenLineCount: 1,
-          screenTail: ["$"],
-        },
-        recovery: {
-          resumable: false,
-          relaunchable: true,
-          hasPersistedSession: false,
-          canResumeAfterRestart: false,
-          missingPersistedMetadata: false,
-          wouldBeLostOnFullClose: true,
-          lifecycle: "live",
-        },
-        derived: {
-          blankButLiveRenderer: false,
-          staleDisposedWebglOwnership: false,
-          disposedTabStillSelected: false,
-        },
-      },
-    ];
-
-    const { view } = createView();
-    await flushAsync();
-
-    await expect(view.copySessionDiagnostics()).resolves.toBe(true);
-    expect(mockState.clipboardWriteText).toHaveBeenCalledTimes(1);
-    expect(mockState.clipboardWriteText.mock.calls[0][0]).toContain('"activeTabCount": 1');
-    expect(mockState.notices).toContain("Session diagnostics copied to clipboard");
-  });
-
-  it("shows restart menu action for all resumable agent tabs including Copilot", async () => {
-    const { view } = createView();
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "copilot",
-        label: "Copilot",
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    expect(mockState.menuTitles).toContain("Rename");
-    expect(mockState.menuTitles).toContain("Restart");
-  });
-
-  it("keeps the restart menu action available for Claude tabs", async () => {
-    const { view } = createView();
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Claude",
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    expect(mockState.menuTitles).toContain("Restart");
-  });
-
-  it("restarts Claude tabs by creating a resumed replacement before closing the old tab", async () => {
-    mockState.activeItemId = "task-1";
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.claudeExtraArgs": "--dangerously-skip-permissions",
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Claude",
-        agentSessionId: "session-123",
-        launchShell: "/bin/echo",
-        launchCwd: expandTilde("~/resume"),
-        launchCommandArgs: [
-          "/bin/echo",
-          "--dangerously-skip-permissions",
-          "--session-id",
-          "old-id",
-        ],
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.tabManagerCalls).toEqual(["createTabForItem", "closeTabInstance"]);
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "task-1",
-      "/bin/echo",
-      expandTilde("~/resume"),
-      "Claude",
-      "claude",
-      undefined,
-      ["/bin/echo", "--dangerously-skip-permissions", "--session-id", "session-123"],
-      "session-123",
-    ]);
-  });
-
-  it("preserves non-session args around restart resume metadata", async () => {
-    mockState.activeItemId = "task-1";
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Claude",
-        taskPath: "task-1",
-        agentSessionId: "session-123",
-        paramPassMode: "both",
-        launchShell: "/bin/echo",
-        launchCwd: expandTilde("~/resume"),
-        launchCommandArgs: [
-          "/bin/echo",
-          "--flag-before",
-          "alpha",
-          "--session-id",
-          "old-id",
-          "--flag-after",
-          "beta",
-          "--resume",
-          "old-resume",
-          "--another=option",
-          "--resume=legacy",
-          "--session-id=legacy-2",
-          "--tail",
-        ],
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "task-1",
-      "/bin/echo",
-      expandTilde("~/resume"),
-      "Claude",
-      "claude",
-      undefined,
-      [
-        "/bin/echo",
-        "--flag-before",
-        "alpha",
-        "--flag-after",
-        "beta",
-        "--another=option",
-        "--tail",
-        "--session-id",
-        "session-123",
-      ],
-      "session-123",
-    ]);
-  });
-
-  it("preserves Claude-with-context when restart falls back to a fresh launch", async () => {
-    mockState.activeItemId = "task-1";
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/fresh",
-      "core.additionalAgentContext": "Prompt for $title",
-    });
-    view.setItems([
-      {
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks/task-1.md",
-      } as any,
-    ]);
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude-with-context",
-        label: "Claude (ctx)",
-        agentSessionId: null,
-        launchShell: "/bin/echo",
-        launchCwd: expandTilde("~/fresh"),
-        launchCommandArgs: ["/bin/echo", "--session-id", "old-id", "Prompt for Task One"],
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.tabManagerCalls).toEqual(["createTabForItem", "closeTabInstance"]);
-    expect(mockState.latestCreateTabArgs?.[0]).toBe("task-1");
-    expect(mockState.latestCreateTabArgs?.[1]).toBe("/bin/echo");
-    expect(mockState.latestCreateTabArgs?.[2]).toBe(expandTilde("~/fresh"));
-    expect(mockState.latestCreateTabArgs?.[3]).toBe("Claude (ctx)");
-    expect(mockState.latestCreateTabArgs?.[4]).toBe("claude-with-context");
-  });
-
-  it("preserves durable relaunch identity when restart relaunches a non-resumable tab", async () => {
-    mockState.activeItemId = "task-1";
-    const { view } = createView();
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Claude",
-        claudeSessionId: null,
-        durableSessionId: "durable-claude-relaunch",
-        launchShell: "/bin/echo",
-        launchCwd: "/vault",
-        launchCommandArgs: ["/bin/echo", "--flag"],
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "task-1",
-      "/bin/echo",
-      "/vault",
-      "Claude",
-      "claude",
-      undefined,
-      ["/bin/echo", "--flag"],
-      null,
-      "durable-claude-relaunch",
-    ]);
-  });
-
-  it("falls back to fresh settings for restart when recovered tabs lack launch metadata", async () => {
-    mockState.activeItemId = "task-1";
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/fallback",
-    });
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Recovered Claude",
-        agentSessionId: "session-456",
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.tabManagerCalls).toEqual(["createTabForItem", "closeTabInstance"]);
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "task-1",
-      "/bin/echo",
-      expandTilde("~/fallback"),
-      "Recovered Claude",
-      "claude",
-      undefined,
-      ["/bin/echo", "--session-id", "session-456"],
-      "session-456",
-    ]);
-  });
-
-  it("normalizes multiline continuation args when restoring a closed session from settings", async () => {
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/fallback",
-      "core.claudeExtraArgs": `--dangerously-skip-permissions \\
-        --plugin-dir /path/a`,
-    });
-    await flushAsync();
-
-    await (view as any).restoreClosedSession({
-      sessionType: "claude",
-      label: "Recovered Claude",
-      agentSessionId: "session-456",
-      closedAt: Date.now(),
-      itemId: "task-1",
-    });
-    await flushAsync();
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "task-1",
-      "/bin/echo",
-      expandTilde("~/fallback"),
-      "Recovered Claude",
-      "claude",
-      undefined,
-      [
-        "/bin/echo",
-        "--dangerously-skip-permissions",
-        "--plugin-dir",
-        "/path/a",
-        "--session-id",
-        "session-456",
-      ],
-      "session-456",
-    ]);
-  });
-
-  it("restores recently closed legacy entries using claudeSessionId fallback", async () => {
-    const { view } = createView({
-      "core.copilotCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/fallback",
-    });
-    await flushAsync();
-
-    await (view as any).restoreClosedSession({
-      sessionType: "copilot",
-      label: "Recovered Copilot",
-      claudeSessionId: "session-legacy",
-      closedAt: Date.now(),
-      itemId: "task-1",
-    });
-
-    expect(mockState.latestCreateTabArgs).toEqual([
-      "task-1",
-      "/bin/echo",
-      expandTilde("~/fallback"),
-      "Recovered Copilot",
-      "copilot",
-      undefined,
-      ["/bin/echo", "--resume=session-legacy"],
-      "session-legacy",
-    ]);
-  });
-
-  it("shows install guidance when restoring a Claude session without an available CLI", async () => {
-    const { view } = createView({
-      "core.claudeCommand": "definitely-not-a-real-command-issue-158",
-      "core.defaultTerminalCwd": "~/fallback",
-    });
-    await flushAsync();
-
-    const entry = {
-      sessionType: "claude",
-      label: "Recovered Claude",
-      claudeSessionId: "session-456",
-      closedAt: Date.now(),
-      itemId: "task-1",
-      recoveryMode: "resume" as const,
-    };
-    (view as any).recentlyClosedStore.add(entry);
-
-    await (view as any).restoreClosedSession(entry);
-
-    expect(mockState.latestCreateTabArgs).toBeNull();
-    expect(mockState.notices).toContain(
-      `Claude Code CLI not found for "definitely-not-a-real-command-issue-158". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`,
-    );
-    expect((view as any).recentlyClosedStore.serialize()).toEqual([
-      expect.objectContaining({
-        label: "Recovered Claude",
-        itemId: "task-1",
-      }),
-    ]);
   });
 
   it("keeps tab clicks working after rename mode is torn down by a task switch", async () => {
@@ -2777,58 +719,6 @@ describe("TerminalPanelView hook warning", () => {
     vi.useRealTimers();
   });
 
-  it("restarts tabs against the tab item before falling back to the active item", async () => {
-    mockState.activeItemId = "other-task";
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/fallback",
-    });
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Recovered Claude",
-        taskPath: "task-1",
-        agentSessionId: "session-456",
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.latestCreateTabArgs?.[0]).toBe("task-1");
-  });
-
-  it("shows install guidance when restarting a Claude tab without an available CLI", async () => {
-    const { view } = createView({
-      "core.claudeCommand": "definitely-not-a-real-command-issue-158",
-      "core.defaultTerminalCwd": "~/fallback",
-    });
-    await flushAsync();
-
-    (view as any).showTabContextMenu(
-      {
-        sessionType: "claude",
-        label: "Recovered Claude",
-        taskPath: "task-1",
-        agentSessionId: "session-456",
-      },
-      0,
-      new dom.window.MouseEvent("contextmenu"),
-    );
-
-    mockState.menuActions.get("Restart")?.();
-    await flushAsync();
-
-    expect(mockState.latestCreateTabArgs).toBeNull();
-    expect(mockState.notices).toContain(
-      `Claude Code CLI not found for "definitely-not-a-real-command-issue-158". Install it first, for example with brew install --cask claude-code, then update Work Terminal's Claude command setting if needed.`,
-    );
-  });
-
   it("shows a notice when a spawn button launch rejects", async () => {
     const { panelEl, view } = createView();
     await flushAsync();
@@ -2948,8 +838,6 @@ describe("TerminalPanelView hook warning", () => {
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      "--session-id",
-      expect.any(String),
       "Built prompt for /vault/Tasks/task-1.md",
     ]);
   });
@@ -2983,8 +871,6 @@ describe("TerminalPanelView hook warning", () => {
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      "--session-id",
-      expect.any(String),
       "Built prompt for /vault/Tasks/task-1.md",
     ]);
   });
@@ -3018,8 +904,6 @@ describe("TerminalPanelView hook warning", () => {
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      "--session-id",
-      expect.any(String),
       "Built prompt\n\nTemplate for Task One in doing",
     ]);
   });
@@ -3053,8 +937,6 @@ describe("TerminalPanelView hook warning", () => {
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      "--session-id",
-      expect.any(String),
       "Built prompt\n\nTemplate path: /vault/Tasks/task-1.md",
     ]);
   });
@@ -3078,12 +960,7 @@ describe("TerminalPanelView hook warning", () => {
     const prompt = await (view as any).getClaudeContextPrompt(item);
     await (view as any).spawnClaudeWithContext();
 
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "--session-id",
-      expect.any(String),
-      prompt,
-    ]);
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo", prompt]);
   });
 
   it("does not inject the context template into plain Claude sessions", async () => {
@@ -3097,11 +974,7 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnClaude();
 
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "--session-id",
-      expect.any(String),
-    ]);
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
   it("injects context prompt into Copilot-with-context sessions", async () => {
@@ -3133,15 +1006,11 @@ describe("TerminalPanelView hook warning", () => {
       sessionType: "copilot-with-context",
     });
 
-    // Copilot context sessions omit --resume to avoid the -i flag being ignored.
-    // The session ID is detected from log files after spawn instead.
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
       "-i",
       "Built prompt\n\nTemplate for Task One in doing",
     ]);
-    // Session ID should be null (deferred detection)
-    expect(mockState.latestCreateTabArgs?.[6]).toBeNull();
   });
 
   it("does not inject context prompt into plain Copilot sessions", async () => {
@@ -3163,10 +1032,7 @@ describe("TerminalPanelView hook warning", () => {
 
     await (view as any).spawnAgentSession({ agentType: "copilot", sessionType: "copilot" });
 
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      expect.stringMatching(/^--resume=/),
-    ]);
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
   it("injects context prompt into Strands-with-context sessions", async () => {
@@ -3228,8 +1094,6 @@ describe("TerminalPanelView hook warning", () => {
 
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      "--session-id",
-      expect.any(String),
       "--dangerously-skip-permissions",
       "--plugin-dir",
       "/path/a",
@@ -3295,8 +1159,59 @@ describe("TerminalPanelView hook warning", () => {
       "strands",
       undefined,
       ["/bin/echo", "--mode", "interactive", "Review this task"],
-      null,
     ]);
+  });
+
+  it("copies session diagnostics to the clipboard", async () => {
+    mockState.activeItemId = "Tasks/task-1.md";
+    mockState.tabDiagnostics = [
+      {
+        tabId: "tab-1",
+        itemId: "Tasks/task-1.md",
+        tabIndex: 0,
+        label: "Shell",
+        sessionType: "shell",
+        claudeState: "inactive",
+        isVisible: true,
+        isDisposed: false,
+        isSelected: true,
+        process: {
+          pid: 50,
+          status: "alive",
+          killed: false,
+          exitCode: null,
+          signalCode: null,
+          spawnTime: 1000,
+          uptimeMs: 1000,
+        },
+        renderer: {
+          canvasCount: 1,
+          hasRenderableContent: true,
+          hasBlankRenderSurface: false,
+          trackedWebglAddonPresent: false,
+          trackedWebglAddonDisposed: false,
+          webglSuspended: false,
+          staleDisposedWebglOwnership: false,
+        },
+        buffer: {
+          screenLineCount: 1,
+          screenTail: ["$"],
+        },
+        derived: {
+          blankButLiveRenderer: false,
+          staleDisposedWebglOwnership: false,
+          disposedTabStillSelected: false,
+        },
+      },
+    ];
+
+    const { view } = createView();
+    await flushAsync();
+
+    await expect(view.copySessionDiagnostics()).resolves.toBe(true);
+    expect(mockState.clipboardWriteText).toHaveBeenCalledTimes(1);
+    expect(mockState.clipboardWriteText.mock.calls[0][0]).toContain('"activeTabCount": 1');
+    expect(mockState.notices).toContain("Session diagnostics copied to clipboard");
   });
 
   it("keeps Windows absolute vault paths intact for Claude context prompts", async () => {
@@ -3462,7 +1377,7 @@ describe("TerminalPanelView hook warning", () => {
     const jiraLink = panelEl.querySelector(".wt-task-jira-link") as HTMLAnchorElement | null;
     expect(jiraLink).not.toBeNull();
     expect(jiraLink?.textContent).toContain("PROJ-1234");
-    expect(jiraLink?.textContent).toContain("↗");
+    expect(jiraLink?.textContent).toContain("\u2197");
     expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Fix restart issue");
     expect(panelEl.querySelector(".wt-task-title")?.getAttribute("style")).toContain(
       "--wt-task-color: #005cc5",
@@ -3599,7 +1514,6 @@ describe("profile launch", () => {
     mockState.activeItemId = null;
     mockState.tabsByItem = new Map();
     mockState.activeTabIndex = 0;
-    mockState.persistedSessions = [];
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
@@ -3608,11 +1522,9 @@ describe("profile launch", () => {
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
     mockState.tabManagerCalls = [];
-    mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
     mockState.latestTabManagerCtorArgs = null;
-    mockState.stopPeriodicPersist.mockClear();
   });
 
   afterEach(() => {
@@ -4221,234 +2133,6 @@ describe("profile launch", () => {
     const commandArgs = mockState.latestCreateTabArgs?.[5] as string[];
     expect(commandArgs).toBeDefined();
     expect(commandArgs[0]).toBe("pi");
-
-    resolveStub.mockRestore();
-  });
-});
-
-describe("paramPassMode resume behavior", () => {
-  let dom: JSDOM;
-
-  beforeEach(() => {
-    dom = new JSDOM("<!doctype html><html><body></body></html>");
-    vi.stubGlobal("window", dom.window);
-    vi.stubGlobal("document", dom.window.document);
-    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
-    vi.stubGlobal("Element", dom.window.Element);
-    vi.stubGlobal("Node", dom.window.Node);
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    );
-    installDomHelpers({
-      window: dom.window,
-      document: dom.window.document,
-      HTMLElement: dom.window.HTMLElement,
-      Element: dom.window.Element,
-      Node: dom.window.Node,
-    });
-
-    mockState.activeSessions = new Map();
-    mockState.activeTabs = [];
-    mockState.activeItemId = "task-1";
-    mockState.tabsByItem = new Map();
-    mockState.activeTabIndex = 0;
-    mockState.persistedSessions = [];
-    mockState.tabDiagnostics = [];
-    mockState.idleSinceByItem = new Map();
-    mockState.menuTitles = [];
-    mockState.menuActions = new Map();
-    mockState.notices = [];
-    mockState.clipboardWriteText.mockClear();
-    mockState.latestCreateTabArgs = null;
-    mockState.tabManagerCalls = [];
-    mockState.hookStatus = { scriptExists: false, hooksConfigured: false };
-    mockState.openExternal.mockClear();
-    mockState.latestTabManager = null;
-    mockState.latestTabManagerCtorArgs = null;
-    mockState.stopPeriodicPersist.mockClear();
-  });
-
-  afterEach(() => {
-    while (createdViews.length > 0) {
-      createdViews.pop()?.disposeAll();
-    }
-    vi.unstubAllGlobals();
-    dom.window.close();
-  });
-
-  it("does not pass stored extra args on resume when paramPassMode is undefined (default launch-only)", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ found: true, resolved: "/bin/echo" });
-
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.claudeExtraArgs": "--global-flag",
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    const tab = (view as any).createResumedTab({
-      targetItemId: "task-1",
-      sessionType: "claude",
-      label: "Claude",
-      sessionId: "session-123",
-      freshSettings: { "core.claudeExtraArgs": "--global-flag" },
-      resolvedCommand: "/bin/echo",
-      extraArgs: ["--model", "opus"],
-      // paramPassMode undefined = default "launch-only"
-    });
-
-    expect(tab).not.toBeNull();
-    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
-    expect(commandArgs).toBeDefined();
-    expect(commandArgs.join(" ")).toContain("--global-flag");
-    expect(commandArgs.join(" ")).not.toContain("--model");
-    expect(commandArgs.join(" ")).not.toContain("opus");
-    resolveStub.mockRestore();
-  });
-
-  it("passes stored extra args on resume when paramPassMode is resume-only", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ found: true, resolved: "/bin/echo" });
-
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.claudeExtraArgs": "--global-flag",
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    const tab = (view as any).createResumedTab({
-      targetItemId: "task-1",
-      sessionType: "claude",
-      label: "Claude",
-      sessionId: "session-456",
-      freshSettings: { "core.claudeExtraArgs": "--global-flag" },
-      resolvedCommand: "/bin/echo",
-      extraArgs: ["--model", "opus"],
-      paramPassMode: "resume-only",
-    });
-
-    expect(tab).not.toBeNull();
-    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
-    expect(commandArgs).toBeDefined();
-    expect(commandArgs.join(" ")).toContain("--model");
-    expect(commandArgs.join(" ")).toContain("opus");
-    resolveStub.mockRestore();
-  });
-
-  it("passes stored extra args on resume when paramPassMode is both", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ found: true, resolved: "/bin/echo" });
-
-    const { view } = createView({
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    const tab = (view as any).createResumedTab({
-      targetItemId: "task-1",
-      sessionType: "claude",
-      label: "Claude",
-      sessionId: "session-789",
-      freshSettings: {},
-      resolvedCommand: "/bin/echo",
-      extraArgs: ["--model", "opus"],
-      paramPassMode: "both",
-    });
-
-    expect(tab).not.toBeNull();
-    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
-    expect(commandArgs).toBeDefined();
-    expect(commandArgs.join(" ")).toContain("--model");
-    expect(commandArgs.join(" ")).toContain("opus");
-    resolveStub.mockRestore();
-  });
-
-  it("uses unresolved command name in resumed tab commandArgs when profile has loginShellWrap", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ requested: "pi", found: true, resolved: "/usr/local/bin/pi" });
-
-    const { view } = createView({
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    (view as any).profileManager = {
-      getProfile: () => ({
-        id: "profile-pi",
-        command: "pi",
-        loginShellWrap: true,
-        agentType: "custom",
-      }),
-      getButtonProfiles: () => [],
-    };
-
-    const tab = (view as any).createResumedTab({
-      targetItemId: "task-1",
-      sessionType: "custom",
-      label: "Pi",
-      sessionId: "session-pi-1",
-      freshSettings: {},
-      resolvedCommand: "/usr/local/bin/pi",
-      profileId: "profile-pi",
-    });
-
-    expect(tab).not.toBeNull();
-    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
-    expect(commandArgs).toBeDefined();
-    // Should use the unresolved profile command, not the absolute path
-    expect(commandArgs[0]).toBe("pi");
-    expect(commandArgs[0]).not.toBe("/usr/local/bin/pi");
-
-    resolveStub.mockRestore();
-  });
-
-  it("uses resolved command in resumed tab commandArgs when profile does not have loginShellWrap", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ requested: "claude", found: true, resolved: "/usr/local/bin/claude" });
-
-    const { view } = createView({
-      "core.claudeCommand": "/usr/local/bin/claude",
-      "core.defaultTerminalCwd": "~/resume",
-    });
-    await flushAsync();
-
-    (view as any).profileManager = {
-      getProfile: () => ({
-        id: "profile-claude",
-        command: "claude",
-        loginShellWrap: false,
-        agentType: "claude",
-      }),
-      getButtonProfiles: () => [],
-    };
-
-    const tab = (view as any).createResumedTab({
-      targetItemId: "task-1",
-      sessionType: "claude",
-      label: "Claude",
-      sessionId: "session-claude-1",
-      freshSettings: { "core.claudeCommand": "/usr/local/bin/claude" },
-      resolvedCommand: "/usr/local/bin/claude",
-      profileId: "profile-claude",
-    });
-
-    expect(tab).not.toBeNull();
-    const commandArgs = mockState.latestCreateTabArgs?.[6] as string[];
-    expect(commandArgs).toBeDefined();
-    expect(commandArgs[0]).toBe("/usr/local/bin/claude");
 
     resolveStub.mockRestore();
   });

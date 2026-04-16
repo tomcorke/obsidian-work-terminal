@@ -2,7 +2,7 @@
  * CLI launch helpers: PATH augmentation, command resolution, and agent argument builders.
  */
 import { expandTilde, electronRequire } from "../utils";
-import { type AgentType, getResumeConfig } from "./AgentProfile";
+import { type AgentType, getLaunchConfig } from "./AgentProfile";
 
 /** Static directories that are always included in Unix PATH augmentation. */
 const UNIX_STATIC_EXTRA_DIRS = ["~/.local/bin", "/usr/local/bin", "/opt/homebrew/bin"];
@@ -483,7 +483,7 @@ export function resolveCommand(cmd: string): string {
 }
 
 export function buildMissingCliNotice(agent: AgentType, command: string): string {
-  const config = getResumeConfig(agent);
+  const config = getLaunchConfig(agent);
   const normalized = command.trim() || config.defaultCommand || agent;
   return `${config.cliDisplayName} not found for "${normalized}". ${config.installHint}`;
 }
@@ -504,22 +504,18 @@ export function mergeExtraArgs(...extraArgs: Array<string | undefined>): string 
 /**
  * Build agent CLI argument array from agent type config, extra args, and optional prompt.
  *
- * Uses AgentResumeConfig to determine:
- * - Which settings key holds extra args (extraArgsSettingKey)
+ * Uses AgentLaunchConfig to determine:
  * - How the prompt is injected (promptInjectionMode / promptFlag)
  * - Whether additionalAgentContext is appended to the prompt (all agent types)
- *
- * Session ID / resume handling is NOT included here - that stays agent-specific
- * in the spawn methods (see TerminalPanelView).
  */
 export function buildAgentArgs(
   agentType: AgentType,
   extraArgs?: string,
   prompt?: string,
   additionalAgentContext?: string,
-  resumeConfigOverride?: import("./AgentProfile").AgentResumeConfig,
+  launchConfigOverride?: import("./AgentProfile").AgentLaunchConfig,
 ): string[] {
-  const config = resumeConfigOverride ?? getResumeConfig(agentType);
+  const config = launchConfigOverride ?? getLaunchConfig(agentType);
   const args: string[] = [];
 
   if (extraArgs) {
@@ -540,34 +536,6 @@ export function buildAgentArgs(
   }
 
   return args;
-}
-
-/**
- * Build Claude CLI argument array from settings, session ID, and optional prompt.
- * @deprecated Use buildAgentArgs("claude", ...) instead. Kept for backward compatibility.
- */
-export function buildClaudeArgs(
-  settings: {
-    claudeExtraArgs?: string;
-    additionalAgentContext?: string;
-  },
-  sessionId: string,
-  prompt?: string,
-): string[] {
-  const promptArgs = buildAgentArgs(
-    "claude",
-    settings.claudeExtraArgs,
-    prompt,
-    settings.additionalAgentContext,
-  );
-  // Insert session ID after extra args but before the prompt (if any).
-  // The prompt is always the last element when present.
-  const sessionArgs = ["--session-id", sessionId];
-  if (prompt) {
-    // prompt is the last element - insert session args before it
-    return [...promptArgs.slice(0, -1), ...sessionArgs, promptArgs[promptArgs.length - 1]];
-  }
-  return [...promptArgs, ...sessionArgs];
 }
 
 /**

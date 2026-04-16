@@ -24,10 +24,10 @@ User-configured command (default: `claude`) with `--session-id <uuid>` and optio
 
 ### 3. GitHub Copilot CLI
 
-User-configured command (default: `copilot`) with `--resume=<sessionId>` (for resume) and optional `-i <prompt>`.
+User-configured command (default: `copilot`) with optional `-i <prompt>`.
 
 - **Trigger**: User launches a Copilot session via custom session modal
-- **Source**: `src/framework/TerminalPanelView.ts` - `spawnCopilotSession()` adds `--resume=<sessionId>` (line 1929); `src/core/agents/AgentLauncher.ts` - `buildCopilotArgs()` adds remaining args (line 335)
+- **Source**: `src/core/agents/AgentLauncher.ts` - `buildCopilotArgs()` (line 335)
 - **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
 
 ### 4. AWS Strands
@@ -46,15 +46,7 @@ One-shot `claude -p <prompt> --output-format text` for background task enrichmen
 - **Source**: `src/core/claude/HeadlessClaude.ts` - `spawnHeadlessClaude()` (line 24)
 - **Mechanism**: `child_process.spawn()` with array args (no shell interpretation)
 
-### 6. Hook script
-
-`~/.work-terminal/hooks/session-change.sh` - a bash script that reads Claude hook JSON from stdin and writes event files to `~/.work-terminal/events/`.
-
-- **Trigger**: Installed explicitly via plugin settings UI; invoked by Claude CLI on session start/end
-- **Source**: `src/core/claude/ClaudeHookManager.ts` - `installHooks()` (line 119)
-- **Mechanism**: Written to disk by the plugin, then made executable via `child_process.execSync('chmod +x ...')` (line 126); executed by Claude CLI (not by the plugin directly)
-
-### 7. VS Code
+### 6. VS Code
 
 `code --goto "{file}:{line}"` on terminal file-link clicks (Cmd+click on file paths in terminal output). Falls back to `shell.openPath()` if VS Code is not available.
 
@@ -86,21 +78,15 @@ All vault operations use Obsidian's `app.vault.*` API, never direct `fs.*` write
 Uses `plugin.loadData()` / `plugin.saveData()`, stored in `.obsidian/plugins/work-terminal/data.json`:
 
 - Settings (core + adapter)
-- Resumable session metadata (session IDs, types, labels, item paths)
-- Recently-closed tab entries
 - Guided tour completion state
 - Custom session defaults
-- Hook-dismiss state
 
-Source: `src/core/PluginDataStore.ts`, `src/core/session/SessionPersistence.ts`, `src/core/session/RecentlyClosedStore.ts`, `src/framework/GuidedTour.ts`, `src/framework/TerminalPanelView.ts`, `src/framework/MainView.ts`
+Source: `src/core/PluginDataStore.ts`, `src/framework/GuidedTour.ts`, `src/framework/TerminalPanelView.ts`, `src/framework/MainView.ts`
 
 ### Outside the vault (direct `fs.*`)
 
 | Path | Operation | Trigger | Source file |
 |------|-----------|---------|-------------|
-| `~/.work-terminal/hooks/session-change.sh` | Written | Explicit user action via settings UI ("Install hooks") | `src/core/claude/ClaudeHookManager.ts` - `installHooks()` (line 119) |
-| `~/.work-terminal/events/{sessionId}-*.json` | Written by external hook script; read and auto-cleaned by plugin | Hook script writes on Claude session events; plugin reads on poll, cleans stale files (>5 min) | `src/core/claude/ClaudeHookManager.ts` - `readResumeEvent()` (line 189), `cleanupStaleEvents()` (line 230) |
-| `{cwd}/.claude/settings.local.json` | Read, written, deleted | Explicit user action via settings UI ("Install hooks" / "Remove hooks") | `src/core/claude/ClaudeHookManager.ts` - `installHooks()` (line 119), `removeHooks()` (line 154), `checkHookStatus()` (line 92) |
 | `pty-wrapper.py` | Read-only existence check | Terminal tab spawn | `src/core/terminal/TerminalTab.ts` - `resolvePtyWrapperPath()` (line 77) |
 | Command binary paths | Read-only existence + executable check | Terminal tab spawn, headless Claude spawn | `src/core/agents/AgentLauncher.ts` - `resolveCommandInfo()` (line 155) |
 
@@ -110,5 +96,5 @@ Source: `src/core/PluginDataStore.ts`, `src/core/session/SessionPersistence.ts`,
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
 - **Zero outbound network requests from the plugin itself** - The plugin makes no network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
 - **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()`, never direct `fs.*` writes to vault files.
-- **Limited direct filesystem writes** - Direct `fs.*` writes are limited to `~/.work-terminal/` (hook scripts, event cleanup) and `{cwd}/.claude/settings.local.json` (project-local hook configuration). Hook installation and settings writes are triggered explicitly by the user through the settings UI; stale event cleanup (`cleanupStaleEvents()`, line 230 of `ClaudeHookManager.ts`) runs automatically on a poll interval via `AgentSessionTracker`.
-- **Plugin data via Obsidian API** - Settings and session state use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.
+- **Minimal direct filesystem writes** - Direct `fs.*` writes are limited to reading `pty-wrapper.py` and checking command binary paths. All other filesystem operations go through Obsidian's API.
+- **Plugin data via Obsidian API** - Settings use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.

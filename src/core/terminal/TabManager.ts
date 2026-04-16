@@ -64,7 +64,7 @@ export class TabManager {
       // idle animations start fully stale (300s ago) instead of fresh.
       const fullyStale = Date.now() - 300_000;
       for (const [itemId, tabs] of this.sessions) {
-        if (tabs.some((t) => t.isResumableAgent)) {
+        if (tabs.some((t) => t.isAgentTab)) {
           this.idleSince.set(itemId, fullyStale);
         }
       }
@@ -159,8 +159,6 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
-    agentSessionId?: string | null,
-    durableSessionId?: string | null,
   ): TerminalTab | null {
     if (!this.activeItemId) return null;
 
@@ -172,8 +170,6 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
-      agentSessionId,
-      durableSessionId,
     );
   }
 
@@ -185,8 +181,6 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
-    agentSessionId?: string | null,
-    durableSessionId?: string | null,
   ): TerminalTab {
     const isActiveItem = this.activeItemId === itemId;
 
@@ -202,8 +196,6 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
-      agentSessionId,
-      durableSessionId,
       this.pluginDir,
     );
 
@@ -425,11 +417,6 @@ export class TabManager {
     return !!tabs && tabs.length > 0;
   }
 
-  hasResumableAgentSessions(itemId: string): boolean {
-    const tabs = this.sessions.get(itemId) || [];
-    return tabs.some((tab) => tab.isResumableAgent);
-  }
-
   /** Return item IDs that have terminal sessions. */
   getSessionItemIds(): string[] {
     return Array.from(this.sessions.keys());
@@ -459,9 +446,7 @@ export class TabManager {
           tabId: tab.id,
           itemId: tab.taskPath ?? itemId,
           label: tab.label,
-          sessionId: tab.agentSessionId,
           sessionType: tab.sessionType,
-          isResumableAgent: tab.isResumableAgent,
         });
       }
     }
@@ -474,25 +459,10 @@ export class TabManager {
     for (const [itemId, tabs] of this.sessions) {
       for (const [tabIndex, tab] of tabs.entries()) {
         const tabDiagnostics = tab.getDiagnostics();
-        const lifecycle =
-          tab.isDisposed || tabDiagnostics.isDisposed
-            ? "disposed"
-            : tabDiagnostics.process.status === "alive"
-              ? "live"
-              : "lost";
         diagnostics.push({
           itemId: tab.taskPath ?? itemId,
           tabIndex,
           isSelected: this.activeItemId === itemId && this.activeTabIndex === tabIndex,
-          recovery: {
-            resumable: tab.isResumableAgent,
-            relaunchable: !tab.isResumableAgent,
-            hasPersistedSession: false,
-            canResumeAfterRestart: false,
-            missingPersistedMetadata: false,
-            wouldBeLostOnFullClose: false,
-            lifecycle,
-          },
           ...tabDiagnostics,
           derived: {
             ...tabDiagnostics.derived,
@@ -512,15 +482,6 @@ export class TabManager {
     return this.getAllActiveTabs().filter(
       (tab) => tab.label.trim().toLowerCase() === normalizedLabel,
     );
-  }
-
-  /** Return a set of all active agentSessionIds across all items. */
-  getActiveSessionIds(): Set<string> {
-    const ids = new Set<string>();
-    for (const tab of this.getAllActiveTabs()) {
-      if (tab.sessionId) ids.add(tab.sessionId);
-    }
-    return ids;
   }
 
   /** Re-fit the active terminal to its container dimensions. */
@@ -544,7 +505,7 @@ export class TabManager {
     const tabs = this.sessions.get(itemId) || [];
     const states: AgentState[] = [];
     for (const tab of tabs) {
-      if (tab.isResumableAgent) {
+      if (tab.isAgentTab) {
         states.push(tab.agentState);
       }
     }

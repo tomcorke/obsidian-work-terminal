@@ -29,16 +29,9 @@ import {
   type SessionType,
   type TerminalTabDiagnostics,
   type TabProcessDiagnostics,
-  isResumableSessionType,
 } from "../session/types";
-import { AgentSessionTracker } from "../agents/AgentSessionTracker";
-import { CopilotSessionDetector } from "../agents/CopilotSessionDetector";
 import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
-import {
-  type ParamPassMode,
-  sessionTypeToAgentType,
-  getResumeConfig,
-} from "../agents/AgentProfile";
+import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
 
 export type AgentState = AgentRuntimeState;
@@ -107,20 +100,11 @@ export class TerminalTab {
   id: string;
   label: string;
   taskPath: string | null;
-  agentSessionId: string | null = null;
-  durableSessionId: string | null = null;
   sessionType: SessionType;
   profileId: string | undefined;
   profileColor: string | undefined;
-  paramPassMode: import("../agents/AgentProfile").ParamPassMode | undefined;
-  /** Activity detection patterns from resume config. When set, config-driven detection is used. */
+  /** Activity detection patterns from launch config. When set, config-driven detection is used. */
   activityPatterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] };
-  /**
-   * Explicit resumable override. When set, takes precedence over
-   * `isResumableSessionType()` for custom profiles whose resume
-   * config is profile-level rather than type-level.
-   */
-  isResumableOverride?: boolean;
   /**
    * When true, the command is launched through a login shell even if it
    * resolves to an absolute path. Enables shell wrapper functions.
@@ -163,7 +147,8 @@ export class TerminalTab {
   private _agentState: AgentState = "inactive";
   private _recentCleanLines: string[] = [];
   private _stateTimer: ReturnType<typeof setInterval> | null = null;
-  private _isResumableAgent = false;
+  /** Whether this tab is an agent tab that should have state tracking. */
+  private _isAgentTab = false;
   /** Suppress "active" detection until this timestamp (ms). Used after reload
    *  to prevent stale xterm buffer content from triggering false active state. */
   _suppressActiveUntil = 0;
@@ -179,14 +164,6 @@ export class TerminalTab {
   _userScrolledUp = false;
   _programmaticScrollGuards = 0;
   _pendingBottomCheck = false;
-
-  // Session tracking (/resume detection)
-  private _sessionTracker: AgentSessionTracker | null = null;
-
-  // Deferred session ID detection (Copilot context sessions)
-  private _sessionDetector: CopilotSessionDetector | null = null;
-  /** Override the session log directory from agent config (set from user settings). */
-  sessionLogDirOverride?: string;
 
   // Rename detection
   private _renameDecoder = new StringDecoder("utf8");
@@ -204,13 +181,8 @@ export class TerminalTab {
     sessionType: SessionType,
     preCommand?: string,
     private commandArgs?: string[],
-    agentSessionId?: string | null,
-    durableSessionId?: string | null,
     private pluginDir?: string,
   ) {
-    this.agentSessionId = agentSessionId || null;
-    this.durableSessionId =
-      durableSessionId || (agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     this.taskPath = taskPath;
     this.label = label;
     this.sessionType = sessionType;
@@ -345,7 +317,6 @@ export class TerminalTab {
         console.log("[work-terminal] Spawned pid:", proc.pid, "cols:", cols, "rows:", rows);
         this.process = proc;
         this.wireProcess(proc);
-        this._initSessionTracker();
         this.startStateTracking();
         this.terminal.scrollToBottom();
       } catch (err) {
@@ -540,7 +511,6 @@ export class TerminalTab {
   private wireProcess(proc: ChildProcess): void {
     this.terminal.onData((data) => {
       if (this._isDisposed) return;
-      this._sessionTracker?.feedInput(data);
       if (proc.stdin && !proc.stdin.destroyed) {
         proc.stdin.write(data);
       }
@@ -1000,16 +970,9 @@ export class TerminalTab {
     return this.agentState;
   }
 
-  get claudeSessionId(): string | null {
-    return this.agentSessionId;
-  }
-
-  set claudeSessionId(value: string | null) {
-    this.agentSessionId = value;
-  }
-
-  get isResumableAgent(): boolean {
-    return this._isResumableAgent;
+  /** Whether this tab has an agent session with state tracking active. */
+  get isAgentTab(): boolean {
+    return this._isAgentTab;
   }
 
   private getProcessStatus(): TabProcessDiagnostics["status"] {
@@ -1055,10 +1018,8 @@ export class TerminalTab {
     return {
       tabId: this.id,
       label: this.label,
-      sessionId: this.agentSessionId,
       sessionType: this.sessionType,
       claudeState: this.claudeState,
-      isResumableAgent: this.isResumableAgent,
       isVisible: this.isVisible,
       isDisposed: this.isDisposed,
       process: {
@@ -1090,10 +1051,10 @@ export class TerminalTab {
     };
   }
 
-  /** Start state tracking for Claude/Agent sessions. Call after label is known. */
+  /** Start state tracking for agent sessions. Call after label is known. */
   startStateTracking(): void {
-    this._isResumableAgent = this._detectResumableAgent();
-    if (!this._isResumableAgent || this._stateTimer) return;
+    this._isAgentTab = this._detectAgentTab();
+    if (!this._isAgentTab || this._stateTimer) return;
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
@@ -1104,67 +1065,15 @@ export class TerminalTab {
     this._stateTimer = setInterval(() => this._checkState(), 2000);
   }
 
-  /** Initialize session tracker for agent sessions that support session tracking. */
-  private _initSessionTracker(): void {
-    if (!this.agentSessionId) {
-      // No session ID yet - check if this agent type supports deferred detection
-      this._initDeferredSessionDetector();
-      return;
-    }
+  /** Check whether this tab is an agent session that should have state tracking. */
+  private _detectAgentTab(): boolean {
     const { agentType } = sessionTypeToAgentType(this.sessionType);
-    const resumeConfig = getResumeConfig(agentType);
-    if (!resumeConfig.sessionTracking) return;
-
-    this._sessionTracker = new AgentSessionTracker(this.cwd, this.agentSessionId);
-    this._sessionTracker.onSessionChange = (newId) => {
-      this.agentSessionId = newId;
-      console.log("[work-terminal] Session ID updated via /resume:", newId);
-    };
-  }
-
-  /**
-   * Start deferred session ID detection for agents that discover their session
-   * ID from log files after spawn (e.g. Copilot context sessions launched
-   * without --resume).
-   */
-  private _initDeferredSessionDetector(): void {
-    const { agentType } = sessionTypeToAgentType(this.sessionType);
-    const resumeConfig = getResumeConfig(agentType);
-    const sessionLogDir = this.sessionLogDirOverride || resumeConfig.sessionLogDir;
-    if (!resumeConfig.deferSessionId || !sessionLogDir || !resumeConfig.sessionLogPattern) {
-      return;
-    }
-
-    this._sessionDetector = new CopilotSessionDetector({
-      logDir: sessionLogDir,
-      logPattern: resumeConfig.sessionLogPattern,
-      spawnTime: this.spawnTime,
-    });
-    this._sessionDetector.onSessionDetected = (sessionId) => {
-      this.agentSessionId = sessionId;
-      this._isResumableAgent = this._detectResumableAgent();
-      console.log("[work-terminal] Deferred session ID detected:", sessionId);
-      this._sessionDetector = null;
-      // Start state tracking if it was skipped during initial setup
-      // (safety net for cases where detector didn't exist yet at startStateTracking time)
-      if (this._isResumableAgent && !this._stateTimer) {
-        this.startStateTracking();
-      }
-    };
-    this._sessionDetector.start();
-  }
-
-  private _detectResumableAgent(): boolean {
-    // Custom profiles may override resumability at the profile level
-    const resumable = this.isResumableOverride ?? isResumableSessionType(this.sessionType);
-    if (!resumable) return false;
-    // Either we already have a session ID, or we're actively detecting one
-    return !!this.agentSessionId || !!this._sessionDetector;
+    return agentType !== "shell";
   }
 
   /** Called on each chunk of output data to track activity. */
   private _trackOutput(data: Buffer | string): void {
-    if (!this._isResumableAgent) return;
+    if (!this._isAgentTab) return;
 
     // Buffer recent clean lines for pattern matching (keep last 30 lines)
     const text = typeof data === "string" ? data : data.toString("utf8");
@@ -1199,7 +1108,7 @@ export class TerminalTab {
   }
 
   private _checkState(): void {
-    if (!this._isResumableAgent) return;
+    if (!this._isAgentTab) return;
 
     const hidden = !this.isVisible;
 
@@ -1319,15 +1228,10 @@ export class TerminalTab {
       id: this.id,
       taskPath: this.taskPath,
       label: this.label,
-      agentSessionId: this.agentSessionId,
-      claudeSessionId: this.claudeSessionId,
-      durableSessionId: this.durableSessionId,
       sessionType: this.sessionType,
       profileId: this.profileId,
       profileColor: this.profileColor,
-      paramPassMode: this.paramPassMode,
       activityPatterns: this.activityPatterns,
-      isResumableOverride: this.isResumableOverride,
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
@@ -1360,16 +1264,10 @@ export class TerminalTab {
     tab.id = stored.id;
     tab.label = stored.label;
     tab.taskPath = stored.taskPath;
-    tab.agentSessionId = stored.agentSessionId ?? stored.claudeSessionId ?? null;
-    tab.durableSessionId =
-      stored.durableSessionId ||
-      (tab.agentSessionId ? null : globalThis.crypto?.randomUUID?.() || null);
     tab.sessionType = stored.sessionType;
     tab.profileId = stored.profileId;
     tab.profileColor = stored.profileColor;
-    tab.paramPassMode = stored.paramPassMode;
     tab.activityPatterns = stored.activityPatterns;
-    tab.isResumableOverride = stored.isResumableOverride;
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
@@ -1409,9 +1307,8 @@ export class TerminalTab {
     tab._agentState = "inactive" as AgentState;
     tab._recentCleanLines = [];
     tab._stateTimer = null;
-    tab._isResumableAgent = false;
+    tab._isAgentTab = false;
     tab._isDisposed = false;
-    tab._sessionTracker = null;
     tab._renameDecoder = new StringDecoder("utf8");
     tab._renameLineBuffer = "";
     tab._renamePattern = /^\s*[^\w]*Session renamed to:\s*(.+?)\s*$/;
@@ -1569,11 +1466,6 @@ export class TerminalTab {
   dispose(): void {
     if (this._isDisposed) return;
     this._isDisposed = true;
-    // Stop session tracker and deferred session detector
-    this._sessionTracker?.dispose();
-    this._sessionTracker = null;
-    this._sessionDetector?.dispose();
-    this._sessionDetector = null;
     // Stop state tracking
     if (this._stateTimer) {
       clearInterval(this._stateTimer);

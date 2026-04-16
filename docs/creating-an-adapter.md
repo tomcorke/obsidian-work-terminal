@@ -81,7 +81,7 @@ const adapter = new MyAdapter();
 Your adapter inherits all of this without writing any terminal code:
 
 - Shell + Claude + Claude-with-context terminal tabs per item
-- Session persistence (hot-reload + disk resume with 7-day retention)
+- Session persistence (hot-reload stash preserves PTY state across plugin reloads)
 - Agent state detection (active/waiting/idle) with card indicators
 - Agent session rename detection with adapter hook
 - Keyboard capture (Option+Arrow, Option+B/F/D, Shift+Enter, Option+digit printable chars preserved, other Option shortcuts keep terminal Meta behavior)

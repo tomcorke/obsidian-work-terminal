@@ -1,7 +1,7 @@
 /**
  * TerminalPanelView - wraps TabManager with terminal launch buttons,
- * custom session spawning, state aggregation, session resume, tab context
- * menu, and inline rename.
+ * custom session spawning, state aggregation, tab context menu, and
+ * inline rename.
  */
 import { Menu, Notice } from "obsidian";
 
@@ -10,42 +10,34 @@ import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
   buildMissingCliNotice,
-  resolveCommand,
   resolveCommandInfo,
   buildAgentArgs,
   mergeExtraArgs,
   parseExtraArgs,
 } from "../core/agents/AgentLauncher";
-import { SessionPersistence, PERSIST_INTERVAL_MS } from "../core/session/SessionPersistence";
 import { SessionStore } from "../core/session/SessionStore";
-import { isResumableSessionType } from "../core/session/types";
 import type {
   ActiveTabInfo,
   AgentRuntimeState,
-  DurableRecoveryMode,
-  PersistedSession,
   SessionType,
   TabDiagnostics,
 } from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
-import { checkHookStatus } from "../core/claude/ClaudeHookManager";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { buildAgentContextPrompt, expandProfilePlaceholders } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
-import { RecentlyClosedStore, type ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
-import { getDefaultSessionLabel, isSessionTrackingSession } from "./CustomSessionConfig";
+import { getDefaultSessionLabel } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
-import type { AgentProfile, AgentType, ParamPassMode } from "../core/agents/AgentProfile";
+import type { AgentProfile, AgentType } from "../core/agents/AgentProfile";
 import {
   agentTypeToSessionType,
   sessionTypeToAgentType,
-  getResumeConfig,
-  getProfileResumeConfig,
-  getAllResumeFlags,
-  type AgentResumeConfig,
+  getLaunchConfig,
+  getProfileLaunchConfig,
+  type AgentLaunchConfig,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
 
@@ -54,8 +46,6 @@ interface WorkTerminalDebugSnapshot {
   activeItemId: string | null;
   activeTabIndex: number;
   activeTabs: ActiveTabInfo[];
-  activeSessionIds: string[];
-  persistedSessions: PersistedSession[];
   hasHotReloadStore: boolean;
 }
 
@@ -63,8 +53,6 @@ interface WorkTerminalDebugApi extends WorkTerminalDebugSnapshot {
   getSnapshot(): WorkTerminalDebugSnapshot;
   getAllActiveTabs(): ActiveTabInfo[];
   findTabsByLabel(label: string): ActiveTabInfo[];
-  getActiveSessionIds(): string[];
-  getPersistedSessions(itemId?: string): PersistedSession[];
   getSessionDiagnostics(): WorkTerminalSessionDiagnosticsSnapshot;
 }
 
@@ -73,14 +61,10 @@ interface DiagnosticsSummary {
   activeTabIndex: number;
   activeItemCount: number;
   activeTabCount: number;
-  persistedSessionCount: number;
-  recentlyClosedCount: number;
   hasHotReloadStore: boolean;
   derivedCounts: {
     blankButLiveRenderer: number;
     staleDisposedWebglOwnership: number;
-    missingPersistedMetadata: number;
-    liveNonResumableSessions: number;
     disposedTabStillSelected: number;
   };
 }
@@ -100,12 +84,6 @@ interface WorkTerminalSessionDiagnosticsSnapshot {
   generatedAt: string;
   summary: DiagnosticsSummary;
   items: DiagnosticsItemSnapshot[];
-  persistedSessions: PersistedSession[];
-  recentlyClosedSessions: Array<
-    ClosedSessionEntry & {
-      recoveryAvailable: boolean;
-    }
-  >;
 }
 
 const DEBUG_API_OWNER = Symbol("work-terminal-debug-owner");
@@ -137,11 +115,6 @@ export class TerminalPanelView {
   private tabBarEl: HTMLElement;
   private terminalWrapperEl: HTMLElement;
 
-  // Persisted sessions from disk
-  private persistedSessions: PersistedSession[] = [];
-  private pendingPersistedSessions: PersistedSession[] = [];
-  private durablePersistedSessions: PersistedSession[] = [];
-
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
 
@@ -151,21 +124,6 @@ export class TerminalPanelView {
   // Delayed click timer for tab switching (cancelled on double-click)
   private tabClickTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Periodic persist stop function
-  private stopPeriodicPersist: (() => void) | null = null;
-
-  // Recently closed sessions store
-  private recentlyClosedStore = RecentlyClosedStore.createWindowScoped();
-
-  // Hook warning banner element
-  private hookWarningEl: HTMLElement | null = null;
-
-  // Interval ID for hook-status polling while warning is visible
-  private hookWarningPollId: ReturnType<typeof setInterval> | null = null;
-
-  // In-flight guard to prevent overlapping async checkHookWarning() calls
-  private hookWarningCheckInFlight = false;
-  private hookWarningCheckQueued = false;
   private isDisposed = false;
   private profileManager: AgentProfileManager | null = null;
   private tabBarResizeObserver: ResizeObserver | null = null;
@@ -219,159 +177,16 @@ export class TerminalPanelView {
     this.tabManager.onSessionChange = () => {
       this.refreshDebugGlobal();
       this.renderTabBar();
-      void this.checkHookWarning();
       this.onSessionChange();
     };
     this.tabManager.onAgentStateChange = (itemId: string, state: AgentState) => {
       this.onAgentStateChange(itemId, state);
       this.updateTabStateClasses();
     };
-    this.tabManager.onPersistRequest = () => {
-      void this.persistSessions().catch((error) => {
-        console.error("[work-terminal] Failed to persist sessions:", error);
-      });
-    };
-    this.tabManager.onTabClosed = (itemId, tab) => {
-      const entry = this.buildClosedSessionEntry(itemId, tab);
-      if (!entry) return;
-      this.recentlyClosedStore.add(entry);
-      this.removePersistedSessionForClosedEntry(entry);
-      this.syncRecentlyClosedState();
-      void this.persistRecentlyClosedSessions();
-    };
-
-    // Load durable recovery state from disk
-    this.fireAndForget("load persisted sessions", () => this.loadPersistedSessions());
-    this.fireAndForget("load recently closed sessions", () => this.loadRecentlyClosedSessions());
-
-    // Start periodic disk persist as safety net (every 30s)
-    this.stopPeriodicPersist = SessionPersistence.startPeriodicPersist(
-      () => this.persistSessions(),
-      PERSIST_INTERVAL_MS,
-    );
 
     // Initial tab bar render
     this.renderTabBar();
     this.refreshDebugGlobal();
-
-    // Check hook status and show warning banner if needed
-    this.fireAndForget("check hook warning", () => this.checkHookWarning());
-  }
-
-  // ---------------------------------------------------------------------------
-  // Hook warning banner
-  // ---------------------------------------------------------------------------
-
-  private async checkHookWarning(): Promise<void> {
-    if (this.isDisposed) return;
-    if (this.hookWarningCheckInFlight) {
-      this.hookWarningCheckQueued = true;
-      return;
-    }
-    this.hookWarningCheckInFlight = true;
-    try {
-      const fresh = ((await this.plugin.loadData()) || {}).settings || {};
-      if (this.isDisposed) return;
-      const accepted = fresh["core.acceptNoResumeHooks"] ?? false;
-      const cwd = expandTilde(
-        fresh["core.defaultTerminalCwd"] || this.settings["core.defaultTerminalCwd"] || "~",
-      );
-      const status = checkHookStatus(cwd);
-      const hooksOk = status.scriptExists && status.hooksConfigured;
-      const hasClaudeUsage = this.hasClaudeHookDependentUsage();
-
-      if (!hooksOk && !accepted && hasClaudeUsage) {
-        // Only create the banner on the transition from no-banner -> banner needed
-        if (!this.hookWarningEl) {
-          this.hookWarningEl = this.panelEl.createDiv({ cls: "wt-hook-warning-banner" });
-          // Insert at the very top of the panel
-          this.panelEl.insertBefore(this.hookWarningEl, this.panelEl.firstChild);
-
-          const textEl = this.hookWarningEl.createSpan();
-          textEl.textContent =
-            "Claude /resume tracking requires Claude hooks. Copilot restart resume works without them.";
-
-          const openBtn = this.hookWarningEl.createEl("button", {
-            cls: "wt-hook-warning-btn",
-            text: "Open Settings",
-          });
-          openBtn.addEventListener("click", () => {
-            (this.plugin.app as any).setting.open();
-            (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
-          });
-
-          const dismissBtn = this.hookWarningEl.createEl("button", {
-            cls: "wt-hook-warning-btn",
-            text: "Dismiss",
-          });
-          dismissBtn.addEventListener("click", async () => {
-            await mergeAndSavePluginData(this.plugin, async (data) => {
-              if (!data.settings) data.settings = {};
-              data.settings["core.acceptNoResumeHooks"] = true;
-            });
-            this.hookWarningEl?.remove();
-            this.hookWarningEl = null;
-            this.stopHookWarningPoller();
-          });
-
-          // Poll hook status while warning is visible so it auto-dismisses when
-          // the user installs hooks via settings without manually reloading.
-          this.startHookWarningPoller();
-        }
-        // else: banner already visible, nothing to change
-      } else {
-        // Hooks OK or accepted: remove banner and stop polling on transition
-        if (this.hookWarningEl) {
-          this.hookWarningEl.remove();
-          this.hookWarningEl = null;
-        }
-        this.stopHookWarningPoller();
-      }
-    } finally {
-      this.hookWarningCheckInFlight = false;
-      if (this.hookWarningCheckQueued) {
-        this.hookWarningCheckQueued = false;
-        void this.checkHookWarning();
-      }
-    }
-  }
-
-  private startHookWarningPoller(): void {
-    this.stopHookWarningPoller();
-    this.hookWarningPollId = setInterval(() => {
-      this.checkHookWarning().catch((err) =>
-        console.error("[work-terminal] hook warning check failed:", err),
-      );
-    }, 2000);
-  }
-
-  private stopHookWarningPoller(): void {
-    if (this.hookWarningPollId !== null) {
-      clearInterval(this.hookWarningPollId);
-      this.hookWarningPollId = null;
-    }
-  }
-
-  private hasClaudeHookDependentUsage(): boolean {
-    for (const tabs of this.tabManager.getSessions().values()) {
-      for (const tab of tabs) {
-        if (isSessionTrackingSession(tab.sessionType)) {
-          return true;
-        }
-      }
-    }
-
-    return (
-      this.persistedSessions.some(
-        (session) =>
-          session.recoveryMode === "resume" && isSessionTrackingSession(session.sessionType),
-      ) ||
-      this.recentlyClosedStore
-        .serialize()
-        .some(
-          (entry) => entry.recoveryMode === "resume" && isSessionTrackingSession(entry.sessionType),
-        )
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -396,7 +211,7 @@ export class TerminalPanelView {
         const tab = tabs[i];
         const tabEl = tabsContainer.createDiv({ cls: "wt-tab" });
         if (i === activeIdx) tabEl.addClass("wt-tab-active");
-        if (tab.isResumableAgent) {
+        if (tab.isAgentTab) {
           const state = tab.agentState;
           if (state !== "inactive") tabEl.addClass(`wt-tab-agent-${state}`);
         }
@@ -780,14 +595,6 @@ export class TerminalPanelView {
       });
     });
 
-    if (isResumableSessionType(tab.sessionType)) {
-      menu.addItem((item) => {
-        item.setTitle("Restart").onClick(() => {
-          this.launchAction("Agent restart", () => this.restartAgentTab(tab, index));
-        });
-      });
-    }
-
     // Move to Item submenu - grouped by column with headers
     if (this.allItems.length > 0) {
       menu.addSeparator();
@@ -877,454 +684,6 @@ export class TerminalPanelView {
     });
   }
 
-  private buildClosedSessionEntry(itemId: string, tab: TerminalTab): ClosedSessionEntry | null {
-    if (tab.isResumableAgent && (tab.agentSessionId || tab.claudeSessionId)) {
-      const sessionId = tab.agentSessionId ?? tab.claudeSessionId;
-      return {
-        sessionType: tab.sessionType,
-        label: tab.label,
-        agentSessionId: sessionId!,
-        claudeSessionId: sessionId!,
-        durableSessionId: tab.durableSessionId ?? undefined,
-        closedAt: Date.now(),
-        itemId,
-        recoveryMode: "resume",
-        cwd: tab.launchCwd,
-        command: tab.launchCommandArgs?.[0] || tab.launchShell,
-        commandArgs: tab.launchCommandArgs,
-        profileId: tab.profileId,
-        profileColor: tab.profileColor,
-        paramPassMode: tab.paramPassMode,
-      };
-    }
-
-    const command = tab.launchCommandArgs?.[0] || tab.launchShell;
-    if (!command || !tab.launchCwd) {
-      return null;
-    }
-
-    return {
-      sessionType: tab.sessionType,
-      label: tab.label,
-      agentSessionId: null,
-      claudeSessionId: null,
-      durableSessionId: tab.durableSessionId ?? undefined,
-      closedAt: Date.now(),
-      itemId,
-      recoveryMode: "relaunch",
-      cwd: tab.launchCwd,
-      command,
-      commandArgs: tab.launchCommandArgs,
-      profileId: tab.profileId,
-      profileColor: tab.profileColor,
-      paramPassMode: tab.paramPassMode,
-    };
-  }
-
-  private matchesRecoverySession(
-    tab: TerminalTab,
-    session: Pick<
-      PersistedSession | ClosedSessionEntry,
-      | "sessionType"
-      | "label"
-      | "agentSessionId"
-      | "claudeSessionId"
-      | "durableSessionId"
-      | "durableSessionIdGenerated"
-      | "recoveryMode"
-      | "cwd"
-      | "command"
-      | "commandArgs"
-    >,
-  ): boolean {
-    if (tab.sessionType !== session.sessionType) {
-      return false;
-    }
-
-    if (session.recoveryMode === "resume") {
-      const sessionId = session.agentSessionId || session.claudeSessionId;
-      const tabSessionId = tab.agentSessionId || tab.claudeSessionId;
-      return !!sessionId && tabSessionId === sessionId;
-    }
-
-    if (session.durableSessionId && tab.durableSessionId) {
-      if (session.durableSessionId === tab.durableSessionId) {
-        return true;
-      }
-      if (!session.durableSessionIdGenerated) {
-        return false;
-      }
-    }
-
-    const tabCommand = tab.launchCommandArgs?.[0] || tab.launchShell;
-    const tabArgs = tab.launchCommandArgs || [];
-    const sessionArgs = session.commandArgs || [];
-    return (
-      tab.launchCwd === session.cwd &&
-      tabCommand === session.command &&
-      tab.label === session.label &&
-      tabArgs.length === sessionArgs.length &&
-      tabArgs.every((arg, index) => arg === sessionArgs[index])
-    );
-  }
-
-  private adoptSynthesizedDurableSessionIds(sessions: PersistedSession[]): void {
-    const claimedTabIds = new Set<string>();
-    for (const session of sessions) {
-      if (
-        session.recoveryMode !== "relaunch" ||
-        !session.durableSessionIdGenerated ||
-        !session.durableSessionId
-      ) {
-        continue;
-      }
-
-      const matchingTab = this.tabManager.getTabs(session.taskPath).find(
-        (tab) =>
-          !claimedTabIds.has(tab.id) &&
-          this.matchesRecoverySession(tab, {
-            sessionType: session.sessionType,
-            label: session.label,
-            agentSessionId: session.agentSessionId,
-            claudeSessionId: session.claudeSessionId,
-            durableSessionId: undefined,
-            durableSessionIdGenerated: undefined,
-            recoveryMode: session.recoveryMode,
-            cwd: session.cwd,
-            command: session.command,
-            commandArgs: session.commandArgs,
-          }),
-      );
-      if (matchingTab) {
-        claimedTabIds.add(matchingTab.id);
-        matchingTab.durableSessionId = session.durableSessionId;
-        session.durableSessionIdGenerated = undefined;
-      }
-    }
-  }
-
-  private findPersistedSessionTabAcrossViews(
-    session: PersistedSession,
-    claimedTabs: Set<TerminalTab>,
-    candidate: Pick<
-      PersistedSession,
-      | "sessionType"
-      | "label"
-      | "claudeSessionId"
-      | "durableSessionId"
-      | "durableSessionIdGenerated"
-      | "recoveryMode"
-      | "cwd"
-      | "command"
-      | "commandArgs"
-    >,
-  ): TerminalTab | null {
-    const views = Array.from(liveTerminalViews).filter((view) => !view.isDisposed);
-    for (const view of views) {
-      const matchingTab = view.tabManager
-        .getTabs(session.taskPath)
-        .find((tab) => !claimedTabs.has(tab) && view.matchesRecoverySession(tab, candidate));
-      if (matchingTab) {
-        return matchingTab;
-      }
-    }
-    return null;
-  }
-
-  private findPersistedSessionExactMatchAcrossViews(
-    session: PersistedSession,
-    claimedTabs: Set<TerminalTab>,
-  ): TerminalTab | null {
-    if (session.recoveryMode === "relaunch" && session.durableSessionId) {
-      const views = Array.from(liveTerminalViews).filter((view) => !view.isDisposed);
-      for (const view of views) {
-        const matchingTab = view.tabManager
-          .getTabs(session.taskPath)
-          .find(
-            (tab) =>
-              !claimedTabs.has(tab) &&
-              tab.sessionType === session.sessionType &&
-              tab.durableSessionId === session.durableSessionId,
-          );
-        if (matchingTab) {
-          return matchingTab;
-        }
-      }
-      return null;
-    }
-
-    return this.findPersistedSessionTabAcrossViews(session, claimedTabs, session);
-  }
-
-  private findPersistedSessionFallbackMatchAcrossViews(
-    session: PersistedSession,
-    claimedTabs: Set<TerminalTab>,
-  ): TerminalTab | null {
-    return this.findPersistedSessionTabAcrossViews(session, claimedTabs, {
-      sessionType: session.sessionType,
-      label: session.label,
-      claudeSessionId: session.claudeSessionId,
-      durableSessionId: undefined,
-      durableSessionIdGenerated: undefined,
-      recoveryMode: session.recoveryMode,
-      cwd: session.cwd,
-      command: session.command,
-      commandArgs: session.commandArgs,
-    });
-  }
-
-  private applyPersistedSessionState(persistedSessions: PersistedSession[]): void {
-    this.persistedSessions = persistedSessions.map((session) => ({
-      ...session,
-      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-    }));
-    this.durablePersistedSessions = this.persistedSessions.map((session) => ({
-      ...session,
-      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-    }));
-    this.recalculatePendingPersistedSessions();
-    this.refreshDebugGlobal();
-  }
-
-  private recalculatePendingPersistedSessions(): void {
-    const claimedTabs = new Set<TerminalTab>();
-    const pendingGeneratedAliases: PersistedSession[] = [];
-    const pendingSessions: PersistedSession[] = [];
-
-    for (const session of this.persistedSessions) {
-      const exactMatch = this.findPersistedSessionExactMatchAcrossViews(session, claimedTabs);
-      if (exactMatch) {
-        claimedTabs.add(exactMatch);
-        continue;
-      }
-
-      if (
-        session.recoveryMode === "relaunch" &&
-        session.durableSessionIdGenerated &&
-        session.durableSessionId
-      ) {
-        pendingGeneratedAliases.push(session);
-        continue;
-      }
-
-      const fallbackMatch = this.findPersistedSessionTabAcrossViews(session, claimedTabs, session);
-      if (fallbackMatch) {
-        claimedTabs.add(fallbackMatch);
-        continue;
-      }
-
-      pendingSessions.push(session);
-    }
-
-    for (const session of pendingGeneratedAliases) {
-      const fallbackMatch = this.findPersistedSessionFallbackMatchAcrossViews(session, claimedTabs);
-      if (fallbackMatch) {
-        claimedTabs.add(fallbackMatch);
-        continue;
-      }
-
-      pendingSessions.push(session);
-    }
-
-    this.pendingPersistedSessions = pendingSessions;
-  }
-
-  private syncPersistedSessionState(persistedSessions: PersistedSession[]): void {
-    for (const view of liveTerminalViews) {
-      if (!view.isDisposed) {
-        view.applyPersistedSessionState(persistedSessions);
-      }
-    }
-  }
-
-  private getLiveSessionsAcrossViews(): Map<string, TerminalTab[]> {
-    const sessions = new Map<string, TerminalTab[]>();
-    for (const view of liveTerminalViews) {
-      if (view.isDisposed) {
-        continue;
-      }
-      for (const [itemId, tabs] of view.tabManager.getSessions()) {
-        const existingTabs = sessions.get(itemId) || [];
-        sessions.set(itemId, [...existingTabs, ...tabs]);
-      }
-    }
-    return sessions;
-  }
-
-  private fireAndForget(taskName: string, task: () => Promise<void>): void {
-    void task().catch((error) => {
-      console.error(`[work-terminal] Failed to ${taskName}:`, error);
-    });
-  }
-
-  private getSavedResumeLaunchContext(
-    session: Pick<
-      PersistedSession | ClosedSessionEntry,
-      "sessionType" | "cwd" | "command" | "commandArgs"
-    >,
-  ): {
-    cwd?: string;
-    resolvedCommand?: string;
-    extraArgs?: string[];
-  } {
-    const resolvedCommand = session.commandArgs?.[0] || session.command;
-    const extraArgs = session.commandArgs
-      ? this.extractResumeExtraArgs(session.sessionType, session.commandArgs, session.profileId)
-      : resolvedCommand || session.cwd
-        ? []
-        : undefined;
-
-    return {
-      cwd: session.cwd,
-      resolvedCommand,
-      extraArgs,
-    };
-  }
-
-  private isPersistedSessionActive(session: PersistedSession): boolean {
-    return this.tabManager
-      .getTabs(session.taskPath)
-      .some((tab) => this.matchesRecoverySession(tab, session));
-  }
-
-  private isClosedSessionActive(entry: ClosedSessionEntry): boolean {
-    return this.tabManager
-      .getTabs(entry.itemId)
-      .some((tab) => this.matchesRecoverySession(tab, entry));
-  }
-
-  private isClosedSessionActiveAcrossViews(entry: ClosedSessionEntry): boolean {
-    return Array.from(liveTerminalViews).some((view) =>
-      view.tabManager.getTabs(entry.itemId).some((tab) => view.matchesRecoverySession(tab, entry)),
-    );
-  }
-
-  private getActiveSessionIdsAcrossViews(): Set<string> {
-    const activeIds = new Set<string>();
-    for (const view of liveTerminalViews) {
-      if (view.isDisposed) {
-        continue;
-      }
-      for (const sessionId of view.tabManager.getActiveSessionIds()) {
-        activeIds.add(sessionId);
-      }
-    }
-    return activeIds;
-  }
-
-  private syncRecentlyClosedState(): void {
-    for (const view of liveTerminalViews) {
-      if (view.isDisposed) {
-        continue;
-      }
-      view.refreshDebugGlobal();
-      void view.checkHookWarning();
-    }
-  }
-
-  /**
-   * Shared predicate: does `candidate` match the given entry fields?
-   * Used by both removePersistedSession and removePersistedSessionForClosedEntry
-   * to avoid duplicating the matching logic.
-   */
-  private matchesPersistedSessionForEntry(
-    candidate: PersistedSession,
-    entry: {
-      itemId: string;
-      recoveryMode?: DurableRecoveryMode;
-      agentSessionId?: string | null;
-      claudeSessionId?: string | null;
-      durableSessionId?: string;
-      sessionType: SessionType;
-      label: string;
-      cwd?: string;
-      command?: string;
-      commandArgs?: string[];
-    },
-  ): boolean {
-    if (candidate.recoveryMode !== entry.recoveryMode) {
-      return false;
-    }
-
-    if (entry.recoveryMode === "resume") {
-      const entrySessionId = entry.agentSessionId || entry.claudeSessionId;
-      const candidateSessionId = candidate.agentSessionId || candidate.claudeSessionId;
-      return !!entrySessionId && candidateSessionId === entrySessionId;
-    }
-
-    if (entry.durableSessionId && candidate.durableSessionId) {
-      return (
-        candidate.taskPath === entry.itemId && candidate.durableSessionId === entry.durableSessionId
-      );
-    }
-
-    return (
-      candidate.taskPath === entry.itemId &&
-      candidate.sessionType === entry.sessionType &&
-      candidate.label === entry.label &&
-      candidate.cwd === entry.cwd &&
-      candidate.command === entry.command &&
-      JSON.stringify(candidate.commandArgs || []) === JSON.stringify(entry.commandArgs || [])
-    );
-  }
-
-  private removePersistedSession(session: PersistedSession): void {
-    const entry = {
-      itemId: session.taskPath,
-      recoveryMode: session.recoveryMode,
-      agentSessionId: session.agentSessionId,
-      claudeSessionId: session.claudeSessionId,
-      durableSessionId: session.durableSessionId,
-      sessionType: session.sessionType,
-      label: session.label,
-      cwd: session.cwd,
-      command: session.command,
-      commandArgs: session.commandArgs,
-    };
-    const matches = (candidate: PersistedSession) =>
-      this.matchesPersistedSessionForEntry(candidate, entry);
-
-    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
-      (candidate) => !matches(candidate),
-    );
-    this.persistedSessions = this.persistedSessions.filter((candidate) => !matches(candidate));
-    this.syncPersistedSessionState(this.persistedSessions);
-  }
-
-  /**
-   * Remove a persisted session that corresponds to a tab the user explicitly closed.
-   * Prevents recently-closed sessions from leaking back into auto-restore via
-   * pendingPersistedSessions on the next periodic persist cycle.
-   */
-  private removePersistedSessionForClosedEntry(entry: ClosedSessionEntry): void {
-    const matches = (candidate: PersistedSession) =>
-      this.matchesPersistedSessionForEntry(candidate, entry);
-
-    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
-      (candidate) => !matches(candidate),
-    );
-    this.persistedSessions = this.persistedSessions.filter((candidate) => !matches(candidate));
-    this.syncPersistedSessionState(this.persistedSessions);
-  }
-
-  private trackRecoverySuccess(
-    tab: TerminalTab,
-    onRecovered: () => void,
-    onFailed?: () => void,
-  ): void {
-    const spawnTime = Date.now();
-    const origExit = tab.onProcessExit;
-    tab.onProcessExit = (code, signal) => {
-      const lived = Date.now() - spawnTime;
-      if (lived < 5000) {
-        onFailed?.();
-      } else {
-        onRecovered();
-      }
-      origExit?.(code, signal);
-    };
-  }
-
   /**
    * Spawn a session from an agent profile.
    * Resolves profile settings, builds the appropriate session type, and delegates
@@ -1411,8 +770,8 @@ export class TerminalPanelView {
 
     // Profile's resolveArguments() already includes global args, so skip the
     // global merge inside spawnAgentSession to avoid doubling them.
-    const resolvedConfig = this.resolveResumeConfig(profile.agentType, profile);
-    const resumeConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
+    const resolvedConfig = this.resolveLaunchConfig(profile.agentType, profile);
+    const launchConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
     await this.spawnAgentSession({
       agentType: profile.agentType,
       sessionType,
@@ -1423,7 +782,7 @@ export class TerminalPanelView {
       label,
       prompt,
       freshSettings: fresh,
-      resumeConfigOverrides,
+      launchConfigOverrides,
       loginShellWrap: profile.loginShellWrap,
     });
 
@@ -1435,10 +794,7 @@ export class TerminalPanelView {
       if (lastTab) {
         lastTab.profileId = profile.id;
         if (profile.button.color) lastTab.profileColor = profile.button.color;
-        if (profile.paramPassMode !== "launch-only") {
-          lastTab.paramPassMode = profile.paramPassMode;
-        }
-        // Set activity patterns from the resolved resume config.
+        // Set activity patterns from the resolved launch config.
         // For custom profiles, explicitly set empty patterns when none are
         // configured so active-indicator checks don't fall back to legacy
         // Claude/Copilot detection.
@@ -1447,11 +803,6 @@ export class TerminalPanelView {
           (profile.agentType === "custom"
             ? { activeLinePatterns: [], activeJoinedPatterns: [] }
             : undefined);
-        // Set resumable override for custom profiles so the tab knows
-        // whether session tracking should be active
-        if (profile.agentType === "custom") {
-          lastTab.isResumableOverride = resolvedConfig.resumable;
-        }
         // Launch through login shell when profile requests it
         if (profile.loginShellWrap) {
           lastTab.loginShellWrap = true;
@@ -1488,403 +839,6 @@ export class TerminalPanelView {
       prompt,
       label: label || "Claude (ctx)",
     });
-  }
-
-  async resumeSession(persisted: PersistedSession, itemId?: string): Promise<void> {
-    const targetItemId = itemId || this.tabManager.getActiveItemId();
-    if (!targetItemId) return;
-    const fresh = await this.loadFreshSettings();
-    const tab =
-      persisted.recoveryMode === "relaunch"
-        ? this.createRelaunchedTab({
-            targetItemId,
-            sessionType: persisted.sessionType,
-            label: persisted.label,
-            command: persisted.command,
-            cwd: persisted.cwd,
-            commandArgs: persisted.commandArgs,
-            durableSessionId: persisted.durableSessionId,
-          })
-        : this.getPersistedSessionId(persisted)
-          ? this.createResumedTab({
-              targetItemId,
-              sessionType: persisted.sessionType,
-              label: persisted.label,
-              sessionId: this.getPersistedSessionId(persisted) || "",
-              freshSettings: fresh,
-              paramPassMode: persisted.paramPassMode,
-              profileId: persisted.profileId,
-              ...this.getSavedResumeLaunchContext(persisted),
-            })
-          : null;
-
-    if (!tab) return;
-
-    // Pass user-configured session log directory override for deferred detection
-    const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
-    if (copilotLogDir) {
-      tab.sessionLogDirOverride = copilotLogDir;
-    }
-
-    if (persisted.profileId) {
-      tab.profileId = persisted.profileId;
-      const profile = this.profileManager?.getProfile(persisted.profileId);
-      if (profile?.button.color) {
-        tab.profileColor = profile.button.color;
-      } else if (persisted.profileColor) {
-        tab.profileColor = persisted.profileColor;
-      }
-    } else if (persisted.profileColor) {
-      tab.profileColor = persisted.profileColor;
-    }
-    if (persisted.paramPassMode) {
-      tab.paramPassMode = persisted.paramPassMode;
-    }
-
-    // Remove eagerly so data.json reflects the live session, not a pending
-    // resume.  If the process dies within 5s, re-add so the user can retry.
-    this.removePersistedSession(persisted);
-    this.persistSessions().catch(() => {});
-
-    this.trackRecoverySuccess(
-      tab,
-      () => {}, // success - already removed, nothing to do
-      () => {
-        // Process died within 5s - restore so the user can retry
-        this.persistedSessions.push(persisted);
-        this.persistSessions().catch(() => {});
-      },
-    );
-
-    this.renderTabBar();
-  }
-
-  private createRelaunchedTab(options: {
-    targetItemId: string;
-    sessionType: PersistedSession["sessionType"];
-    label: string;
-    command?: string;
-    cwd?: string;
-    commandArgs?: string[];
-    durableSessionId?: string;
-  }): TerminalTab | null {
-    if (!options.command || !options.cwd) {
-      return null;
-    }
-
-    return this.tabManager.createTabForItem(
-      options.targetItemId,
-      options.command,
-      options.cwd,
-      options.label,
-      options.sessionType,
-      undefined,
-      options.commandArgs,
-      null,
-      options.durableSessionId,
-    );
-  }
-
-  private createResumedTab(options: {
-    targetItemId: string;
-    sessionType: PersistedSession["sessionType"];
-    label: string;
-    sessionId: string;
-    freshSettings: Record<string, unknown>;
-    cwd?: string;
-    resolvedCommand?: string;
-    extraArgs?: string[];
-    paramPassMode?: ParamPassMode;
-    profileId?: string;
-  }): TerminalTab | null {
-    const { agentType } = sessionTypeToAgentType(options.sessionType);
-
-    // Look up originating profile if available
-    const profile = options.profileId
-      ? this.profileManager?.getProfile(options.profileId)
-      : undefined;
-    const resumeConfig = this.resolveResumeConfig(agentType, profile);
-
-    const configuredCwd = expandTilde(
-      this.getStringSetting(options.freshSettings, "core.defaultTerminalCwd", "~"),
-    );
-    const cwd = options.cwd || configuredCwd;
-    const configuredCommand =
-      profile?.command?.trim() ||
-      this.getStringSetting(
-        options.freshSettings,
-        resumeConfig.commandSettingKey,
-        resumeConfig.defaultCommand,
-      );
-    const savedResolution = options.resolvedCommand
-      ? resolveCommandInfo(options.resolvedCommand, cwd)
-      : null;
-    const command = savedResolution?.found
-      ? savedResolution.resolved
-      : this.resolveAgentCommandOrNotice(agentType, configuredCommand, configuredCwd);
-    if (!command) {
-      return null;
-    }
-
-    // Build resume flag based on agent type's format
-    const args =
-      resumeConfig.resumeFlagFormat === "flag-equals"
-        ? [`${resumeConfig.resumeFlag}=${options.sessionId}`]
-        : [resumeConfig.resumeFlag, options.sessionId];
-
-    // When paramPassMode is "launch-only", skip stored profile args on resume
-    // and fall through to global defaults only
-    const passParamsOnResume =
-      options.paramPassMode === "resume-only" || options.paramPassMode === "both";
-    const globalExtraArgs = resumeConfig.extraArgsSettingKey
-      ? this.getStringSetting(options.freshSettings, resumeConfig.extraArgsSettingKey, "")
-      : "";
-    const extraArgs = passParamsOnResume ? options.extraArgs || globalExtraArgs : globalExtraArgs;
-    const parsedExtraArgs = Array.isArray(extraArgs) ? extraArgs : parseExtraArgs(extraArgs);
-
-    if (parsedExtraArgs.length > 0) {
-      args.unshift(...parsedExtraArgs);
-    }
-
-    // When the profile uses loginShellWrap, use the unresolved command name
-    // in commandArgs so the login shell can find shell functions/aliases.
-    // Trim to avoid shlex.quote() producing a token with stray whitespace.
-    const cmdForArgs = profile?.loginShellWrap ? configuredCommand.trim() : command;
-    const tab = this.tabManager.createTabForItem(
-      options.targetItemId,
-      command,
-      cwd,
-      options.label,
-      options.sessionType,
-      undefined,
-      [cmdForArgs, ...args],
-      options.sessionId,
-    );
-
-    if (tab) {
-      if (profile?.loginShellWrap) tab.loginShellWrap = true;
-      if (this.adapter.transformSessionLabel) {
-        tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
-      }
-    }
-
-    return tab;
-  }
-
-  private async restartAgentTab(tab: TerminalTab, _index: number): Promise<void> {
-    const targetItemId = tab.taskPath ?? this.tabManager.getActiveItemId();
-    if (!targetItemId) return;
-
-    // Record the old tab's position so the replacement can take its place
-    const oldTabs = this.tabManager.getTabs(targetItemId);
-    const oldIndex = oldTabs.indexOf(tab);
-
-    const fresh = await this.loadFreshSettings();
-    const fallbackCwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
-    const { agentType } = sessionTypeToAgentType(tab.sessionType);
-    const profile = tab.profileId ? this.profileManager?.getProfile(tab.profileId) : undefined;
-    const resumeConfig = this.resolveResumeConfig(agentType, profile);
-    let replacement: TerminalTab | null;
-    if (tab.agentSessionId) {
-      const fallbackCommand = profile?.command?.trim();
-      replacement = this.createResumedTab({
-        targetItemId,
-        sessionType: tab.sessionType,
-        label: tab.label,
-        sessionId: tab.agentSessionId,
-        freshSettings: fresh,
-        cwd: tab.launchCommandArgs?.length ? tab.launchCwd : fallbackCwd,
-        resolvedCommand:
-          tab.launchCommandArgs?.[0] ||
-          resolveCommand(
-            fallbackCommand ||
-              this.getStringSetting(
-                fresh,
-                resumeConfig.commandSettingKey,
-                resumeConfig.defaultCommand,
-              ),
-          ),
-        extraArgs: this.extractResumeExtraArgs(
-          tab.sessionType,
-          tab.launchCommandArgs,
-          tab.profileId,
-        ),
-        paramPassMode: tab.paramPassMode,
-        profileId: tab.profileId,
-      });
-    } else if (tab.launchCommandArgs?.length) {
-      replacement = this.tabManager.createTabForItem(
-        targetItemId,
-        tab.launchCommandArgs[0],
-        tab.launchCwd,
-        tab.label,
-        tab.sessionType,
-        undefined,
-        tab.launchCommandArgs,
-        null,
-        tab.durableSessionId,
-      );
-      if (replacement && tab.loginShellWrap) {
-        replacement.loginShellWrap = true;
-      }
-    } else {
-      replacement = await this.spawnAgentSession({
-        agentType,
-        sessionType: tab.sessionType,
-        cwd: fallbackCwd,
-        label: tab.label,
-        freshSettings: fresh,
-        targetItemId,
-        loginShellWrap: profile?.loginShellWrap,
-      });
-    }
-
-    if (!replacement) return;
-
-    // Pass user-configured session log directory override for deferred detection
-    const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
-    if (copilotLogDir) {
-      replacement.sessionLogDirOverride = copilotLogDir;
-    }
-
-    // Close the old tab first, then move replacement to the old position
-    this.tabManager.closeTabInstance(targetItemId, tab);
-    if (oldIndex >= 0) {
-      this.tabManager.moveTabToIndex(targetItemId, replacement, oldIndex);
-    }
-  }
-
-  /**
-   * Extract extra args from a previous launch's command args, stripping the
-   * resume flag (and its value) plus any context prompt so they can be
-   * regenerated fresh on resume.
-   *
-   * Uses AgentResumeConfig rather than per-agent branching:
-   * - All known resume flags (from every agent type) are stripped, since
-   *   persisted command args may contain flags from any historical launch.
-   * - `promptInjectionMode` + `promptFlag` from the current agent's config
-   *   determine how to recognise and strip the context prompt.
-   *
-   * For "positional" prompt injection, the context prompt is the argument
-   * immediately after the resume flag + value pair. For "flag" injection
-   * (e.g. copilot's "-i"), the prompt flag and its value are stripped
-   * wherever they appear in the arg list.
-   */
-  private extractResumeExtraArgs(
-    sessionType: PersistedSession["sessionType"],
-    commandArgs?: string[],
-    profileId?: string,
-  ): string[] {
-    if (!commandArgs?.length) {
-      return [];
-    }
-    const args = commandArgs.slice(1);
-    const { agentType, withContext } = sessionTypeToAgentType(sessionType);
-    const profile = profileId ? this.profileManager?.getProfile(profileId) : undefined;
-    const resumeConfig = this.resolveResumeConfig(agentType, profile);
-    const { promptInjectionMode, promptFlag } = resumeConfig;
-
-    // Collect all known resume flags so we strip any that appear in
-    // historical command args, regardless of which agent spawned them.
-    // Also include the profile's custom resume flag if not already covered.
-    const allResumeFlags = getAllResumeFlags();
-    if (resumeConfig.resumeFlag && !allResumeFlags.includes(resumeConfig.resumeFlag)) {
-      allResumeFlags.push(resumeConfig.resumeFlag);
-    }
-    const allResumePrefixes = allResumeFlags.map((f) => f + "=");
-
-    const extraArgs: string[] = [];
-
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i];
-
-      // Strip flag-based context prompt (e.g. copilot's "-i <prompt>")
-      if (withContext && promptInjectionMode === "flag" && promptFlag && arg === promptFlag) {
-        if (i + 1 < args.length) {
-          i++; // skip the prompt value
-        }
-        continue;
-      }
-
-      // Strip any known resume flag in "flag-space" format (e.g. "--session-id <id>")
-      if (allResumeFlags.includes(arg)) {
-        if (i + 1 < args.length) {
-          i++; // skip the session-id value
-        }
-        // For positional prompt injection, the context prompt follows the
-        // resume flag + value pair as the next argument
-        if (withContext && promptInjectionMode === "positional" && i + 1 < args.length) {
-          i++; // skip the trailing context prompt
-        }
-        continue;
-      }
-
-      // Strip any known resume flag in "flag-equals" format (e.g. "--resume=<id>")
-      if (allResumePrefixes.some((prefix) => arg.startsWith(prefix))) {
-        // For positional prompt injection, context prompt follows as the next arg
-        if (withContext && promptInjectionMode === "positional" && i + 1 < args.length) {
-          i++; // skip the trailing context prompt
-        }
-        continue;
-      }
-
-      extraArgs.push(arg);
-    }
-
-    return extraArgs;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Session persistence
-  // ---------------------------------------------------------------------------
-
-  private async loadPersistedSessions(): Promise<void> {
-    const persistedSessions = await SessionPersistence.loadFromDisk(this.plugin);
-    if (this.isDisposed) return;
-    this.adoptSynthesizedDurableSessionIds(persistedSessions);
-    this.syncPersistedSessionState(persistedSessions);
-    await this.checkHookWarning();
-  }
-
-  private async loadRecentlyClosedSessions(): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    if (this.isDisposed) return;
-    if (RecentlyClosedStore.claimWindowHydration()) {
-      for (const entry of RecentlyClosedStore.fromData(data.recentlyClosedSessions || [])) {
-        this.recentlyClosedStore.add(entry);
-      }
-    }
-    this.syncRecentlyClosedState();
-    await this.checkHookWarning();
-  }
-
-  async persistSessions(): Promise<void> {
-    if (this.isDisposed) return;
-    this.recalculatePendingPersistedSessions();
-    const persistedSessions = SessionPersistence.mergePersistedSessions(
-      this.pendingPersistedSessions,
-      this.getLiveSessionsAcrossViews(),
-    );
-    await mergeAndSavePluginData(this.plugin, async (data) => {
-      SessionPersistence.setPersistedSessions(data, persistedSessions);
-    });
-    if (this.isDisposed) return;
-    this.syncPersistedSessionState(persistedSessions);
-  }
-
-  private async persistRecentlyClosedSessions(): Promise<void> {
-    if (this.isDisposed) return;
-    const recentlyClosed = this.recentlyClosedStore.serialize();
-    await mergeAndSavePluginData(this.plugin, async (data) => {
-      if (recentlyClosed.length > 0) {
-        data.recentlyClosedSessions = recentlyClosed;
-      } else {
-        delete data.recentlyClosedSessions;
-      }
-    });
-    if (this.isDisposed) return;
-    this.syncRecentlyClosedState();
-    this.refreshDebugGlobal();
   }
 
   // ---------------------------------------------------------------------------
@@ -2030,53 +984,8 @@ export class TerminalPanelView {
     return this.tabManager.findTabsByLabel(label);
   }
 
-  getActiveSessionIds(): string[] {
-    return Array.from(this.tabManager.getActiveSessionIds());
-  }
-
-  private getPersistedSessionId(session: PersistedSession): string | null {
-    return session.agentSessionId || session.claudeSessionId || null;
-  }
-
-  private getClosedSessionId(entry: ClosedSessionEntry): string | null {
-    return entry.agentSessionId || entry.claudeSessionId || null;
-  }
-
   private buildSessionDiagnosticsSnapshot(): WorkTerminalSessionDiagnosticsSnapshot {
-    const activeSessionIds = this.tabManager.getActiveSessionIds();
-    const activeTabs = this.tabManager.getTabDiagnostics().map((tab) => {
-      const hasPersistedSession =
-        !!tab.sessionId &&
-        this.durablePersistedSessions.some(
-          (session) =>
-            session.taskPath === tab.itemId &&
-            this.getPersistedSessionId(session) === tab.sessionId &&
-            session.sessionType === tab.sessionType,
-        );
-      const missingPersistedMetadata = tab.isResumableAgent && !hasPersistedSession;
-      const wouldBeLostOnFullClose = tab.process.status === "alive" && !tab.isResumableAgent;
-      const lifecycle = tab.isDisposed
-        ? "disposed"
-        : tab.process.status === "alive"
-          ? "live"
-          : tab.isResumableAgent && hasPersistedSession
-            ? "resumable"
-            : missingPersistedMetadata
-              ? "resume-metadata-missing"
-              : "lost";
-      return {
-        ...tab,
-        recovery: {
-          resumable: tab.isResumableAgent,
-          relaunchable: !tab.isResumableAgent,
-          hasPersistedSession,
-          canResumeAfterRestart: tab.isResumableAgent && hasPersistedSession,
-          missingPersistedMetadata,
-          wouldBeLostOnFullClose,
-          lifecycle,
-        },
-      };
-    });
+    const activeTabs = this.tabManager.getTabDiagnostics();
     const itemIds = this.tabManager.getSessionItemIds();
     const items = itemIds.map((itemId) => ({
       itemId,
@@ -2088,30 +997,17 @@ export class TerminalPanelView {
       sessionCounts: this.tabManager.getSessionCounts(itemId),
       tabs: activeTabs.filter((tab) => tab.itemId === itemId),
     }));
-    const recentlyClosedSessions = this.recentlyClosedStore
-      .getEntries(activeSessionIds, 20)
-      .map((entry) => ({
-        ...entry,
-        recoveryAvailable:
-          isResumableSessionType(entry.sessionType) && !!this.getClosedSessionId(entry),
-      }));
     const summary: DiagnosticsSummary = {
       activeItemId: this.tabManager.getActiveItemId(),
       activeTabIndex: this.tabManager.getActiveTabIndex(),
       activeItemCount: items.length,
       activeTabCount: activeTabs.length,
-      persistedSessionCount: this.durablePersistedSessions.length,
-      recentlyClosedCount: recentlyClosedSessions.length,
       hasHotReloadStore: SessionStore.isReload(),
       derivedCounts: {
         blankButLiveRenderer: activeTabs.filter((tab) => tab.derived.blankButLiveRenderer).length,
         staleDisposedWebglOwnership: activeTabs.filter(
           (tab) => tab.derived.staleDisposedWebglOwnership,
         ).length,
-        missingPersistedMetadata: activeTabs.filter((tab) => tab.recovery.missingPersistedMetadata)
-          .length,
-        liveNonResumableSessions: activeTabs.filter((tab) => tab.recovery.wouldBeLostOnFullClose)
-          .length,
         disposedTabStillSelected: activeTabs.filter((tab) => tab.derived.disposedTabStillSelected)
           .length,
       },
@@ -2122,8 +1018,6 @@ export class TerminalPanelView {
       generatedAt: new Date().toISOString(),
       summary,
       items,
-      persistedSessions: [...this.durablePersistedSessions],
-      recentlyClosedSessions,
     };
   }
 
@@ -2183,10 +1077,6 @@ export class TerminalPanelView {
 
     const fresh = await this.loadFreshSettings();
     const defaultCwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
-    const activeIds = this.getActiveSessionIdsAcrossViews();
-    const closedSessions = this.recentlyClosedStore.getEntries(activeIds, 5, (entry) =>
-      this.isClosedSessionActiveAcrossViews(entry),
-    );
     new ProfileLaunchModal(
       this.plugin.app,
       profiles,
@@ -2194,11 +1084,8 @@ export class TerminalPanelView {
       (overrides) => {
         this.launchAction("profile launch", () => this.spawnFromProfileWithOverrides(overrides));
       },
-      closedSessions,
-      (entry) => {
-        this.launchAction("restore session", () => this.restoreClosedSession(entry));
-      },
-      // NOTE: duplicated settings-open logic (see also ~line 297). Extract a helper in a follow-up.
+      undefined,
+      undefined,
       () => {
         (this.plugin.app as any).setting.open();
         (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
@@ -2227,94 +1114,9 @@ export class TerminalPanelView {
     await this.spawnFromProfile(effectiveProfile);
   }
 
-  private async restoreClosedSession(entry: ClosedSessionEntry): Promise<void> {
-    const claimedFromStore = this.recentlyClosedStore.take(entry);
-    const entryRecoveryMode = (entry as { recoveryMode?: ClosedSessionEntry["recoveryMode"] })
-      .recoveryMode;
-    const fallbackEntry =
-      claimedFromStore ||
-      entryRecoveryMode === "resume" ||
-      entryRecoveryMode === "relaunch" ||
-      !this.getClosedSessionId(entry)
-        ? undefined
-        : RecentlyClosedStore.fromData([entry])[0];
-    const claimedEntry = claimedFromStore ?? fallbackEntry;
-    if (!claimedEntry) {
-      return;
-    }
-
-    if (claimedFromStore) {
-      this.syncRecentlyClosedState();
-      this.persistRecentlyClosedSessions().catch(() => {});
-    }
-
-    const fresh = await this.loadFreshSettings();
-    const sessionId = this.getClosedSessionId(claimedEntry);
-    const tab =
-      claimedEntry.recoveryMode === "relaunch"
-        ? this.createRelaunchedTab({
-            targetItemId: claimedEntry.itemId,
-            sessionType: claimedEntry.sessionType,
-            label: claimedEntry.label,
-            command: claimedEntry.command,
-            cwd: claimedEntry.cwd,
-            commandArgs: claimedEntry.commandArgs,
-            durableSessionId: claimedEntry.durableSessionId,
-          })
-        : sessionId
-          ? this.createResumedTab({
-              targetItemId: claimedEntry.itemId,
-              sessionType: claimedEntry.sessionType,
-              label: claimedEntry.label,
-              sessionId,
-              freshSettings: fresh,
-              paramPassMode: claimedEntry.paramPassMode,
-              profileId: claimedEntry.profileId,
-              ...this.getSavedResumeLaunchContext(claimedEntry),
-            })
-          : null;
-
-    if (!tab) {
-      this.recentlyClosedStore.add(claimedEntry);
-      this.syncRecentlyClosedState();
-      this.persistRecentlyClosedSessions().catch(() => {});
-      return;
-    }
-
-    if (claimedEntry.profileId) {
-      tab.profileId = claimedEntry.profileId;
-      const profile = this.profileManager?.getProfile(claimedEntry.profileId);
-      if (profile?.button.color) {
-        tab.profileColor = profile.button.color;
-      } else if (claimedEntry.profileColor) {
-        tab.profileColor = claimedEntry.profileColor;
-      }
-    } else if (claimedEntry.profileColor) {
-      tab.profileColor = claimedEntry.profileColor;
-    }
-    if (claimedEntry.paramPassMode) {
-      tab.paramPassMode = claimedEntry.paramPassMode;
-    }
-
-    this.trackRecoverySuccess(
-      tab,
-      () => {
-        this.syncRecentlyClosedState();
-        this.persistRecentlyClosedSessions().catch(() => {});
-      },
-      () => {
-        this.recentlyClosedStore.add(claimedEntry);
-        this.syncRecentlyClosedState();
-        this.persistRecentlyClosedSessions().catch(() => {});
-      },
-    );
-    this.renderTabBar();
-  }
-
   /**
-   * Unified agent session spawner. Dispatches via AgentResumeConfig to handle
-   * command resolution, session ID generation, argument building, and tab
-   * creation for any agent type.
+   * Unified agent session spawner. Resolves command, builds arguments, and
+   * creates a tab for any agent type.
    */
   private async spawnAgentSession(options: {
     agentType: AgentType;
@@ -2326,16 +1128,18 @@ export class TerminalPanelView {
     label?: string;
     prompt?: string;
     freshSettings?: Record<string, unknown>;
-    /** Override the base resume config (used for custom agent profiles). */
-    resumeConfigOverrides?: AgentResumeConfig;
+    /** Override the base launch config (used for custom agent profiles). */
+    launchConfigOverrides?: AgentLaunchConfig;
     /**
      * When true, use the original unresolved command name in commandArgs
      * instead of the resolved absolute path, so the login shell can invoke
      * shell functions/aliases defined in ~/.zshrc etc.
      */
     loginShellWrap?: boolean;
+    /** Create tab for a specific item instead of the active item. */
+    targetItemId?: string;
   }): Promise<TerminalTab | null> {
-    const resumeConfig = options.resumeConfigOverrides ?? getResumeConfig(options.agentType);
+    const launchConfig = options.launchConfigOverrides ?? getLaunchConfig(options.agentType);
     const { withContext } = sessionTypeToAgentType(options.sessionType);
 
     // Build context prompt on demand if this is a context session without one.
@@ -2346,7 +1150,7 @@ export class TerminalPanelView {
       const item = this.getActiveItem();
       if (!item) {
         new Notice(
-          `Select a ${this.adapter.config.itemName} first to launch ${resumeConfig.cliDisplayName} with context`,
+          `Select a ${this.adapter.config.itemName} first to launch ${launchConfig.cliDisplayName} with context`,
         );
         return null;
       }
@@ -2362,7 +1166,7 @@ export class TerminalPanelView {
     const fresh = options.freshSettings ?? (await this.loadFreshSettings());
     const agentCmd =
       options.command ||
-      this.getStringSetting(fresh, resumeConfig.commandSettingKey, resumeConfig.defaultCommand);
+      this.getStringSetting(fresh, launchConfig.commandSettingKey, launchConfig.defaultCommand);
     const cwd = expandTilde(
       options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
     );
@@ -2371,71 +1175,32 @@ export class TerminalPanelView {
       return null;
     }
 
-    // Generate session ID for resumable agents, unless this agent type defers
-    // session ID detection when a prompt is present (e.g. Copilot's --resume
-    // flag conflicts with -i, so fresh context sessions omit it and discover
-    // the session ID from log files after spawn).
-    const deferDetection = resumeConfig.deferSessionId && !!prompt;
-    const sessionId = resumeConfig.resumable && !deferDetection ? crypto.randomUUID() : undefined;
-
     // Merge extra args (skip global merge when profile already includes them)
-    const rawExtraArgs = options.skipGlobalArgs
+    const mergedExtraArgs = options.skipGlobalArgs
       ? options.extraArgs || ""
       : mergeExtraArgs(
-          this.getStringSetting(fresh, resumeConfig.extraArgsSettingKey, ""),
+          this.getStringSetting(fresh, launchConfig.extraArgsSettingKey, ""),
           options.extraArgs || "",
         );
-    // Replace or strip deferred $sessionId placeholders in extra args and prompt
-    const mergedExtraArgs = rawExtraArgs.replace(/\$sessionId/g, sessionId || "");
-    if (prompt) {
-      prompt = prompt.replace(/\$sessionId/g, sessionId || "");
-    }
 
     // Build args via the unified buildAgentArgs helper
-    const baseArgs = buildAgentArgs(
+    const args = buildAgentArgs(
       options.agentType,
       mergedExtraArgs,
       prompt,
       undefined,
-      options.resumeConfigOverrides,
+      options.launchConfigOverrides,
     );
-
-    // Prepend session/resume flag for resumable agents (skip when deferring)
-    let args: string[];
-    if (sessionId) {
-      if (resumeConfig.resumeFlagFormat === "flag-equals") {
-        args = [`${resumeConfig.resumeFlag}=${sessionId}`, ...baseArgs];
-      } else {
-        args = [resumeConfig.resumeFlag, sessionId, ...baseArgs];
-      }
-    } else {
-      args = baseArgs;
-    }
 
     const label = options.label || getDefaultSessionLabel(options.sessionType);
-    // When loginShellWrap is active, use the original unresolved command name
-    // in commandArgs so the login shell can find shell functions/aliases
-    // (e.g. pi() wrapper in ~/.zshrc). Trim to avoid shlex.quote() producing
-    // a command token with leading/trailing spaces. The resolved absolute path
-    // is still used as the `shell` parameter for display/fallback purposes.
     const cmdForArgs = options.loginShellWrap ? agentCmd.trim() : resolved;
-    const tab = this.tabManager.createTab(
-      resolved,
-      cwd,
-      label,
-      options.sessionType,
-      undefined,
-      [cmdForArgs, ...args],
-      sessionId ?? null,
-    );
+    const tab = this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
+      cmdForArgs,
+      ...args,
+    ]);
     if (tab) {
       if (options.loginShellWrap) {
         tab.loginShellWrap = true;
-      }
-      // Pass user-configured session log directory override for deferred detection
-      const copilotLogDir = this.getStringSetting(fresh, "core.copilotSessionLogDir", "");
-      if (copilotLogDir) {
-        tab.sessionLogDirOverride = copilotLogDir;
       }
       if (this.adapter.transformSessionLabel) {
         tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
@@ -2459,17 +1224,17 @@ export class TerminalPanelView {
   }
 
   /**
-   * Resolve the resume config for an agent type, using profile-level overrides
+   * Resolve the launch config for an agent type, using profile-level overrides
    * for custom profiles when available.
    */
-  private resolveResumeConfig(
+  private resolveLaunchConfig(
     agentType: AgentType,
     profile?: AgentProfile | null,
-  ): AgentResumeConfig {
+  ): AgentLaunchConfig {
     if (profile && profile.agentType === "custom") {
-      return getProfileResumeConfig(profile);
+      return getProfileLaunchConfig(profile);
     }
-    return getResumeConfig(agentType);
+    return getLaunchConfig(agentType);
   }
 
   getRecoveredItemId(): string | null {
@@ -2486,10 +1251,6 @@ export class TerminalPanelView {
 
   hasSessions(itemId: string): boolean {
     return this.tabManager.hasSessions(itemId);
-  }
-
-  hasResumableAgentSessions(itemId: string): boolean {
-    return this.tabManager.hasResumableAgentSessions(itemId);
   }
 
   hasAnySessions(): boolean {
@@ -2514,68 +1275,6 @@ export class TerminalPanelView {
     this.renderTabBar();
   }
 
-  getPersistedSessions(itemId: string): PersistedSession[] {
-    this.recalculatePendingPersistedSessions();
-    return this.pendingPersistedSessions.filter((session) => session.taskPath === itemId);
-  }
-
-  /**
-   * Clear all persisted and recently-closed resume sessions for an item.
-   * Removes the indicator from the card by triggering a session badge refresh.
-   */
-  async clearResumeSessionsForItem(itemId: string): Promise<void> {
-    // Remove from persisted sessions (both pending and durable)
-    this.pendingPersistedSessions = this.pendingPersistedSessions.filter(
-      (session) => session.taskPath !== itemId,
-    );
-    this.persistedSessions = this.persistedSessions.filter(
-      (session) => session.taskPath !== itemId,
-    );
-    this.syncPersistedSessionState(this.persistedSessions);
-
-    // Remove from recently-closed store
-    this.recentlyClosedStore.removeByItemId(itemId);
-    this.syncRecentlyClosedState();
-
-    try {
-      await this.persistClearedResumeState();
-    } catch (error) {
-      console.error("[work-terminal] Failed to persist cleared resume sessions:", error);
-      new Notice("Cleared resume sessions in the UI, but failed to save the updated resume state.");
-    } finally {
-      // Trigger session badge refresh (via the onSessionChange callback)
-      this.onSessionChange();
-    }
-  }
-
-  getPendingPersistedSessionsForPersist(): PersistedSession[] {
-    return this.pendingPersistedSessions.map((session) => ({
-      ...session,
-      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-    }));
-  }
-
-  private async persistClearedResumeState(): Promise<void> {
-    if (this.isDisposed) return;
-    this.recalculatePendingPersistedSessions();
-    const persistedSessions = SessionPersistence.mergePersistedSessions(
-      this.pendingPersistedSessions,
-      this.getLiveSessionsAcrossViews(),
-    );
-    const recentlyClosed = this.recentlyClosedStore.serialize();
-    await mergeAndSavePluginData(this.plugin, async (data) => {
-      SessionPersistence.setPersistedSessions(data, persistedSessions);
-      if (recentlyClosed.length > 0) {
-        data.recentlyClosedSessions = recentlyClosed;
-      } else {
-        delete data.recentlyClosedSessions;
-      }
-    });
-    if (this.isDisposed) return;
-    this.syncPersistedSessionState(persistedSessions);
-    this.syncRecentlyClosedState();
-  }
-
   /**
    * Broadcast current agent state for all items with sessions.
    * Call after initial list render to sync state indicators that may have been
@@ -2594,20 +1293,10 @@ export class TerminalPanelView {
 
   rekeyItem(oldId: string, newId: string): void {
     this.tabManager.rekeyItem(oldId, newId);
-    this.persistedSessions = this.persistedSessions.map((session) =>
-      session.taskPath === oldId ? { ...session, taskPath: newId } : session,
-    );
-    this.pendingPersistedSessions = this.pendingPersistedSessions.map((session) =>
-      session.taskPath === oldId ? { ...session, taskPath: newId } : session,
-    );
-    this.syncPersistedSessionState(this.persistedSessions);
   }
 
   stashAll(): void {
     this.isDisposed = true;
-    this.stopPeriodicPersist?.();
-    this.stopPeriodicPersist = null;
-    this.stopHookWarningPoller();
     this.detachSettingsListener();
     this.tabBarResizeObserver?.disconnect();
     this.tabBarResizeObserver = null;
@@ -2616,20 +1305,12 @@ export class TerminalPanelView {
   }
 
   disposeAll(): void {
-    const persistedSessions = this.persistedSessions.map((session) => ({
-      ...session,
-      commandArgs: session.commandArgs ? [...session.commandArgs] : undefined,
-    }));
     this.isDisposed = true;
     liveTerminalViews.delete(this);
-    this.syncPersistedSessionState(persistedSessions);
-    this.stopPeriodicPersist?.();
-    this.stopPeriodicPersist = null;
     if (this.tabClickTimer !== null) {
       clearTimeout(this.tabClickTimer);
       this.tabClickTimer = null;
     }
-    this.stopHookWarningPoller();
     this.detachSettingsListener();
     this.tabBarResizeObserver?.disconnect();
     this.tabBarResizeObserver = null;
@@ -2697,8 +1378,6 @@ export class TerminalPanelView {
       activeItemId: this.tabManager.getActiveItemId(),
       activeTabIndex: this.tabManager.getActiveTabIndex(),
       activeTabs: this.getAllActiveTabs(),
-      activeSessionIds: this.getActiveSessionIds(),
-      persistedSessions: [...this.persistedSessions],
       hasHotReloadStore: SessionStore.isReload(),
     };
   }
@@ -2709,8 +1388,6 @@ export class TerminalPanelView {
       activeItemId: null,
       activeTabIndex: 0,
       activeTabs: [],
-      activeSessionIds: [],
-      persistedSessions: [],
       hasHotReloadStore: false,
     };
   }
@@ -2732,12 +1409,6 @@ export class TerminalPanelView {
       get activeTabs() {
         return getSnapshot().activeTabs;
       },
-      get activeSessionIds() {
-        return getSnapshot().activeSessionIds;
-      },
-      get persistedSessions() {
-        return getSnapshot().persistedSessions;
-      },
       get hasHotReloadStore() {
         return getSnapshot().hasHotReloadStore;
       },
@@ -2745,13 +1416,6 @@ export class TerminalPanelView {
       getAllActiveTabs: () => getSnapshot().activeTabs,
       findTabsByLabel: (label: string) =>
         this.canExposeDebugApi() ? this.findTabsByLabel(label) : [],
-      getActiveSessionIds: () => getSnapshot().activeSessionIds,
-      getPersistedSessions: (itemId?: string) =>
-        this.canExposeDebugApi()
-          ? itemId
-            ? getPersistedSessions(itemId)
-            : [...this.persistedSessions]
-          : [],
       getSessionDiagnostics: () =>
         this.canExposeDebugApi()
           ? this.getSessionDiagnosticsSnapshot()
@@ -2763,20 +1427,14 @@ export class TerminalPanelView {
                 activeTabIndex: 0,
                 activeItemCount: 0,
                 activeTabCount: 0,
-                persistedSessionCount: 0,
-                recentlyClosedCount: 0,
                 hasHotReloadStore: false,
                 derivedCounts: {
                   blankButLiveRenderer: 0,
                   staleDisposedWebglOwnership: 0,
-                  missingPersistedMetadata: 0,
-                  liveNonResumableSessions: 0,
                   disposedTabStillSelected: 0,
                 },
               },
               items: [],
-              persistedSessions: [],
-              recentlyClosedSessions: [],
             },
     };
   }

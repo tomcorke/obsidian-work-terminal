@@ -12,15 +12,15 @@ src/
     utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
     interfaces.ts # All extension point interfaces + BaseAdapter
     terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
-    agents/       # AgentLauncher, AgentStateDetector, AgentSessionRename, AgentSessionTracker
-    claude/       # ClaudeHookManager, HeadlessClaude
-    session/      # SessionStore (window-global), SessionPersistence (disk), types
+    agents/       # AgentLauncher, AgentStateDetector, AgentSessionRename
+    claude/       # HeadlessClaude
+    session/      # SessionStore (window-global), types
 
   framework/      # Obsidian plugin scaffolding - delegates to adapters
     PluginBase.ts          # Abstract Plugin subclass, view/command/settings registration
     MainView.ts            # 2-panel ItemView (list | terminals), vault events, rename detection
     ListPanel.ts           # Column-based kanban, drag-drop, filtering, badges, state indicators
-    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation, resume
+    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation
     PromptBox.ts           # Item creation UI with column selector
     SettingsTab.ts         # Core + adapter namespaced settings
     DangerConfirm.ts       # Modal confirmation for destructive actions
@@ -43,14 +43,14 @@ src/
 
 ### Extension model
 
-The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, Claude integration, session persistence, drag-drop, state detection, keyboard capture.
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, Claude integration, hot-reload session stash, drag-drop, state detection, keyboard capture.
 
 To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`.
 
 ### Key design decisions
 
 - **Agent integration owned by framework, not adapter** - AgentLauncher, AgentStateDetector, and AgentSessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
-- **UUID-based keying** - Sessions, custom order, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
+- **UUID-based keying** - Custom order and selection use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
 
@@ -116,4 +116,3 @@ Updates to the user guide (`docs/user-guide.md`) are always part of implementing
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Option+B/F/D, Shift+Enter, Option+Backspace, Cmd+Left/Right. xterm keeps Meta behavior by default, while Option+digit printable combos are preserved for layout-specific characters.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
-- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs.

@@ -43,7 +43,7 @@ These regression tests can be driven entirely through CDP commands and filesyste
 | TL-01 | Collapsible sections | CDP: check section elements exist with correct classes |
 | TL-21 | Filter input | CDP: type in filter, check visible cards |
 | TL-29 | Abandoned tasks filtered | Seed abandoned task file, check it is absent from DOM |
-| SP-03 | Disk persistence on spawn | Spawn session, read data.json from filesystem |
+| SP-03 | Session types tracked | Spawn Shell, Claude, and Claude(ctx) tabs, verify types |
 | TO-01 | Task creation via PromptBox | CDP: type title, submit, check file created |
 | LD-01 | 2-panel split layout | CDP: check panel elements exist |
 
@@ -98,5 +98,5 @@ pnpm run obsidian:test:stop -- --vault .claude/testing/smoke
 ## Next steps
 
 1. **Screenshot regression** - capture baseline screenshots of key views, compare on subsequent runs using pixel diff.
-2. **Integration test harness** - isolated vault + mock Claude CLI for testing agent launch/resume/state detection flows without a real Claude binary.
+2. **Integration test harness** - isolated vault + mock Claude CLI for testing agent launch/state detection flows without a real Claude binary.
 3. **Tier 2 tests** - add timing/animation observation tests for double-rAF rendering, hot-reload survival, and state indicators.

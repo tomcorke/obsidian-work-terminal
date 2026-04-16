@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultCustomSessionConfig,
   getDefaultSessionLabel,
-  getSessionTypeHelp,
   isAgentTypeSession,
   isClaudeSession,
   isContextSession,
   isCopilotSession,
-  isSessionTrackingSession,
   isStrandsSession,
   sanitizeCustomSessionConfig,
   supportsExtraArgs,
@@ -69,15 +67,6 @@ describe("CustomSessionConfig", () => {
     expect(getDefaultSessionLabel("strands-with-context")).toBe("Strands (ctx)");
   });
 
-  it("describes session resume behavior per session type", () => {
-    expect(getSessionTypeHelp("shell")).toContain("not saved for restart resume");
-    expect(getSessionTypeHelp("claude")).toContain("--session-id");
-    expect(getSessionTypeHelp("claude")).toContain("Claude hooks");
-    expect(getSessionTypeHelp("copilot")).toContain("--resume[=sessionId]");
-    expect(getSessionTypeHelp("copilot")).toContain("without hooks");
-    expect(getSessionTypeHelp("strands")).toContain("start fresh each time");
-  });
-
   it("identifies context and copilot sessions", () => {
     expect(isContextSession("claude-with-context")).toBe(true);
     expect(isContextSession("copilot-with-context")).toBe(true);
@@ -113,13 +102,5 @@ describe("CustomSessionConfig", () => {
     expect(isAgentTypeSession("strands", "strands")).toBe(true);
     expect(isAgentTypeSession("shell", "shell")).toBe(true);
     expect(isAgentTypeSession("claude", "copilot")).toBe(false);
-  });
-
-  it("isSessionTrackingSession returns true only for session-tracking types", () => {
-    expect(isSessionTrackingSession("claude")).toBe(true);
-    expect(isSessionTrackingSession("claude-with-context")).toBe(true);
-    expect(isSessionTrackingSession("copilot")).toBe(false);
-    expect(isSessionTrackingSession("strands")).toBe(false);
-    expect(isSessionTrackingSession("shell")).toBe(false);
   });
 });

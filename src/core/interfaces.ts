@@ -214,10 +214,6 @@ export interface CardActionContext {
   getContextPrompt(): Promise<string | null>;
   /** Retry background enrichment for this item. */
   onRetryEnrich(): void;
-  /** Clear stored resume sessions for this item and remove the resume indicator. */
-  onClearResumeSessions(): Promise<void>;
-  /** Whether this item currently shows the framework resume indicator. */
-  hasResumeSessions(): boolean;
   /** Pin this item to the top of the kanban board. */
   onPin?(): void;
   /** Unpin this item, returning it to its real state column. */
