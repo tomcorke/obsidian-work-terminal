@@ -58,6 +58,9 @@ export class ListPanel {
   private groups: Record<string, WorkItem[]> = {};
   private customOrder: Record<string, string[]> = {};
 
+  // Activity mode: previous bucket assignment per item ID for cross-bucket detection
+  private previousBuckets: Map<string, ActivityBucket> = new Map();
+
   // Placeholders for enrichment
   private placeholders: Map<string, HTMLElement> = new Map();
 
@@ -313,7 +316,29 @@ export class ListPanel {
     for (const item of this.items) {
       const bucket = tracker ? tracker.getBucket(item.id, now, threshold) : "older";
       bucketItems[bucket].push(item);
+
+      // Detect bucket crossing: if an item moved to a different bucket,
+      // place it at the top of the destination bucket's custom order.
+      const prevBucket = this.previousBuckets.get(item.id);
+      if (prevBucket !== undefined && prevBucket !== bucket) {
+        const order = this.customOrder[bucket] || [];
+        if (!order.includes(item.id)) {
+          this.customOrder[bucket] = [item.id, ...order];
+        } else {
+          // Already in the order array - move to front
+          this.customOrder[bucket] = [item.id, ...order.filter((id) => id !== item.id)];
+        }
+        this.onCustomOrderChange(this.customOrder);
+      }
     }
+
+    // Update previous bucket assignments for next render cycle
+    const newBuckets = new Map<string, ActivityBucket>();
+    for (const item of this.items) {
+      const bucket = tracker ? tracker.getBucket(item.id, now, threshold) : "older";
+      newBuckets.set(item.id, bucket);
+    }
+    this.previousBuckets = newBuckets;
 
     // Render each non-empty bucket as a section.
     // Within each bucket, respect custom order (manual ordering).
