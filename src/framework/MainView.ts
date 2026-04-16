@@ -630,24 +630,26 @@ export class MainView extends ItemView {
     try {
       const content = await this.app.vault.read(file);
 
+      // Extract frontmatter block so we only match/replace within it,
+      // never accidentally touching a `last-active:` line in the body.
+      const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+      if (!fmMatch) return; // No frontmatter block - can't write
+
+      const [fullMatch, openFence, body, closeFence] = fmMatch;
+      const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
+
       let updated: string;
-      if (/^last-active:\s*.+$/m.test(content)) {
-        updated = content.replace(/^last-active:\s*.+$/m, `last-active: ${isoTimestamp}`);
+      if (/^last-active:\s*.+$/m.test(body)) {
+        // Replace existing last-active within frontmatter only
+        const newBody = body.replace(/^last-active:\s*.+$/m, `last-active: ${isoTimestamp}`);
+        updated = content.replace(fullMatch, `${openFence}${newBody}${closeFence}`);
       } else {
         // Insert last-active into frontmatter
-        const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
-        if (fmMatch) {
-          const [fullMatch, openFence, body, closeFence] = fmMatch;
-          const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
-          const bodyPrefix = body.length === 0 ? "" : body.endsWith(eol) ? body : body + eol;
-          updated = content.replace(
-            fullMatch,
-            `${openFence}${bodyPrefix}last-active: ${isoTimestamp}${eol}${closeFence}`,
-          );
-        } else {
-          // No frontmatter block - can't write
-          return;
-        }
+        const bodyPrefix = body.length === 0 ? "" : body.endsWith(eol) ? body : body + eol;
+        updated = content.replace(
+          fullMatch,
+          `${openFence}${bodyPrefix}last-active: ${isoTimestamp}${eol}${closeFence}`,
+        );
       }
 
       if (updated !== content) {

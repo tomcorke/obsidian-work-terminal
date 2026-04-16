@@ -494,4 +494,19 @@ describe("MainView writeLastActive", () => {
     const written = modifyFn.mock.calls[0][1] as string;
     expect(written).toBe("---\nid: uuid-123\nlast-active: 2026-04-16T10:00:00Z\n---\nBody");
   });
+
+  it("does not match last-active in markdown body outside frontmatter", async () => {
+    const { view, modifyFn, readFn } = makeWriteView();
+    readFn.mockResolvedValue(
+      "---\nid: uuid-123\n---\nSome content\nlast-active: 2026-01-01T00:00:00Z\nMore content",
+    );
+
+    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
+
+    const written = modifyFn.mock.calls[0][1] as string;
+    // Should insert into frontmatter and leave body unchanged
+    expect(written).toBe(
+      "---\nid: uuid-123\nlast-active: 2026-04-16T10:00:00Z\n---\nSome content\nlast-active: 2026-01-01T00:00:00Z\nMore content",
+    );
+  });
 });
