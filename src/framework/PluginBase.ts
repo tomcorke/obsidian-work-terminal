@@ -96,10 +96,12 @@ export abstract class PluginBase extends Plugin {
     // up stashed sessions from window store. A plain activateView()
     // would find the stale leaf via getLeavesOfType and just reveal it
     // without re-initialising the view, leaving a blank pane.
-    const existingLeaf = appRef.workspace.getLeavesOfType(VIEW_TYPE)[0];
-    if (existingLeaf) {
-      await existingLeaf.setViewState({ type: VIEW_TYPE, active: true });
-      appRef.workspace.revealLeaf(existingLeaf);
+    const existingLeaves = appRef.workspace.getLeavesOfType(VIEW_TYPE);
+    if (existingLeaves.length > 0) {
+      for (const existingLeaf of existingLeaves) {
+        await existingLeaf.setViewState({ type: VIEW_TYPE, active: true });
+      }
+      appRef.workspace.revealLeaf(existingLeaves[0]);
     } else {
       const newPlugin = plugins.plugins["work-terminal"];
       if (newPlugin && typeof newPlugin.activateView === "function") {
