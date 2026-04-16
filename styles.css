@@ -2116,6 +2116,20 @@ button.wt-spawn-claude-ctx:hover svg {
   flex-shrink: 0;
 }
 
+/* In compact/comfortable modes the actions container is in-flow, so toggling
+   the move-to-top button between display:none and display:flex causes layout
+   shift (the title truncates shorter and adjacent cards jump). Use
+   visibility:hidden/visible instead to reserve space permanently. */
+.wt-card-compact-row .wt-move-to-top {
+  display: flex;
+  visibility: hidden;
+}
+
+.wt-card-compact-row:hover .wt-move-to-top,
+.wt-card-wrapper:hover .wt-card-compact-row .wt-move-to-top {
+  visibility: visible;
+}
+
 /* Indicator dots container */
 .wt-card-compact-dots {
   display: flex;
