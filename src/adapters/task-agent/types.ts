@@ -34,6 +34,7 @@ export interface TaskFile {
   backgroundIngestion?: "failed" | "retrying";
   created: string;
   updated: string;
+  lastActive: string;
 }
 
 export const STATE_FOLDER_MAP: Record<KanbanColumn, string> = {
