@@ -350,15 +350,7 @@ describe("ProfileLaunchModal placeholders", () => {
 
 describe("ProfileLaunchModal settings link", () => {
   function createModalWithSettings(profiles: AgentProfile[], onOpenSettings?: () => void) {
-    const modal = new ProfileLaunchModal(
-      {} as any,
-      profiles,
-      "/vault",
-      vi.fn(),
-      [],
-      undefined,
-      onOpenSettings,
-    );
+    const modal = new ProfileLaunchModal({} as any, profiles, "/vault", vi.fn(), onOpenSettings);
     modal.open();
     return modal;
   }

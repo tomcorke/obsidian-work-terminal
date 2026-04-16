@@ -2005,3 +2005,137 @@ button.wt-spawn-claude-ctx:hover svg {
   margin: 0;
   flex-shrink: 0;
 }
+
+/* =============================================================================
+   Compact card display mode
+   ============================================================================= */
+
+/* Icon slot placeholder - hidden by default, present in DOM for future use */
+.wt-card-icon-slot {
+  width: 0;
+  height: 0;
+  flex-shrink: 0;
+}
+
+/* Compact card wrapper overrides */
+.wt-compact .wt-card-wrapper {
+  --wt-card-padding-y: 2px;
+}
+
+/* Compact card inner layout: single horizontal row */
+.wt-card-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Compact title: single line, truncated */
+.wt-card-compact-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Compact actions container: positioned inline, not absolute */
+.wt-card-compact-row .wt-card-actions {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Indicator dots container */
+.wt-card-compact-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+/* Base indicator dot style */
+.wt-compact-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Jira source dot - blue */
+.wt-compact-dot--jira {
+  background-color: #0062e3;
+}
+
+/* Priority score dots */
+.wt-compact-dot--priority-high {
+  background-color: #e53e3e;
+}
+
+.wt-compact-dot--priority-medium {
+  background-color: #d69e2e;
+}
+
+.wt-compact-dot--priority-low {
+  background-color: #a0aec0;
+}
+
+/* Goal dot - green */
+.wt-compact-dot--goal {
+  background-color: #38a169;
+}
+
+/* Flag dot - uses inline background-color from flag.color */
+.wt-compact-dot--flag {
+  background-color: #e53e3e;
+}
+
+/* Compact mode: drop indicator thinner */
+.wt-compact .wt-drop-indicator {
+  height: 1px;
+  margin: 0 4px;
+}
+
+/* Compact mode: move-to-top smaller */
+.wt-compact .wt-move-to-top {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+
+/* Compact mode: session badge slightly smaller */
+.wt-compact .wt-session-badge {
+  min-width: 16px;
+  height: 16px;
+  font-size: 9px;
+  padding: 0 3px;
+}
+
+/* Compact mode: pinned state badge adapts to single-line height */
+.wt-compact .wt-card-state-badge {
+  font-size: 8px;
+  padding: 0 3px;
+}
+
+/* Compact mode: agent state waiting overlay adapts */
+.wt-compact .wt-card-wrapper.wt-agent-waiting::after {
+  border-radius: inherit;
+}
+
+/* Compact mode: agent state active arc on badge */
+.wt-compact .wt-agent-active .wt-session-badge::before {
+  inset: -2px;
+  border-radius: 10px;
+}
+
+/* Compact mode: agent state idle arc on badge */
+.wt-compact .wt-agent-idle .wt-session-badge::before {
+  inset: -2px;
+  border-radius: 10px;
+}

@@ -12,7 +12,7 @@ src/
     utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
     interfaces.ts # All extension point interfaces + BaseAdapter
     terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
-    agents/       # AgentLauncher, AgentStateDetector, AgentSessionRename
+    agents/       # AgentLauncher, AgentStateDetector
     claude/       # HeadlessClaude
     session/      # SessionStore (window-global), types
 
@@ -49,7 +49,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 
 ### Key design decisions
 
-- **Agent integration owned by framework, not adapter** - AgentLauncher, AgentStateDetector, and AgentSessionRename are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **Agent integration owned by framework, not adapter** - AgentLauncher and AgentStateDetector are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
 - **UUID-based keying** - Custom order and selection use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.

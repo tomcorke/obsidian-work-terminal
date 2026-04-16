@@ -222,6 +222,9 @@ export interface CardActionContext {
   isPinned?(): boolean;
 }
 
+/** Display mode for card rendering. */
+export type CardDisplayMode = "standard" | "compact";
+
 /**
  * Renders a work item as a DOM card element and provides context menu items.
  * Adapters control the visual appearance of cards (badges, icons, layout)
@@ -229,7 +232,7 @@ export interface CardActionContext {
  */
 export interface CardRenderer {
   /** Create the card DOM element for a work item. */
-  render(item: WorkItem, ctx: CardActionContext): HTMLElement;
+  render(item: WorkItem, ctx: CardActionContext, displayMode?: CardDisplayMode): HTMLElement;
   /** Return context menu items for right-click on a card. */
   getContextMenuItems(item: WorkItem, ctx: CardActionContext): MenuItem[];
 }

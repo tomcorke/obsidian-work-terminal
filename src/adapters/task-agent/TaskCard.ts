@@ -4,6 +4,7 @@ import type {
   CardRenderer,
   CardActionContext,
   CardFlagRule,
+  CardDisplayMode,
 } from "../../core/interfaces";
 import { matchCardFlags, type MatchedCardFlag } from "../../core/cardFlags";
 import { normalizeObsidianDisplayText } from "../../core/utils";
@@ -21,7 +22,7 @@ export class TaskCard implements CardRenderer {
     this.flagRules = rules;
   }
 
-  render(item: WorkItem, ctx: CardActionContext): HTMLElement {
+  render(item: WorkItem, ctx: CardActionContext, displayMode?: CardDisplayMode): HTMLElement {
     const meta = (item.metadata || {}) as Record<string, any>;
     const source = meta.source || { type: "other" };
     const priority = meta.priority || { score: 0 };
@@ -39,8 +40,54 @@ export class TaskCard implements CardRenderer {
       card.style.setProperty("--wt-task-color", taskColor);
     }
 
+    if (displayMode === "compact") {
+      card.addClass("wt-card-compact");
+      this.renderCompact(card, item, meta, source, priority, goal);
+    } else {
+      this.renderStandard(card, item, meta, source, priority, goal, ingesting);
+    }
+
+    // Click to select
+    card.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ctx.onSelect();
+    });
+
+    // Drag events
+    card.addEventListener("dragstart", (e) => {
+      card.addClass("dragging");
+      e.dataTransfer?.setData("text/plain", item.path);
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+      }
+    });
+
+    card.addEventListener("dragend", () => {
+      card.removeClass("dragging");
+    });
+
+    return card;
+  }
+
+  /**
+   * Render the standard multi-line card layout with full badges and metadata.
+   */
+  private renderStandard(
+    card: HTMLElement,
+    item: WorkItem,
+    meta: Record<string, any>,
+    source: Record<string, any>,
+    priority: Record<string, any>,
+    goal: string[],
+    ingesting: boolean,
+  ): void {
     // Title row
     const titleRow = card.createDiv({ cls: "wt-card-title-row" });
+
+    // TODO(icons): Render item icon in this slot when icon support is implemented
+    const iconSlot = titleRow.createDiv({ cls: "wt-card-icon-slot" });
+    iconSlot.style.display = "none";
+
     const titleEl = titleRow.createDiv({ cls: "wt-card-title" });
     titleEl.textContent = item.title;
 
@@ -101,27 +148,95 @@ export class TaskCard implements CardRenderer {
     for (const flag of matchedFlags) {
       this.renderFlag(metaRow, card, flag);
     }
+  }
 
-    // Click to select
-    card.addEventListener("click", (e) => {
-      e.stopPropagation();
-      ctx.onSelect();
-    });
+  /**
+   * Render a compact single-line card layout with indicator dots replacing
+   * verbose badges.
+   */
+  private renderCompact(
+    card: HTMLElement,
+    item: WorkItem,
+    meta: Record<string, any>,
+    source: Record<string, any>,
+    priority: Record<string, any>,
+    goal: string[],
+  ): void {
+    const compactRow = card.createDiv({ cls: "wt-card-compact-row" });
 
-    // Drag events
-    card.addEventListener("dragstart", (e) => {
-      card.addClass("dragging");
-      e.dataTransfer?.setData("text/plain", item.path);
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = "move";
+    // TODO(icons): Render item icon in this slot when icon support is implemented
+    const iconSlot = compactRow.createDiv({ cls: "wt-card-icon-slot" });
+    iconSlot.style.display = "none";
+
+    // Title - single line with ellipsis truncation
+    const titleEl = compactRow.createDiv({ cls: "wt-card-compact-title" });
+    titleEl.textContent = item.title;
+    titleEl.title = item.title;
+
+    // Indicator dots container
+    const dotsEl = compactRow.createDiv({ cls: "wt-card-compact-dots" });
+    this.renderIndicatorDots(dotsEl, meta, source, priority, goal);
+
+    // Actions container (session badge + move-to-top added by framework)
+    compactRow.createDiv({ cls: "wt-card-actions" });
+  }
+
+  /**
+   * Render coloured indicator dots for compact mode. Each dot replaces a
+   * verbose badge with a small coloured circle and tooltip.
+   */
+  private renderIndicatorDots(
+    container: HTMLElement,
+    meta: Record<string, any>,
+    source: Record<string, any>,
+    priority: Record<string, any>,
+    goal: string[],
+  ): void {
+    // Jira source dot
+    if (source.type === "jira" && source.id) {
+      const label = source.id.toUpperCase();
+      const dot = container.createSpan({ cls: "wt-compact-dot wt-compact-dot--jira" });
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
+    }
+
+    // Priority score dot
+    if (priority.score > 0) {
+      const tierClass =
+        priority.score >= 60
+          ? "wt-compact-dot--priority-high"
+          : priority.score >= 30
+            ? "wt-compact-dot--priority-medium"
+            : "wt-compact-dot--priority-low";
+      const label = `Priority: ${priority.score}`;
+      const dot = container.createSpan({ cls: `wt-compact-dot ${tierClass}` });
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
+    }
+
+    // Goal dot
+    if (goal.length > 0) {
+      const label = normalizeObsidianDisplayText(goal[0]).replace(/-/g, " ");
+      const dot = container.createSpan({ cls: "wt-compact-dot wt-compact-dot--goal" });
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
+    }
+
+    // Card flag dots
+    const matchedFlags = matchCardFlags(this.flagRules, meta);
+    for (const flag of matchedFlags) {
+      const label = flag.tooltip || flag.label;
+      const dot = container.createSpan({ cls: "wt-compact-dot wt-compact-dot--flag" });
+      if (flag.color) {
+        dot.style.backgroundColor = flag.color;
       }
-    });
-
-    card.addEventListener("dragend", () => {
-      card.removeClass("dragging");
-    });
-
-    return card;
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
+    }
   }
 
   /**

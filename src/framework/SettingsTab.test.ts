@@ -150,6 +150,36 @@ vi.mock("obsidian", () => {
       callback(button);
       return this;
     }
+
+    addDropdown(
+      callback: (dropdown: {
+        addOption: (value: string, label: string) => any;
+        setValue: (value: string) => any;
+        onChange: (handler: (value: string) => void) => any;
+      }) => void,
+    ) {
+      const selectEl = document.createElement("select");
+      this.controlEl.appendChild(selectEl);
+      const dropdown = {
+        addOption(value: string, label: string) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          selectEl.appendChild(option);
+          return dropdown;
+        },
+        setValue(value: string) {
+          selectEl.value = value;
+          return dropdown;
+        },
+        onChange(handler: (value: string) => void) {
+          selectEl.addEventListener("change", () => handler(selectEl.value));
+          return dropdown;
+        },
+      };
+      callback(dropdown);
+      return this;
+    }
   }
 
   class Modal {

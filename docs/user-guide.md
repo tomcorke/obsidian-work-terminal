@@ -11,6 +11,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Creating tasks](#creating-tasks)
   - [Kanban board](#kanban-board)
   - [Task card anatomy](#task-card-anatomy)
+  - [Compact card mode](#compact-card-mode)
   - [Context menu](#context-menu)
   - [Detail panel](#detail-panel)
   - [Drag-drop reordering](#drag-drop-reordering)
@@ -109,6 +110,33 @@ Cards contain:
 - **Ingestion indicator** - shows "ingesting..." while background enrichment is running
 
 When a task has an active terminal session, a small indicator appears on the card showing the session count and type.
+
+### Compact card mode
+
+Work Terminal offers an optional **compact display mode** that collapses each task card into a single horizontal line. This is useful when you have many tasks and want to see more of them at once without scrolling.
+
+To enable compact mode, go to **Settings > Core > Card display mode** and select **Compact**.
+
+In compact mode, each card becomes a single row containing:
+
+- **Title** - single line, truncated with ellipsis if it overflows
+- **Indicator dots** - small coloured dots that replace the verbose meta badges:
+  - Blue dot for Jira-sourced tasks (hover to see the Jira key, e.g. "CASTLE-1234")
+  - Orange/red dot for priority score (hover to see the score value; red for 60+, orange for 30-59, grey for below 30)
+  - Green dot for tasks with a goal assigned (hover to see the goal name)
+  - Coloured dot for each active card flag (hover to see the flag label or context)
+- **Session badge** - the session count badge remains visible, slightly smaller
+
+Everything else works identically in compact mode:
+
+- **Drag-drop** reordering and cross-column moves
+- **Selection** and detail panel opening
+- **Context menu** with all the same actions
+- **Agent state indicators** (active/waiting/idle border and glow animations)
+- **Pinned section** with state badges (adapted to the compact height)
+- **Filtering** by text and active sessions
+
+Switch back to **Standard** mode at any time to restore the full multi-line card layout with verbose badges, goal tags, and flag labels.
 
 ### Context menu
 
@@ -302,6 +330,7 @@ The core settings section covers:
 
 | Setting | Description |
 |---------|-------------|
+| **Card display mode** | Choose between **Standard** (full card details with badges and tags) and **Compact** (single-line cards with indicator dots). See [Compact card mode](#compact-card-mode). |
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
 | **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |

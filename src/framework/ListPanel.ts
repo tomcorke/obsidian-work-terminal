@@ -12,6 +12,7 @@ import type {
   WorkItemMover,
   WorkItemParser,
   CardActionContext,
+  CardDisplayMode,
 } from "../core/interfaces";
 import type { TerminalPanelView } from "./TerminalPanelView";
 import type { PinStore } from "../core/PinStore";
@@ -149,6 +150,12 @@ export class ListPanel {
   // Rendering
   // ---------------------------------------------------------------------------
 
+  /** Resolve the current card display mode from settings. */
+  private getDisplayMode(): CardDisplayMode {
+    const value = this.settings["core.cardDisplayMode"];
+    return value === "compact" ? "compact" : "standard";
+  }
+
   render(groups: Record<string, WorkItem[]>, customOrder: Record<string, string[]>): void {
     this.groups = groups;
     this.customOrder = customOrder;
@@ -160,6 +167,14 @@ export class ListPanel {
     }
 
     this.listEl.empty();
+
+    // Apply compact mode class to list panel container
+    const displayMode = this.getDisplayMode();
+    if (displayMode === "compact") {
+      this.listEl.addClass("wt-compact");
+    } else {
+      this.listEl.removeClass("wt-compact");
+    }
 
     // Collect pinned item IDs and build a lookup of all items by ID
     const pinnedIds = this.pinStore?.getPinnedIds() ?? [];
@@ -273,12 +288,14 @@ export class ListPanel {
     // Drop zone for drag-drop
     this.setupDropZone(cardsEl, sectionEl, headerEl, columnId);
 
+    const displayMode = this.getDisplayMode();
+
     for (const item of items) {
       // For pinned items, use the pinned column as the visual column
       // but track the real column for move operations
       const effectiveColumn = isPinnedSection ? PINNED_COLUMN_ID : columnId;
       const ctx = this.buildCardActionContext(item, effectiveColumn);
-      const cardEl = this.cardRenderer.render(item, ctx);
+      const cardEl = this.cardRenderer.render(item, ctx, displayMode);
       cardEl.addClass("wt-card-wrapper");
       cardEl.setAttribute("data-item-id", item.id);
       cardEl.setAttribute("draggable", "true");
@@ -293,10 +310,13 @@ export class ListPanel {
         stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${stateSlug}`);
         stateBadge.textContent = stateLabel;
         stateBadge.title = `Real state: ${stateLabel}`;
-        // Insert badge into the meta row if available, otherwise into the card
+        // Insert badge into the meta row, compact dots container, or card root
         const metaRow = cardEl.querySelector(".wt-card-meta");
+        const compactDots = cardEl.querySelector(".wt-card-compact-dots");
         if (metaRow) {
           metaRow.insertBefore(stateBadge, metaRow.firstChild);
+        } else if (compactDots) {
+          compactDots.insertBefore(stateBadge, compactDots.firstChild);
         } else {
           cardEl.appendChild(stateBadge);
         }
