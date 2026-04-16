@@ -350,6 +350,7 @@ Each profile includes:
 - **Default CWD** - working directory for the session (supports `~` expansion)
 - **Tab bar button** - optionally add a quick-launch button to the tab bar
 - **Context prompt** - a prompt template injected when launching with task context
+
 **Import/Export**: Profiles can be exported as JSON for sharing or backup, and imported from JSON to quickly set up a new installation.
 
 ### Card indicator rules

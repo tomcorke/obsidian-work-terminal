@@ -159,7 +159,7 @@ const StoredProfileSchema = z
     promptFlag: z.string().optional(),
     loginShellWrap: z.boolean().optional(),
   })
-  .passthrough();
+  .strip();
 
 export const StoredProfileArraySchema = z.array(StoredProfileSchema);
 
