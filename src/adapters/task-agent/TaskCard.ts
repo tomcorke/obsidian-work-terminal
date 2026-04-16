@@ -133,63 +133,63 @@ export class TaskCard implements CardRenderer {
     // Actions container (session badge + move-to-top added by framework)
     titleRow.createDiv({ cls: "wt-card-actions" });
 
-    // Meta row - always created so the framework can inject state/ingesting badges,
-    // but hidden when the user has disabled card indicators.
+    // Meta row - always created so the framework can inject state/ingesting badges.
+    // When indicators are disabled we skip rendering adapter-owned content but
+    // leave the container visible so framework-injected badges still appear.
     const metaRow = card.createDiv({ cls: "wt-card-meta" });
-    if (!this.showIndicators) {
-      metaRow.style.display = "none";
-    }
 
-    // Source badge - hide for CLI-created tasks, show Jira key when available
-    if (source.type !== "prompt") {
-      const sourceBadge = metaRow.createSpan({ cls: "wt-card-source" });
-      if (source.type === "jira" && source.id) {
-        sourceBadge.textContent = source.id.toUpperCase();
-        sourceBadge.addClass("wt-card-source--jira");
-      } else {
-        sourceBadge.textContent = SOURCE_LABELS[source.type] || "---";
+    if (this.showIndicators) {
+      // Source badge - hide for CLI-created tasks, show Jira key when available
+      if (source.type !== "prompt") {
+        const sourceBadge = metaRow.createSpan({ cls: "wt-card-source" });
+        if (source.type === "jira" && source.id) {
+          sourceBadge.textContent = source.id.toUpperCase();
+          sourceBadge.addClass("wt-card-source--jira");
+        } else {
+          sourceBadge.textContent = SOURCE_LABELS[source.type] || "---";
+        }
       }
-    }
 
-    // Ingesting indicator
-    if (ingesting) {
-      const badge = metaRow.createSpan({ cls: "wt-card-ingesting" });
-      badge.textContent = "ingesting...";
-    }
-
-    // Enrichment failed indicator
-    const backgroundIngestion = meta.backgroundIngestion;
-    if (backgroundIngestion === "failed") {
-      const failBadge = metaRow.createSpan({ cls: "wt-card-enrich-failed" });
-      failBadge.textContent = "enrichment failed";
-      failBadge.title = "Background ingestion did not complete. Right-click to retry.";
-    }
-
-    // Priority score badge
-    if (priority.score > 0) {
-      const scoreBadge = metaRow.createSpan({ cls: "wt-card-score" });
-      scoreBadge.textContent = String(priority.score);
-      if (priority.score >= 60) {
-        scoreBadge.addClass("score-high");
-      } else if (priority.score >= 30) {
-        scoreBadge.addClass("score-medium");
-      } else {
-        scoreBadge.addClass("score-low");
+      // Ingesting indicator
+      if (ingesting) {
+        const badge = metaRow.createSpan({ cls: "wt-card-ingesting" });
+        badge.textContent = "ingesting...";
       }
-    }
 
-    // Goal tags (max 2)
-    for (const g of goal.slice(0, 2)) {
-      const displayGoal = normalizeObsidianDisplayText(g);
-      const goalEl = metaRow.createSpan({ cls: "wt-card-goal" });
-      goalEl.textContent = displayGoal.replace(/-/g, " ");
-      goalEl.title = displayGoal;
-    }
+      // Enrichment failed indicator
+      const backgroundIngestion = meta.backgroundIngestion;
+      if (backgroundIngestion === "failed") {
+        const failBadge = metaRow.createSpan({ cls: "wt-card-enrich-failed" });
+        failBadge.textContent = "enrichment failed";
+        failBadge.title = "Background ingestion did not complete. Right-click to retry.";
+      }
 
-    // Configurable card flags (replaces hard-coded blocker indicator)
-    const matchedFlags = matchCardFlags(this.flagRules, meta);
-    for (const flag of matchedFlags) {
-      this.renderFlag(metaRow, card, flag);
+      // Priority score badge
+      if (priority.score > 0) {
+        const scoreBadge = metaRow.createSpan({ cls: "wt-card-score" });
+        scoreBadge.textContent = String(priority.score);
+        if (priority.score >= 60) {
+          scoreBadge.addClass("score-high");
+        } else if (priority.score >= 30) {
+          scoreBadge.addClass("score-medium");
+        } else {
+          scoreBadge.addClass("score-low");
+        }
+      }
+
+      // Goal tags (max 2)
+      for (const g of goal.slice(0, 2)) {
+        const displayGoal = normalizeObsidianDisplayText(g);
+        const goalEl = metaRow.createSpan({ cls: "wt-card-goal" });
+        goalEl.textContent = displayGoal.replace(/-/g, " ");
+        goalEl.title = displayGoal;
+      }
+
+      // Configurable card flags (replaces hard-coded blocker indicator)
+      const matchedFlags = matchCardFlags(this.flagRules, meta);
+      for (const flag of matchedFlags) {
+        this.renderFlag(metaRow, card, flag);
+      }
     }
   }
 
@@ -217,12 +217,11 @@ export class TaskCard implements CardRenderer {
     titleEl.title = item.title;
 
     // Indicator dots container - always created so the framework can inject
-    // state badges for pinned cards, but hidden when indicators are disabled.
+    // state badges for pinned cards. When indicators are disabled we skip
+    // rendering adapter-owned dots but leave the container visible.
     const dotsEl = compactRow.createDiv({ cls: "wt-card-compact-dots" });
     if (this.showIndicators) {
       this.renderIndicatorDots(dotsEl, meta, source, priority, goal);
-    } else {
-      dotsEl.style.display = "none";
     }
 
     // Actions container (session badge + move-to-top added by framework)

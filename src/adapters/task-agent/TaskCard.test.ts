@@ -893,7 +893,7 @@ describe("TaskCard", () => {
       expect(el.querySelector(".wt-card-goal")).not.toBeNull();
     });
 
-    it("hides meta row in standard mode when indicators are disabled", () => {
+    it("does not render indicator content in standard mode when indicators are disabled", () => {
       const item = makeItem({
         metadata: {
           source: { type: "jira", id: "PROJ-123" },
@@ -908,8 +908,13 @@ describe("TaskCard", () => {
       const el = card.render(item, ctx, "standard");
       const metaRow = el.querySelector(".wt-card-meta") as HTMLElement;
 
+      // Container still exists and is visible for framework badge injection
       expect(metaRow).not.toBeNull();
-      expect(metaRow.style.display).toBe("none");
+      expect(metaRow.style.display).not.toBe("none");
+      // But adapter-owned indicator content is not rendered
+      expect(el.querySelector(".wt-card-source")).toBeNull();
+      expect(el.querySelector(".wt-card-score")).toBeNull();
+      expect(el.querySelector(".wt-card-goal")).toBeNull();
     });
 
     it("still creates meta row element when indicators are hidden (for framework badge injection)", () => {
@@ -942,7 +947,7 @@ describe("TaskCard", () => {
       expect(dotsEl.querySelectorAll(".wt-compact-dot").length).toBeGreaterThan(0);
     });
 
-    it("hides indicator dots in compact mode when indicators are disabled", () => {
+    it("does not render indicator dots in compact mode when indicators are disabled", () => {
       const item = makeItem({
         metadata: {
           source: { type: "jira", id: "CASTLE-1234" },
@@ -956,9 +961,10 @@ describe("TaskCard", () => {
       const el = card.render(item, ctx, "compact");
       const dotsEl = el.querySelector(".wt-card-compact-dots") as HTMLElement;
 
+      // Container still exists and is visible for framework badge injection
       expect(dotsEl).not.toBeNull();
-      expect(dotsEl.style.display).toBe("none");
-      // No dots should be rendered inside
+      expect(dotsEl.style.display).not.toBe("none");
+      // But no adapter-owned dots are rendered
       expect(dotsEl.querySelectorAll(".wt-compact-dot").length).toBe(0);
     });
 
@@ -1010,13 +1016,13 @@ describe("TaskCard", () => {
 
       card.updateIndicatorVisibility(false);
       const hidden = card.render(item, ctx, "standard");
-      expect((hidden.querySelector(".wt-card-meta") as HTMLElement).style.display).toBe("none");
+      // Indicator content not rendered when disabled
+      expect(hidden.querySelector(".wt-card-source")).toBeNull();
 
       card.updateIndicatorVisibility(true);
       const visible = card.render(item, ctx, "standard");
-      expect((visible.querySelector(".wt-card-meta") as HTMLElement).style.display).not.toBe(
-        "none",
-      );
+      // Indicator content rendered again when re-enabled
+      expect(visible.querySelector(".wt-card-source")).not.toBeNull();
     });
   });
 });
