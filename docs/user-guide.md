@@ -408,9 +408,23 @@ Dynamic columns:
 - **Can be reordered** using the column display order controls in settings, just like built-in columns. Once reordered, the dynamic column's position is persisted.
 - **Are shown with a star** (\*) in the settings column ordering UI to distinguish them from built-in columns
 - **Do not have folder mappings** - dragging a task into a dynamic column updates its frontmatter `state` field but does not move the file to a different folder
-- **Disappear** when no tasks have that state (they are not shown as empty columns)
+- **Auto-cleanup** - empty dynamic columns are automatically removed from the board and column order settings when no tasks remain in them, unless they are pinned (see below)
 
 This is useful for workflows that need temporary or project-specific states like "review", "waiting", "testing", or any other status that makes sense for your work.
+
+#### Pinning custom states
+
+Dynamic columns can be **pinned** to keep them visible on the board even when they have no tasks. This is useful for permanent workflow stages that should always appear regardless of whether tasks currently occupy them.
+
+To pin a dynamic column, go to **Settings > Column Order & Creation** and click the **Pin** button next to the dynamic column's entry in the column order list. Pinned columns show "(pinned)" next to their label. Click **Unpin** to allow the column to auto-clean when empty.
+
+Resetting the column order to defaults also clears all pinned custom states.
+
+#### Creating custom states from settings
+
+You can pre-create a custom state column without needing to first create a task with that state. In **Settings > Column Order & Creation**, use the **Create custom state** input at the bottom of the column order section.
+
+Type a lowercase identifier with hyphens (e.g. `review`, `blocked-upstream`, `testing`) and press Enter. The new column is added to the column order and pinned by default so it stays visible even with zero tasks. You can then drag tasks into the new column or set the `state` frontmatter field to match the column ID.
 
 ### Background enrichment
 
