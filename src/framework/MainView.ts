@@ -677,6 +677,22 @@ export class MainView extends ItemView {
       }
     }
 
+    // Parse pinned custom states from settings
+    const pinnedJson = (this.settings["adapter.pinnedCustomStates"] as string) || "[]";
+    let pinnedCustomStates: string[] = [];
+    try {
+      const parsed = JSON.parse(pinnedJson);
+      if (Array.isArray(parsed)) pinnedCustomStates = parsed;
+    } catch {
+      /* empty */
+    }
+    const pinnedSet = new Set(pinnedCustomStates);
+
+    // Determine which columns are predefined (have a folderName)
+    const predefinedIds = new Set(
+      this.adapter.config.columns.filter((c) => c.folderName).map((c) => c.id),
+    );
+
     // Discover dynamic columns (states in items not in configured columns)
     // and update the adapter config so the SettingsTab column ordering UI
     // includes them. Dynamic columns appear after configured columns.
@@ -695,6 +711,59 @@ export class MainView extends ItemView {
         ...dynamicColumns.filter((dc) => !configuredIds.has(dc.id)),
       ];
     }
+
+    // Auto-cleanup: remove empty, unpinned dynamic columns from the column
+    // order settings. Only affects dynamic columns (no folderName) - never
+    // predefined ones. Pinned columns are preserved regardless of task count.
+    const columnOrderJson = (this.settings["adapter.columnOrder"] as string) || "";
+    if (columnOrderJson) {
+      let orderIds: string[] = [];
+      try {
+        const parsed = JSON.parse(columnOrderJson);
+        if (Array.isArray(parsed)) orderIds = parsed;
+      } catch {
+        /* empty */
+      }
+
+      const cleanedIds = orderIds.filter((id) => {
+        // Keep predefined columns always
+        if (predefinedIds.has(id)) return true;
+        // Keep pinned dynamic columns even if empty
+        if (pinnedSet.has(id)) return true;
+        // Keep dynamic columns that have tasks
+        if ((groups[id]?.length ?? 0) > 0) return true;
+        // Remove empty unpinned dynamic columns
+        return false;
+      });
+
+      if (cleanedIds.length !== orderIds.length) {
+        // Remove cleaned-out columns from the adapter config too
+        this.adapter.config.columns = this.adapter.config.columns.filter(
+          (c) => c.folderName || pinnedSet.has(c.id) || (groups[c.id]?.length ?? 0) > 0,
+        );
+        // Persist the cleaned column order
+        const newOrderJson = JSON.stringify(cleanedIds);
+        this.settings["adapter.columnOrder"] = newOrderJson;
+        await mergeAndSavePluginData(this.pluginRef, async (data) => {
+          if (!data.settings) data.settings = {};
+          data.settings["adapter.columnOrder"] = newOrderJson;
+        });
+      }
+    }
+
+    // Ensure pinned custom state columns appear in the adapter config even
+    // when they have zero tasks, so they render as empty columns on the board.
+    for (const pinnedId of pinnedCustomStates) {
+      if (!this.adapter.config.columns.some((c) => c.id === pinnedId)) {
+        this.adapter.config.columns.push({
+          id: pinnedId,
+          label: titleCase(pinnedId),
+        });
+      }
+    }
+
+    // Pass pinned custom states to ListPanel so it renders empty pinned columns
+    this.listPanel.setPinnedCustomStates(pinnedCustomStates);
 
     const data = (await this.pluginRef.loadData()) || {};
     const customOrder = this.pendingCustomOrderOverride || data.customOrder || {};
