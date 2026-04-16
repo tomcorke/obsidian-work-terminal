@@ -29,6 +29,7 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
+  "core.cardDisplayMode": string;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -45,6 +46,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.defaultTerminalCwd": "~",
   "core.exposeDebugApi": false,
   "core.keepSessionsAlive": true,
+  "core.cardDisplayMode": "standard",
 };
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
@@ -121,6 +123,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Keep sessions alive when tab is closed",
       "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state.",
     );
+    this.addCoreDropdown(
+      containerEl,
+      "core.cardDisplayMode",
+      "Card display mode",
+      "Standard shows full card details. Compact shows single-line cards with indicator dots replacing verbose badges.",
+      { standard: "Standard", compact: "Compact" },
+    );
+
     this.addCoreToggle(
       containerEl,
       "core.exposeDebugApi",
@@ -226,6 +236,32 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (tourId) {
       setting.settingEl.setAttribute("data-wt-tour", tourId);
     }
+  }
+
+  private async addCoreDropdown(
+    containerEl: HTMLElement,
+    key: keyof CoreSettings,
+    name: string,
+    description: string,
+    choices: Record<string, string>,
+  ): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const value = settings[key] ?? CORE_DEFAULTS[key];
+
+    new Setting(containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addDropdown((dropdown) => {
+        for (const [val, label] of Object.entries(choices)) {
+          dropdown.addOption(val, label);
+        }
+        dropdown.setValue(String(value || "")).onChange(async (newValue) => {
+          await this.saveSettings((settings) => {
+            settings[key] = newValue;
+          });
+        });
+      });
   }
 
   private async addCardFlagRulesButton(containerEl: HTMLElement): Promise<void> {

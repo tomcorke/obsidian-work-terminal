@@ -12,6 +12,7 @@ import type {
   WorkItemMover,
   WorkItemParser,
   CardActionContext,
+  CardDisplayMode,
 } from "../core/interfaces";
 import type { TerminalPanelView } from "./TerminalPanelView";
 import type { PinStore } from "../core/PinStore";
@@ -149,6 +150,11 @@ export class ListPanel {
   // Rendering
   // ---------------------------------------------------------------------------
 
+  /** Resolve the current card display mode from settings. */
+  private getDisplayMode(): CardDisplayMode {
+    return (this.settings["core.cardDisplayMode"] as CardDisplayMode) || "standard";
+  }
+
   render(groups: Record<string, WorkItem[]>, customOrder: Record<string, string[]>): void {
     this.groups = groups;
     this.customOrder = customOrder;
@@ -160,6 +166,14 @@ export class ListPanel {
     }
 
     this.listEl.empty();
+
+    // Apply compact mode class to list panel container
+    const displayMode = this.getDisplayMode();
+    if (displayMode === "compact") {
+      this.listEl.addClass("wt-compact");
+    } else {
+      this.listEl.removeClass("wt-compact");
+    }
 
     // Collect pinned item IDs and build a lookup of all items by ID
     const pinnedIds = this.pinStore?.getPinnedIds() ?? [];
@@ -273,12 +287,14 @@ export class ListPanel {
     // Drop zone for drag-drop
     this.setupDropZone(cardsEl, sectionEl, headerEl, columnId);
 
+    const displayMode = this.getDisplayMode();
+
     for (const item of items) {
       // For pinned items, use the pinned column as the visual column
       // but track the real column for move operations
       const effectiveColumn = isPinnedSection ? PINNED_COLUMN_ID : columnId;
       const ctx = this.buildCardActionContext(item, effectiveColumn);
-      const cardEl = this.cardRenderer.render(item, ctx);
+      const cardEl = this.cardRenderer.render(item, ctx, displayMode);
       cardEl.addClass("wt-card-wrapper");
       cardEl.setAttribute("data-item-id", item.id);
       cardEl.setAttribute("draggable", "true");
