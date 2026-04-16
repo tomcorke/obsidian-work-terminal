@@ -13,6 +13,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Task card anatomy](#task-card-anatomy)
   - [Task card icons](#task-card-icons)
   - [Card display modes](#card-display-modes)
+  - [Hiding card indicators](#hiding-card-indicators)
   - [Context menu](#context-menu)
   - [Detail panel](#detail-panel)
   - [Drag-drop reordering](#drag-drop-reordering)
@@ -175,6 +176,17 @@ All three modes share the same interactive behaviour:
 - **Filtering** by text and active sessions
 
 Switch between modes at any time from the settings dropdown.
+
+### Hiding card indicators
+
+The **Show card indicators** setting (under **Settings > Adapter**) controls whether metadata badges and indicator dots appear on task cards. When disabled:
+
+- **Standard/Comfortable mode** - the metadata row below the title is hidden. This removes source badges (e.g. Jira keys), priority scores, goal tags, and card flag labels, reclaiming vertical space on the board.
+- **Compact mode** - the coloured indicator dots after the title are hidden.
+
+**What stays visible**: Agent session badges (the small session count indicators injected by the framework) remain visible regardless of this setting, since they reflect live session state rather than static metadata. Task card icons are also unaffected.
+
+This is useful when you have many tasks and want a minimal board that shows only titles, or when the metadata is not relevant to your current workflow.
 
 ### Context menu
 
@@ -541,6 +553,7 @@ These settings appear under the **Adapter** section and are specific to the task
 | Retry enrichment prompt | Custom prompt for retry enrichment | (default) |
 | Enrichment agent profile | Which profile to use for enrichment | Default |
 | Enrichment timeout | Max seconds for enrichment | 300 |
+| Show card indicators | Show metadata indicators on cards (source badges, priority scores, goal tags, card flags, indicator dots). See [Hiding card indicators](#hiding-card-indicators). | `true` |
 | Task card icons | Show icons on task cards | `false` |
 | Automatic icon mode | How automatic icons are assigned (none/source/state) | `none` |
 

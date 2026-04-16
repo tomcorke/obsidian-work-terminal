@@ -85,6 +85,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     const mergedRules = this.getMergedFlagRules();
     this._cardRenderer = new TaskCard(mergedRules);
     this.applyIconSettings();
+    this.applyIndicatorSettings();
     this._cardRenderer.setIconOperations({
       promptSetIcon: (item: WorkItem) => this.promptSetIcon(item),
       clearIcon: (item: WorkItem) => this.clearIcon(item),
@@ -105,6 +106,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (this._cardRenderer) {
       this._cardRenderer.updateFlagRules(this.getMergedFlagRules());
       this.applyIconSettings();
+      this.applyIndicatorSettings();
     }
     // Update column order and creation columns from settings
     this.config.columns = resolveColumns(settings["adapter.columnOrder"] as string | undefined);
@@ -185,6 +187,14 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   transformSessionLabel(_oldLabel: string, detectedLabel: string): string {
     return detectedLabel;
+  }
+
+  /** Apply current card indicator visibility setting to the card renderer. */
+  private applyIndicatorSettings(): void {
+    if (!this._cardRenderer) return;
+    // Default to true (show indicators) when setting is absent
+    const show = this._settings["adapter.showCardIndicators"] !== false;
+    this._cardRenderer.updateIndicatorVisibility(show);
   }
 
   /** Apply current icon settings to the card renderer. */
