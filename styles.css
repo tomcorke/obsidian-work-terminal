@@ -2069,9 +2069,22 @@ button.wt-spawn-claude-ctx:hover svg {
   line-height: 1;
 }
 
-/* Compact card wrapper overrides */
+/* Compact section header: tightest */
+.wt-compact .wt-section-header {
+  padding: 4px 8px;
+}
+
+/* Compact cards container: tightest */
+.wt-compact .wt-section-cards {
+  padding: 0 2px 2px;
+}
+
+/* Compact card wrapper overrides: smallest values in the hierarchy */
 .wt-compact .wt-card-wrapper {
+  --wt-card-padding-x: 6px;
   --wt-card-padding-y: 2px;
+  margin: 1px 0;
+  border-radius: 3px;
 }
 
 /* Compact card inner layout: single horizontal row */
@@ -2199,18 +2212,18 @@ button.wt-spawn-claude-ctx:hover svg {
    between compact and standard.
    ============================================================================= */
 
-/* Comfortable section headers: between compact (6px 8px) and standard (8px 10px) */
+/* Comfortable section headers: between compact (4px 8px) and standard (6px 10px) */
 .wt-comfortable .wt-section-header {
-  padding: 7px 9px;
+  padding: 5px 9px;
 }
 
-/* Comfortable cards container: between compact (0 2px 4px) and standard (2px 4px 6px) */
+/* Comfortable cards container: between compact (0 2px 2px) and standard (0 4px 4px) */
 .wt-comfortable .wt-section-cards {
-  padding: 1px 3px 5px;
+  padding: 0 3px 3px;
 }
 
-/* Comfortable card wrapper: between compact (2px y-pad, 2px margin, 3px radius)
-   and standard (8px y-pad, 3px margin, 4px radius). Uses compact row layout. */
+/* Comfortable card wrapper: between compact (6px x-pad, 2px y-pad, 1px margin, 3px radius)
+   and standard (10px x-pad, 8px y-pad, 3px margin, 4px radius). Uses compact row layout. */
 .wt-comfortable .wt-card-wrapper {
   --wt-card-padding-x: 8px;
   --wt-card-padding-y: 4px;
