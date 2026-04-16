@@ -137,6 +137,11 @@ export class ListPanel {
     }
   }
 
+  /** Update cached settings (called by MainView when settings change). */
+  updateSettings(settings: Record<string, any>): void {
+    this.settings = settings;
+  }
+
   getParser(): WorkItemParser | null {
     return null; // Parser is owned by MainView, not ListPanel
   }

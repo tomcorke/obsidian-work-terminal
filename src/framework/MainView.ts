@@ -79,6 +79,8 @@ export class MainView extends ItemView {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     // Notify adapter so it can update internal state (e.g. card flag rules, column order)
     this.adapter.onSettingsChanged?.(this.settings);
+    // Keep ListPanel's cached settings in sync so card display mode etc. take effect
+    this.listPanel?.updateSettings(this.settings);
     // Only rebuild PromptBox creation columns when they actually changed
     const newCreationColumnIds = this.adapter.config.creationColumns;
     if (prevCreationColumnIds !== newCreationColumnIds) {
