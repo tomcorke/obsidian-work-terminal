@@ -1,3 +1,7 @@
+// Pin timezone to UTC so local-midnight calculations in classifyActivity
+// match the hardcoded UTC timestamps used in these tests.
+process.env.TZ = "UTC";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ActivityTracker,
