@@ -34,6 +34,7 @@ export class TaskCard implements CardRenderer {
   private iconsEnabled = false;
   private autoIconMode: AutoIconMode = "none";
   private iconOps: IconOperations | null = null;
+  private showIndicators = true;
 
   constructor(flagRules: CardFlagRule[] = []) {
     this.flagRules = flagRules;
@@ -48,6 +49,11 @@ export class TaskCard implements CardRenderer {
   updateIconSettings(enabled: boolean, autoMode: AutoIconMode): void {
     this.iconsEnabled = enabled;
     this.autoIconMode = autoMode;
+  }
+
+  /** Update card indicator visibility (called when settings change). */
+  updateIndicatorVisibility(visible: boolean): void {
+    this.showIndicators = visible;
   }
 
   /** Set the icon operations handler (provided by the adapter). */
@@ -127,8 +133,12 @@ export class TaskCard implements CardRenderer {
     // Actions container (session badge + move-to-top added by framework)
     titleRow.createDiv({ cls: "wt-card-actions" });
 
-    // Meta row
+    // Meta row - always created so the framework can inject state/ingesting badges,
+    // but hidden when the user has disabled card indicators.
     const metaRow = card.createDiv({ cls: "wt-card-meta" });
+    if (!this.showIndicators) {
+      metaRow.style.display = "none";
+    }
 
     // Source badge - hide for CLI-created tasks, show Jira key when available
     if (source.type !== "prompt") {
@@ -206,9 +216,14 @@ export class TaskCard implements CardRenderer {
     titleEl.textContent = item.title;
     titleEl.title = item.title;
 
-    // Indicator dots container
+    // Indicator dots container - always created so the framework can inject
+    // state badges for pinned cards, but hidden when indicators are disabled.
     const dotsEl = compactRow.createDiv({ cls: "wt-card-compact-dots" });
-    this.renderIndicatorDots(dotsEl, meta, source, priority, goal);
+    if (this.showIndicators) {
+      this.renderIndicatorDots(dotsEl, meta, source, priority, goal);
+    } else {
+      dotsEl.style.display = "none";
+    }
 
     // Actions container (session badge + move-to-top added by framework)
     compactRow.createDiv({ cls: "wt-card-actions" });

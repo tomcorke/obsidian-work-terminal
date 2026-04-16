@@ -98,6 +98,14 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       default: "",
     },
     {
+      key: "showCardIndicators",
+      name: "Show card indicators",
+      description:
+        "Show metadata indicators on task cards. In standard mode this is the metadata row (source badge, priority score, goal tags, card flags). In compact mode this is the indicator dots. Agent session badges remain visible regardless of this setting.",
+      type: "toggle",
+      default: true,
+    },
+    {
       key: "taskCardIcons",
       name: "Task card icons",
       description:
@@ -130,6 +138,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     retryEnrichmentPrompt: "",
     enrichmentProfile: "",
     enrichmentTimeout: "",
+    showCardIndicators: true,
     taskCardIcons: false,
     autoIconMode: "none",
     customCardFlags: "[]",

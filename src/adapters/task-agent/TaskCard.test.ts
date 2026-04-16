@@ -870,4 +870,153 @@ describe("TaskCard", () => {
       expect(setItem).toBeUndefined();
     });
   });
+
+  describe("show card indicators setting", () => {
+    it("shows meta row in standard mode by default (indicators visible)", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "PROJ-123" },
+          priority: { score: 50 },
+          goal: ["Ship Feature"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "standard");
+      const metaRow = el.querySelector(".wt-card-meta") as HTMLElement;
+
+      expect(metaRow).not.toBeNull();
+      expect(metaRow.style.display).not.toBe("none");
+      expect(el.querySelector(".wt-card-source")).not.toBeNull();
+      expect(el.querySelector(".wt-card-score")).not.toBeNull();
+      expect(el.querySelector(".wt-card-goal")).not.toBeNull();
+    });
+
+    it("hides meta row in standard mode when indicators are disabled", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "PROJ-123" },
+          priority: { score: 50 },
+          goal: ["Ship Feature"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIndicatorVisibility(false);
+
+      const el = card.render(item, ctx, "standard");
+      const metaRow = el.querySelector(".wt-card-meta") as HTMLElement;
+
+      expect(metaRow).not.toBeNull();
+      expect(metaRow.style.display).toBe("none");
+    });
+
+    it("still creates meta row element when indicators are hidden (for framework badge injection)", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIndicatorVisibility(false);
+
+      const el = card.render(item, ctx, "standard");
+      const metaRow = el.querySelector(".wt-card-meta");
+
+      expect(metaRow).not.toBeNull();
+    });
+
+    it("shows indicator dots in compact mode by default", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "CASTLE-1234" },
+          priority: { score: 75 },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+      const dotsEl = el.querySelector(".wt-card-compact-dots") as HTMLElement;
+
+      expect(dotsEl).not.toBeNull();
+      expect(dotsEl.style.display).not.toBe("none");
+      expect(dotsEl.querySelectorAll(".wt-compact-dot").length).toBeGreaterThan(0);
+    });
+
+    it("hides indicator dots in compact mode when indicators are disabled", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "CASTLE-1234" },
+          priority: { score: 75 },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIndicatorVisibility(false);
+
+      const el = card.render(item, ctx, "compact");
+      const dotsEl = el.querySelector(".wt-card-compact-dots") as HTMLElement;
+
+      expect(dotsEl).not.toBeNull();
+      expect(dotsEl.style.display).toBe("none");
+      // No dots should be rendered inside
+      expect(dotsEl.querySelectorAll(".wt-compact-dot").length).toBe(0);
+    });
+
+    it("still creates dots container element when indicators are hidden (for framework badge injection)", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIndicatorVisibility(false);
+
+      const el = card.render(item, ctx, "compact");
+      const dotsEl = el.querySelector(".wt-card-compact-dots");
+
+      expect(dotsEl).not.toBeNull();
+    });
+
+    it("preserves actions container when indicators are hidden in compact mode", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIndicatorVisibility(false);
+
+      const el = card.render(item, ctx, "compact");
+      const actions = el.querySelector(".wt-card-compact-row .wt-card-actions");
+
+      expect(actions).not.toBeNull();
+    });
+
+    it("preserves title row and actions in standard mode when indicators are hidden", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIndicatorVisibility(false);
+
+      const el = card.render(item, ctx, "standard");
+
+      expect(el.querySelector(".wt-card-title-row")).not.toBeNull();
+      expect(el.querySelector(".wt-card-title")).not.toBeNull();
+      expect(el.querySelector(".wt-card-actions")).not.toBeNull();
+    });
+
+    it("re-enables indicators after toggling back on", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "PROJ-123" },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      card.updateIndicatorVisibility(false);
+      const hidden = card.render(item, ctx, "standard");
+      expect((hidden.querySelector(".wt-card-meta") as HTMLElement).style.display).toBe("none");
+
+      card.updateIndicatorVisibility(true);
+      const visible = card.render(item, ctx, "standard");
+      expect((visible.querySelector(".wt-card-meta") as HTMLElement).style.display).not.toBe(
+        "none",
+      );
+    });
+  });
 });
