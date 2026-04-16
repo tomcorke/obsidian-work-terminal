@@ -165,7 +165,7 @@ export class AgentProfileEditModal extends Modal {
     const argsSetting = new Setting(contentEl)
       .setName("Arguments")
       .setDesc(
-        "Extra CLI arguments. Merged with global defaults. Placeholders: $title, $state, $filePath, $id, $sessionId, $workTerminalPrompt (full assembled context prompt)",
+        "Extra CLI arguments. Merged with global defaults. Placeholders: $title, $state, $filePath, $absoluteFilePath, $id, $sessionId, $workTerminalPrompt (full assembled context prompt)",
       )
       .addTextArea((ta) => {
         ta.setValue(this.draft.arguments).onChange((value) => {
@@ -356,7 +356,7 @@ export class AgentProfileEditModal extends Modal {
     new Setting(containerEl)
       .setName("Suppress adapter prompt")
       .setDesc(
-        "When enabled, the adapter's base prompt is not prepended - your context template is used as the full prompt. Use $title, $state, $filePath, $id placeholders for item data.",
+        "When enabled, the adapter's base prompt is not prepended - your context template is used as the full prompt. Use $title, $state, $filePath, $absoluteFilePath, $id placeholders for item data.",
       )
       .addToggle((toggle) => {
         toggle.setValue(this.draft.suppressAdapterPrompt).onChange((value) => {
@@ -368,7 +368,7 @@ export class AgentProfileEditModal extends Modal {
     const ctxSetting = new Setting(containerEl)
       .setName("Context prompt template")
       .setDesc(
-        "Custom context template for this profile. Leave blank to use the global additional context. Placeholders: $title, $state, $filePath, $id, $sessionId",
+        "Custom context template for this profile. Leave blank to use the global additional context. Placeholders: $title, $state, $filePath, $absoluteFilePath, $id, $sessionId",
       )
       .addTextArea((ta) => {
         ta.setValue(this.draft.contextPrompt).onChange((value) => {
