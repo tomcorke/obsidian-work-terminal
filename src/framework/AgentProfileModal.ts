@@ -1,21 +1,19 @@
 /**
  * AgentProfileModal - modal for editing a single agent profile.
  * Covers all profile fields: name, agent type, command, CWD, arguments,
- * context prompt, button configuration, and parameter pass mode.
+ * context prompt, and button configuration.
  */
 import { App, Modal, Notice, Setting } from "obsidian";
 import type {
   AgentProfile,
   AgentType,
   BorderStyle,
-  ParamPassMode,
   ProfileIcon,
 } from "../core/agents/AgentProfile";
 import {
   AGENT_TYPES,
   BORDER_STYLES,
   BRAND_COLORS,
-  PARAM_PASS_MODES,
   PROFILE_ICONS,
   createDefaultProfile,
 } from "../core/agents/AgentProfile";
@@ -39,11 +37,6 @@ const BORDER_STYLE_LABELS: Record<BorderStyle, string> = {
   dashed: "Dashed",
   dotted: "Dotted",
   thick: "Thick",
-};
-
-const PARAM_PASS_MODE_LABELS: Record<ParamPassMode, string> = {
-  "launch-only": "Launch only",
-  both: "Both (launch and future use)",
 };
 
 const ICON_LABELS: Record<ProfileIcon, string> = {
@@ -119,7 +112,7 @@ export class AgentProfileEditModal extends Modal {
     // Agent type
     new Setting(contentEl)
       .setName("Agent type")
-      .setDesc("Determines how sessions are launched and resumed")
+      .setDesc("Determines how sessions are launched")
       .addDropdown((dropdown) => {
         for (const type of AGENT_TYPES) {
           dropdown.addOption(type, AGENT_TYPE_LABELS[type]);
@@ -214,19 +207,6 @@ export class AgentProfileEditModal extends Modal {
     // Reorder DOM: move contextDependentEl after the toggle setting
     contentEl.insertAfter(contextDependentEl, useContextSetting.settingEl);
     this.renderContextDependentSection(contextDependentEl);
-
-    // Parameter pass mode
-    new Setting(contentEl)
-      .setName("Parameter pass mode")
-      .setDesc("When to pass arguments and context prompt: on initial launch, on resume, or both")
-      .addDropdown((dropdown) => {
-        for (const mode of PARAM_PASS_MODES) {
-          dropdown.addOption(mode, PARAM_PASS_MODE_LABELS[mode]);
-        }
-        dropdown.setValue(this.draft.paramPassMode).onChange((value) => {
-          this.draft.paramPassMode = value as ParamPassMode;
-        });
-      });
 
     // ---------------------------------------------------------------------------
     // Button configuration

@@ -336,7 +336,7 @@ describe("AgentProfileManager", () => {
             name: "Legacy Profile",
             agentType: "claude",
             // Missing: command, defaultCwd, arguments, contextPrompt, useContext,
-            //          paramPassMode, button, sortOrder
+            //          button, sortOrder
           },
         ],
         agentProfilesMigrated: true,
@@ -348,7 +348,6 @@ describe("AgentProfileManager", () => {
       expect(profile.command).toBe("");
       expect(profile.defaultCwd).toBe("");
       expect(profile.useContext).toBe(false);
-      expect(profile.paramPassMode).toBe("launch-only");
       expect(profile.sortOrder).toBe(0);
       expect(plugin.saveData).not.toHaveBeenCalled();
     });

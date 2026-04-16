@@ -18,7 +18,7 @@ src/
     PluginBase.ts          # Abstract Plugin subclass, view/command/settings registration
     MainView.ts            # 2-panel ItemView (list | terminals), vault events, rename detection
     ListPanel.ts           # Column-based kanban, drag-drop, filtering, badges, state indicators
-    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation, resume
+    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation
     PromptBox.ts           # Item creation UI with column selector
     SettingsTab.ts         # Core + adapter namespaced settings
     DangerConfirm.ts       # Modal confirmation for destructive actions
