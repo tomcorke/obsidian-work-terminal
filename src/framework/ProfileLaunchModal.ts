@@ -24,8 +24,6 @@ export class ProfileLaunchModal extends Modal {
     private profiles: AgentProfile[],
     private defaultCwd: string,
     private onSubmit: (overrides: ProfileLaunchOverrides) => void,
-    _closedSessions?: unknown,
-    _onRestore?: unknown,
     private onOpenSettings?: () => void,
   ) {
     super(app);

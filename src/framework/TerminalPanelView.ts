@@ -1084,8 +1084,6 @@ export class TerminalPanelView {
       (overrides) => {
         this.launchAction("profile launch", () => this.spawnFromProfileWithOverrides(overrides));
       },
-      undefined,
-      undefined,
       () => {
         (this.plugin.app as any).setting.open();
         (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
