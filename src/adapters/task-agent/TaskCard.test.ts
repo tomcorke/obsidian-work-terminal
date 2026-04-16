@@ -19,8 +19,17 @@ vi.mock("obsidian", () => ({
   setIcon: (el: HTMLElement, iconName: string) => {
     // Simulate Obsidian's setIcon: insert an SVG for known Lucide icon names
     const KNOWN_ICONS = [
-      "rocket", "terminal", "ticket", "message-square", "file-text",
-      "circle", "flame", "play", "list-todo", "check", "circle-dot",
+      "rocket",
+      "terminal",
+      "ticket",
+      "message-square",
+      "file-text",
+      "circle",
+      "flame",
+      "play",
+      "list-todo",
+      "check",
+      "circle-dot",
     ];
     if (KNOWN_ICONS.includes(iconName)) {
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
