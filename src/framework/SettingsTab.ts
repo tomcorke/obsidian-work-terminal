@@ -29,7 +29,7 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
-  "core.cardDisplayMode": "standard" | "compact";
+  "core.cardDisplayMode": "standard" | "compact" | "comfortable";
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -127,8 +127,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       containerEl,
       "core.cardDisplayMode",
       "Card display mode",
-      "Standard shows full card details. Compact shows single-line cards with indicator dots replacing verbose badges.",
-      { standard: "Standard", compact: "Compact" },
+      "Standard shows full card details. Comfortable adds extra padding and spacing for easier scanning. Compact shows single-line cards with indicator dots replacing verbose badges.",
+      { standard: "Standard", comfortable: "Comfortable", compact: "Compact" },
     );
 
     this.addCoreToggle(

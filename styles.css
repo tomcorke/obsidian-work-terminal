@@ -2139,3 +2139,50 @@ button.wt-spawn-claude-ctx:hover svg {
   inset: -2px;
   border-radius: 10px;
 }
+
+/* =============================================================================
+   Comfortable card display mode
+   ============================================================================= */
+
+/* Comfortable sections: more breathing room between columns */
+.wt-comfortable .wt-section {
+  margin-bottom: 8px;
+}
+
+/* Comfortable section headers: taller with more padding */
+.wt-comfortable .wt-section-header {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+/* Comfortable cards container: more horizontal padding */
+.wt-comfortable .wt-section-cards {
+  padding: 2px 6px 8px;
+}
+
+/* Comfortable card wrapper: more padding and larger gaps */
+.wt-comfortable .wt-card-wrapper {
+  --wt-card-padding-x: 14px;
+  --wt-card-padding-y: 12px;
+  margin: 6px 0;
+  border-radius: 6px;
+}
+
+/* Comfortable title: slightly larger with more bottom margin */
+.wt-comfortable .wt-card-title {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+/* Comfortable meta row: more gap between badges */
+.wt-comfortable .wt-card-meta {
+  gap: 8px;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Comfortable drop indicator: thicker with more margin */
+.wt-comfortable .wt-drop-indicator {
+  height: 3px;
+  margin: 3px 6px;
+}

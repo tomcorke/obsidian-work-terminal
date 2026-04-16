@@ -153,7 +153,9 @@ export class ListPanel {
   /** Resolve the current card display mode from settings. */
   private getDisplayMode(): CardDisplayMode {
     const value = this.settings["core.cardDisplayMode"];
-    return value === "compact" ? "compact" : "standard";
+    if (value === "compact") return "compact";
+    if (value === "comfortable") return "comfortable";
+    return "standard";
   }
 
   render(groups: Record<string, WorkItem[]>, customOrder: Record<string, string[]>): void {
@@ -168,12 +170,13 @@ export class ListPanel {
 
     this.listEl.empty();
 
-    // Apply compact mode class to list panel container
+    // Apply display mode class to list panel container
     const displayMode = this.getDisplayMode();
+    this.listEl.removeClass("wt-compact", "wt-comfortable");
     if (displayMode === "compact") {
       this.listEl.addClass("wt-compact");
-    } else {
-      this.listEl.removeClass("wt-compact");
+    } else if (displayMode === "comfortable") {
+      this.listEl.addClass("wt-comfortable");
     }
 
     // Collect pinned item IDs and build a lookup of all items by ID
