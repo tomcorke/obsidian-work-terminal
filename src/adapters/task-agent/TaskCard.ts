@@ -194,8 +194,11 @@ export class TaskCard implements CardRenderer {
   ): void {
     // Jira source dot
     if (source.type === "jira" && source.id) {
+      const label = source.id.toUpperCase();
       const dot = container.createSpan({ cls: "wt-compact-dot wt-compact-dot--jira" });
-      dot.title = source.id.toUpperCase();
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
     }
 
     // Priority score dot
@@ -206,25 +209,33 @@ export class TaskCard implements CardRenderer {
           : priority.score >= 30
             ? "wt-compact-dot--priority-medium"
             : "wt-compact-dot--priority-low";
+      const label = `Priority: ${priority.score}`;
       const dot = container.createSpan({ cls: `wt-compact-dot ${tierClass}` });
-      dot.title = `Priority: ${priority.score}`;
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
     }
 
     // Goal dot
     if (goal.length > 0) {
-      const displayGoal = normalizeObsidianDisplayText(goal[0]);
+      const label = normalizeObsidianDisplayText(goal[0]).replace(/-/g, " ");
       const dot = container.createSpan({ cls: "wt-compact-dot wt-compact-dot--goal" });
-      dot.title = displayGoal.replace(/-/g, " ");
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
     }
 
     // Card flag dots
     const matchedFlags = matchCardFlags(this.flagRules, meta);
     for (const flag of matchedFlags) {
+      const label = flag.tooltip || flag.label;
       const dot = container.createSpan({ cls: "wt-compact-dot wt-compact-dot--flag" });
       if (flag.color) {
         dot.style.backgroundColor = flag.color;
       }
-      dot.title = flag.tooltip || flag.label;
+      dot.title = label;
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", label);
     }
   }
 

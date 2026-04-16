@@ -152,7 +152,8 @@ export class ListPanel {
 
   /** Resolve the current card display mode from settings. */
   private getDisplayMode(): CardDisplayMode {
-    return (this.settings["core.cardDisplayMode"] as CardDisplayMode) || "standard";
+    const value = this.settings["core.cardDisplayMode"];
+    return value === "compact" ? "compact" : "standard";
   }
 
   render(groups: Record<string, WorkItem[]>, customOrder: Record<string, string[]>): void {
@@ -309,10 +310,13 @@ export class ListPanel {
         stateBadge.addClass("wt-card-state-badge", `wt-state-badge-${stateSlug}`);
         stateBadge.textContent = stateLabel;
         stateBadge.title = `Real state: ${stateLabel}`;
-        // Insert badge into the meta row if available, otherwise into the card
+        // Insert badge into the meta row, compact dots container, or card root
         const metaRow = cardEl.querySelector(".wt-card-meta");
+        const compactDots = cardEl.querySelector(".wt-card-compact-dots");
         if (metaRow) {
           metaRow.insertBefore(stateBadge, metaRow.firstChild);
+        } else if (compactDots) {
+          compactDots.insertBefore(stateBadge, compactDots.firstChild);
         } else {
           cardEl.appendChild(stateBadge);
         }

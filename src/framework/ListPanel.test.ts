@@ -1034,7 +1034,7 @@ describe("ListPanel", () => {
         return el;
       });
 
-      const { panel, parentEl } = createListPanel({
+      const { panel } = createListPanel({
         settings: { "core.cardDisplayMode": "compact" },
       });
 

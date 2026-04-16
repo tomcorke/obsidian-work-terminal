@@ -29,7 +29,7 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
-  "core.cardDisplayMode": string;
+  "core.cardDisplayMode": "standard" | "compact";
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
