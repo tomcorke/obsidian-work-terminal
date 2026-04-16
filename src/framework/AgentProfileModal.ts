@@ -1,7 +1,7 @@
 /**
  * AgentProfileModal - modal for editing a single agent profile.
- * Covers all profile fields: name, agent type, command, CWD, arguments,
- * context prompt, and button configuration.
+ * Exposes launch settings (agent type, command, CWD, arguments, login shell),
+ * context prompt options, and tab bar button styling.
  */
 import { App, Modal, Notice, Setting } from "obsidian";
 import type {
