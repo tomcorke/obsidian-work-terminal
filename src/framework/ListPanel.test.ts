@@ -1166,4 +1166,214 @@ describe("ListPanel", () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Activity mode
+  // ---------------------------------------------------------------------------
+
+  function makeMockTracker(bucketMap: Record<string, string>) {
+    return {
+      getBucket: (itemId: string) => bucketMap[itemId] || "older",
+      recordActivity: vi.fn(),
+      seedFromFrontmatter: vi.fn(),
+      getTimestamp: vi.fn(),
+      rekey: vi.fn(),
+      dispose: vi.fn(),
+      setFlushCallback: vi.fn(),
+    };
+  }
+
+  describe("activity mode", () => {
+    it("groups items into activity buckets instead of kanban columns", () => {
+      const { panel } = createListPanel({
+        columns: [
+          { id: "active", label: "Active", folderName: "active" },
+          { id: "todo", label: "To Do", folderName: "todo" },
+        ],
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+      });
+
+      panel.setActivityTracker(
+        makeMockTracker({
+          "task-1": "recent",
+          "task-2": "recent",
+          "task-3": "last-7-days",
+          "task-4": "older",
+        }) as any,
+      );
+
+      const groups = {
+        active: [makeItem("task-1"), makeItem("task-3")],
+        todo: [makeItem("task-2"), makeItem("task-4")],
+      };
+      panel.render(groups, {});
+
+      const sections = Array.from(document.querySelectorAll(".wt-section"));
+      const sectionColumns = sections.map((s) => s.getAttribute("data-column"));
+      expect(sectionColumns).toEqual(["recent", "last-7-days", "older"]);
+
+      const recentCards = Array.from(
+        document.querySelectorAll('[data-column="recent"] .wt-card-wrapper'),
+      );
+      expect(recentCards.map((c) => c.getAttribute("data-item-id"))).toEqual(["task-1", "task-2"]);
+    });
+
+    it("respects custom order within activity buckets", () => {
+      const { panel } = createListPanel({
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+      });
+
+      panel.setActivityTracker(
+        makeMockTracker({
+          "task-1": "recent",
+          "task-2": "recent",
+          "task-3": "recent",
+        }) as any,
+      );
+
+      const groups = {
+        todo: [makeItem("task-1"), makeItem("task-2"), makeItem("task-3")],
+      };
+      panel.render(groups, { recent: ["task-3", "task-1", "task-2"] });
+
+      const recentCards = Array.from(
+        document.querySelectorAll('[data-column="recent"] .wt-card-wrapper'),
+      );
+      expect(recentCards.map((c) => c.getAttribute("data-item-id"))).toEqual([
+        "task-3",
+        "task-1",
+        "task-2",
+      ]);
+    });
+
+    it("drag-drop reorders within an activity bucket using DOM-derived order", () => {
+      const onCustomOrderChange = vi.fn();
+      const { panel } = createListPanel({
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+        onCustomOrderChange,
+      });
+
+      panel.setActivityTracker(
+        makeMockTracker({
+          "task-1": "recent",
+          "task-2": "recent",
+          "task-3": "recent",
+        }) as any,
+      );
+
+      const groups = {
+        todo: [makeItem("task-1"), makeItem("task-2"), makeItem("task-3")],
+      };
+      panel.render(groups, {});
+
+      // "recent" is NOT in groups (groups has "todo"), so reorderWithinSection
+      // must fall back to DOM-based order reading.
+      (panel as any).reorderWithinSection("recent", "task-3", 0);
+
+      expect(onCustomOrderChange).toHaveBeenCalled();
+      const lastCall = onCustomOrderChange.mock.calls[onCustomOrderChange.mock.calls.length - 1][0];
+      expect(lastCall["recent"]).toEqual(["task-3", "task-1", "task-2"]);
+    });
+
+    it("cross-bucket drag is treated as reorder in destination bucket", () => {
+      const onCustomOrderChange = vi.fn();
+      const { panel } = createListPanel({
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+        onCustomOrderChange,
+      });
+
+      panel.setActivityTracker(
+        makeMockTracker({
+          "task-1": "recent",
+          "task-2": "last-7-days",
+          "task-3": "last-7-days",
+        }) as any,
+      );
+
+      const groups = {
+        todo: [makeItem("task-1"), makeItem("task-2"), makeItem("task-3")],
+      };
+      panel.render(groups, {});
+
+      (panel as any).reorderWithinSection("last-7-days", "task-3", 0);
+
+      expect(onCustomOrderChange).toHaveBeenCalled();
+      const lastCall = onCustomOrderChange.mock.calls[onCustomOrderChange.mock.calls.length - 1][0];
+      expect(lastCall["last-7-days"]).toEqual(["task-3", "task-2"]);
+    });
+
+    it("places item at top of destination bucket on bucket crossing", () => {
+      const onCustomOrderChange = vi.fn();
+      const { panel } = createListPanel({
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+        onCustomOrderChange,
+      });
+
+      // First render: task-1 is in "recent"
+      panel.setActivityTracker(
+        makeMockTracker({
+          "task-1": "recent",
+          "task-2": "last-7-days",
+          "task-3": "last-7-days",
+        }) as any,
+      );
+
+      const groups = {
+        todo: [makeItem("task-1"), makeItem("task-2"), makeItem("task-3")],
+      };
+      panel.render(groups, { "last-7-days": ["task-2", "task-3"] });
+      onCustomOrderChange.mockClear();
+
+      // Second render: task-1 has aged to "last-7-days"
+      panel.setActivityTracker(
+        makeMockTracker({
+          "task-1": "last-7-days",
+          "task-2": "last-7-days",
+          "task-3": "last-7-days",
+        }) as any,
+      );
+
+      panel.render(groups, { "last-7-days": ["task-2", "task-3"] });
+
+      expect(onCustomOrderChange).toHaveBeenCalled();
+      const lastCall = onCustomOrderChange.mock.calls[onCustomOrderChange.mock.calls.length - 1][0];
+      expect(lastCall["last-7-days"][0]).toBe("task-1");
+    });
+
+    it("does not trigger bucket crossing on first render", () => {
+      const onCustomOrderChange = vi.fn();
+      const { panel } = createListPanel({
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+        onCustomOrderChange,
+      });
+
+      panel.setActivityTracker(
+        makeMockTracker({ "task-1": "recent", "task-2": "last-7-days" }) as any,
+      );
+
+      const groups = { todo: [makeItem("task-1"), makeItem("task-2")] };
+      panel.render(groups, {});
+
+      expect(onCustomOrderChange).not.toHaveBeenCalled();
+    });
+
+    it("does not trigger crossing when item stays in same bucket", () => {
+      const onCustomOrderChange = vi.fn();
+      const { panel } = createListPanel({
+        settings: { "core.viewMode": "activity", "core.recentThreshold": "3h" },
+        onCustomOrderChange,
+      });
+
+      panel.setActivityTracker(makeMockTracker({ "task-1": "recent" }) as any);
+
+      const groups = { todo: [makeItem("task-1")] };
+
+      panel.render(groups, {});
+      onCustomOrderChange.mockClear();
+
+      panel.render(groups, {});
+
+      expect(onCustomOrderChange).not.toHaveBeenCalled();
+    });
+  });
 });
