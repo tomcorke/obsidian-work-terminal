@@ -965,11 +965,22 @@ export class ListPanel {
   }
 
   private reorderWithinSection(columnId: string, itemId: string, targetIndex: number): void {
-    // Build the full current visual order: items already in customOrder first,
-    // then remaining items in their default sort order. This ensures ALL items
-    // in the section are tracked, not just previously-ordered ones.
-    const colItems = this.sortItems(this.groups[columnId] || [], columnId);
-    const order = colItems.map((i) => i.id);
+    // Build the full current visual order. In kanban mode this comes from
+    // this.groups[columnId]; in activity mode the groups map contains kanban
+    // state columns, not bucket IDs, so we derive the order from the DOM.
+    let order: string[];
+
+    if (this.groups[columnId]) {
+      const colItems = this.sortItems(this.groups[columnId], columnId);
+      order = colItems.map((i) => i.id);
+    } else {
+      // Activity mode: read current card order from the rendered section
+      const sectionEl = this.listEl.querySelector(`[data-column="${columnId}"]`);
+      const cards = sectionEl ? Array.from(sectionEl.querySelectorAll(".wt-card-wrapper")) : [];
+      order = cards
+        .map((el) => el.getAttribute("data-item-id"))
+        .filter((id): id is string => id != null);
+    }
 
     const fromIndex = order.indexOf(itemId);
     if (fromIndex < 0) return; // Item not in this section
