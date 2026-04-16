@@ -22,6 +22,7 @@ export function buildAgentContextPrompt(
   }
 
   return template
+    .replace(/\$absoluteFilePath/g, fullPath ?? item.path)
     .replace(/\$title/g, item.title)
     .replace(/\$state/g, item.state)
     .replace(/\$filePath/g, fullPath ?? item.path)
@@ -34,11 +35,12 @@ export const buildClaudeContextPrompt = buildAgentContextPrompt;
  * Expand placeholder variables in a profile template string.
  *
  * Supported placeholders:
- * - $title       - Work item title
- * - $state       - Work item state (e.g. "priority", "active")
- * - $filePath    - Work item file path
- * - $id          - Work item UUID
- * - $sessionId   - Agent session ID (may be a literal "$sessionId" when deferred)
+ * - $title             - Work item title
+ * - $state             - Work item state (e.g. "priority", "active")
+ * - $filePath          - Work item file path (vault-relative)
+ * - $absoluteFilePath  - Fully resolved absolute filesystem path to the work item file
+ * - $id                - Work item UUID
+ * - $sessionId         - Agent session ID (may be a literal "$sessionId" when deferred)
  * - $workTerminalPrompt - The fully assembled context prompt string, when provided via
  *                         the optional `contextPrompt` argument; otherwise expands to ""
  *
@@ -51,9 +53,11 @@ export function expandProfilePlaceholders(
   item: WorkItem,
   sessionId: string,
   contextPrompt?: string,
+  absoluteFilePath?: string,
 ): string {
   return template
     .replace(/\$workTerminalPrompt/g, contextPrompt ?? "")
+    .replace(/\$absoluteFilePath/g, absoluteFilePath ?? item.path)
     .replace(/\$title/g, item.title)
     .replace(/\$state/g, item.state)
     .replace(/\$filePath/g, item.path)

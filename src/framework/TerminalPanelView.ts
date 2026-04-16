@@ -708,7 +708,14 @@ export class TerminalPanelView {
       // Expand item placeholders in arguments for shell profiles
       let expandedArgs = extraArgs;
       if (item && expandedArgs) {
-        expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId");
+        const absPath = this.resolveWorkItemPath(item.path);
+        expandedArgs = expandProfilePlaceholders(
+          expandedArgs,
+          item,
+          "$sessionId",
+          undefined,
+          absPath,
+        );
       }
       const commandArgs = expandedArgs ? parseExtraArgs(expandedArgs) : [];
       const expandedCwd = expandTilde(cwd);
@@ -739,7 +746,14 @@ export class TerminalPanelView {
           ? null
           : this.promptBuilder.buildPrompt(item, this.resolveWorkItemPath(item.path));
         // Defer $sessionId in context template too (no $workTerminalPrompt in context itself)
-        const expandedContext = expandProfilePlaceholders(contextTemplate, item, "$sessionId");
+        const absPath = this.resolveWorkItemPath(item.path);
+        const expandedContext = expandProfilePlaceholders(
+          contextTemplate,
+          item,
+          "$sessionId",
+          undefined,
+          absPath,
+        );
         prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
       } else {
         // Fall back to standard context prompt building
@@ -761,7 +775,8 @@ export class TerminalPanelView {
     // $workTerminalPrompt resolves to the assembled context prompt above
     let expandedArgs = extraArgs;
     if (item && expandedArgs) {
-      expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt);
+      const absPath = this.resolveWorkItemPath(item.path);
+      expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt, absPath);
     }
 
     // Profile's resolveArguments() already includes global args, so skip the

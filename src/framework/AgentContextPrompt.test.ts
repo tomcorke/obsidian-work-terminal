@@ -39,6 +39,28 @@ describe("buildAgentContextPrompt", () => {
     expect(prompt).toBe("Path: /vault/2 - Areas/Tasks/priority/task.md");
   });
 
+  it("expands $absoluteFilePath to the resolved absolute path", () => {
+    const prompt = buildAgentContextPrompt(
+      item,
+      {
+        "core.additionalAgentContext": "Abs: $absoluteFilePath\nRel: $filePath",
+      },
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+
+    expect(prompt).toBe(
+      "Abs: /vault/2 - Areas/Tasks/priority/task.md\nRel: /vault/2 - Areas/Tasks/priority/task.md",
+    );
+  });
+
+  it("falls back to item.path for $absoluteFilePath when no fullPath provided", () => {
+    const prompt = buildAgentContextPrompt(item, {
+      "core.additionalAgentContext": "Abs: $absoluteFilePath",
+    });
+
+    expect(prompt).toBe("Abs: 2 - Areas/Tasks/priority/task.md");
+  });
+
   it("treats an explicitly cleared template as unavailable", () => {
     const prompt = buildAgentContextPrompt(item, {
       "core.additionalAgentContext": "",
@@ -134,5 +156,47 @@ describe("expandProfilePlaceholders", () => {
   it("returns template unchanged when no placeholders present", () => {
     const result = expandProfilePlaceholders("--verbose --model opus", item, "sess-abc");
     expect(result).toBe("--verbose --model opus");
+  });
+
+  it("expands $absoluteFilePath when provided", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+    expect(result).toBe("--path /vault/2 - Areas/Tasks/priority/task.md");
+  });
+
+  it("falls back to item.path for $absoluteFilePath when not provided", () => {
+    const result = expandProfilePlaceholders("--path $absoluteFilePath", item, "sess-abc");
+    expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
+  });
+
+  it("expands $absoluteFilePath and $filePath independently", () => {
+    const result = expandProfilePlaceholders(
+      "--abs $absoluteFilePath --rel $filePath",
+      item,
+      "sess-abc",
+      undefined,
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+    expect(result).toBe(
+      "--abs /vault/2 - Areas/Tasks/priority/task.md --rel 2 - Areas/Tasks/priority/task.md",
+    );
+  });
+
+  it("expands $absoluteFilePath alongside all other placeholders", () => {
+    const result = expandProfilePlaceholders(
+      "--title $title --abs $absoluteFilePath --id $id --session $sessionId",
+      item,
+      "sess-abc",
+      undefined,
+      "/vault/task.md",
+    );
+    expect(result).toBe(
+      "--title Fix prompt sync --abs /vault/task.md --id task-123 --session sess-abc",
+    );
   });
 });

@@ -351,6 +351,20 @@ Each profile includes:
 - **Tab bar button** - optionally add a quick-launch button to the tab bar
 - **Context prompt** - a prompt template injected when launching with task context
 
+**Placeholders**: The **Arguments** and **Context prompt** fields support placeholder variables that expand to work item data at launch time:
+
+| Placeholder | Description |
+|-------------|-------------|
+| `$title` | Work item title |
+| `$state` | Work item state (e.g. "priority", "active") |
+| `$filePath` | Vault-relative file path |
+| `$absoluteFilePath` | Fully resolved absolute filesystem path (useful for agents that need to read files directly) |
+| `$id` | Work item UUID |
+| `$sessionId` | Agent session ID (assigned at launch) |
+| `$workTerminalPrompt` | The fully assembled context prompt (only meaningful in arguments, not in the context template itself) |
+
+For example, an argument string like `--file $absoluteFilePath --task $title` would expand to something like `--file /Users/me/vault/Tasks/active/my-task.md --task My Task`.
+
 **Import/Export**: Profiles can be exported as JSON for sharing or backup, and imported from JSON to quickly set up a new installation.
 
 ### Card indicator rules
