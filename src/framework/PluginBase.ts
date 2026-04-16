@@ -6,7 +6,6 @@ import { type App, Notice, type PluginManifest, Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
 import { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { WorkTerminalSettingsTab } from "./SettingsTab";
-import { SessionPersistence } from "../core/session/SessionPersistence";
 
 export const VIEW_TYPE = "work-terminal-view";
 
@@ -137,38 +136,7 @@ export abstract class PluginBase extends Plugin {
   }
 
   onunload(): void {
-    // Best-effort persist as backup - onClose() should have already persisted,
-    // but Obsidian may not always honor async cleanup in onClose during shutdown.
-    if (!this._isReloading) {
-      // Iterate all leaves to persist sessions from every open Work Terminal view
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE);
-      const shutdownSessions = new Map<string, any[]>();
-      let shutdownPendingPersisted: any[] | undefined;
-      for (const leaf of leaves) {
-        const view = leaf.view as any;
-        const sessions = view?.terminalPanel?.tabManager?.getSessions?.();
-        const pendingPersisted = view?.terminalPanel?.getPendingPersistedSessionsForPersist?.();
-        if (sessions) {
-          for (const [itemId, tabs] of sessions as Map<string, any[]>) {
-            const existingTabs = shutdownSessions.get(itemId) || [];
-            shutdownSessions.set(itemId, [...existingTabs, ...tabs]);
-          }
-        }
-        if (
-          Array.isArray(pendingPersisted) &&
-          (!shutdownPendingPersisted || pendingPersisted.length > shutdownPendingPersisted.length)
-        ) {
-          shutdownPendingPersisted = pendingPersisted;
-        }
-      }
-      if (shutdownSessions.size === 0 && !shutdownPendingPersisted?.length) {
-        return;
-      }
-      // Fire-and-forget: onunload is sync, so we can't await this,
-      // but it gives us one more chance to persist before shutdown.
-      SessionPersistence.saveToDisk(this, shutdownSessions, shutdownPendingPersisted).catch(
-        () => {},
-      );
-    }
+    // No-op: session resume and disk persistence have been removed.
+    // Hot-reload stash (SessionStore) handles module re-evaluation.
   }
 }

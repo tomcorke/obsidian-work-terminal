@@ -8,12 +8,7 @@ import type { WebLinksAddon } from "@xterm/addon-web-links";
 import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
-import {
-  type ParamPassMode,
-  sessionTypeToAgentType,
-  isResumableAgentType,
-  isProfileSessionType,
-} from "../agents/AgentProfile";
+import { isProfileSessionType } from "../agents/AgentProfile";
 
 export const KNOWN_SESSION_TYPES = [
   "shell",
@@ -38,8 +33,6 @@ export type ProfileSessionType = `profile:${string}`;
  */
 export type SessionType = KnownSessionType | ProfileSessionType;
 
-export type DurableRecoveryMode = "resume" | "relaunch";
-
 export type AgentRuntimeState = "inactive" | "active" | "idle" | "waiting";
 
 /**
@@ -50,17 +43,11 @@ export interface StoredSession {
   id: string;
   taskPath: string | null;
   label: string;
-  agentSessionId?: string | null;
-  claudeSessionId?: string | null;
-  durableSessionId?: string | null;
   sessionType: SessionType;
   profileId?: string;
   profileColor?: string;
-  paramPassMode?: ParamPassMode;
   /** Activity detection patterns for config-driven state detection. */
   activityPatterns?: { activeLinePatterns: RegExp[]; activeJoinedPatterns: RegExp[] };
-  /** Explicit resumable override for custom profiles. */
-  isResumableOverride?: boolean;
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
@@ -78,36 +65,11 @@ export interface StoredSession {
   resizeObserver: ResizeObserver;
 }
 
-/**
- * Lightweight metadata persisted to disk so resumable agent sessions can be
- * resumed after a full plugin close/restart (not just hot-reload).
- */
-export interface PersistedSession {
-  version: 1 | 2;
-  taskPath: string;
-  agentSessionId?: string | null;
-  claudeSessionId?: string | null;
-  durableSessionId?: string;
-  durableSessionIdGenerated?: boolean;
-  label: string;
-  sessionType: SessionType;
-  savedAt: string; // ISO timestamp
-  recoveryMode?: DurableRecoveryMode;
-  cwd?: string;
-  command?: string;
-  commandArgs?: string[];
-  profileId?: string;
-  profileColor?: string;
-  paramPassMode?: ParamPassMode;
-}
-
 export interface ActiveTabInfo {
   tabId: string;
   itemId: string;
   label: string;
-  sessionId: string | null;
   sessionType: SessionType;
-  isResumableAgent: boolean;
 }
 
 export interface TabProcessDiagnostics {
@@ -138,10 +100,8 @@ export interface TabBufferDiagnostics {
 export interface TerminalTabDiagnostics {
   tabId: string;
   label: string;
-  sessionId: string | null;
   sessionType: SessionType;
   claudeState: AgentRuntimeState;
-  isResumableAgent: boolean;
   isVisible: boolean;
   isDisposed: boolean;
   process: TabProcessDiagnostics;
@@ -157,15 +117,6 @@ export interface TabDiagnostics extends TerminalTabDiagnostics {
   itemId: string;
   tabIndex: number;
   isSelected: boolean;
-  recovery: {
-    resumable: boolean;
-    relaunchable: boolean;
-    hasPersistedSession: boolean;
-    canResumeAfterRestart: boolean;
-    missingPersistedMetadata: boolean;
-    wouldBeLostOnFullClose: boolean;
-    lifecycle: "live" | "disposed" | "resumable" | "resume-metadata-missing" | "lost";
-  };
   derived: TerminalTabDiagnostics["derived"] & {
     disposedTabStillSelected: boolean;
   };
@@ -183,9 +134,4 @@ export function isSessionType(value: unknown): value is SessionType {
     (KNOWN_SESSION_TYPES.includes(value as (typeof KNOWN_SESSION_TYPES)[number]) ||
       isProfileSessionType(value))
   );
-}
-
-export function isResumableSessionType(sessionType: SessionType): boolean {
-  const { agentType } = sessionTypeToAgentType(sessionType);
-  return isResumableAgentType(agentType);
 }
