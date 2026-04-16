@@ -33,7 +33,7 @@ export class ListPanel {
   private plugin: Plugin;
   private terminalPanel: TerminalPanelView;
 
-  private settings: Record<string, any>;
+  private settings: Record<string, unknown>;
   private onSelect: (item: WorkItem | null) => void;
   private onCustomOrderChange: (order: Record<string, string[]>) => void;
   private onSessionFilterChange: (active: boolean) => void;
@@ -73,7 +73,7 @@ export class ListPanel {
     mover: WorkItemMover,
     plugin: Plugin,
     terminalPanel: TerminalPanelView,
-    settings: Record<string, any>,
+    settings: Record<string, unknown>,
     onSelect: (item: WorkItem | null) => void,
     onCustomOrderChange: (order: Record<string, string[]>) => void,
     onSessionFilterChange?: (active: boolean) => void,
@@ -138,7 +138,7 @@ export class ListPanel {
   }
 
   /** Update cached settings (called by MainView when settings change). */
-  updateSettings(settings: Record<string, any>): void {
+  updateSettings(settings: Record<string, unknown>): void {
     this.settings = settings;
   }
 

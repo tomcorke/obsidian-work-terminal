@@ -97,7 +97,7 @@ function createListPanel(
     cardClasses?: string[];
     includeMetaRow?: boolean;
     itemName?: string;
-    settings?: Record<string, any>;
+    settings?: Record<string, unknown>;
   } = {},
 ) {
   const parentEl = document.createElement("div") as HTMLElement & {
@@ -1013,7 +1013,7 @@ describe("ListPanel", () => {
     });
 
     it("removes wt-compact class when mode changes from compact to standard", () => {
-      const settings: Record<string, any> = { "core.cardDisplayMode": "compact" };
+      const settings: Record<string, unknown> = { "core.cardDisplayMode": "compact" };
       const { panel } = createListPanel({ settings });
 
       panel.render({ todo: [makeItem("task-1")] }, {});
@@ -1049,6 +1049,28 @@ describe("ListPanel", () => {
         expect.anything(),
         "compact",
       );
+    });
+
+    it("picks up a new settings object via updateSettings on the next render", () => {
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "standard" },
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-compact")).toBe(false);
+
+      // MainView replaces the settings object on change
+      panel.updateSettings({ "core.cardDisplayMode": "compact" });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(listEl.classList.contains("wt-compact")).toBe(true);
+
+      // Switch back to standard
+      panel.updateSettings({ "core.cardDisplayMode": "standard" });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(listEl.classList.contains("wt-compact")).toBe(false);
     });
 
     it("passes standard displayMode to card renderer when not compact", () => {
