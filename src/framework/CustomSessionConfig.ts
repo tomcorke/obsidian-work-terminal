@@ -2,8 +2,7 @@ import type { SessionType } from "../core/session/types";
 import {
   type AgentType,
   sessionTypeToAgentType,
-  getResumeConfig,
-  hasSessionTracking,
+  getLaunchConfig,
   isProfileSessionType,
 } from "../core/agents/AgentProfile";
 
@@ -49,13 +48,8 @@ export function sanitizeCustomSessionConfig(
 
 export function getDefaultSessionLabel(sessionType: SessionType): string {
   const { agentType, withContext } = sessionTypeToAgentType(sessionType);
-  const config = getResumeConfig(agentType);
+  const config = getLaunchConfig(agentType);
   return withContext ? `${config.displayLabel} (ctx)` : config.displayLabel;
-}
-
-export function getSessionTypeHelp(sessionType: SessionType): string {
-  const { agentType } = sessionTypeToAgentType(sessionType);
-  return getResumeConfig(agentType).helpText;
 }
 
 export function isContextSession(sessionType: SessionType): boolean {
@@ -67,13 +61,6 @@ export function isContextSession(sessionType: SessionType): boolean {
  */
 export function isAgentTypeSession(sessionType: SessionType, target: AgentType): boolean {
   return sessionTypeToAgentType(sessionType).agentType === target;
-}
-
-/**
- * Check whether a session type uses session tracking (e.g. Claude hooks).
- */
-export function isSessionTrackingSession(sessionType: SessionType): boolean {
-  return hasSessionTracking(sessionTypeToAgentType(sessionType).agentType);
 }
 
 export function isCopilotSession(sessionType: SessionType): boolean {

@@ -16,7 +16,7 @@ import {
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
-  getResumeConfig,
+  getLaunchConfig,
 } from "./AgentProfile";
 
 const PROFILES_KEY = "agentProfiles";
@@ -266,7 +266,7 @@ export class AgentProfileManager {
       return profile.command.trim();
     }
     // Fall back to global settings via AgentResumeConfig
-    const config = getResumeConfig(profile.agentType);
+    const config = getLaunchConfig(profile.agentType);
     const shellFallback = profile.agentType === "shell" ? process.env.SHELL || "/bin/zsh" : "";
     return String(settings[config.commandSettingKey] || config.defaultCommand || shellFallback);
   }
@@ -287,7 +287,7 @@ export class AgentProfileManager {
   resolveArguments(profile: AgentProfile, settings: Record<string, unknown>): string {
     const profileArgs = profile.arguments.trim();
     // Global args (for backward compatibility) via AgentResumeConfig
-    const config = getResumeConfig(profile.agentType);
+    const config = getLaunchConfig(profile.agentType);
     const globalArgs = config.extraArgsSettingKey
       ? String(settings[config.extraArgsSettingKey] || "")
       : "";

@@ -1,17 +1,7 @@
 import { App, Modal, Setting } from "obsidian";
 import type { AgentProfile } from "../core/agents/AgentProfile";
-import type { ClosedSessionEntry } from "../core/session/RecentlyClosedStore";
 import { isValidCssColor } from "../core/utils";
 import { createProfileIcon } from "../ui/ProfileIcons";
-import { getDefaultSessionLabel } from "./CustomSessionConfig";
-
-function formatTimeAgo(closedAt: number): string {
-  const seconds = Math.floor((Date.now() - closedAt) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes === 1) return "1m ago";
-  return `${minutes}m ago`;
-}
 
 export interface ProfileLaunchOverrides {
   profile: AgentProfile;
@@ -25,7 +15,6 @@ export class ProfileLaunchModal extends Modal {
   private cwdOverride = "";
   private extraArgsOverride = "";
   private labelOverride = "";
-  private activeTab: "new" | "restore" = "new";
   private cwdInput: HTMLInputElement | null = null;
   private labelInput: HTMLInputElement | null = null;
   private argsInput: HTMLTextAreaElement | null = null;
@@ -35,8 +24,8 @@ export class ProfileLaunchModal extends Modal {
     private profiles: AgentProfile[],
     private defaultCwd: string,
     private onSubmit: (overrides: ProfileLaunchOverrides) => void,
-    private closedSessions: ClosedSessionEntry[] = [],
-    private onRestore?: (entry: ClosedSessionEntry) => void,
+    _closedSessions?: unknown,
+    _onRestore?: unknown,
     private onOpenSettings?: () => void,
   ) {
     super(app);
@@ -51,36 +40,7 @@ export class ProfileLaunchModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("wt-custom-spawn-modal");
-
-    const hasClosedSessions = this.closedSessions.length > 0;
-
-    if (hasClosedSessions) {
-      const tabBar = contentEl.createDiv({ cls: "wt-custom-spawn-tabs" });
-
-      const newTab = tabBar.createEl("button", {
-        text: "Launch profile",
-        cls: `wt-custom-spawn-tab${this.activeTab === "new" ? " wt-custom-spawn-tab-active" : ""}`,
-      });
-      newTab.addEventListener("click", () => {
-        this.activeTab = "new";
-        this.render();
-      });
-
-      const restoreTab = tabBar.createEl("button", {
-        text: "Restore recent",
-        cls: `wt-custom-spawn-tab${this.activeTab === "restore" ? " wt-custom-spawn-tab-active" : ""}`,
-      });
-      restoreTab.addEventListener("click", () => {
-        this.activeTab = "restore";
-        this.render();
-      });
-    }
-
-    if (this.activeTab === "restore" && hasClosedSessions) {
-      this.renderRestoreTab(contentEl);
-    } else {
-      this.renderLaunchTab(contentEl);
-    }
+    this.renderLaunchTab(contentEl);
   }
 
   private renderLaunchTab(contentEl: HTMLElement): void {
@@ -203,51 +163,6 @@ export class ProfileLaunchModal extends Modal {
 
   private renderProfileSummary(container: HTMLElement): void {
     renderProfileSummary(container, this.selectedProfile);
-  }
-
-  private renderRestoreTab(contentEl: HTMLElement): void {
-    contentEl.createEl("h3", { text: "Restore recent sessions" });
-    contentEl.createEl("p", {
-      text: "Resume reopens the original agent session. Relaunch starts a fresh terminal, so prior scrollback is not restored.",
-      cls: "wt-custom-spawn-help",
-    });
-
-    const listEl = contentEl.createDiv({ cls: "wt-recently-closed-list" });
-
-    for (const entry of this.closedSessions) {
-      const row = listEl.createEl("button", { cls: "wt-recently-closed-row" });
-
-      if (entry.profileColor) {
-        const triangle = row.createDiv({ cls: "wt-tab-color-indicator" });
-        triangle.style.borderTopColor = entry.profileColor;
-        triangle.style.borderLeftColor = entry.profileColor;
-      }
-
-      const labelEl = row.createDiv({ cls: "wt-recently-closed-label" });
-      labelEl.createSpan({ text: entry.label, cls: "wt-recently-closed-name" });
-      labelEl.createSpan({
-        text: getDefaultSessionLabel(entry.sessionType),
-        cls: "wt-recently-closed-type",
-      });
-      labelEl.createSpan({
-        text: entry.recoveryMode === "resume" ? "Resume exact session" : "Relaunch fresh session",
-        cls: "wt-recently-closed-type",
-      });
-
-      row.createDiv({
-        text: formatTimeAgo(entry.closedAt),
-        cls: "wt-recently-closed-time",
-      });
-
-      row.addEventListener("click", () => {
-        this.onRestore?.(entry);
-        this.close();
-      });
-    }
-
-    const buttons = contentEl.createDiv({ cls: "wt-custom-spawn-buttons" });
-    const cancelBtn = buttons.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
   }
 
   onClose(): void {

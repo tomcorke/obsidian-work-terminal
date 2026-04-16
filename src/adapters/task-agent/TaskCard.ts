@@ -243,15 +243,6 @@ export class TaskCard implements CardRenderer {
       },
     });
 
-    // Clear resume sessions (only when resume badge is visible)
-    if (ctx.hasResumeSessions()) {
-      (items as any[]).push({ separator: true });
-      (items as any[]).push({
-        title: "Clear Resume Sessions",
-        callback: () => ctx.onClearResumeSessions(),
-      });
-    }
-
     (items as any[]).push({ separator: true });
 
     // Delete (danger)

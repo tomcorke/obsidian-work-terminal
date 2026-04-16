@@ -4,7 +4,7 @@
  * Coordinates with adapter.onItemCreated for background enrichment.
  */
 import type { Plugin } from "obsidian";
-import { getProfileResumeConfig, type AgentProfile } from "../core/agents/AgentProfile";
+import { getProfileLaunchConfig, type AgentProfile } from "../core/agents/AgentProfile";
 import type { AdapterBundle } from "../core/interfaces";
 
 export class PromptBox {
@@ -160,9 +160,9 @@ export class PromptBox {
           const profileMgr = (this.plugin as any).profileManager;
           const profile = profileMgr?.getProfile?.(profileId);
           if (profile) {
-            const resumeConfig = getProfileResumeConfig(profile as AgentProfile);
+            const launchConfig = getProfileLaunchConfig(profile as AgentProfile);
             const promptMode =
-              profile.agentType === "claude" ? "claude" : resumeConfig.promptInjectionMode;
+              profile.agentType === "claude" ? "claude" : launchConfig.promptInjectionMode;
             enrichmentSettings._enrichmentProfile = {
               command: profile.command,
               args: profile.arguments,

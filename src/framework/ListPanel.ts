@@ -13,7 +13,6 @@ import type {
   WorkItemParser,
   CardActionContext,
 } from "../core/interfaces";
-import type { PersistedSession } from "../core/session/types";
 import type { TerminalPanelView } from "./TerminalPanelView";
 import type { PinStore } from "../core/PinStore";
 import { DangerConfirm } from "./DangerConfirm";
@@ -325,11 +324,9 @@ export class ListPanel {
       // Agent state indicators (applied as class on card wrapper)
       this.renderAgentStateIndicator(cardEl, item);
 
-      // Actions container: session badge + resume badge + move-to-top (top-right)
-      // Order: [session badge] [resume badge] [move-to-top (on hover)]
+      // Actions container: session badge + move-to-top (top-right)
       const actionsEl = this.getCardActionsContainer(cardEl);
       this.renderSessionBadges(actionsEl, item);
-      this.renderResumeBadge(actionsEl, item);
       this.renderMoveToTop(actionsEl, item);
 
       // Ingesting shine + badge: card-level class drives the CSS animation
@@ -411,8 +408,6 @@ export class ListPanel {
       // preview, so suppressAdapterPrompt does not apply (always includes adapter prompt).
       getContextPrompt: () => this.terminalPanel.getAgentContextPrompt(item),
       onRetryEnrich: () => this.retryEnrichment(item),
-      onClearResumeSessions: () => this.terminalPanel.clearResumeSessionsForItem(item.id),
-      hasResumeSessions: () => this.hasVisibleResumeSessions(item.id),
       onPin: () => this.pinItem(item),
       onUnpin: () => this.unpinItem(item),
       isPinned: () => this.pinStore?.isPinned(item.id) ?? false,
@@ -986,47 +981,6 @@ export class ListPanel {
     });
   }
 
-  private renderResumeBadge(containerEl: HTMLElement, item: WorkItem): void {
-    const persisted = this.terminalPanel.getPersistedSessions(item.id);
-    if (!this.hasVisibleResumeSessions(item.id, persisted)) return;
-
-    const badge = containerEl.createDiv({ cls: "wt-resume-badge" });
-    let resumeInProgress = false;
-    const resumableCount = persisted.filter(
-      (session) => session.recoveryMode !== "relaunch",
-    ).length;
-    const relaunchCount = persisted.length - resumableCount;
-    badge.textContent = "\u21bb"; // Clockwise arrow
-    badge.setAttribute(
-      "title",
-      `${persisted.length} recoverable session(s) - ${resumableCount} resume, ${relaunchCount} relaunch. Relaunched sessions start fresh.`,
-    );
-    badge.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (resumeInProgress) return;
-      resumeInProgress = true;
-
-      try {
-        // Select the item first so resumed tabs appear in the terminal panel
-        this.selectItem(item);
-        // Resume all persisted sessions for this item
-        for (const session of persisted) {
-          await this.terminalPanel.resumeSession(session, item.id);
-        }
-      } catch (error) {
-        console.error("Failed to resume persisted sessions for item", item.id, error);
-        new Notice("Failed to resume previous sessions. See console for details.");
-      } finally {
-        resumeInProgress = false;
-      }
-    });
-  }
-
-  private hasVisibleResumeSessions(itemId: string, persisted?: PersistedSession[]): boolean {
-    const sessions = persisted ?? this.terminalPanel.getPersistedSessions(itemId);
-    return sessions.length > 0 && !this.terminalPanel.hasResumableAgentSessions(itemId);
-  }
-
   private getCardActionsContainer(cardEl: HTMLElement): HTMLElement {
     return (cardEl.querySelector(".wt-card-actions") as HTMLElement) || cardEl;
   }
@@ -1117,12 +1071,10 @@ export class ListPanel {
       if (!cardEl) continue;
       // Remove existing badges
       cardEl.querySelectorAll(".wt-session-badge").forEach((el) => el.remove());
-      cardEl.querySelectorAll(".wt-resume-badge").forEach((el) => el.remove());
       const actionsEl = this.getCardActionsContainer(cardEl);
-      // Re-render in order: session badge | resume badge | move-to-top (on hover)
+      // Re-render in order: session badge | move-to-top (on hover)
       const moveBtn = actionsEl.querySelector(".wt-move-to-top");
       this.renderSessionBadges(actionsEl, item);
-      this.renderResumeBadge(actionsEl, item);
       if (moveBtn) actionsEl.appendChild(moveBtn); // re-append to keep it last
     }
 
