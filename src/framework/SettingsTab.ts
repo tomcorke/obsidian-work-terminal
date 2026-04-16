@@ -9,7 +9,12 @@
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
-import type { AdapterBundle, CardFlagRule, SettingField } from "../core/interfaces";
+import type {
+  AdapterBundle,
+  CardDisplayMode,
+  CardFlagRule,
+  SettingField,
+} from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
@@ -29,7 +34,7 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
-  "core.cardDisplayMode": "standard" | "compact";
+  "core.cardDisplayMode": CardDisplayMode;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -127,8 +132,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       containerEl,
       "core.cardDisplayMode",
       "Card display mode",
-      "Standard shows full card details. Compact shows single-line cards with indicator dots replacing verbose badges.",
-      { standard: "Standard", compact: "Compact" },
+      "Standard shows full card details. Comfortable adds extra padding and spacing for easier scanning. Compact shows single-line cards with indicator dots replacing verbose badges.",
+      { standard: "Standard", comfortable: "Comfortable", compact: "Compact" },
     );
 
     this.addCoreToggle(

@@ -223,7 +223,7 @@ export interface CardActionContext {
 }
 
 /** Display mode for card rendering. */
-export type CardDisplayMode = "standard" | "compact";
+export type CardDisplayMode = "standard" | "compact" | "comfortable";
 
 /**
  * Renders a work item as a DOM card element and provides context menu items.

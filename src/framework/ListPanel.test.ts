@@ -981,6 +981,76 @@ describe("ListPanel", () => {
     });
   });
 
+  describe("comfortable display mode", () => {
+    it("adds wt-comfortable class to list panel when cardDisplayMode is comfortable", () => {
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "comfortable" },
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-comfortable")).toBe(true);
+    });
+
+    it("does not add wt-comfortable class when cardDisplayMode is standard", () => {
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "standard" },
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-comfortable")).toBe(false);
+    });
+
+    it("does not add wt-comfortable class when cardDisplayMode is not set", () => {
+      const { panel } = createListPanel({
+        settings: {},
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-comfortable")).toBe(false);
+    });
+
+    it("removes wt-comfortable class when mode changes from comfortable to standard", () => {
+      const settings: Record<string, any> = { "core.cardDisplayMode": "comfortable" };
+      const { panel } = createListPanel({ settings });
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-comfortable")).toBe(true);
+
+      // Simulate settings change
+      settings["core.cardDisplayMode"] = "standard";
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(listEl.classList.contains("wt-comfortable")).toBe(false);
+    });
+
+    it("passes comfortable displayMode to card renderer", () => {
+      const renderSpy = vi.fn((item: WorkItem) => {
+        const el = document.createElement("div");
+        el.createDiv({ cls: "wt-card-actions" });
+        return el;
+      });
+
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "comfortable" },
+      });
+
+      const cardRenderer = (panel as any).cardRenderer;
+      cardRenderer.render = renderSpy;
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "task-1" }),
+        expect.anything(),
+        "comfortable",
+      );
+    });
+  });
+
   describe("compact display mode", () => {
     it("adds wt-compact class to list panel when cardDisplayMode is compact", () => {
       const { panel } = createListPanel({
