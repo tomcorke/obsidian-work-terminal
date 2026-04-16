@@ -91,11 +91,22 @@ export abstract class PluginBase extends Plugin {
     await plugins.disablePlugin("work-terminal");
     await plugins.enablePlugin("work-terminal");
 
-    // The new plugin instance re-registered the view type. Open the view
-    // so onOpen() fires and picks up stashed sessions from window store.
-    const newPlugin = plugins.plugins["work-terminal"];
-    if (newPlugin && typeof newPlugin.activateView === "function") {
-      await newPlugin.activateView();
+    // The new plugin instance re-registered the view type. Force the
+    // existing leaf to re-create its view so onOpen() fires and picks
+    // up stashed sessions from window store. A plain activateView()
+    // would find the stale leaf via getLeavesOfType and just reveal it
+    // without re-initialising the view, leaving a blank pane.
+    const existingLeaves = appRef.workspace.getLeavesOfType(VIEW_TYPE);
+    if (existingLeaves.length > 0) {
+      for (const existingLeaf of existingLeaves) {
+        await existingLeaf.setViewState({ type: VIEW_TYPE, active: true });
+      }
+      appRef.workspace.revealLeaf(existingLeaves[0]);
+    } else {
+      const newPlugin = plugins.plugins["work-terminal"];
+      if (newPlugin && typeof newPlugin.activateView === "function") {
+        await newPlugin.activateView();
+      }
     }
     console.log("[work-terminal] Hot reload complete");
   }

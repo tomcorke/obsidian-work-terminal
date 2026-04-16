@@ -259,12 +259,12 @@ describe("PluginBase", () => {
   describe("hotReload", () => {
     it("stashes terminal sessions before reloading", async () => {
       const stashAll = vi.fn();
-      const fakeLeaf = { view: { terminalPanel: { stashAll } } };
+      const fakeLeaf = {
+        view: { terminalPanel: { stashAll } },
+        setViewState: vi.fn(() => Promise.resolve()),
+      };
       const app = makeApp();
       (app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
-      app.plugins.plugins["work-terminal"] = {
-        activateView: vi.fn(() => Promise.resolve()),
-      };
       const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
       await plugin.hotReload();
       expect(stashAll).toHaveBeenCalledTimes(1);
@@ -281,17 +281,49 @@ describe("PluginBase", () => {
       expect(app.plugins.enablePlugin).toHaveBeenCalledWith("work-terminal");
     });
 
-    it("calls activateView on the new plugin instance after reload", async () => {
+    it("re-initialises existing leaf via setViewState instead of activateView", async () => {
+      const setViewState = vi.fn(() => Promise.resolve());
+      const fakeLeaf = { view: {}, setViewState };
       const newActivateView = vi.fn(() => Promise.resolve());
       const app = makeApp();
+      (app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
+      app.plugins.plugins["work-terminal"] = { activateView: newActivateView };
+      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
+      await plugin.hotReload();
+      expect(setViewState).toHaveBeenCalledWith({ type: VIEW_TYPE, active: true });
+      expect(app.workspace.revealLeaf).toHaveBeenCalledWith(fakeLeaf);
+      expect(newActivateView).not.toHaveBeenCalled();
+    });
+
+    it("falls back to activateView when no existing leaf is found", async () => {
+      const newActivateView = vi.fn(() => Promise.resolve());
+      const app = makeApp();
+      (app.workspace.getLeavesOfType as any).mockReturnValue([]);
       app.plugins.plugins["work-terminal"] = { activateView: newActivateView };
       const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
       await plugin.hotReload();
       expect(newActivateView).toHaveBeenCalledTimes(1);
     });
 
+    it("re-initialises all existing leaves when multiple are open", async () => {
+      const setViewStateA = vi.fn(() => Promise.resolve());
+      const setViewStateB = vi.fn(() => Promise.resolve());
+      const leafA = { view: {}, setViewState: setViewStateA };
+      const leafB = { view: {}, setViewState: setViewStateB };
+      const newActivateView = vi.fn(() => Promise.resolve());
+      const app = makeApp();
+      (app.workspace.getLeavesOfType as any).mockReturnValue([leafA, leafB]);
+      app.plugins.plugins["work-terminal"] = { activateView: newActivateView };
+      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
+      await plugin.hotReload();
+      expect(setViewStateA).toHaveBeenCalledWith({ type: VIEW_TYPE, active: true });
+      expect(setViewStateB).toHaveBeenCalledWith({ type: VIEW_TYPE, active: true });
+      expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leafA);
+      expect(newActivateView).not.toHaveBeenCalled();
+    });
+
     it("tolerates missing terminalPanel gracefully", async () => {
-      const fakeLeaf = { view: {} };
+      const fakeLeaf = { view: {}, setViewState: vi.fn(() => Promise.resolve()) };
       const app = makeApp();
       (app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
       app.plugins.plugins["work-terminal"] = { activateView: vi.fn(() => Promise.resolve()) };
