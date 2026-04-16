@@ -59,13 +59,6 @@ export const AGENT_TYPES = ["claude", "copilot", "strands", "shell", "custom"] a
 export type AgentType = (typeof AGENT_TYPES)[number];
 
 // ---------------------------------------------------------------------------
-// Placeholder options for launch vs resume
-// ---------------------------------------------------------------------------
-
-export const PARAM_PASS_MODES = ["launch-only", "both"] as const;
-export type ParamPassMode = (typeof PARAM_PASS_MODES)[number];
-
-// ---------------------------------------------------------------------------
 // Button configuration
 // ---------------------------------------------------------------------------
 
@@ -92,7 +85,6 @@ export interface AgentProfile {
   useContext: boolean;
   /** When true, the adapter's base prompt is not prepended to the context prompt. */
   suppressAdapterPrompt: boolean;
-  paramPassMode: ParamPassMode;
   button: ProfileButton;
   /** Order index for sorting in the UI. Lower values first. */
   sortOrder: number;
@@ -135,7 +127,6 @@ const AgentProfileSchema = z.object({
   contextPrompt: z.string(),
   useContext: z.boolean(),
   suppressAdapterPrompt: z.boolean(),
-  paramPassMode: z.enum(PARAM_PASS_MODES),
   button: ProfileButtonSchema,
   sortOrder: z.number(),
   promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
@@ -159,7 +150,6 @@ const StoredProfileSchema = z
     contextPrompt: z.string().default(""),
     useContext: z.boolean().default(false),
     suppressAdapterPrompt: z.boolean().default(false),
-    paramPassMode: z.enum(PARAM_PASS_MODES).default("launch-only"),
     button: ProfileButtonSchema.default({
       enabled: false,
       label: "Agent",
@@ -389,7 +379,6 @@ export function createDefaultProfile(overrides?: Partial<AgentProfile>): AgentPr
     contextPrompt: "",
     useContext: false,
     suppressAdapterPrompt: false,
-    paramPassMode: "launch-only",
     button: {
       enabled: false,
       label: "",
@@ -414,7 +403,6 @@ export function createDefaultClaudeProfile(sortOrder = 0): AgentProfile {
     contextPrompt: "",
     useContext: false,
     suppressAdapterPrompt: false,
-    paramPassMode: "launch-only",
     button: {
       enabled: true,
       label: "Claude",
@@ -437,7 +425,6 @@ export function createDefaultClaudeCtxProfile(sortOrder = 1): AgentProfile {
     contextPrompt: "",
     useContext: true,
     suppressAdapterPrompt: false,
-    paramPassMode: "launch-only",
     button: {
       enabled: true,
       label: "Claude (ctx)",
@@ -460,7 +447,6 @@ export function createDefaultCopilotProfile(sortOrder = 2): AgentProfile {
     contextPrompt: "",
     useContext: false,
     suppressAdapterPrompt: false,
-    paramPassMode: "launch-only",
     button: {
       enabled: false,
       label: "Copilot",

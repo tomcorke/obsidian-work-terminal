@@ -1545,7 +1545,6 @@ describe("profile launch", () => {
       arguments: "--model opus",
       contextPrompt: "",
       useContext: false,
-      paramPassMode: "launch-only",
       button: { enabled: true, label: "Claude", icon: "claude", borderStyle: "solid" },
       sortOrder: 0,
       ...overrides,
@@ -1867,7 +1866,7 @@ describe("profile launch", () => {
     resolveStub.mockRestore();
   });
 
-  it("passes arguments when paramPassMode is launch-only", async () => {
+  it("always passes arguments on launch", async () => {
     const { view } = createView();
     await flushAsync();
 
@@ -1884,76 +1883,14 @@ describe("profile launch", () => {
 
     const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
 
-    await (view as any).spawnFromProfile(
-      makeProfile({ paramPassMode: "launch-only", arguments: "--model opus" }),
-    );
+    await (view as any).spawnFromProfile(makeProfile({ arguments: "--model opus" }));
 
     expect(spawnAgentSpy).toHaveBeenCalledOnce();
     const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.extraArgs).toBe("--model opus");
   });
 
-  it("suppresses arguments when paramPassMode is resume-only", async () => {
-    const { view } = createView();
-    await flushAsync();
-
-    mockState.activeItemId = "task-1";
-    (view as any).allItems = [
-      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
-    ];
-    (view as any).profileManager = {
-      resolveCommand: () => "claude",
-      resolveCwd: () => "~/projects",
-      resolveArguments: () => "--model opus",
-      resolveContextPrompt: () => "",
-    };
-
-    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
-
-    await (view as any).spawnFromProfile(
-      makeProfile({ paramPassMode: "resume-only", arguments: "--model opus" }),
-    );
-
-    expect(spawnAgentSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnAgentSpy.mock.calls[0][0];
-    expect(callArgs.extraArgs).toBe("");
-  });
-
-  it("suppresses context prompt when paramPassMode is resume-only", async () => {
-    const promptBuilder = {
-      buildPrompt: vi.fn(() => "adapter prompt"),
-    };
-    const { view } = createView({}, {}, promptBuilder);
-    await flushAsync();
-
-    mockState.activeItemId = "task-1";
-    (view as any).allItems = [
-      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
-    ];
-    (view as any).profileManager = {
-      resolveCommand: () => "claude",
-      resolveCwd: () => "~/projects",
-      resolveArguments: () => "",
-      resolveContextPrompt: () => "Context for $title",
-    };
-
-    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
-
-    await (view as any).spawnFromProfile(
-      makeProfile({
-        paramPassMode: "resume-only",
-        useContext: true,
-        contextPrompt: "Context for $title",
-      }),
-    );
-
-    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
-    expect(spawnAgentSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnAgentSpy.mock.calls[0][0];
-    expect(callArgs.prompt).toBeUndefined();
-  });
-
-  it("passes arguments and prompt when paramPassMode is both", async () => {
+  it("always passes arguments and prompt on launch when useContext is enabled", async () => {
     const promptBuilder = {
       buildPrompt: vi.fn(() => "adapter prompt"),
     };
@@ -1975,7 +1912,6 @@ describe("profile launch", () => {
 
     await (view as any).spawnFromProfile(
       makeProfile({
-        paramPassMode: "both",
         useContext: true,
         arguments: "--verbose",
         contextPrompt: "Context for $title",

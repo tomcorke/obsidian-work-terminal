@@ -702,15 +702,11 @@ export class TerminalPanelView {
     const extraArgs = this.profileManager.resolveArguments(profile, fresh);
     const label = profile.button.label || profile.name;
 
-    // Determine whether params (arguments + context prompt) should be passed on launch
-    const passParamsOnLaunch =
-      profile.paramPassMode === "launch-only" || profile.paramPassMode === "both";
-
     const item = this.getActiveItem();
 
     if (profile.agentType === "shell") {
       // Expand item placeholders in arguments for shell profiles
-      let expandedArgs = passParamsOnLaunch ? extraArgs : "";
+      let expandedArgs = extraArgs;
       if (item && expandedArgs) {
         expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId");
       }
@@ -735,7 +731,7 @@ export class TerminalPanelView {
 
     // Build context prompt first so $workTerminalPrompt can be resolved in args
     let prompt: string | undefined;
-    if (passParamsOnLaunch && profile.useContext && item) {
+    if (profile.useContext && item) {
       const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
       if (contextTemplate) {
         // Build from adapter prompt + profile context template
@@ -763,7 +759,7 @@ export class TerminalPanelView {
 
     // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
     // $workTerminalPrompt resolves to the assembled context prompt above
-    let expandedArgs = passParamsOnLaunch ? extraArgs : "";
+    let expandedArgs = extraArgs;
     if (item && expandedArgs) {
       expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt);
     }

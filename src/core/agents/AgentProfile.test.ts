@@ -242,7 +242,6 @@ describe("Zod schema for custom profiles", () => {
       contextPrompt: "",
       useContext: false,
       suppressAdapterPrompt: false,
-      paramPassMode: "launch-only",
       button: { enabled: true, label: "Pi" },
       sortOrder: 0,
       promptInjectionMode: "positional",
@@ -262,7 +261,6 @@ describe("Zod schema for custom profiles", () => {
       contextPrompt: "",
       useContext: false,
       suppressAdapterPrompt: false,
-      paramPassMode: "launch-only",
       button: { enabled: false, label: "" },
       sortOrder: 0,
     };
