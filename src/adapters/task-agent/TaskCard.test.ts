@@ -428,4 +428,237 @@ describe("TaskCard", () => {
       expect(flags.length).toBe(0);
     });
   });
+
+  describe("compact display mode", () => {
+    it("renders wt-card-compact class in compact mode", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      expect(el.classList.contains("wt-card-compact")).toBe(true);
+    });
+
+    it("does not render wt-card-compact class in standard mode", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "standard");
+
+      expect(el.classList.contains("wt-card-compact")).toBe(false);
+    });
+
+    it("does not render wt-card-compact class when displayMode is undefined", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx);
+
+      expect(el.classList.contains("wt-card-compact")).toBe(false);
+    });
+
+    it("renders compact row layout with title and dots container", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const compactRow = el.querySelector(".wt-card-compact-row");
+      expect(compactRow).not.toBeNull();
+
+      const title = el.querySelector(".wt-card-compact-title");
+      expect(title).not.toBeNull();
+      expect(title!.textContent).toBe("Fix context prompt");
+
+      const dots = el.querySelector(".wt-card-compact-dots");
+      expect(dots).not.toBeNull();
+    });
+
+    it("renders icon slot placeholder in compact mode (hidden)", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+      expect(iconSlot).not.toBeNull();
+      expect(iconSlot.style.display).toBe("none");
+    });
+
+    it("renders icon slot placeholder in standard mode (hidden)", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "standard");
+
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+      expect(iconSlot).not.toBeNull();
+      expect(iconSlot.style.display).toBe("none");
+    });
+
+    it("does not render meta row in compact mode", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "PROJ-123" },
+          priority: { score: 50 },
+          goal: ["Ship Feature"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      expect(el.querySelector(".wt-card-meta")).toBeNull();
+      expect(el.querySelector(".wt-card-source")).toBeNull();
+      expect(el.querySelector(".wt-card-score")).toBeNull();
+      expect(el.querySelector(".wt-card-goal")).toBeNull();
+    });
+
+    it("renders Jira indicator dot with blue color and tooltip", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "CASTLE-1234" },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const jiraDot = el.querySelector(".wt-compact-dot--jira") as HTMLElement;
+      expect(jiraDot).not.toBeNull();
+      expect(jiraDot.title).toBe("CASTLE-1234");
+    });
+
+    it("renders priority indicator dot with correct tier class", () => {
+      const highItem = makeItem({
+        metadata: { priority: { score: 75 } },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const highEl = card.render(highItem, ctx, "compact");
+      expect(highEl.querySelector(".wt-compact-dot--priority-high")).not.toBeNull();
+      expect(highEl.querySelector(".wt-compact-dot--priority-high")!.getAttribute("title")).toBe(
+        "Priority: 75",
+      );
+
+      const medItem = makeItem({
+        metadata: { priority: { score: 40 } },
+      });
+      const medEl = card.render(medItem, ctx, "compact");
+      expect(medEl.querySelector(".wt-compact-dot--priority-medium")).not.toBeNull();
+
+      const lowItem = makeItem({
+        metadata: { priority: { score: 10 } },
+      });
+      const lowEl = card.render(lowItem, ctx, "compact");
+      expect(lowEl.querySelector(".wt-compact-dot--priority-low")).not.toBeNull();
+    });
+
+    it("does not render priority dot when score is 0", () => {
+      const item = makeItem({
+        metadata: { priority: { score: 0 } },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+      const dots = el.querySelectorAll(".wt-compact-dot");
+      const priorityDots = Array.from(dots).filter(
+        (d) =>
+          d.classList.contains("wt-compact-dot--priority-high") ||
+          d.classList.contains("wt-compact-dot--priority-medium") ||
+          d.classList.contains("wt-compact-dot--priority-low"),
+      );
+
+      expect(priorityDots.length).toBe(0);
+    });
+
+    it("renders goal indicator dot with tooltip", () => {
+      const item = makeItem({
+        metadata: {
+          goal: ["[[Ship Feature|My Goal]]"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const goalDot = el.querySelector(".wt-compact-dot--goal") as HTMLElement;
+      expect(goalDot).not.toBeNull();
+      expect(goalDot.title).toBe("My Goal");
+    });
+
+    it("renders flag indicator dots with flag color and tooltip", () => {
+      const rules: CardFlagRule[] = [
+        {
+          field: "priority.has-blocker",
+          value: true,
+          label: "BLOCKED",
+          style: "badge",
+          color: "#e5484d",
+          tooltip: "{{priority.blocker-context}}",
+        },
+      ];
+      const item = makeItem({
+        metadata: {
+          priority: {
+            "has-blocker": true,
+            "blocker-context": "waiting on deploy",
+          },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard(rules);
+
+      const el = card.render(item, ctx, "compact");
+
+      const flagDot = el.querySelector(".wt-compact-dot--flag") as HTMLElement;
+      expect(flagDot).not.toBeNull();
+      expect(flagDot.style.backgroundColor).toBe("rgb(229, 72, 77)");
+      expect(flagDot.title).toBe("waiting on deploy");
+    });
+
+    it("renders no dots for a plain task with no metadata", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const dots = el.querySelectorAll(".wt-compact-dot");
+      expect(dots.length).toBe(0);
+    });
+
+    it("renders actions container inside compact row for framework badges", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const actions = el.querySelector(".wt-card-compact-row .wt-card-actions");
+      expect(actions).not.toBeNull();
+    });
+
+    it("sets title attribute on compact title for tooltip on hover", () => {
+      const item = makeItem({ title: "A very long task title that would be truncated" });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "compact");
+
+      const title = el.querySelector(".wt-card-compact-title") as HTMLElement;
+      expect(title.getAttribute("title")).toBe("A very long task title that would be truncated");
+    });
+  });
 });

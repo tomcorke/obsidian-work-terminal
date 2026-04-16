@@ -980,4 +980,98 @@ describe("ListPanel", () => {
       expect(card2.style.display).toBe("");
     });
   });
+
+  describe("compact display mode", () => {
+    it("adds wt-compact class to list panel when cardDisplayMode is compact", () => {
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "compact" },
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-compact")).toBe(true);
+    });
+
+    it("does not add wt-compact class when cardDisplayMode is standard", () => {
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "standard" },
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-compact")).toBe(false);
+    });
+
+    it("does not add wt-compact class when cardDisplayMode is not set", () => {
+      const { panel } = createListPanel({
+        settings: {},
+      });
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-compact")).toBe(false);
+    });
+
+    it("removes wt-compact class when mode changes from compact to standard", () => {
+      const settings: Record<string, any> = { "core.cardDisplayMode": "compact" };
+      const { panel } = createListPanel({ settings });
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+      const listEl = document.querySelector(".wt-list-panel") as HTMLElement;
+      expect(listEl.classList.contains("wt-compact")).toBe(true);
+
+      // Simulate settings change
+      settings["core.cardDisplayMode"] = "standard";
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(listEl.classList.contains("wt-compact")).toBe(false);
+    });
+
+    it("passes displayMode to card renderer", () => {
+      const renderSpy = vi.fn((item: WorkItem) => {
+        const el = document.createElement("div");
+        el.createDiv({ cls: "wt-card-actions" });
+        return el;
+      });
+
+      const { panel, parentEl } = createListPanel({
+        settings: { "core.cardDisplayMode": "compact" },
+      });
+
+      // Replace the card renderer's render with a spy to verify the displayMode argument
+      const cardRenderer = (panel as any).cardRenderer;
+      cardRenderer.render = renderSpy;
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "task-1" }),
+        expect.anything(),
+        "compact",
+      );
+    });
+
+    it("passes standard displayMode to card renderer when not compact", () => {
+      const renderSpy = vi.fn((item: WorkItem) => {
+        const el = document.createElement("div");
+        el.createDiv({ cls: "wt-card-actions" });
+        return el;
+      });
+
+      const { panel } = createListPanel({
+        settings: { "core.cardDisplayMode": "standard" },
+      });
+
+      const cardRenderer = (panel as any).cardRenderer;
+      cardRenderer.render = renderSpy;
+
+      panel.render({ todo: [makeItem("task-1")] }, {});
+
+      expect(renderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "task-1" }),
+        expect.anything(),
+        "standard",
+      );
+    });
+  });
 });
