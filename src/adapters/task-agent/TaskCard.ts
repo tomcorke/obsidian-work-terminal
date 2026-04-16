@@ -17,9 +17,19 @@ import {
   type AutoIconMode,
 } from "./types";
 
-/** Emoji detection regex - matches common emoji patterns including modifiers and ZWJ sequences. */
-const EMOJI_RE =
-  /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*$/u;
+/**
+ * Emoji detection regex - matches emoji including skin-tone modifiers and ZWJ sequences.
+ *
+ * Each component allows an optional skin-tone modifier (\u{1F3FB}-\u{1F3FF}) after the base
+ * emoji, which is required for ZWJ sequences like 🤷🏻‍♂️ (person shrugging + light skin tone +
+ * ZWJ + male sign + VS16).
+ *
+ * Known limitation: ZWJ emoji render correctly as task card icons but may split into
+ * component glyphs in the xterm.js terminal. This is an upstream xterm.js limitation
+ * with wide/complex emoji and is not something we can fix here. See #432.
+ */
+export const EMOJI_RE =
+  /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)[\u{1F3FB}-\u{1F3FF}]?(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)[\u{1F3FB}-\u{1F3FF}]?)*$/u;
 
 /** Callback for icon operations provided by the adapter. */
 export interface IconOperations {

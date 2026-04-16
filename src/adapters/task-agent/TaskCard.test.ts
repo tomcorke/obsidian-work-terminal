@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { TaskCard } from "./TaskCard";
+import { EMOJI_RE, TaskCard } from "./TaskCard";
 import type { CardActionContext, CardFlagRule, WorkItem } from "../../core/interfaces";
 import { DEFAULT_CARD_FLAGS } from "./TaskAgentConfig";
 
@@ -1083,6 +1083,79 @@ describe("TaskCard", () => {
       const visible = card.render(item, ctx, "standard");
       // Indicator content rendered again when re-enabled
       expect(visible.querySelector(".wt-card-source")).not.toBeNull();
+    });
+  });
+
+  describe("EMOJI_RE - ZWJ sequence and skin tone support (#432)", () => {
+    // Simple emoji (baseline - should still work)
+    it.each([
+      ["\uD83D\uDE80", "rocket (simple emoji presentation)"],
+      ["\u2764\uFE0F", "red heart (text emoji + VS16)"],
+      ["\uD83D\uDE00", "grinning face"],
+      ["\u2728", "sparkles"],
+    ])("matches simple emoji: %s (%s)", (emoji) => {
+      expect(EMOJI_RE.test(emoji)).toBe(true);
+    });
+
+    // Skin tone modifiers (the core fix for #432)
+    it.each([
+      ["\uD83D\uDC4D\uD83C\uDFFB", "thumbs up + light skin tone"],
+      ["\uD83D\uDC4D\uD83C\uDFFF", "thumbs up + dark skin tone"],
+      ["\uD83D\uDC4B\uD83C\uDFFD", "waving hand + medium skin tone"],
+    ])("matches emoji with skin tone modifier: %s (%s)", (emoji) => {
+      expect(EMOJI_RE.test(emoji)).toBe(true);
+    });
+
+    // ZWJ sequences without skin tones
+    it.each([
+      ["\uD83D\uDC68\u200D\uD83D\uDCBB", "man technologist (man + ZWJ + laptop)"],
+      ["\uD83D\uDC69\u200D\uD83C\uDF73", "woman cook (woman + ZWJ + cooking)"],
+      [
+        "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66",
+        "family: man, woman, girl, boy",
+      ],
+    ])("matches ZWJ sequence: %s (%s)", (emoji) => {
+      expect(EMOJI_RE.test(emoji)).toBe(true);
+    });
+
+    // ZWJ sequences WITH skin tones (the primary bug from #432)
+    it.each([
+      ["\uD83E\uDD37\uD83C\uDFFB\u200D\u2642\uFE0F", "man shrugging + light skin tone"],
+      ["\uD83E\uDD37\uD83C\uDFFF\u200D\u2640\uFE0F", "woman shrugging + dark skin tone"],
+      ["\uD83D\uDC68\uD83C\uDFFE\u200D\uD83D\uDCBB", "man technologist + medium-dark skin tone"],
+      ["\uD83D\uDC69\uD83C\uDFFC\u200D\uD83C\uDF73", "woman cook + medium-light skin tone"],
+    ])("matches ZWJ sequence with skin tone: %s (%s)", (emoji) => {
+      expect(EMOJI_RE.test(emoji)).toBe(true);
+    });
+
+    // Non-emoji strings (should NOT match)
+    it.each([
+      ["hello", "plain text"],
+      ["rocket", "lucide icon name"],
+      ["123", "numbers"],
+      ["", "empty string"],
+      [" \uD83D\uDE80", "emoji with leading space"],
+      ["\uD83D\uDE80 ", "emoji with trailing space"],
+      ["abc\uD83D\uDE80", "emoji with text prefix"],
+    ])("rejects non-emoji string: '%s' (%s)", (input) => {
+      expect(EMOJI_RE.test(input)).toBe(false);
+    });
+
+    // Integration: ZWJ emoji renders as text content in card icon slot
+    it("renders ZWJ emoji with skin tone as card icon text content", () => {
+      // man shrugging + light skin tone: the exact case from #432
+      const zwjEmoji = "\uD83E\uDD37\uD83C\uDFFB\u200D\u2642\uFE0F";
+      const item = makeItem({ metadata: { icon: zwjEmoji } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.style.display).not.toBe("none");
+      expect(iconSlot.textContent).toBe(zwjEmoji);
+      expect(iconSlot.classList.contains("wt-card-icon-emoji")).toBe(true);
     });
   });
 });
