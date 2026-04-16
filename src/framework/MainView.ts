@@ -355,8 +355,6 @@ export class MainView extends ItemView {
       // onSessionChange callback
       () => {
         this.listPanel?.updateSessionBadges();
-        // Persist sessions to disk
-        this.terminalPanel?.persistSessions();
       },
       // profileManager
       this.profileManager,
@@ -502,8 +500,6 @@ export class MainView extends ItemView {
     if (this.listPanel?.rekeyCustomOrder(oldPath, newPath)) {
       void this.persistCustomOrder();
     }
-    // Persist updated session paths to disk so they survive a full reload
-    this.terminalPanel?.persistSessions();
   }
 
   private completeRename(oldPath: string, newPath: string): void {
@@ -517,8 +513,6 @@ export class MainView extends ItemView {
       void this.persistCustomOrder();
     }
     this.adapter.rekeyDetailPath?.(oldPath, newPath);
-    // Persist updated session paths to disk so they survive a full reload
-    this.terminalPanel?.persistSessions();
   }
 
   private scheduleRefresh(): void {
@@ -563,7 +557,6 @@ export class MainView extends ItemView {
       await this.persistCustomOrder();
     }
     await this.refreshList();
-    await this.terminalPanel?.persistSessions();
 
     if (!shouldReselect) {
       return;
@@ -656,16 +649,11 @@ export class MainView extends ItemView {
     if (this.pluginRef.isReloading || keepAlive) {
       // Stash sessions to window-global store so PTY processes survive
       // and can be restored when the view is reopened.
-      // Always persist to disk as a fallback (e.g. if Obsidian quits
-      // before the tab is reopened, the window-global stash is lost).
-      await this.terminalPanel?.persistSessions();
       // Only stash if not already stashed (hotReload pre-stashes explicitly)
       if (!SessionStore.isReload()) {
         this.terminalPanel?.stashAll();
       }
     } else {
-      // Persist sessions to disk before disposing so they can be resumed
-      await this.terminalPanel?.persistSessions();
       this.terminalPanel?.disposeAll();
     }
 
