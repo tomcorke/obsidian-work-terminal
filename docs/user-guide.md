@@ -17,6 +17,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Detail panel](#detail-panel)
   - [Drag-drop reordering](#drag-drop-reordering)
   - [Filtering](#filtering)
+  - [Activity view](#activity-view)
 - [Terminal and agent sessions](#terminal-and-agent-sessions)
   - [Shell tabs](#shell-tabs)
   - [Agent sessions](#agent-sessions)
@@ -216,6 +217,46 @@ The filter input at the top of the kanban board provides instant text filtering 
 
 Below the text filter is an **Active sessions only** checkbox. When enabled, only tasks that have open terminal tabs or agent sessions are shown. This is useful when working with many tasks and you want to focus on just the ones you are actively working on. The toggle combines with the text filter - both conditions must match for a card to be visible. The filter state persists across plugin reloads.
 
+### Activity view
+
+Work Terminal offers an alternative view mode that groups and orders tasks by recent activity instead of by state columns. This is useful when you want to see what you have been working on recently, regardless of task state.
+
+To switch, go to **Settings > Core > View mode** and select **Activity (by recency)**.
+
+In activity mode, the kanban board is replaced with four recency sections:
+
+| Section | Includes |
+|---------|----------|
+| **Recent** | Today, or the last N hours (configurable), whichever is longer |
+| **Last 7 Days** | Activity within the past week |
+| **Last 30 Days** | Activity within the past month |
+| **Older** | Everything else, or tasks with no recorded activity |
+
+**Activity tracking** works as follows:
+
+- Any tab creation, agent session launch, or agent state change refreshes the activity timestamp for the associated task
+- Timestamps are maintained in memory for accurate within-session ordering
+- A `last-active` field is written to task frontmatter (at most once per minute) so timestamps survive plugin/Obsidian restarts
+- On load, the plugin reads `last-active` from frontmatter to seed the initial ordering
+
+**Configurable threshold**: The "Recent" section threshold can be adjusted in **Settings > Core > Recent activity threshold**:
+
+- Last hour
+- Last 3 hours (default)
+- Last 24 hours
+
+The "Recent" section always includes at minimum all of today's activity, even if the threshold is shorter than the time since midnight.
+
+**Ordering rules**: Tasks do not continuously reorder within a section based on exact timestamps. This avoids disruptive UI churn when multiple sessions are active simultaneously. Instead:
+
+- Tasks only move between sections when they cross a section boundary (e.g. from "Recent" to "Last 7 Days")
+- When a task ages out of its current section, it appears at the top of the next section
+- Manual reordering within sections is supported via drag-drop and is persisted
+
+**Drag-drop in activity mode**: Dragging a task within a section reorders it manually, just like in kanban mode. Dragging a task between sections is treated as a reorder within the destination section - it does not change the task's state or activity timestamp, since sections are time-based.
+
+**Task states are ignored** while activity view is enabled. All tasks from every state column appear in the recency sections. This is a separate view mode, not a replacement for the state-based kanban - switch back to kanban mode at any time to see the familiar column layout.
+
 ---
 
 ## Terminal and agent sessions
@@ -368,6 +409,8 @@ The core settings section covers:
 | Setting | Description |
 |---------|-------------|
 | **Card display mode** | Choose between **Standard** (full card details), **Comfortable** (spacious layout with more padding and gaps), and **Compact** (single-line cards with indicator dots). See [Card display modes](#card-display-modes). |
+| **View mode** | Choose between **Kanban** (group by state columns) and **Activity** (group by recency). See [Activity view](#activity-view). |
+| **Recent activity threshold** | How far back the "Recent" section extends in activity view: Last hour, Last 3 hours (default), or Last 24 hours. |
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
 | **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |

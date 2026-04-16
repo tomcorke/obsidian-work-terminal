@@ -25,6 +25,7 @@ import { extractYamlFrontmatterString } from "../core/frontmatter";
 import { titleCase } from "../core/utils";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import { ActivityTracker } from "./ActivityTracker";
 
 interface PendingRename {
   uuid: string | null;
@@ -62,6 +63,9 @@ export class MainView extends ItemView {
 
   // Agent profile manager
   private profileManager: AgentProfileManager | null = null;
+
+  // Activity tracking
+  private activityTracker: ActivityTracker = new ActivityTracker();
 
   // Adapter-contributed style element
   private adapterStyleEl: HTMLStyleElement | null = null;
@@ -353,10 +357,19 @@ export class MainView extends ItemView {
       // onAgentStateChange callback
       (itemId: string, state: string) => {
         this.listPanel?.updateAgentState(itemId, state);
+        // Record activity for agent state changes (indicates tab usage)
+        if (state !== "inactive") {
+          this.activityTracker.recordActivity(itemId);
+        }
       },
       // onSessionChange callback
       () => {
         this.listPanel?.updateSessionBadges();
+        // Record activity for the currently active item when sessions change
+        const activeId = this.terminalPanel?.getActiveItemId();
+        if (activeId) {
+          this.activityTracker.recordActivity(activeId);
+        }
       },
       // profileManager
       this.profileManager,
@@ -399,6 +412,12 @@ export class MainView extends ItemView {
     const pinStore = new PinStore(this.pluginRef);
     await pinStore.load();
     this.listPanel.setPinStore(pinStore);
+
+    // Initialize ActivityTracker and inject into ListPanel
+    this.activityTracker.setFlushCallback(async (itemId: string, isoTimestamp: string) => {
+      await this.writeLastActive(itemId, isoTimestamp);
+    });
+    this.listPanel.setActivityTracker(this.activityTracker);
   }
 
   // ---------------------------------------------------------------------------
@@ -499,6 +518,7 @@ export class MainView extends ItemView {
   private handleRename(newPath: string, oldPath: string): void {
     // Obsidian's own rename event - update sessions directly
     this.terminalPanel?.rekeyItem(oldPath, newPath);
+    this.activityTracker.rekey(oldPath, newPath);
     if (this.listPanel?.rekeyCustomOrder(oldPath, newPath)) {
       void this.persistCustomOrder();
     }
@@ -511,6 +531,7 @@ export class MainView extends ItemView {
       this.pendingRenames.delete(oldPath);
     }
     this.terminalPanel?.rekeyItem(oldPath, newPath);
+    this.activityTracker.rekey(oldPath, newPath);
     if (this.listPanel?.rekeyCustomOrder(oldPath, newPath)) {
       void this.persistCustomOrder();
     }
@@ -555,6 +576,7 @@ export class MainView extends ItemView {
 
     const shouldReselect = this.terminalPanel?.getActiveItemId() === item.id;
     this.terminalPanel?.rekeyItem(item.id, updatedItem.id);
+    this.activityTracker.rekey(item.id, updatedItem.id);
     if (this.listPanel?.rekeyCustomOrder(item.id, updatedItem.id)) {
       await this.persistCustomOrder();
     }
@@ -593,10 +615,67 @@ export class MainView extends ItemView {
     );
   }
 
+  /**
+   * Write `last-active` timestamp to a work item's frontmatter.
+   * Used by the ActivityTracker's throttled flush callback.
+   */
+  private async writeLastActive(itemId: string, isoTimestamp: string): Promise<void> {
+    // Find the item by ID to get its file path
+    const item = this.allItems?.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const file = this.app.vault.getAbstractFileByPath(item.path);
+    if (!file || !(file instanceof TFile)) return;
+
+    try {
+      const content = await this.app.vault.read(file);
+
+      // Extract frontmatter block so we only match/replace within it,
+      // never accidentally touching a `last-active:` line in the body.
+      const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+      if (!fmMatch) return; // No frontmatter block - can't write
+
+      const [fullMatch, openFence, body, closeFence] = fmMatch;
+      const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
+
+      let updated: string;
+      if (/^last-active:\s*.+$/m.test(body)) {
+        // Replace existing last-active within frontmatter only
+        const newBody = body.replace(/^last-active:\s*.+$/m, `last-active: ${isoTimestamp}`);
+        updated = content.replace(fullMatch, `${openFence}${newBody}${closeFence}`);
+      } else {
+        // Insert last-active into frontmatter
+        const bodyPrefix = body.length === 0 ? "" : body.endsWith(eol) ? body : body + eol;
+        updated = content.replace(
+          fullMatch,
+          `${openFence}${bodyPrefix}last-active: ${isoTimestamp}${eol}${closeFence}`,
+        );
+      }
+
+      if (updated !== content) {
+        await this.app.vault.modify(file, updated);
+      }
+    } catch (err) {
+      console.error(`[work-terminal] Failed to write last-active for ${item.path}:`, err);
+    }
+  }
+
+  /** Cached items reference from the last refreshList call. */
+  private allItems: WorkItem[] = [];
+
   private async refreshList(): Promise<WorkItem[]> {
     if (!this.listPanel || !this.parser) return [];
     const items = await this.parser.loadAll();
+    this.allItems = items;
     const groups = this.parser.groupByColumn(items);
+
+    // Seed activity tracker from frontmatter for items not yet in memory
+    for (const item of items) {
+      const lastActive = (item.metadata as Record<string, unknown>)?.lastActive;
+      if (typeof lastActive === "string" && lastActive) {
+        this.activityTracker.seedFromFrontmatter(item.id, lastActive);
+      }
+    }
 
     // Discover dynamic columns (states in items not in configured columns)
     // and update the adapter config so the SettingsTab column ordering UI
@@ -660,6 +739,7 @@ export class MainView extends ItemView {
     }
 
     this.listPanel?.dispose();
+    this.activityTracker.dispose();
 
     // Stop listening for settings changes
     window.removeEventListener(

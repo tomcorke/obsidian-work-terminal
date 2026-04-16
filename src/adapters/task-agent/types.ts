@@ -36,6 +36,7 @@ export interface TaskFile {
   backgroundIngestion?: "failed" | "retrying";
   created: string;
   updated: string;
+  lastActive: string;
 }
 
 /** Automatic icon assignment mode. */

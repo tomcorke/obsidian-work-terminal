@@ -21,6 +21,7 @@ import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
+import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -35,6 +36,8 @@ interface CoreSettings {
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
   "core.cardDisplayMode": CardDisplayMode;
+  "core.viewMode": ViewMode;
+  "core.recentThreshold": RecentThreshold;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -52,6 +55,8 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.exposeDebugApi": false,
   "core.keepSessionsAlive": true,
   "core.cardDisplayMode": "standard",
+  "core.viewMode": "kanban",
+  "core.recentThreshold": "3h",
 };
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
@@ -134,6 +139,20 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "Card display mode",
       "Standard shows full card details. Comfortable adds extra padding and spacing for easier scanning. Compact shows single-line cards with indicator dots replacing verbose badges.",
       { standard: "Standard", comfortable: "Comfortable", compact: "Compact" },
+    );
+    this.addCoreDropdown(
+      containerEl,
+      "core.viewMode",
+      "View mode",
+      "Kanban groups tasks by state columns. Activity groups tasks by recency (recent, last 7 days, last 30 days, older).",
+      { kanban: "Kanban (by state)", activity: "Activity (by recency)" },
+    );
+    this.addCoreDropdown(
+      containerEl,
+      "core.recentThreshold",
+      "Recent activity threshold",
+      'How far back the "Recent" section extends in activity view. The section always includes today, or the configured threshold, whichever is longer.',
+      { "1h": "Last hour", "3h": "Last 3 hours (default)", "24h": "Last 24 hours" },
     );
 
     this.addCoreToggle(

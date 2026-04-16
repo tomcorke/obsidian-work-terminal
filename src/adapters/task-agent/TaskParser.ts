@@ -79,6 +79,7 @@ export class TaskParser implements WorkItemParser {
       backgroundIngestion,
       created: fm.created || "",
       updated: fm.updated || "",
+      lastActive: fm["last-active"] || "",
     };
   }
 
@@ -345,6 +346,7 @@ export class TaskParser implements WorkItemParser {
       color: undefined,
       created: "",
       updated: "",
+      lastActive: "",
     };
   }
 
@@ -366,6 +368,7 @@ export class TaskParser implements WorkItemParser {
         backgroundIngestion: task.backgroundIngestion,
         created: task.created,
         updated: task.updated,
+        lastActive: task.lastActive,
       },
     };
   }

@@ -132,6 +132,12 @@
 .wt-section-header-todo { border-bottom-color: var(--text-muted); }
 .wt-section-header-done { border-bottom-color: #38a169; }
 
+/* Section header colours for activity view buckets */
+.wt-section-header-recent { border-bottom-color: #38a169; }
+.wt-section-header-last-7-days { border-bottom-color: var(--interactive-accent); }
+.wt-section-header-last-30-days { border-bottom-color: #d69e2e; }
+.wt-section-header-older { border-bottom-color: var(--text-muted); }
+
 .wt-collapse-icon {
   font-size: 8px;
   width: 10px;
@@ -2231,4 +2237,17 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-comfortable .wt-drop-indicator {
   height: 3px;
   margin: 3px 6px;
+}
+
+/* =============================================================================
+   Activity view mode
+   ============================================================================= */
+
+/* Activity view sections have no special card-level treatment beyond
+   the section header colours defined above. The wt-activity-view class
+   is applied to the list panel container for targeted overrides. */
+
+/* In activity view, the pinned section is hidden (pinning is a kanban concept). */
+.wt-activity-view .wt-section[data-column="__pinned__"] {
+  display: none;
 }
