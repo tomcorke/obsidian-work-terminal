@@ -2183,10 +2183,12 @@ button.wt-spawn-claude-ctx:hover svg {
   padding: 0 3px;
 }
 
-/* Compact mode: pinned state badge adapts to single-line height */
-.wt-compact .wt-card-state-badge {
-  font-size: 8px;
-  padding: 0 3px;
+/* Compact/comfortable mode: hide state badge on pinned cards.
+   The Pinned section already communicates that items are pinned,
+   so the state label is redundant and wastes horizontal space. */
+.wt-compact .wt-card-state-badge,
+.wt-comfortable .wt-card-state-badge {
+  display: none;
 }
 
 /* Compact mode: agent state waiting overlay adapts */

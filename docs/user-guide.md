@@ -172,7 +172,7 @@ All three modes share the same interactive behaviour:
 - **Selection** and detail panel opening
 - **Context menu** with all the same actions
 - **Agent state indicators** (active/waiting/idle border and glow animations)
-- **Pinned section** with state badges
+- **Pinned section** with state badges (standard mode only - hidden in compact/comfortable to save space)
 - **Filtering** by text and active sessions
 
 Switch between modes at any time from the settings dropdown.
@@ -450,6 +450,8 @@ The core settings section covers:
 Pin important tasks to keep them visible at the top of the board regardless of their column. Pinned tasks appear in a dedicated **Pinned** section above the regular columns.
 
 To pin a task, use the pin action from the task's context area. Pinned tasks can be reordered within the pinned section using drag-drop. Unpin a task to return it to its normal column position.
+
+In **standard mode**, pinned cards show a state label badge (e.g. "Active", "To Do") so you can see each task's real column at a glance. In **compact** and **comfortable** modes, the state label is hidden to conserve horizontal space - the dedicated Pinned section heading already provides sufficient context.
 
 Pinned state is persisted across sessions using the task's UUID, so it survives file renames and moves.
 
