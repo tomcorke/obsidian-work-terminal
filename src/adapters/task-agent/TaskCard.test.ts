@@ -68,8 +68,6 @@ function makeContext(overrides: Partial<CardActionContext> = {}): CardActionCont
     onCloseSessions: vi.fn(),
     getContextPrompt: vi.fn().mockResolvedValue("Task: Fix context prompt\nState: priority"),
     onRetryEnrich: vi.fn(),
-    onClearResumeSessions: vi.fn().mockResolvedValue(undefined),
-    hasResumeSessions: vi.fn().mockReturnValue(false),
     ...overrides,
   };
 }
@@ -297,42 +295,6 @@ describe("TaskCard", () => {
       retryItem?.callback();
 
       expect(ctx.onRetryEnrich).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("clear resume sessions menu item", () => {
-    it("shows Clear Resume Sessions when hasResumeSessions returns true", () => {
-      const ctx = makeContext({ hasResumeSessions: vi.fn().mockReturnValue(true) });
-      const item = makeItem();
-      const card = new TaskCard();
-      const menuItems = card.getContextMenuItems(item, ctx);
-      const clearItem = menuItems.find(
-        (menuItem) => (menuItem as any).title === "Clear Resume Sessions",
-      );
-      expect(clearItem).toBeDefined();
-    });
-
-    it("hides Clear Resume Sessions when hasResumeSessions returns false", () => {
-      const ctx = makeContext({ hasResumeSessions: vi.fn().mockReturnValue(false) });
-      const item = makeItem();
-      const card = new TaskCard();
-      const menuItems = card.getContextMenuItems(item, ctx);
-      const clearItem = menuItems.find(
-        (menuItem) => (menuItem as any).title === "Clear Resume Sessions",
-      );
-      expect(clearItem).toBeUndefined();
-    });
-
-    it("calls onClearResumeSessions when triggered", () => {
-      const ctx = makeContext({ hasResumeSessions: vi.fn().mockReturnValue(true) });
-      const item = makeItem();
-      const card = new TaskCard();
-      const menuItems = card.getContextMenuItems(item, ctx);
-      const clearItem = menuItems.find(
-        (menuItem) => (menuItem as any).title === "Clear Resume Sessions",
-      ) as { callback: () => void } | undefined;
-      clearItem?.callback();
-      expect(ctx.onClearResumeSessions).toHaveBeenCalledTimes(1);
     });
   });
 

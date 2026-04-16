@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoistedMocks = vi.hoisted(() => {
   const profileManagerLoadMock = vi.fn(() => Promise.resolve([]));
-  const saveToDiskMock = vi.fn(() => Promise.resolve());
   const registerViewMock = vi.fn();
   const addRibbonIconMock = vi.fn();
   const addCommandMock = vi.fn();
@@ -45,16 +44,11 @@ const hoistedMocks = vi.hoisted(() => {
     addSettingTabMock,
     profileManagerLoadMock,
     registerViewMock,
-    saveToDiskMock,
   };
 });
 
 vi.mock("../core/agents/AgentProfileManager", () => ({
   AgentProfileManager: hoistedMocks.AgentProfileManagerMock,
-}));
-
-vi.mock("../core/session/SessionPersistence", () => ({
-  SessionPersistence: { saveToDisk: hoistedMocks.saveToDiskMock },
 }));
 
 vi.mock("./MainView", () => ({ MainView: hoistedMocks.MainViewMock }));
@@ -97,7 +91,6 @@ const {
   addSettingTabMock,
   profileManagerLoadMock,
   registerViewMock,
-  saveToDiskMock,
 } = hoistedMocks;
 
 import { PluginBase, VIEW_TYPE } from "./PluginBase";
@@ -136,7 +129,6 @@ describe("PluginBase", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     profileManagerLoadMock.mockResolvedValue(undefined);
-    saveToDiskMock.mockResolvedValue(undefined);
   });
 
   describe("VIEW_TYPE constant", () => {
@@ -357,86 +349,6 @@ describe("PluginBase", () => {
       await copyCmd!.callback();
       expect(copyB).toHaveBeenCalledTimes(1);
       expect(copyA).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("onunload", () => {
-    it("does nothing when isReloading is true", () => {
-      const app = makeApp();
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
-      (plugin as any)._isReloading = true;
-      plugin.onunload();
-      expect(saveToDiskMock).not.toHaveBeenCalled();
-    });
-
-    it("does nothing when no leaves have sessions", () => {
-      const fakeLeaf = { view: {} };
-      const app = makeApp();
-      (app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
-      plugin.onunload();
-      expect(saveToDiskMock).not.toHaveBeenCalled();
-    });
-
-    it("persists sessions from all open work-terminal leaves", () => {
-      const sessions = new Map([["item-1", [{ id: "tab-1" }]]]);
-      const fakeLeaf = {
-        view: {
-          terminalPanel: {
-            tabManager: { getSessions: () => sessions },
-            getPendingPersistedSessionsForPersist: () => [],
-          },
-        },
-      };
-      const app = makeApp();
-      (app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
-      plugin.onunload();
-      expect(saveToDiskMock).toHaveBeenCalledTimes(1);
-      const [, savedSessions] = saveToDiskMock.mock.calls[0];
-      expect(savedSessions.get("item-1")).toHaveLength(1);
-    });
-
-    it("merges sessions across multiple leaves", () => {
-      const sessionsA = new Map([["item-1", [{ id: "tab-a" }]]]);
-      const sessionsB = new Map([["item-1", [{ id: "tab-b" }]]]);
-      function makeLeaf(sessions: Map<string, object[]>) {
-        return {
-          view: {
-            terminalPanel: {
-              tabManager: { getSessions: () => sessions },
-              getPendingPersistedSessionsForPersist: () => [],
-            },
-          },
-        };
-      }
-      const app = makeApp();
-      (app.workspace.getLeavesOfType as any).mockReturnValue([
-        makeLeaf(sessionsA),
-        makeLeaf(sessionsB),
-      ]);
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
-      plugin.onunload();
-      const [, savedSessions] = saveToDiskMock.mock.calls[0];
-      expect(savedSessions.get("item-1")).toHaveLength(2);
-    });
-
-    it("includes pending persisted sessions in saveToDisk call", () => {
-      const pending = [{ sessionId: "s1" }];
-      const fakeLeaf = {
-        view: {
-          terminalPanel: {
-            tabManager: { getSessions: () => new Map([["item-1", [{}]]]) },
-            getPendingPersistedSessionsForPersist: () => pending,
-          },
-        },
-      };
-      const app = makeApp();
-      (app.workspace.getLeavesOfType as any).mockReturnValue([fakeLeaf]);
-      const plugin = new TestPlugin(app, makeManifest(), makeAdapter());
-      plugin.onunload();
-      const [, , savedPending] = saveToDiskMock.mock.calls[0];
-      expect(savedPending).toBe(pending);
     });
   });
 });

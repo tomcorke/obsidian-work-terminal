@@ -292,35 +292,6 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(scrollToBottom).toHaveBeenCalled();
   });
 
-  it("restores legacy session ids from hot-reload storage when agentSessionId is missing", () => {
-    const restored = TerminalTab.fromStored(
-      {
-        id: "term-1",
-        taskPath: "task.md",
-        label: "Claude",
-        claudeSessionId: "legacy-session-1",
-        sessionType: "claude",
-        terminal: { focus: vi.fn(), scrollToBottom: vi.fn(), cols: 80 } as any,
-        fitAddon: {} as any,
-        searchAddon: {} as any,
-        containerEl: {
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          hasClass: vi.fn(() => false),
-          querySelector: vi.fn(() => null),
-        } as any,
-        process: null,
-        webglAddon: null,
-        webglContextLossListener: null,
-        documentListeners: [],
-        resizeObserver: { disconnect: vi.fn(), observe: vi.fn() } as any,
-      } as any,
-      { appendChild: vi.fn() } as any,
-    );
-
-    expect(restored.agentSessionId).toBe("legacy-session-1");
-  });
-
   it("sets linkHandler on restored terminals that lack one (pre-fix sessions)", () => {
     const terminal = {
       options: {} as Record<string, unknown>,
@@ -434,7 +405,6 @@ describe("TerminalTab hot-reload addon handling", () => {
   it("disposes the custom link provider before terminal teardown", () => {
     const order: string[] = [];
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
-      _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
       _stateTimer: null,
       _resizeDebounce: null,
       _spawnTimeout: null,
@@ -457,7 +427,7 @@ describe("TerminalTab hot-reload addon handling", () => {
 
     tab.dispose();
 
-    expect(order).toEqual(["tracker", "resize-observer", "link-provider", "terminal", "container"]);
+    expect(order).toEqual(["resize-observer", "link-provider", "terminal", "container"]);
   });
 
   it("clears legacy link providers for restored sessions created before tracking them", () => {
@@ -520,7 +490,6 @@ describe("TerminalTab hot-reload addon handling", () => {
       order.push("terminal");
     });
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
-      _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
       _stateTimer: null,
       _resizeDebounce: null,
       _spawnTimeout: null,
@@ -564,7 +533,6 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(addonEntries).toEqual([]);
     expect(addonManagerDispose).toHaveBeenCalledTimes(1);
     expect(order).toEqual([
-      "tracker",
       "resize-observer",
       "webgl-listener",
       "unicode",
@@ -578,7 +546,6 @@ describe("TerminalTab hot-reload addon handling", () => {
     const order: string[] = [];
     const addonManagerDispose = vi.fn(() => order.push("addon-manager"));
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
-      _sessionTracker: { dispose: vi.fn(() => order.push("tracker")) },
       _stateTimer: null,
       _resizeDebounce: null,
       _documentCleanups: [vi.fn(() => order.push("cleanup"))],
@@ -599,7 +566,7 @@ describe("TerminalTab hot-reload addon handling", () => {
 
     tab.dispose();
 
-    expect(order).toEqual(["tracker", "cleanup", "resize-observer", "terminal", "container"]);
+    expect(order).toEqual(["cleanup", "resize-observer", "terminal", "container"]);
     expect(addonManagerDispose).not.toHaveBeenCalled();
   });
 
@@ -760,7 +727,6 @@ describe("TerminalTab hot-reload addon handling", () => {
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
       id: "term-1",
       label: "Claude",
-      agentSessionId: "session-1",
       sessionType: "claude",
       process: {
         pid: 321,
@@ -780,7 +746,6 @@ describe("TerminalTab hot-reload addon handling", () => {
         querySelectorAll: vi.fn(() => []),
       },
       _agentState: "idle",
-      _isResumableAgent: true,
       _isDisposed: false,
       _readTerminalScreen: vi.fn(() => ["line 1", "line 2"]),
       hasRenderableSessionContent: vi.fn(() => true),
@@ -793,10 +758,8 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(diagnostics).toMatchObject({
       tabId: "term-1",
       label: "Claude",
-      sessionId: "session-1",
       sessionType: "claude",
       claudeState: "idle",
-      isResumableAgent: true,
       isVisible: true,
       isDisposed: false,
       process: {
@@ -1857,89 +1820,5 @@ describe("TerminalTab user scroll detection", () => {
     // Should not throw
     tab._wireUserScrollDetection();
     expect(tab._userScrolledUp).toBe(false);
-  });
-});
-
-describe("TerminalTab deferred session detection and state tracking", () => {
-  beforeEach(() => {
-    mocks.MockCopilotSessionDetector.instances.length = 0;
-    mocks.setCopilotSessionDetectorStartImpl(null);
-    vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("_detectResumableAgent returns true when _sessionDetector is active but no session ID", () => {
-    const tab = Object.assign(Object.create(TerminalTab.prototype), {
-      sessionType: "copilot-with-context",
-      agentSessionId: null,
-      _sessionDetector: { start: vi.fn(), stop: vi.fn() }, // fake active detector
-    }) as TerminalTab;
-
-    const result = (
-      tab as never as { _detectResumableAgent: () => boolean }
-    )._detectResumableAgent();
-    expect(result).toBe(true);
-  });
-
-  it("startStateTracking starts timer when _sessionDetector is active (deferred detection)", () => {
-    const tab = Object.assign(Object.create(TerminalTab.prototype), {
-      sessionType: "copilot-with-context",
-      agentSessionId: null,
-      _sessionDetector: { start: vi.fn(), stop: vi.fn() },
-      _stateTimer: null,
-      _agentState: null,
-      _recentCleanLines: null,
-      _suppressActiveUntil: 0,
-      _isResumableAgent: false,
-      terminal: { buffer: { active: { cursorY: 0 } } },
-    }) as TerminalTab;
-
-    tab.startStateTracking();
-
-    expect((tab as never as { _isResumableAgent: boolean })._isResumableAgent).toBe(true);
-    expect((tab as never as { _stateTimer: unknown })._stateTimer).not.toBeNull();
-
-    // Clean up the interval
-    clearInterval((tab as never as { _stateTimer: ReturnType<typeof setInterval> })._stateTimer);
-  });
-
-  it("startStateTracking is idempotent when synchronous deferred detection fires first", () => {
-    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
-    const tab = Object.assign(Object.create(TerminalTab.prototype), {
-      sessionType: "copilot-with-context",
-      agentSessionId: null,
-      spawnTime: Date.now(),
-      _sessionDetector: null,
-      _stateTimer: null,
-      _agentState: null,
-      _recentCleanLines: null,
-      _suppressActiveUntil: 0,
-      _isResumableAgent: false,
-      terminal: { buffer: { active: { cursorY: 0 } } },
-    }) as TerminalTab;
-
-    mocks.setCopilotSessionDetectorStartImpl((detector) => {
-      detector.onSessionDetected?.("session-123");
-    });
-
-    (tab as never as { _initDeferredSessionDetector: () => void })._initDeferredSessionDetector();
-    const firstTimer = (tab as never as { _stateTimer: ReturnType<typeof setInterval> })
-      ._stateTimer;
-
-    tab.startStateTracking();
-
-    expect((tab as never as { agentSessionId: string | null }).agentSessionId).toBe("session-123");
-    expect((tab as never as { _sessionDetector: unknown })._sessionDetector).toBeNull();
-
-    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
-    expect((tab as never as { _stateTimer: ReturnType<typeof setInterval> })._stateTimer).toBe(
-      firstTimer,
-    );
-
-    clearInterval(firstTimer);
   });
 });

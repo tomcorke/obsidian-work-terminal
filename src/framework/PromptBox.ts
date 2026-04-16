@@ -169,7 +169,7 @@ export class PromptBox {
               cwd: profile.defaultCwd,
               agentName: profile.name,
               promptMode,
-              promptFlag: resumeConfig.promptFlag,
+              promptFlag: launchConfig.promptFlag,
             };
           }
         }

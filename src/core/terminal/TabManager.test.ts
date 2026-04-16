@@ -12,9 +12,7 @@ const terminalTabMock = vi.hoisted(() => {
     id = "mock-tab";
     label = "Shell";
     agentState: AgentState = "inactive";
-    isResumableAgent = false;
     sessionType: SessionType = "shell";
-    agentSessionId: string | null = null;
     taskPath = "item-1";
     isDisposed = false;
     onStateChange?: (state: AgentState) => void;
@@ -29,10 +27,8 @@ const terminalTabMock = vi.hoisted(() => {
     getDiagnostics = vi.fn(() => ({
       tabId: this.id,
       label: this.label,
-      sessionId: this.agentSessionId,
       sessionType: this.sessionType,
       claudeState: this.agentState,
-      isResumableAgent: this.isResumableAgent,
       isVisible: true,
       isDisposed: this.isDisposed,
       process: {
@@ -95,11 +91,9 @@ import type { AgentState } from "./TerminalTab";
 function makeStubTab(
   overrides: {
     agentState?: AgentState;
-    isResumableAgent?: boolean;
     sessionType?: SessionType;
     label?: string;
     id?: string;
-    agentSessionId?: string | null;
     taskPath?: string;
     isDisposed?: boolean;
     processStatus?: "alive" | "exited" | "killed" | "missing";
@@ -108,9 +102,7 @@ function makeStubTab(
   id: string;
   label: string;
   agentState: AgentState;
-  isResumableAgent: boolean;
   sessionType: SessionType;
-  agentSessionId: string | null;
   onStateChange?: (state: AgentState) => void;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
@@ -122,17 +114,18 @@ function makeStubTab(
   resumeWebGl: ReturnType<typeof vi.fn>;
   taskPath: string;
   isDisposed: boolean;
+  isAgentTab: boolean;
   getDiagnostics: ReturnType<typeof vi.fn>;
 } {
   const isDisposed = overrides.isDisposed ?? false;
   const processStatus = overrides.processStatus ?? "alive";
+  const sessionType = overrides.sessionType ?? "shell";
   return {
     id: overrides.id ?? "tab-1",
     label: overrides.label ?? "Shell",
     agentState: overrides.agentState ?? "inactive",
-    isResumableAgent: overrides.isResumableAgent ?? false,
-    sessionType: overrides.sessionType ?? "shell",
-    agentSessionId: overrides.agentSessionId ?? null,
+    sessionType,
+    isAgentTab: sessionType !== "shell",
     dispose: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
@@ -145,10 +138,8 @@ function makeStubTab(
     getDiagnostics: vi.fn(() => ({
       tabId: overrides.id ?? "tab-1",
       label: overrides.label ?? "Shell",
-      sessionId: overrides.agentSessionId ?? null,
       sessionType: overrides.sessionType ?? "shell",
       claudeState: overrides.agentState ?? "inactive",
-      isResumableAgent: overrides.isResumableAgent ?? false,
       isVisible: true,
       isDisposed,
       process: {
@@ -212,7 +203,7 @@ describe("TabManager - closeTab", () => {
   it("fires onAgentStateChange with inactive when the only Claude tab (waiting) is closed", () => {
     const tab = makeStubTab({
       agentState: "waiting",
-      isResumableAgent: true,
+
       sessionType: "claude",
     });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
@@ -229,10 +220,10 @@ describe("TabManager - closeTab", () => {
   it("fires onAgentStateChange with waiting when a non-waiting tab is closed but a waiting tab remains", () => {
     const waitingTab = makeStubTab({
       agentState: "waiting",
-      isResumableAgent: true,
+
       sessionType: "copilot",
     });
-    const shellTab = makeStubTab({ agentState: "inactive", isResumableAgent: false });
+    const shellTab = makeStubTab({ agentState: "inactive" });
     const mgr = makeTabManagerWithSessions("item-1", [shellTab, waitingTab]);
 
     const stateChanges: Array<{ itemId: string; state: AgentState }> = [];
@@ -247,12 +238,12 @@ describe("TabManager - closeTab", () => {
   it("fires onAgentStateChange with active after closing a waiting tab when an active tab remains", () => {
     const waitingTab = makeStubTab({
       agentState: "waiting",
-      isResumableAgent: true,
+
       sessionType: "claude",
     });
     const activeTab = makeStubTab({
       agentState: "active",
-      isResumableAgent: true,
+
       sessionType: "copilot",
     });
     const mgr = makeTabManagerWithSessions("item-1", [waitingTab, activeTab]);
@@ -271,7 +262,7 @@ describe("TabManager - closeTab", () => {
   it("fires onSessionChange alongside onAgentStateChange", () => {
     const tab = makeStubTab({
       agentState: "waiting",
-      isResumableAgent: true,
+
       sessionType: "claude",
     });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
@@ -305,7 +296,7 @@ describe("TabManager - closeAllSessions", () => {
   it("fires onAgentStateChange with inactive after closing all sessions for an item", () => {
     const tab = makeStubTab({
       agentState: "waiting",
-      isResumableAgent: true,
+
       sessionType: "copilot",
     });
     const mgr = makeTabManagerWithSessions("item-1", [tab]);
@@ -333,7 +324,7 @@ describe("TabManager - closeAllSessions", () => {
   it("counts shell tabs separately from agent tabs", () => {
     const mgr = makeTabManagerWithSessions("item-1", [
       makeStubTab({ sessionType: "shell" }),
-      makeStubTab({ sessionType: "copilot", isResumableAgent: true }),
+      makeStubTab({ sessionType: "copilot" }),
       makeStubTab({ sessionType: "strands" }),
     ]);
 
@@ -470,16 +461,12 @@ describe("TabManager - active tab discovery", () => {
         id: "tab-claude",
         label: "Automatic Issues",
         sessionType: "claude",
-        isResumableAgent: true,
-        agentSessionId: "session-1",
         taskPath: "item-1",
       }),
       makeStubTab({
         id: "tab-shell",
         label: "Shell",
         sessionType: "shell",
-        isResumableAgent: false,
-        agentSessionId: null,
         taskPath: "item-1",
       }),
     ]);
@@ -488,8 +475,6 @@ describe("TabManager - active tab discovery", () => {
         id: "tab-copilot",
         label: "Automatic Issues",
         sessionType: "copilot",
-        isResumableAgent: true,
-        agentSessionId: "session-2",
         taskPath: "item-2",
       }),
     ]);
@@ -499,45 +484,35 @@ describe("TabManager - active tab discovery", () => {
         tabId: "tab-claude",
         itemId: "item-1",
         label: "Automatic Issues",
-        sessionId: "session-1",
         sessionType: "claude",
-        isResumableAgent: true,
       },
       {
         tabId: "tab-shell",
         itemId: "item-1",
         label: "Shell",
-        sessionId: null,
         sessionType: "shell",
-        isResumableAgent: false,
       },
       {
         tabId: "tab-copilot",
         itemId: "item-2",
         label: "Automatic Issues",
-        sessionId: "session-2",
         sessionType: "copilot",
-        isResumableAgent: true,
       },
     ]);
   });
 
-  it("finds tabs by normalized label and returns active session IDs from the same source", () => {
+  it("finds tabs by normalized label", () => {
     const mgr = new TabManager(null as any);
     (mgr as any).sessions.set("item-1", [
       makeStubTab({
         id: "tab-claude",
         label: "Automatic Issues",
         sessionType: "claude",
-        isResumableAgent: true,
-        agentSessionId: "session-1",
       }),
       makeStubTab({
         id: "tab-copilot",
         label: " automatic issues ",
         sessionType: "copilot",
-        isResumableAgent: true,
-        agentSessionId: "session-2",
       }),
       makeStubTab({
         id: "tab-shell",
@@ -551,20 +526,15 @@ describe("TabManager - active tab discovery", () => {
         tabId: "tab-claude",
         itemId: "item-1",
         label: "Automatic Issues",
-        sessionId: "session-1",
         sessionType: "claude",
-        isResumableAgent: true,
       },
       {
         tabId: "tab-copilot",
         itemId: "item-1",
         label: " automatic issues ",
-        sessionId: "session-2",
         sessionType: "copilot",
-        isResumableAgent: true,
       },
     ]);
-    expect(mgr.getActiveSessionIds()).toEqual(new Set(["session-1", "session-2"]));
   });
 });
 
@@ -627,7 +597,7 @@ describe("TabManager - onProcessExit auto-close behaviour", () => {
 });
 
 describe("TabManager - diagnostics lifecycle", () => {
-  it("marks exited and missing processes as lost instead of live", () => {
+  it("includes process status in diagnostics for exited and missing processes", () => {
     const exitedTab = makeStubTab({
       id: "tab-exited",
       processStatus: "exited",
@@ -640,10 +610,11 @@ describe("TabManager - diagnostics lifecycle", () => {
     });
     const mgr = makeTabManagerWithSessions("item-1", [exitedTab, missingTab]);
 
-    expect(mgr.getTabDiagnostics().map((tab) => tab.recovery.lifecycle)).toEqual(["lost", "lost"]);
+    const diagnostics = mgr.getTabDiagnostics();
+    expect(diagnostics.map((tab) => tab.process.status)).toEqual(["exited", "missing"]);
   });
 
-  it("marks disposed tabs as disposed even when diagnostics still report an alive process", () => {
+  it("reports disposed state for disposed tabs in diagnostics", () => {
     const disposedTab = makeStubTab({
       id: "tab-disposed",
       isDisposed: true,
@@ -652,7 +623,7 @@ describe("TabManager - diagnostics lifecycle", () => {
     });
     const mgr = makeTabManagerWithSessions("item-1", [disposedTab]);
 
-    expect(mgr.getTabDiagnostics()[0].recovery.lifecycle).toBe("disposed");
+    expect(mgr.getTabDiagnostics()[0].isDisposed).toBe(true);
   });
 });
 

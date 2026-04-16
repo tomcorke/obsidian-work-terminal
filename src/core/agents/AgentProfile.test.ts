@@ -14,11 +14,6 @@ import {
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
-  getResumeConfig,
-  getProfileResumeConfig,
-  isResumableAgentType,
-  getAllResumeFlags,
-  hasSessionTracking,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -169,111 +164,6 @@ describe("BRAND_COLORS", () => {
   });
 });
 
-describe("getResumeConfig", () => {
-  it("returns resumable config for claude", () => {
-    const config = getResumeConfig("claude");
-    expect(config.resumable).toBe(true);
-    expect(config.sessionTracking).toBe(true);
-    expect(config.resumeFlagFormat).toBe("flag-space");
-    expect(config.resumeFlag).toBe("--session-id");
-    expect(config.promptInjectionMode).toBe("positional");
-    expect(config.commandSettingKey).toBe("core.claudeCommand");
-    expect(config.defaultCommand).toBe("claude");
-    expect(config.extraArgsSettingKey).toBe("core.claudeExtraArgs");
-  });
-
-  it("returns resumable config for copilot with equals format", () => {
-    const config = getResumeConfig("copilot");
-    expect(config.resumable).toBe(true);
-    expect(config.sessionTracking).toBe(false);
-    expect(config.resumeFlagFormat).toBe("flag-equals");
-    expect(config.resumeFlag).toBe("--resume");
-    expect(config.commandSettingKey).toBe("core.copilotCommand");
-    expect(config.defaultCommand).toBe("copilot");
-  });
-
-  it("returns non-resumable config for strands", () => {
-    const config = getResumeConfig("strands");
-    expect(config.resumable).toBe(false);
-    expect(config.sessionTracking).toBe(false);
-  });
-
-  it("returns non-resumable config for shell", () => {
-    const config = getResumeConfig("shell");
-    expect(config.resumable).toBe(false);
-  });
-});
-
-describe("isResumableAgentType", () => {
-  it("returns true for claude and copilot", () => {
-    expect(isResumableAgentType("claude")).toBe(true);
-    expect(isResumableAgentType("copilot")).toBe(true);
-  });
-
-  it("returns false for strands and shell", () => {
-    expect(isResumableAgentType("strands")).toBe(false);
-    expect(isResumableAgentType("shell")).toBe(false);
-  });
-});
-
-describe("getAllResumeFlags", () => {
-  it("returns all unique resume flags across agent types", () => {
-    const flags = getAllResumeFlags();
-    expect(flags).toContain("--session-id");
-    expect(flags).toContain("--resume");
-    // No duplicates
-    expect(new Set(flags).size).toBe(flags.length);
-  });
-
-  it("does not include empty flags", () => {
-    const flags = getAllResumeFlags();
-    expect(flags).not.toContain("");
-  });
-});
-
-describe("hasSessionTracking", () => {
-  it("returns true only for claude", () => {
-    expect(hasSessionTracking("claude")).toBe(true);
-    expect(hasSessionTracking("copilot")).toBe(false);
-    expect(hasSessionTracking("strands")).toBe(false);
-    expect(hasSessionTracking("shell")).toBe(false);
-  });
-});
-
-describe("resume config display fields", () => {
-  it("provides displayLabel for all agent types", () => {
-    expect(getResumeConfig("claude").displayLabel).toBe("Claude");
-    expect(getResumeConfig("copilot").displayLabel).toBe("Copilot");
-    expect(getResumeConfig("strands").displayLabel).toBe("Strands");
-    expect(getResumeConfig("shell").displayLabel).toBe("Shell");
-  });
-
-  it("provides helpText for all agent types", () => {
-    expect(getResumeConfig("claude").helpText).toContain("--session-id");
-    expect(getResumeConfig("copilot").helpText).toContain("--resume[=sessionId]");
-    expect(getResumeConfig("strands").helpText).toContain("start fresh");
-    expect(getResumeConfig("shell").helpText).toContain("not saved for restart resume");
-  });
-});
-
-describe("deferSessionId config", () => {
-  it("copilot defers session ID detection with log dir and pattern", () => {
-    const config = getResumeConfig("copilot");
-    expect(config.deferSessionId).toBe(true);
-    expect(config.sessionLogDir).toBe("~/.copilot/logs");
-    expect(config.sessionLogPattern).toContain("Workspace initialized:");
-  });
-
-  it("claude does not defer session ID detection", () => {
-    expect(getResumeConfig("claude").deferSessionId).toBe(false);
-  });
-
-  it("non-resumable agents do not defer", () => {
-    expect(getResumeConfig("strands").deferSessionId).toBe(false);
-    expect(getResumeConfig("shell").deferSessionId).toBe(false);
-  });
-});
-
 describe("default profile button colors", () => {
   it("sets Claude brand color on the default Claude profile", () => {
     const profile = createDefaultClaudeProfile();
@@ -298,38 +188,6 @@ describe("default profile button colors", () => {
 describe("custom agent type", () => {
   it("is included in AGENT_TYPES", () => {
     expect(AGENT_TYPES).toContain("custom");
-  });
-
-  it("has a non-resumable default resume config", () => {
-    const config = getResumeConfig("custom");
-    expect(config.resumable).toBe(false);
-    expect(config.sessionTracking).toBe(false);
-    expect(config.deferSessionId).toBe(false);
-    expect(config.displayLabel).toBe("Custom");
-  });
-
-  it("has no activity patterns by default", () => {
-    const config = getResumeConfig("custom");
-    expect(config.activityPatterns).toBeUndefined();
-  });
-});
-
-describe("activity patterns in resume config", () => {
-  it("provides activity patterns for claude", () => {
-    const config = getResumeConfig("claude");
-    expect(config.activityPatterns).toBeDefined();
-    expect(config.activityPatterns!.activeLinePatterns.length).toBeGreaterThan(0);
-  });
-
-  it("provides activity patterns for copilot", () => {
-    const config = getResumeConfig("copilot");
-    expect(config.activityPatterns).toBeDefined();
-    expect(config.activityPatterns!.activeLinePatterns.length).toBeGreaterThan(0);
-  });
-
-  it("does not provide activity patterns for shell", () => {
-    const config = getResumeConfig("shell");
-    expect(config.activityPatterns).toBeUndefined();
   });
 });
 
@@ -372,44 +230,8 @@ describe("profile session type helpers", () => {
   });
 });
 
-describe("getProfileResumeConfig", () => {
-  it("returns base config for non-custom profiles", () => {
-    const profile = createDefaultProfile({ agentType: "claude" });
-    const config = getProfileResumeConfig(profile);
-    expect(config).toEqual(getResumeConfig("claude"));
-  });
-
-  it("merges profile overrides for custom profiles", () => {
-    const profile = createDefaultProfile({
-      agentType: "custom",
-      name: "My Agent",
-      resumable: true,
-      resumeFlag: "--session",
-      resumeFlagFormat: "flag-equals",
-      promptInjectionMode: "flag",
-      promptFlag: "-m",
-    });
-    const config = getProfileResumeConfig(profile);
-    expect(config.resumable).toBe(true);
-    expect(config.resumeFlag).toBe("--session");
-    expect(config.resumeFlagFormat).toBe("flag-equals");
-    expect(config.promptInjectionMode).toBe("flag");
-    expect(config.promptFlag).toBe("-m");
-    expect(config.displayLabel).toBe("My Agent");
-    expect(config.cliDisplayName).toBe("My Agent");
-  });
-
-  it("uses base defaults when custom profile has no overrides", () => {
-    const profile = createDefaultProfile({ agentType: "custom", name: "Bare" });
-    const config = getProfileResumeConfig(profile);
-    expect(config.resumable).toBe(false);
-    expect(config.resumeFlag).toBe("");
-    expect(config.promptInjectionMode).toBe("positional");
-  });
-});
-
 describe("Zod schema for custom profiles", () => {
-  it("validates a profile with resume override fields", () => {
+  it("validates a profile with promptInjectionMode override", () => {
     const raw = {
       id: "test-1",
       name: "Pi Agent",
@@ -423,16 +245,13 @@ describe("Zod schema for custom profiles", () => {
       paramPassMode: "launch-only",
       button: { enabled: true, label: "Pi" },
       sortOrder: 0,
-      resumable: true,
-      resumeFlag: "--session",
-      resumeFlagFormat: "flag-space",
       promptInjectionMode: "positional",
     };
     const result = AgentProfileSchema.safeParse(raw);
     expect(result.success).toBe(true);
   });
 
-  it("validates a custom profile without resume fields", () => {
+  it("validates a minimal custom profile", () => {
     const raw = {
       id: "test-2",
       name: "Simple CLI",
