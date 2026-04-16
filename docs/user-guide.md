@@ -11,7 +11,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Creating tasks](#creating-tasks)
   - [Kanban board](#kanban-board)
   - [Task card anatomy](#task-card-anatomy)
-  - [Compact card mode](#compact-card-mode)
+  - [Card display modes](#card-display-modes)
   - [Context menu](#context-menu)
   - [Detail panel](#detail-panel)
   - [Drag-drop reordering](#drag-drop-reordering)
@@ -112,13 +112,19 @@ Cards contain:
 
 When a task has an active terminal session, a small indicator appears on the card showing the session count and type.
 
-### Compact card mode
+### Card display modes
 
-Work Terminal offers an optional **compact display mode** that collapses each task card into a single horizontal line. This is useful when you have many tasks and want to see more of them at once without scrolling.
+Work Terminal offers three card display modes, configurable under **Settings > Core > Card display mode**:
 
-To enable compact mode, go to **Settings > Core > Card display mode** and select **Compact**.
+| Mode | Description |
+|------|-------------|
+| **Standard** | The default multi-line card layout with full badges, goal tags, and flag labels. |
+| **Comfortable** | Same layout as Standard but with more padding within cards, larger gaps between cards, and more visual breathing room overall. Useful when you prefer a less dense board that is easier to scan visually. |
+| **Compact** | Collapses each card into a single horizontal line with indicator dots replacing verbose badges. Useful when you have many tasks and want to see more at once without scrolling. |
 
-In compact mode, each card becomes a single row containing:
+**Comfortable mode** uses the same card structure as Standard - title, source badges, priority scores, goal tags, and card flags all remain visible. The difference is purely spacing: cards have more internal padding, larger margins between them, slightly larger text, and more gap between meta badges. Section headers and the cards container also get extra breathing room.
+
+**Compact mode** replaces the full card layout with a single row containing:
 
 - **Title** - single line, truncated with ellipsis if it overflows
 - **Indicator dots** - small coloured dots that replace the verbose meta badges:
@@ -128,16 +134,16 @@ In compact mode, each card becomes a single row containing:
   - Coloured dot for each active card flag (hover to see the flag label or context)
 - **Session badge** - the session count badge remains visible, slightly smaller
 
-Everything else works identically in compact mode:
+All three modes share the same interactive behaviour:
 
 - **Drag-drop** reordering and cross-column moves
 - **Selection** and detail panel opening
 - **Context menu** with all the same actions
 - **Agent state indicators** (active/waiting/idle border and glow animations)
-- **Pinned section** with state badges (adapted to the compact height)
+- **Pinned section** with state badges
 - **Filtering** by text and active sessions
 
-Switch back to **Standard** mode at any time to restore the full multi-line card layout with verbose badges, goal tags, and flag labels.
+Switch between modes at any time from the settings dropdown.
 
 ### Context menu
 
@@ -371,7 +377,7 @@ The core settings section covers:
 
 | Setting | Description |
 |---------|-------------|
-| **Card display mode** | Choose between **Standard** (full card details with badges and tags) and **Compact** (single-line cards with indicator dots). See [Compact card mode](#compact-card-mode). |
+| **Card display mode** | Choose between **Standard** (full card details), **Comfortable** (spacious layout with more padding and gaps), and **Compact** (single-line cards with indicator dots). See [Card display modes](#card-display-modes). |
 | **View mode** | Choose between **Kanban** (group by state columns) and **Activity** (group by recency). See [Activity view](#activity-view). |
 | **Recent activity threshold** | How far back the "Recent" section extends in activity view: Last hour, Last 3 hours (default), or Last 24 hours. |
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
