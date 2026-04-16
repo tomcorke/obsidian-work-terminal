@@ -99,7 +99,10 @@ describe("MainView selection ID backfill", () => {
       getCustomOrder: vi.fn(() => ({ active: [updatedItem.id] })),
       selectById: vi.fn(),
     };
-    const terminalPanel: Pick<TerminalPanelView, 'getActiveItemId' | 'rekeyItem' | 'setActiveItem' | 'setTitle'> = {
+    const terminalPanel: Pick<
+      TerminalPanelView,
+      "getActiveItemId" | "rekeyItem" | "setActiveItem" | "setTitle"
+    > = {
       getActiveItemId: vi.fn(() => item.id),
       rekeyItem: vi.fn(),
       setActiveItem: vi.fn(),
@@ -135,7 +138,10 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => false),
       selectById: vi.fn(),
     };
-    const terminalPanel: Pick<TerminalPanelView, 'getActiveItemId' | 'rekeyItem' | 'setActiveItem' | 'setTitle'> = {
+    const terminalPanel: Pick<
+      TerminalPanelView,
+      "getActiveItemId" | "rekeyItem" | "setActiveItem" | "setTitle"
+    > = {
       getActiveItemId: vi.fn(() => "different-item"),
       rekeyItem: vi.fn(),
       setActiveItem: vi.fn(),
@@ -168,7 +174,7 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => true),
       getCustomOrder: vi.fn(() => ({ active: ["uuid-123"] })),
     };
-    const terminalPanel: Pick<TerminalPanelView, 'rekeyItem'> = {
+    const terminalPanel: Pick<TerminalPanelView, "rekeyItem"> = {
       rekeyItem: vi.fn(),
     };
 
@@ -209,7 +215,7 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => true),
       getCustomOrder: vi.fn(() => ({ todo: ["uuid-123"] })),
     };
-    const terminalPanel: Pick<TerminalPanelView, 'rekeyItem'> = {
+    const terminalPanel: Pick<TerminalPanelView, "rekeyItem"> = {
       rekeyItem: vi.fn(),
     };
 
@@ -257,7 +263,7 @@ describe("MainView selection ID backfill", () => {
       loadAll: vi.fn().mockResolvedValue([]),
       groupByColumn: vi.fn(() => ({ todo: [] })),
     };
-    const terminalPanel: Pick<TerminalPanelView, 'rekeyItem' | 'setItems'> = {
+    const terminalPanel: Pick<TerminalPanelView, "rekeyItem" | "setItems"> = {
       rekeyItem: vi.fn(),
       setItems: vi.fn(),
     };
@@ -301,7 +307,10 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
     return view;
   }
 
-  function makeTerminalPanel(): Pick<TerminalPanelView, 'stashAll' | 'disposeAll' | 'hasAnySessions'> {
+  function makeTerminalPanel(): Pick<
+    TerminalPanelView,
+    "stashAll" | "disposeAll" | "hasAnySessions"
+  > {
     return {
       stashAll: vi.fn(),
       disposeAll: vi.fn(),
