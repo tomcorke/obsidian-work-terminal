@@ -22,9 +22,11 @@ import {
   prepareRetryEnrichment,
   type EnrichmentProfileOverride,
 } from "./BackgroundEnrich";
-import type { KanbanColumn } from "./types";
+import type { KanbanColumn, AutoIconMode } from "./types";
 import { parseCustomCardFlags } from "./customCardFlags";
 import { createStateResolver, type StateStrategy } from "./stateResolverFactory";
+import { SetIconModal } from "./SetIconModal";
+import { yamlQuoteValue } from "../../core/utils";
 
 export class TaskAgentAdapter extends BaseAdapter {
   config: PluginConfig = TASK_AGENT_CONFIG;
@@ -82,6 +84,11 @@ export class TaskAgentAdapter extends BaseAdapter {
   createCardRenderer(): CardRenderer {
     const mergedRules = this.getMergedFlagRules();
     this._cardRenderer = new TaskCard(mergedRules);
+    this.applyIconSettings();
+    this._cardRenderer.setIconOperations({
+      promptSetIcon: (item: WorkItem) => this.promptSetIcon(item),
+      clearIcon: (item: WorkItem) => this.clearIcon(item),
+    });
     return this._cardRenderer;
   }
 
@@ -97,6 +104,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     this._stateResolver = null;
     if (this._cardRenderer) {
       this._cardRenderer.updateFlagRules(this.getMergedFlagRules());
+      this.applyIconSettings();
     }
     // Update column order and creation columns from settings
     this.config.columns = resolveColumns(settings["adapter.columnOrder"] as string | undefined);
@@ -177,5 +185,74 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   transformSessionLabel(_oldLabel: string, detectedLabel: string): string {
     return detectedLabel;
+  }
+
+  /** Apply current icon settings to the card renderer. */
+  private applyIconSettings(): void {
+    if (!this._cardRenderer) return;
+    const enabled = !!this._settings["adapter.taskCardIcons"];
+    const autoMode = (this._settings["adapter.autoIconMode"] as AutoIconMode) || "none";
+    this._cardRenderer.updateIconSettings(enabled, autoMode);
+  }
+
+  /** Show the Set Icon modal and update frontmatter on confirm. */
+  private promptSetIcon(item: WorkItem): void {
+    if (!this._app) return;
+    const meta = (item.metadata || {}) as Record<string, any>;
+    const currentIcon = typeof meta.icon === "string" ? meta.icon : "";
+
+    new SetIconModal(this._app, currentIcon, async (iconValue: string) => {
+      await this.updateFrontmatterIcon(item.path, iconValue);
+    }).open();
+  }
+
+  /** Remove the icon field from a task's frontmatter. */
+  private async clearIcon(item: WorkItem): Promise<void> {
+    await this.updateFrontmatterIcon(item.path, null);
+  }
+
+  /**
+   * Update (or remove) the `icon` field in a task file's YAML frontmatter.
+   * Follows the same regex-based approach used by TaskMover for frontmatter updates.
+   */
+  private async updateFrontmatterIcon(filePath: string, icon: string | null): Promise<void> {
+    if (!this._app) return;
+    const file = this._app.vault.getAbstractFileByPath(filePath) as import("obsidian").TFile | null;
+    if (!file) return;
+
+    try {
+      const content = await this._app.vault.read(file);
+      let updated: string;
+
+      if (icon === null) {
+        // Remove the icon field entirely
+        updated = content.replace(/^icon:[ \t]*[^\r\n]*\r?\n/m, "");
+      } else {
+        const safeIcon = yamlQuoteValue(icon);
+        if (/^icon:[ \t]*[^\r\n]*$/m.test(content)) {
+          // Update existing icon field (also matches empty `icon:` lines)
+          updated = content.replace(/^icon:[ \t]*[^\r\n]*$/m, `icon: ${safeIcon}`);
+        } else {
+          // Insert icon field into frontmatter
+          const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+          if (!fmMatch) return;
+          const [fullMatch, openFence, body, closeFence] = fmMatch;
+          const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
+          // When body is empty (---\n---), insert directly after opening fence
+          // to avoid a leading blank line.
+          const prefix = body.length === 0 ? "" : body.endsWith(eol) ? body : body + eol;
+          updated = content.replace(
+            fullMatch,
+            `${openFence}${prefix}icon: ${safeIcon}${eol}${closeFence}`,
+          );
+        }
+      }
+
+      if (updated !== content) {
+        await this._app.vault.modify(file, updated);
+      }
+    } catch (err) {
+      console.error(`[work-terminal] Failed to update icon for ${filePath}:`, err);
+    }
   }
 }

@@ -31,10 +31,32 @@ export interface TaskFile {
   agentActionable: boolean;
   goal: string[];
   color?: string;
+  /** Custom icon - Lucide icon name or emoji string. */
+  icon?: string;
   backgroundIngestion?: "failed" | "retrying";
   created: string;
   updated: string;
 }
+
+/** Automatic icon assignment mode. */
+export type AutoIconMode = "none" | "source" | "state";
+
+/** Source-based auto-icon mapping: source type -> Lucide icon name. */
+export const SOURCE_AUTO_ICONS: Record<string, string> = {
+  jira: "ticket",
+  slack: "message-square",
+  confluence: "file-text",
+  prompt: "terminal",
+  other: "circle",
+};
+
+/** State-based auto-icon mapping: kanban column -> Lucide icon name. */
+export const STATE_AUTO_ICONS: Record<string, string> = {
+  priority: "flame",
+  active: "play",
+  todo: "list-todo",
+  done: "check",
+};
 
 export const STATE_FOLDER_MAP: Record<KanbanColumn, string> = {
   priority: "priority",

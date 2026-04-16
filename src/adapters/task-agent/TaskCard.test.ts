@@ -16,6 +16,27 @@ vi.mock("obsidian", () => ({
   Notice: class Notice {
     constructor(_message: string) {}
   },
+  setIcon: (el: HTMLElement, iconName: string) => {
+    // Simulate Obsidian's setIcon: insert an SVG for known Lucide icon names
+    const KNOWN_ICONS = [
+      "rocket",
+      "terminal",
+      "ticket",
+      "message-square",
+      "file-text",
+      "circle",
+      "flame",
+      "play",
+      "list-todo",
+      "check",
+      "circle-dot",
+    ];
+    if (KNOWN_ICONS.includes(iconName)) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("data-icon", iconName);
+      el.appendChild(svg);
+    }
+  },
 }));
 
 // Polyfill Obsidian HTMLElement augmentations for jsdom
@@ -659,6 +680,194 @@ describe("TaskCard", () => {
 
       const title = el.querySelector(".wt-card-compact-title") as HTMLElement;
       expect(title.getAttribute("title")).toBe("A very long task title that would be truncated");
+    });
+  });
+
+  describe("icon rendering", () => {
+    it("hides icon slot when icons are disabled (default)", () => {
+      const item = makeItem({ metadata: { icon: "rocket" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot).not.toBeNull();
+      expect(iconSlot.style.display).toBe("none");
+    });
+
+    it("renders Lucide icon when icons are enabled and custom icon is set", () => {
+      const item = makeItem({ metadata: { icon: "rocket" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.style.display).not.toBe("none");
+      expect(iconSlot.classList.contains("wt-card-icon-standard")).toBe(true);
+      expect(iconSlot.querySelector("svg")).not.toBeNull();
+    });
+
+    it("renders emoji icon as text content", () => {
+      const item = makeItem({ metadata: { icon: "\uD83D\uDE80" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.style.display).not.toBe("none");
+      expect(iconSlot.textContent).toBe("\uD83D\uDE80");
+      expect(iconSlot.classList.contains("wt-card-icon-emoji")).toBe(true);
+    });
+
+    it("hides icon slot for unrecognised Lucide icon name", () => {
+      const item = makeItem({ metadata: { icon: "nonexistent-icon-xyz" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.style.display).toBe("none");
+    });
+
+    it("renders source-based auto-icon for Jira task", () => {
+      const item = makeItem({
+        metadata: { source: { type: "jira", id: "PROJ-1" } },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "source");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.style.display).not.toBe("none");
+      const svg = iconSlot.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg!.getAttribute("data-icon")).toBe("ticket");
+    });
+
+    it("renders source-based auto-icon for Slack task", () => {
+      const item = makeItem({
+        metadata: { source: { type: "slack", id: "" } },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "source");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+      const svg = iconSlot.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg!.getAttribute("data-icon")).toBe("message-square");
+    });
+
+    it("renders state-based auto-icon for priority column", () => {
+      const item = makeItem({ state: "priority" });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "state");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+      const svg = iconSlot.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg!.getAttribute("data-icon")).toBe("flame");
+    });
+
+    it("custom per-task icon overrides auto-icon mode", () => {
+      const item = makeItem({
+        metadata: {
+          icon: "rocket",
+          source: { type: "jira", id: "PROJ-1" },
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "source");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+      const svg = iconSlot.querySelector("svg");
+      expect(svg).not.toBeNull();
+      expect(svg!.getAttribute("data-icon")).toBe("rocket");
+    });
+
+    it("renders compact icon with compact class", () => {
+      const item = makeItem({ metadata: { icon: "terminal" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+
+      const el = card.render(item, ctx, "compact");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.classList.contains("wt-card-icon-compact")).toBe(true);
+      expect(iconSlot.classList.contains("wt-card-icon-standard")).toBe(false);
+    });
+
+    it("hides icon slot when icons enabled but no custom icon and auto-mode is none", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+
+      const el = card.render(item, ctx, "standard");
+      const iconSlot = el.querySelector(".wt-card-icon-slot") as HTMLElement;
+
+      expect(iconSlot.style.display).toBe("none");
+    });
+
+    it("includes Set Icon and Clear Icon in context menu when icons enabled", () => {
+      const item = makeItem({ metadata: { icon: "rocket" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+      card.setIconOperations({
+        promptSetIcon: vi.fn(),
+        clearIcon: vi.fn(),
+      });
+
+      const menuItems = card.getContextMenuItems(item, ctx);
+      const setItem = menuItems.find((m) => (m as any).title === "Set Icon...");
+      const clearItem = menuItems.find((m) => (m as any).title === "Clear Icon");
+
+      expect(setItem).toBeDefined();
+      expect(clearItem).toBeDefined();
+    });
+
+    it("does not include Clear Icon when no custom icon is set", () => {
+      const item = makeItem({ metadata: {} });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      card.updateIconSettings(true, "none");
+      card.setIconOperations({
+        promptSetIcon: vi.fn(),
+        clearIcon: vi.fn(),
+      });
+
+      const menuItems = card.getContextMenuItems(item, ctx);
+      const clearItem = menuItems.find((m) => (m as any).title === "Clear Icon");
+
+      expect(clearItem).toBeUndefined();
+    });
+
+    it("does not include icon menu items when icons are disabled", () => {
+      const item = makeItem({ metadata: { icon: "rocket" } });
+      const ctx = makeContext();
+      const card = new TaskCard();
+      // icons disabled by default
+
+      const menuItems = card.getContextMenuItems(item, ctx);
+      const setItem = menuItems.find((m) => (m as any).title === "Set Icon...");
+
+      expect(setItem).toBeUndefined();
     });
   });
 });
