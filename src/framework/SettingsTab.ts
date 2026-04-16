@@ -328,18 +328,31 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
   /**
    * Render column display order controls: a list of columns with up/down
-   * buttons and a reset-to-default action.
+   * buttons, pin toggles for dynamic columns, and a reset-to-default action.
    */
   private async renderColumnOrderControls(containerEl: HTMLElement): Promise<void> {
     // Resolve effective column order (current config reflects it)
     const columns = this.adapter.config.columns;
+
+    // Load pinned custom states
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const pinnedJson = (settings["adapter.pinnedCustomStates"] as string) || "[]";
+    let pinnedStates: string[] = [];
+    try {
+      const parsed = JSON.parse(pinnedJson);
+      if (Array.isArray(parsed)) pinnedStates = parsed;
+    } catch {
+      /* empty */
+    }
+    const pinnedSet = new Set(pinnedStates);
 
     const hasDynamic = columns.some((c) => !c.folderName);
     const desc = new Setting(containerEl)
       .setName("Column display order")
       .setDesc(
         hasDynamic
-          ? "Use arrow buttons to reorder kanban board columns. Dynamic columns (from custom frontmatter states) are shown with a star. Changes take effect immediately."
+          ? "Use arrow buttons to reorder kanban board columns. Dynamic columns (from custom frontmatter states) are shown with a star. Use the pin button to keep a dynamic column visible even when it has no tasks. Changes take effect immediately."
           : "Use arrow buttons to reorder kanban board columns. Changes take effect immediately.",
       );
 
@@ -348,6 +361,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       btn.setButtonText("Reset to default").onClick(async () => {
         await this.saveSettings((settings) => {
           settings["adapter.columnOrder"] = "";
+          settings["adapter.pinnedCustomStates"] = "[]";
         });
         this.display();
       }),
@@ -361,8 +375,30 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
       // Column label (with dynamic indicator for custom frontmatter states)
       const isDynamic = !col.folderName;
-      const labelText = isDynamic ? `${col.label} *` : col.label;
+      const isPinned = isDynamic && pinnedSet.has(col.id);
+      const labelText = isDynamic ? `${col.label} *${isPinned ? " (pinned)" : ""}` : col.label;
       rowEl.createSpan({ text: labelText, cls: "wt-column-order-label" });
+
+      // Pin toggle for dynamic columns
+      if (isDynamic) {
+        const pinBtn = rowEl.createEl("button", {
+          text: isPinned ? "Unpin" : "Pin",
+          cls: "wt-column-order-btn wt-column-pin-btn",
+          attr: { "aria-label": isPinned ? `Unpin ${col.label}` : `Pin ${col.label}` },
+        });
+        pinBtn.addEventListener("click", async () => {
+          const currentPinned = new Set(pinnedStates);
+          if (isPinned) {
+            currentPinned.delete(col.id);
+          } else {
+            currentPinned.add(col.id);
+          }
+          await this.saveSettings((settings) => {
+            settings["adapter.pinnedCustomStates"] = JSON.stringify([...currentPinned]);
+          });
+          this.display();
+        });
+      }
 
       // Up button
       const upBtn = rowEl.createEl("button", {
@@ -398,6 +434,52 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         this.display();
       });
     }
+
+    // "Create custom state" input
+    this.renderCreateCustomStateInput(containerEl, pinnedStates);
+  }
+
+  /**
+   * Render an input for creating a new custom state column.
+   * Newly created states are pinned by default so they remain visible.
+   */
+  private renderCreateCustomStateInput(
+    containerEl: HTMLElement,
+    currentPinnedStates: string[],
+  ): void {
+    const existingIds = new Set(this.adapter.config.columns.map((c) => c.id));
+
+    new Setting(containerEl)
+      .setName("Create custom state")
+      .setDesc(
+        "Add a new custom state column. The column will be pinned by default so it stays visible even with no tasks. Use lowercase identifiers with hyphens (e.g. review, blocked-upstream).",
+      )
+      .addText((text) => {
+        text.inputEl.placeholder = "e.g. review";
+        text.inputEl.addEventListener("keydown", async (e: KeyboardEvent) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          const value = text.inputEl.value.trim().toLowerCase().replace(/\s+/g, "-");
+          if (!value) return;
+          if (existingIds.has(value)) {
+            new Notice(`Column "${value}" already exists`);
+            return;
+          }
+
+          // Add to column order and pin it
+          const columns = this.adapter.config.columns;
+          const ids = columns.map((c) => c.id);
+          ids.push(value);
+          const newPinned = [...currentPinnedStates, value];
+
+          await this.saveSettings((settings) => {
+            settings["adapter.columnOrder"] = JSON.stringify(ids);
+            settings["adapter.pinnedCustomStates"] = JSON.stringify(newPinned);
+          });
+          new Notice(`Custom state "${value}" created and pinned`);
+          this.display();
+        });
+      });
   }
 
   /**
