@@ -11,6 +11,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Creating tasks](#creating-tasks)
   - [Kanban board](#kanban-board)
   - [Task card anatomy](#task-card-anatomy)
+  - [Task card icons](#task-card-icons)
   - [Card display modes](#card-display-modes)
   - [Context menu](#context-menu)
   - [Detail panel](#detail-panel)
@@ -94,6 +95,7 @@ Each task card displays key information at a glance:
 
 Cards contain:
 
+- **Icon** - an optional leading icon (Lucide or emoji) when [task card icons](#task-card-icons) are enabled
 - **Title** - the task name, shown prominently at the top
 - **Source badge** - indicates where the task originated:
   - Jira tasks show the ticket key (e.g. `AUTH-2847`) in a blue badge that links to the Jira ticket
@@ -110,6 +112,33 @@ Cards contain:
 - **Ingestion indicator** - shows "ingesting..." while background enrichment is running
 
 When a task has an active terminal session, a small indicator appears on the card showing the session count and type.
+
+### Task card icons
+
+Task cards can display icons as a leading visual element, visible in both standard and compact display modes.
+
+**Enabling icons**: Go to **Settings > Adapter > Task card icons** and toggle the feature on. Icons are disabled by default.
+
+**Custom per-task icons**: Set a custom icon for any task via:
+
+- **Frontmatter**: Add an `icon` field to the task's YAML frontmatter with a Lucide icon name or an emoji:
+  ```yaml
+  icon: rocket        # Lucide icon name
+  icon: "\uD83D\uDE80"          # Emoji alternative
+  ```
+- **Context menu**: Right-click a task card and select **Set Icon...** to open a text input modal. Enter a Lucide icon name (e.g. `rocket`, `terminal`, `flame`) or paste an emoji. Select **Clear Icon** to remove a custom icon.
+
+**Automatic icon modes**: When a task has no custom icon, the plugin can assign icons automatically based on a configurable mode (Settings > Adapter > Automatic icon mode):
+
+| Mode | Description |
+|------|-------------|
+| **None** (default) | Only custom per-task icons are shown. Tasks without a custom icon have no icon. |
+| **Source-based** | Icon reflects the task source: Jira = ticket, Slack = speech bubble, Confluence = file, CLI/prompt = terminal. |
+| **State-based** | Icon reflects the kanban column: Priority = flame, Active = play, To Do = list, Done = checkmark. |
+
+Custom per-task icons always take priority over automatic icons regardless of mode.
+
+**Icon rendering**: Icons use Obsidian's built-in Lucide icon library (via `setIcon`). Emoji values are detected automatically and rendered as text. Unrecognised icon names are silently hidden - the card displays normally without an icon.
 
 ### Card display modes
 
@@ -156,6 +185,8 @@ Right-click any task card to open the context menu with these options:
 - **Copy Name** - copies the task title to clipboard
 - **Copy Path** - copies the vault file path to clipboard
 - **Copy Context Prompt** - copies the generated context prompt for this task
+- **Set Icon...** - opens a modal to set a custom icon for this task (shown when icons are enabled)
+- **Clear Icon** - removes the custom icon from this task (shown when the task has a custom icon and icons are enabled)
 - **Delete Task** - permanently deletes the task file (shown in red as a destructive action)
 
 ### Detail panel
@@ -427,6 +458,7 @@ priority:
   has-blocker: true|false     # Whether the task is blocked
   blocker-context: "<text>"   # Description of the blocker
 agent-actionable: true|false  # Whether an agent can work on this
+icon: "<name-or-emoji>"       # Custom card icon (Lucide name or emoji)
 goal: []                      # Associated goals
 related: []                   # Related task references
 created: <iso-date>
@@ -464,6 +496,8 @@ These settings appear under the **Adapter** section and are specific to the task
 | Retry enrichment prompt | Custom prompt for retry enrichment | (default) |
 | Enrichment agent profile | Which profile to use for enrichment | Default |
 | Enrichment timeout | Max seconds for enrichment | 300 |
+| Task card icons | Show icons on task cards | `false` |
+| Automatic icon mode | How automatic icons are assigned (none/source/state) | `none` |
 
 ---
 
