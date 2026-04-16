@@ -683,6 +683,66 @@ describe("TaskCard", () => {
     });
   });
 
+  describe("comfortable display mode", () => {
+    it("renders wt-card-compact class in comfortable mode", () => {
+      const item = makeItem();
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "comfortable");
+
+      expect(el.classList.contains("wt-card-compact")).toBe(true);
+    });
+
+    it("renders compact row layout with title and dots container in comfortable mode", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "CASTLE-42" },
+          priority: { score: 60 },
+          goal: ["Ship Feature"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "comfortable");
+
+      const compactRow = el.querySelector(".wt-card-compact-row");
+      expect(compactRow).not.toBeNull();
+
+      const title = el.querySelector(".wt-card-compact-title");
+      expect(title).not.toBeNull();
+      expect(title!.textContent).toBe("Fix context prompt");
+
+      const dots = el.querySelector(".wt-card-compact-dots");
+      expect(dots).not.toBeNull();
+
+      // Should have indicator dots, not full badges
+      expect(el.querySelector(".wt-compact-dot--jira")).not.toBeNull();
+      expect(el.querySelector(".wt-compact-dot--priority-high")).not.toBeNull();
+      expect(el.querySelector(".wt-compact-dot--goal")).not.toBeNull();
+    });
+
+    it("does not render standard meta row in comfortable mode", () => {
+      const item = makeItem({
+        metadata: {
+          source: { type: "jira", id: "PROJ-123" },
+          priority: { score: 50 },
+          goal: ["Ship Feature"],
+        },
+      });
+      const ctx = makeContext();
+      const card = new TaskCard();
+
+      const el = card.render(item, ctx, "comfortable");
+
+      expect(el.querySelector(".wt-card-meta")).toBeNull();
+      expect(el.querySelector(".wt-card-source")).toBeNull();
+      expect(el.querySelector(".wt-card-score")).toBeNull();
+      expect(el.querySelector(".wt-card-goal")).toBeNull();
+    });
+  });
+
   describe("icon rendering", () => {
     it("hides icon slot when icons are disabled (default)", () => {
       const item = makeItem({ metadata: { icon: "rocket" } });
