@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { TFile } from "obsidian";
 import type { WorkItem } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
+import type { TerminalPanelView } from "./TerminalPanelView";
 
 vi.mock("obsidian", () => ({
   ItemView: class {
@@ -98,10 +99,9 @@ describe("MainView selection ID backfill", () => {
       getCustomOrder: vi.fn(() => ({ active: [updatedItem.id] })),
       selectById: vi.fn(),
     };
-    const terminalPanel = {
+    const terminalPanel: Pick<TerminalPanelView, 'getActiveItemId' | 'rekeyItem' | 'setActiveItem' | 'setTitle'> = {
       getActiveItemId: vi.fn(() => item.id),
       rekeyItem: vi.fn(),
-      persistSessions: vi.fn().mockResolvedValue(undefined),
       setActiveItem: vi.fn(),
       setTitle: vi.fn(),
     };
@@ -118,7 +118,6 @@ describe("MainView selection ID backfill", () => {
     expect(mergeAndSavePluginData).toHaveBeenCalledTimes(1);
     expect(mergeAndSavePluginData).toHaveBeenCalledWith(expect.anything(), expect.any(Function));
     expect(refreshSpy).toHaveBeenCalled();
-    expect(terminalPanel.persistSessions).toHaveBeenCalled();
     expect(listPanel.selectById).toHaveBeenCalledWith(updatedItem.id);
     expect(terminalPanel.setActiveItem).not.toHaveBeenCalled();
     expect(terminalPanel.setTitle).not.toHaveBeenCalled();
@@ -136,10 +135,9 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => false),
       selectById: vi.fn(),
     };
-    const terminalPanel = {
+    const terminalPanel: Pick<TerminalPanelView, 'getActiveItemId' | 'rekeyItem' | 'setActiveItem' | 'setTitle'> = {
       getActiveItemId: vi.fn(() => "different-item"),
       rekeyItem: vi.fn(),
-      persistSessions: vi.fn().mockResolvedValue(undefined),
       setActiveItem: vi.fn(),
       setTitle: vi.fn(),
     };
@@ -154,7 +152,6 @@ describe("MainView selection ID backfill", () => {
     expect(listPanel.rekeyCustomOrder).toHaveBeenCalledWith(item.id, updatedItem.id);
     expect(mergeAndSavePluginData).not.toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalled();
-    expect(terminalPanel.persistSessions).toHaveBeenCalled();
     expect(listPanel.selectById).not.toHaveBeenCalled();
     expect(terminalPanel.setActiveItem).not.toHaveBeenCalled();
     expect(terminalPanel.setTitle).not.toHaveBeenCalled();
@@ -171,9 +168,8 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => true),
       getCustomOrder: vi.fn(() => ({ active: ["uuid-123"] })),
     };
-    const terminalPanel = {
+    const terminalPanel: Pick<TerminalPanelView, 'rekeyItem'> = {
       rekeyItem: vi.fn(),
-      persistSessions: vi.fn(),
     };
 
     (view as any).listPanel = listPanel;
@@ -213,9 +209,8 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => true),
       getCustomOrder: vi.fn(() => ({ todo: ["uuid-123"] })),
     };
-    const terminalPanel = {
+    const terminalPanel: Pick<TerminalPanelView, 'rekeyItem'> = {
       rekeyItem: vi.fn(),
-      persistSessions: vi.fn(),
     };
 
     (view as any).listPanel = listPanel;
@@ -262,8 +257,7 @@ describe("MainView selection ID backfill", () => {
       loadAll: vi.fn().mockResolvedValue([]),
       groupByColumn: vi.fn(() => ({ todo: [] })),
     };
-    const terminalPanel = {
-      persistSessions: vi.fn(),
+    const terminalPanel: Pick<TerminalPanelView, 'rekeyItem' | 'setItems'> = {
       rekeyItem: vi.fn(),
       setItems: vi.fn(),
     };
@@ -307,9 +301,8 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
     return view;
   }
 
-  function makeTerminalPanel() {
+  function makeTerminalPanel(): Pick<TerminalPanelView, 'stashAll' | 'disposeAll' | 'hasAnySessions'> {
     return {
-      persistSessions: vi.fn().mockResolvedValue(undefined),
       stashAll: vi.fn(),
       disposeAll: vi.fn(),
       hasAnySessions: vi.fn(() => true),
@@ -327,7 +320,6 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
 
     await view.onClose();
 
-    expect(terminalPanel.persistSessions).toHaveBeenCalled();
     expect(terminalPanel.stashAll).toHaveBeenCalled();
     expect(terminalPanel.disposeAll).not.toHaveBeenCalled();
   });
@@ -343,7 +335,6 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
 
     await view.onClose();
 
-    expect(terminalPanel.persistSessions).toHaveBeenCalled();
     expect(terminalPanel.disposeAll).toHaveBeenCalled();
     expect(terminalPanel.stashAll).not.toHaveBeenCalled();
   });
@@ -378,7 +369,6 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
     await view.onClose();
 
     expect(terminalPanel.stashAll).not.toHaveBeenCalled();
-    expect(terminalPanel.persistSessions).toHaveBeenCalled();
   });
 
   it("skips close guard confirmation when keepSessionsAlive is enabled", () => {
