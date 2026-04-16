@@ -2144,7 +2144,7 @@ button.wt-spawn-claude-ctx:hover svg {
    Comfortable card display mode
    ============================================================================= */
 
-/* Comfortable sections: more breathing room between columns */
+/* Comfortable sections: more breathing room between sections */
 .wt-comfortable .wt-section {
   margin-bottom: 8px;
 }

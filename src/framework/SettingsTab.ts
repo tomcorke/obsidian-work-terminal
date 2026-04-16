@@ -9,7 +9,12 @@
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
-import type { AdapterBundle, CardFlagRule, SettingField } from "../core/interfaces";
+import type {
+  AdapterBundle,
+  CardDisplayMode,
+  CardFlagRule,
+  SettingField,
+} from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
@@ -29,7 +34,7 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
-  "core.cardDisplayMode": "standard" | "compact" | "comfortable";
+  "core.cardDisplayMode": CardDisplayMode;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
