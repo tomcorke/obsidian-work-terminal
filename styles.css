@@ -2194,49 +2194,55 @@ button.wt-spawn-claude-ctx:hover svg {
 
 /* =============================================================================
    Comfortable card display mode
+   Uses the compact single-line renderer (indicator dots, not full badges)
+   but with more padding and breathing room than compact. All values sit
+   between compact and standard.
    ============================================================================= */
 
-/* Comfortable sections: more breathing room between sections */
-.wt-comfortable .wt-section {
-  margin-bottom: 8px;
-}
-
-/* Comfortable section headers: taller with more padding */
+/* Comfortable section headers: between compact (6px 8px) and standard (8px 10px) */
 .wt-comfortable .wt-section-header {
-  padding: 10px 12px;
-  font-size: 12px;
+  padding: 7px 9px;
 }
 
-/* Comfortable cards container: more horizontal padding */
+/* Comfortable cards container: between compact (0 2px 4px) and standard (2px 4px 6px) */
 .wt-comfortable .wt-section-cards {
-  padding: 2px 6px 8px;
+  padding: 1px 3px 5px;
 }
 
-/* Comfortable card wrapper: more padding and larger gaps */
+/* Comfortable card wrapper: between compact (2px y-pad, 2px margin, 3px radius)
+   and standard (8px y-pad, 3px margin, 4px radius). Uses compact row layout. */
 .wt-comfortable .wt-card-wrapper {
-  --wt-card-padding-x: 14px;
-  --wt-card-padding-y: 12px;
-  margin: 6px 0;
-  border-radius: 6px;
+  --wt-card-padding-x: 8px;
+  --wt-card-padding-y: 4px;
+  margin: 2px 0;
+  border-radius: 4px;
 }
 
-/* Comfortable title: slightly larger with more bottom margin */
-.wt-comfortable .wt-card-title {
-  font-size: 14px;
-  margin-bottom: 6px;
-}
-
-/* Comfortable meta row: more gap between badges */
-.wt-comfortable .wt-card-meta {
+/* Comfortable compact row: slightly more gap than compact (6px) */
+.wt-comfortable .wt-card-compact-row {
   gap: 8px;
-  font-size: 12px;
-  margin-top: 2px;
 }
 
-/* Comfortable drop indicator: thicker with more margin */
+/* Comfortable compact title: between compact (12px) and standard (13px) */
+.wt-comfortable .wt-card-compact-title {
+  font-size: 12.5px;
+}
+
+/* Comfortable indicator dots: slightly larger than compact */
+.wt-comfortable .wt-compact-dot {
+  width: 8px;
+  height: 8px;
+}
+
+/* Comfortable dots container: slightly more gap than compact (3px) */
+.wt-comfortable .wt-card-compact-dots {
+  gap: 4px;
+}
+
+/* Comfortable drop indicator: between compact (1px, 0 4px) and standard (2px, 1px 4px) */
 .wt-comfortable .wt-drop-indicator {
-  height: 3px;
-  margin: 3px 6px;
+  height: 2px;
+  margin: 1px 4px;
 }
 
 /* =============================================================================

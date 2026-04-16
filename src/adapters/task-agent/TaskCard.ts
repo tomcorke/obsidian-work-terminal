@@ -73,7 +73,7 @@ export class TaskCard implements CardRenderer {
       card.style.setProperty("--wt-task-color", taskColor);
     }
 
-    if (displayMode === "compact") {
+    if (displayMode === "compact" || displayMode === "comfortable") {
       card.addClass("wt-card-compact");
       this.renderCompact(card, item, meta, source, priority, goal);
     } else {

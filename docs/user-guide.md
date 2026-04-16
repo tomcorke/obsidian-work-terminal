@@ -148,10 +148,8 @@ Work Terminal offers three card display modes, configurable under **Settings > C
 | Mode | Description |
 |------|-------------|
 | **Standard** | The default multi-line card layout with full badges, goal tags, and flag labels. |
-| **Comfortable** | Same layout as Standard but with more padding within cards, larger gaps between cards, and more visual breathing room overall. Useful when you prefer a less dense board that is easier to scan visually. |
-| **Compact** | Collapses each card into a single horizontal line with indicator dots replacing verbose badges. Useful when you have many tasks and want to see more at once without scrolling. |
-
-**Comfortable mode** uses the same card structure as Standard - title, source badges, priority scores, goal tags, and card flags all remain visible. The difference is purely spacing: cards have more internal padding, larger margins between them, slightly larger text, and more gap between meta badges. Section headers and the cards container also get extra breathing room.
+| **Compact** | Collapses each card into a single horizontal line with indicator dots replacing verbose badges. The most dense mode - useful when you have many tasks and want to see more at once without scrolling. |
+| **Comfortable** | Uses the same single-line layout as Compact (indicator dots, not full badges) but with more padding, larger gaps, and slightly bigger indicator dots. A relaxed version of Compact that trades a small amount of density for readability. |
 
 **Compact mode** replaces the full card layout with a single row containing:
 
@@ -162,6 +160,10 @@ Work Terminal offers three card display modes, configurable under **Settings > C
   - Green dot for tasks with a goal assigned (hover to see the goal name)
   - Coloured dot for each active card flag (hover to see the flag label or context)
 - **Session badge** - the session count badge remains visible, slightly smaller
+
+**Comfortable mode** uses the same single-line layout as Compact - title, indicator dots, and session badge. The difference is additional breathing room: cards have more internal padding (between compact and standard), slightly larger indicator dots, and more gap between elements. This makes it easier to scan the board without switching to the full multi-line Standard layout.
+
+The density ordering is: Compact (most dense) < Comfortable (single-line, more padding) < Standard (multi-line, full badges).
 
 All three modes share the same interactive behaviour:
 
@@ -408,7 +410,7 @@ The core settings section covers:
 
 | Setting | Description |
 |---------|-------------|
-| **Card display mode** | Choose between **Standard** (full card details), **Comfortable** (spacious layout with more padding and gaps), and **Compact** (single-line cards with indicator dots). See [Card display modes](#card-display-modes). |
+| **Card display mode** | Choose between **Standard** (full multi-line card details), **Compact** (single-line cards with indicator dots), and **Comfortable** (single-line like Compact but with more padding). See [Card display modes](#card-display-modes). |
 | **View mode** | Choose between **Kanban** (group by state columns) and **Activity** (group by recency). See [Activity view](#activity-view). |
 | **Recent activity threshold** | How far back the "Recent" section extends in activity view: Last hour, Last 3 hours (default), or Last 24 hours. |
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
