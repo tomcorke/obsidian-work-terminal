@@ -2109,25 +2109,29 @@ button.wt-spawn-claude-ctx:hover svg {
 
 /* Compact actions container: positioned inline, not absolute */
 .wt-card-compact-row .wt-card-actions {
-  position: static;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
 
-/* In compact/comfortable modes the actions container is in-flow, so toggling
-   the move-to-top button between display:none and display:flex causes layout
-   shift (the title truncates shorter and adjacent cards jump). Use
-   visibility:hidden/visible instead to reserve space permanently. */
+/* In compact/comfortable modes the move-to-top button is absolutely positioned
+   so it overlays the end of the row on hover without reserving any space in the
+   flow. This avoids both the layout shift from display toggling (#430) and the
+   permanent gap from visibility:hidden (#437). */
 .wt-card-compact-row .wt-move-to-top {
-  display: flex;
-  visibility: hidden;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  /* display:none is safe here because absolute positioning removes it from flow */
 }
 
 .wt-card-compact-row:hover .wt-move-to-top,
 .wt-card-wrapper:hover .wt-card-compact-row .wt-move-to-top {
-  visibility: visible;
+  display: flex;
+  background: var(--background-modifier-hover);
 }
 
 /* Indicator dots container */
