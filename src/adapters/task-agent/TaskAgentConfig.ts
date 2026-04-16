@@ -132,6 +132,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     stateStrategy: "folder",
     columnOrder: "",
     creationColumnIds: "",
+    pinnedCustomStates: "[]",
     jiraBaseUrl: "",
     enrichmentEnabled: true,
     enrichmentPrompt: "",
@@ -227,6 +228,21 @@ export function makeDynamicColumn(stateId: string): ListColumn {
     id: stateId,
     label: titleCase(stateId),
   };
+}
+
+/**
+ * Parse a JSON string containing an array of pinned custom state IDs.
+ * Returns an empty array on invalid/empty input.
+ */
+export function parsePinnedCustomStates(json: string | undefined): string[] {
+  return parseColumnOrderJson(json);
+}
+
+/**
+ * Check whether a custom state ID is pinned.
+ */
+export function isCustomStatePinned(pinnedJson: string | undefined, stateId: string): boolean {
+  return parsePinnedCustomStates(pinnedJson).includes(stateId);
 }
 
 /**

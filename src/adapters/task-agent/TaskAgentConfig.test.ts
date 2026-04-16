@@ -4,6 +4,8 @@ import {
   resolveColumns,
   resolveCreationColumns,
   makeDynamicColumn,
+  parsePinnedCustomStates,
+  isCustomStatePinned,
   DEFAULT_COLUMNS,
   DEFAULT_CREATION_COLUMNS,
   TASK_AGENT_CONFIG,
@@ -190,16 +192,54 @@ describe("TaskAgentConfig column helpers", () => {
     });
   });
 
-  describe("TASK_AGENT_CONFIG defaults", () => {
-    it("has columnOrder and creationColumnIds in defaultSettings", () => {
-      expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("columnOrder", "");
-      expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("creationColumnIds", "");
+  describe("parsePinnedCustomStates", () => {
+    it("returns empty array for undefined input", () => {
+      expect(parsePinnedCustomStates(undefined)).toEqual([]);
     });
 
-    it("does not expose columnOrder or creationColumnIds in settingsSchema", () => {
+    it("returns empty array for empty string", () => {
+      expect(parsePinnedCustomStates("")).toEqual([]);
+    });
+
+    it("parses valid JSON array of strings", () => {
+      expect(parsePinnedCustomStates('["review", "blocked"]')).toEqual(["review", "blocked"]);
+    });
+
+    it("returns empty array for invalid JSON", () => {
+      expect(parsePinnedCustomStates("not json")).toEqual([]);
+    });
+  });
+
+  describe("isCustomStatePinned", () => {
+    it("returns true for a pinned state", () => {
+      expect(isCustomStatePinned('["review", "blocked"]', "review")).toBe(true);
+    });
+
+    it("returns false for an unpinned state", () => {
+      expect(isCustomStatePinned('["review", "blocked"]', "testing")).toBe(false);
+    });
+
+    it("returns false for undefined input", () => {
+      expect(isCustomStatePinned(undefined, "review")).toBe(false);
+    });
+
+    it("returns false for empty array", () => {
+      expect(isCustomStatePinned("[]", "review")).toBe(false);
+    });
+  });
+
+  describe("TASK_AGENT_CONFIG defaults", () => {
+    it("has columnOrder, creationColumnIds, and pinnedCustomStates in defaultSettings", () => {
+      expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("columnOrder", "");
+      expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("creationColumnIds", "");
+      expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("pinnedCustomStates", "[]");
+    });
+
+    it("does not expose columnOrder, creationColumnIds, or pinnedCustomStates in settingsSchema", () => {
       const schemaKeys = TASK_AGENT_CONFIG.settingsSchema.map((f) => f.key);
       expect(schemaKeys).not.toContain("columnOrder");
       expect(schemaKeys).not.toContain("creationColumnIds");
+      expect(schemaKeys).not.toContain("pinnedCustomStates");
     });
 
     it("default columns match KANBAN_COLUMNS order", () => {

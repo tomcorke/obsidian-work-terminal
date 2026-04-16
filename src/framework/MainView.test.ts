@@ -258,6 +258,7 @@ describe("MainView selection ID backfill", () => {
       getCustomOrder: vi.fn(() => ({ todo: ["uuid-123"] })),
       rekeyCustomOrder: vi.fn(() => true),
       render: vi.fn(),
+      setPinnedCustomStates: vi.fn(),
     };
     const parser = {
       loadAll: vi.fn().mockResolvedValue([]),
@@ -272,7 +273,7 @@ describe("MainView selection ID backfill", () => {
     (view as any).parser = parser;
     (view as any).terminalPanel = terminalPanel;
     (view as any).adapter = {
-      config: { columns: [{ id: "todo", label: "To Do" }] },
+      config: { columns: [{ id: "todo", label: "To Do", folderName: "todo" }] },
     };
 
     (view as any).handleRename("2 - Areas/Tasks/todo/task-renamed.md", "stale-path");
@@ -507,6 +508,190 @@ describe("MainView writeLastActive", () => {
     // Should insert into frontmatter and leave body unchanged
     expect(written).toBe(
       "---\nid: uuid-123\nlast-active: 2026-04-16T10:00:00Z\n---\nSome content\nlast-active: 2026-01-01T00:00:00Z\nMore content",
+    );
+  });
+});
+
+describe("MainView dynamic column cleanup", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function makeRefreshView(opts: {
+    columnOrder: string;
+    pinnedCustomStates?: string;
+    groups: Record<string, WorkItem[]>;
+    columns: { id: string; label: string; folderName?: string }[];
+  }) {
+    const savedData: Record<string, any> = {
+      settings: {
+        "adapter.columnOrder": opts.columnOrder,
+        "adapter.pinnedCustomStates": opts.pinnedCustomStates || "[]",
+      },
+      customOrder: {},
+    };
+    const pluginRef = {
+      loadData: vi.fn(async () => savedData),
+      saveData: vi.fn(async (data: Record<string, any>) => {
+        Object.assign(savedData, data);
+      }),
+    };
+    // Override the mergeAndSavePluginData mock to actually run the update
+    vi.mocked(mergeAndSavePluginData).mockImplementation(async (plugin, update) => {
+      const data = (await (plugin as any).loadData()) || {};
+      await update(data);
+      await (plugin as any).saveData(data);
+    });
+    const view = new MainView({} as any, {} as any, pluginRef as any);
+
+    const listPanel = {
+      render: vi.fn(),
+      setPinnedCustomStates: vi.fn(),
+    };
+    const parser = {
+      loadAll: vi.fn(async () => {
+        const items: WorkItem[] = [];
+        for (const group of Object.values(opts.groups)) {
+          items.push(...group);
+        }
+        return items;
+      }),
+      groupByColumn: vi.fn(() => opts.groups),
+    };
+    const terminalPanel = {
+      setItems: vi.fn(),
+    };
+
+    (view as any).listPanel = listPanel;
+    (view as any).parser = parser;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).settings = savedData.settings;
+    (view as any).adapter = {
+      config: { columns: [...opts.columns] },
+    };
+
+    return { view, listPanel, savedData };
+  }
+
+  it("removes empty unpinned dynamic columns from column order", async () => {
+    const { view, savedData } = makeRefreshView({
+      columnOrder: '["priority", "review", "active", "todo", "done"]',
+      columns: [
+        { id: "priority", label: "Priority", folderName: "priority" },
+        { id: "review", label: "Review" },
+        { id: "active", label: "Active", folderName: "active" },
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "done", label: "Done", folderName: "archive" },
+      ],
+      groups: {
+        priority: [],
+        active: [makeItem({ id: "t1", state: "active" })],
+        todo: [],
+        done: [],
+        // "review" has zero tasks - should be removed
+      },
+    });
+
+    await (view as any).refreshList();
+
+    // The column order should have "review" removed
+    expect(savedData.settings["adapter.columnOrder"]).toBe('["priority","active","todo","done"]');
+  });
+
+  it("preserves pinned dynamic columns even when empty", async () => {
+    const { view, savedData, listPanel } = makeRefreshView({
+      columnOrder: '["priority", "review", "active", "todo", "done"]',
+      pinnedCustomStates: '["review"]',
+      columns: [
+        { id: "priority", label: "Priority", folderName: "priority" },
+        { id: "review", label: "Review" },
+        { id: "active", label: "Active", folderName: "active" },
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "done", label: "Done", folderName: "archive" },
+      ],
+      groups: {
+        priority: [],
+        active: [],
+        todo: [],
+        done: [],
+        // "review" has zero tasks but is pinned - should be preserved
+      },
+    });
+
+    await (view as any).refreshList();
+
+    // Column order should NOT have been changed (review is pinned)
+    expect(savedData.settings["adapter.columnOrder"]).toBe(
+      '["priority", "review", "active", "todo", "done"]',
+    );
+
+    // ListPanel should be told about pinned custom states
+    expect(listPanel.setPinnedCustomStates).toHaveBeenCalledWith(["review"]);
+  });
+
+  it("never removes predefined columns even when empty", async () => {
+    const { view, savedData } = makeRefreshView({
+      columnOrder: '["priority", "active", "todo", "done"]',
+      columns: [
+        { id: "priority", label: "Priority", folderName: "priority" },
+        { id: "active", label: "Active", folderName: "active" },
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "done", label: "Done", folderName: "archive" },
+      ],
+      groups: {
+        // All columns empty
+        priority: [],
+        active: [],
+        todo: [],
+        done: [],
+      },
+    });
+
+    await (view as any).refreshList();
+
+    // Predefined columns are always kept
+    expect(savedData.settings["adapter.columnOrder"]).toBe(
+      '["priority", "active", "todo", "done"]',
+    );
+  });
+
+  it("keeps dynamic columns that still have tasks", async () => {
+    const { view, savedData } = makeRefreshView({
+      columnOrder: '["priority", "review", "active", "todo", "done"]',
+      columns: [
+        { id: "priority", label: "Priority", folderName: "priority" },
+        { id: "review", label: "Review" },
+        { id: "active", label: "Active", folderName: "active" },
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "done", label: "Done", folderName: "archive" },
+      ],
+      groups: {
+        priority: [],
+        review: [makeItem({ id: "t1", state: "review" })],
+        active: [],
+        todo: [],
+        done: [],
+      },
+    });
+
+    await (view as any).refreshList();
+
+    // "review" has tasks so should be kept
+    expect(savedData.settings["adapter.columnOrder"]).toBe(
+      '["priority", "review", "active", "todo", "done"]',
     );
   });
 });

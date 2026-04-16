@@ -47,6 +47,7 @@ export class ListPanel {
   private onSessionFilterChange: (active: boolean) => void;
   private pinStore: PinStore | null = null;
   private activityTracker: ActivityTracker | null = null;
+  private pinnedCustomStates: Set<string> = new Set();
 
   // State
   private selectedId: string | null = null;
@@ -168,6 +169,11 @@ export class ListPanel {
     this.activityTracker = tracker;
   }
 
+  /** Update the set of pinned custom state IDs (columns kept visible when empty). */
+  setPinnedCustomStates(pinnedIds: string[]): void {
+    this.pinnedCustomStates = new Set(pinnedIds);
+  }
+
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
@@ -275,7 +281,7 @@ export class ListPanel {
     for (const col of this.adapter.config.columns) {
       const colItems = (groups[col.id] || []).filter((item) => !pinnedSet.has(item.id));
       const isDynamic = !col.folderName;
-      if (isDynamic && colItems.length === 0) continue;
+      if (isDynamic && colItems.length === 0 && !this.pinnedCustomStates.has(col.id)) continue;
       const sortedItems = this.sortItems(colItems, col.id);
 
       this.renderSection(col.id, col.label, sortedItems, false);
