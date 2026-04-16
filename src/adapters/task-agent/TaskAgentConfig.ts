@@ -97,6 +97,27 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       type: "text",
       default: "",
     },
+    {
+      key: "taskCardIcons",
+      name: "Task card icons",
+      description:
+        "Show icons on task cards. Custom per-task icons are set via frontmatter or the context menu. Automatic icons are assigned based on the selected mode below.",
+      type: "toggle",
+      default: false,
+    },
+    {
+      key: "autoIconMode",
+      name: "Automatic icon mode",
+      description:
+        "How automatic icons are assigned when a task has no custom icon. Source-based: icon reflects the task source (Jira, Slack, terminal). State-based: icon reflects the kanban column (flame, play, check). None: only custom per-task icons are shown.",
+      type: "dropdown",
+      default: "none",
+      choices: {
+        none: "None (custom icons only)",
+        source: "Source-based (Jira, Slack, terminal...)",
+        state: "State-based (flame, play, check...)",
+      },
+    },
   ],
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
@@ -109,6 +130,8 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     retryEnrichmentPrompt: "",
     enrichmentProfile: "",
     enrichmentTimeout: "",
+    taskCardIcons: false,
+    autoIconMode: "none",
     customCardFlags: "[]",
   },
   itemName: "task",

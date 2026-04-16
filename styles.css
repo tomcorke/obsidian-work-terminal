@@ -2010,11 +2010,57 @@ button.wt-spawn-claude-ctx:hover svg {
    Compact card display mode
    ============================================================================= */
 
-/* Icon slot placeholder - hidden by default, present in DOM for future use */
+/* =============================================================================
+   Card icons
+   ============================================================================= */
+
+/* Icon slot - hidden by default, shown when icon support is enabled */
 .wt-card-icon-slot {
   width: 0;
   height: 0;
   flex-shrink: 0;
+}
+
+/* Standard mode icon: 18px, vertically centred alongside title */
+.wt-card-icon-slot.wt-card-icon-standard {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.wt-card-icon-slot.wt-card-icon-standard svg {
+  width: 18px;
+  height: 18px;
+}
+
+.wt-card-icon-slot.wt-card-icon-standard.wt-card-icon-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Compact mode icon: 16px, leftmost element in the row */
+.wt-card-icon-slot.wt-card-icon-compact {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.wt-card-icon-slot.wt-card-icon-compact svg {
+  width: 14px;
+  height: 14px;
+}
+
+.wt-card-icon-slot.wt-card-icon-compact.wt-card-icon-emoji {
+  font-size: 13px;
+  line-height: 1;
 }
 
 /* Compact card wrapper overrides */

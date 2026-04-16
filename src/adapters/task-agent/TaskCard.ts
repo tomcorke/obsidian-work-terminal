@@ -1,4 +1,4 @@
-import { Notice, type MenuItem } from "obsidian";
+import { Notice, setIcon, type MenuItem } from "obsidian";
 import type {
   WorkItem,
   CardRenderer,
@@ -8,10 +8,32 @@ import type {
 } from "../../core/interfaces";
 import { matchCardFlags, type MatchedCardFlag } from "../../core/cardFlags";
 import { normalizeObsidianDisplayText } from "../../core/utils";
-import { KANBAN_COLUMNS, COLUMN_LABELS, SOURCE_LABELS } from "./types";
+import {
+  KANBAN_COLUMNS,
+  COLUMN_LABELS,
+  SOURCE_LABELS,
+  SOURCE_AUTO_ICONS,
+  STATE_AUTO_ICONS,
+  type AutoIconMode,
+} from "./types";
+
+/** Emoji detection regex - matches common emoji patterns including modifiers and ZWJ sequences. */
+const EMOJI_RE =
+  /^(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*$/u;
+
+/** Callback for icon operations provided by the adapter. */
+export interface IconOperations {
+  /** Show a modal to set/change the icon for a task, then update frontmatter. */
+  promptSetIcon(item: WorkItem): void;
+  /** Remove the custom icon from a task's frontmatter. */
+  clearIcon(item: WorkItem): Promise<void>;
+}
 
 export class TaskCard implements CardRenderer {
   private flagRules: CardFlagRule[];
+  private iconsEnabled = false;
+  private autoIconMode: AutoIconMode = "none";
+  private iconOps: IconOperations | null = null;
 
   constructor(flagRules: CardFlagRule[] = []) {
     this.flagRules = flagRules;
@@ -20,6 +42,17 @@ export class TaskCard implements CardRenderer {
   /** Replace the active flag rules (e.g. after a settings change merges default + user rules). */
   updateFlagRules(rules: CardFlagRule[]): void {
     this.flagRules = rules;
+  }
+
+  /** Update icon settings (called when settings change). */
+  updateIconSettings(enabled: boolean, autoMode: AutoIconMode): void {
+    this.iconsEnabled = enabled;
+    this.autoIconMode = autoMode;
+  }
+
+  /** Set the icon operations handler (provided by the adapter). */
+  setIconOperations(ops: IconOperations): void {
+    this.iconOps = ops;
   }
 
   render(item: WorkItem, ctx: CardActionContext, displayMode?: CardDisplayMode): HTMLElement {
@@ -84,9 +117,9 @@ export class TaskCard implements CardRenderer {
     // Title row
     const titleRow = card.createDiv({ cls: "wt-card-title-row" });
 
-    // TODO(icons): Render item icon in this slot when icon support is implemented
+    // Icon slot
     const iconSlot = titleRow.createDiv({ cls: "wt-card-icon-slot" });
-    iconSlot.style.display = "none";
+    this.renderIconSlot(iconSlot, meta, item.state, "standard");
 
     const titleEl = titleRow.createDiv({ cls: "wt-card-title" });
     titleEl.textContent = item.title;
@@ -164,9 +197,9 @@ export class TaskCard implements CardRenderer {
   ): void {
     const compactRow = card.createDiv({ cls: "wt-card-compact-row" });
 
-    // TODO(icons): Render item icon in this slot when icon support is implemented
+    // Icon slot
     const iconSlot = compactRow.createDiv({ cls: "wt-card-icon-slot" });
-    iconSlot.style.display = "none";
+    this.renderIconSlot(iconSlot, meta, item.state, "compact");
 
     // Title - single line with ellipsis truncation
     const titleEl = compactRow.createDiv({ cls: "wt-card-compact-title" });
@@ -286,6 +319,76 @@ export class TaskCard implements CardRenderer {
     }
   }
 
+  /**
+   * Resolve the icon to display for a card. Custom per-task icon takes
+   * priority; if absent, automatic icon mode determines the icon.
+   * Returns the icon string (Lucide name or emoji) or undefined.
+   */
+  private resolveIcon(meta: Record<string, any>, state: string): string | undefined {
+    // Custom per-task icon always wins
+    const customIcon = meta.icon;
+    if (typeof customIcon === "string" && customIcon.trim()) {
+      return customIcon.trim();
+    }
+
+    // Automatic icon modes
+    if (this.autoIconMode === "source") {
+      const source = meta.source || { type: "other" };
+      return SOURCE_AUTO_ICONS[source.type] || SOURCE_AUTO_ICONS["other"];
+    }
+
+    if (this.autoIconMode === "state") {
+      return STATE_AUTO_ICONS[state] || "circle-dot";
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Render the icon into the icon slot element. Handles emoji values
+   * (rendered as text), Lucide icon names (via Obsidian's setIcon), and
+   * hides the slot when no icon is available.
+   */
+  private renderIconSlot(
+    slot: HTMLElement,
+    meta: Record<string, any>,
+    state: string,
+    mode: "standard" | "compact",
+  ): void {
+    if (!this.iconsEnabled) {
+      slot.style.display = "none";
+      return;
+    }
+
+    const icon = this.resolveIcon(meta, state);
+    if (!icon) {
+      slot.style.display = "none";
+      return;
+    }
+
+    slot.style.display = "";
+    slot.addClass(mode === "compact" ? "wt-card-icon-compact" : "wt-card-icon-standard");
+    slot.setAttribute("aria-hidden", "true");
+
+    if (EMOJI_RE.test(icon)) {
+      // Emoji: render as text content
+      slot.textContent = icon;
+      slot.addClass("wt-card-icon-emoji");
+    } else {
+      // Lucide icon name: use Obsidian's setIcon
+      try {
+        setIcon(slot, icon);
+        // If setIcon didn't produce an SVG, the name is unrecognised - hide the slot
+        if (!slot.querySelector("svg")) {
+          slot.style.display = "none";
+        }
+      } catch {
+        // Unrecognised icon name - hide the slot gracefully
+        slot.style.display = "none";
+      }
+    }
+  }
+
   getContextMenuItems(item: WorkItem, ctx: CardActionContext): MenuItem[] {
     const items: MenuItem[] = [];
 
@@ -357,6 +460,26 @@ export class TaskCard implements CardRenderer {
         await navigator.clipboard.writeText(prompt);
       },
     });
+
+    // Icon actions (only shown when icons are enabled and icon ops are available)
+    if (this.iconsEnabled && this.iconOps) {
+      (items as any[]).push({ separator: true });
+
+      const iconOps = this.iconOps;
+      (items as any[]).push({
+        title: "Set Icon...",
+        callback: () => iconOps.promptSetIcon(item),
+      });
+
+      if (meta.icon) {
+        (items as any[]).push({
+          title: "Clear Icon",
+          callback: () => {
+            void iconOps.clearIcon(item);
+          },
+        });
+      }
+    }
 
     (items as any[]).push({ separator: true });
 
