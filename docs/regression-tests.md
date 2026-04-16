@@ -75,12 +75,7 @@
 |----|-------------|-------|-----------------|--------|-------|
 | SP-01 | Window-global stash on hot-reload | Run "Reload Plugin (preserve terminals)" from command palette | All terminal sessions survive. PTY processes still running. xterm instances still rendering. DOM state preserved via window.__workTerminalStore. | | |
 | SP-02 | Window store deleted after read | Hot-reload, then check `window.__workTerminalStore` in console | Store should be deleted immediately after read (prevents accidental reuse). | | |
-| SP-03 | Disk persistence on spawn | Spawn a Claude session. Check plugin data.json. | Entry exists with: task path, session ID (UUID), label, session type, version: 1 schema. | | |
-| SP-04 | Disk persistence merge pattern | Spawn sessions across multiple tasks. Check data.json. | loadData merges before saveData - existing sessions preserved when adding new ones. | | |
-| SP-05 | Session resume with UUID | Close and reopen Obsidian (not hot-reload). Open Work Terminal. | Persisted Claude sessions show resume badges. Clicking resumes via `claude --resume <session-id>`. Tab label preserved. | | |
-| SP-06 | Failed resume keeps entry | Force-fail a resume (e.g. corrupt session ID). | Entry kept in data.json for user retry (5s grace period before cleanup). | | |
-| SP-07 | 7-day retention pruning | Manually edit data.json to have a session > 7 days old. Reload plugin. | Old session pruned from data.json. | | |
-| SP-08 | Session types tracked | Spawn Shell, Claude, and Claude-with-context tabs | Each session has correct type: shell / claude / claude-with-context. Types persisted. | | |
+| SP-03 | Session types tracked | Spawn Shell, Claude, and Claude-with-context tabs | Each session has correct type: shell / claude / claude-with-context. | | |
 | SP-09 | Hot-reload command registered | Open command palette, search for "reload" | "Reload Plugin (preserve terminals)" command appears and executes hot-reload. | | |
 | SP-10 | Stash pauses state tracking | Hot-reload while Claude is active | State detection timer paused during stash. No errors from checking stale session objects. | | |
 | SP-11 | 2s active suppression after reload | Hot-reload. Check Claude state indicators immediately after. | Active detections suppressed for 2s (downgraded to idle) - stale buffer content triggers false active. Clears early if screen genuinely updates. | | |
@@ -112,8 +107,7 @@
 | TL-17 | Idle default on plugin load | Load plugin with pre-existing idle Claude sessions | Idle cards default to 300s (fully stale) - don't animate from fresh. | | |
 | TL-18 | State class update without full re-render | Watch task card DOM while Claude state changes | Classes updated in-place. Running CSS animations (idle depletion arc) not interrupted. Badges updated in-place (not full card re-render). | | |
 | TL-19 | Suppress waiting on visible tabs | Have a Claude tab visible that's showing a prompt | Card reports idle (not waiting) - user can already see the prompt. | | |
-| TL-20 | Resume badge | Have persisted Claude sessions (not currently running) | Resume badge appears on the task card. | | |
-| TL-21 | Filter input | Type in the filter box | Case-insensitive task search. 100ms debounce. | | |
+| TL-20 | Filter input | Type in the filter box | Case-insensitive task search. 100ms debounce. | | |
 | TL-22 | Selection restoration across renders | Trigger a board refresh while a task is selected | Same task remains selected after re-render. | | |
 | TL-23 | Context menu: Move to column | Right-click card > Move to <column> | Task moves to selected column. | | |
 | TL-24 | Context menu: Move to Top | Right-click card > Move to Top | Task moves to top of its section. | | |
@@ -213,12 +207,12 @@
 |---------|-------|------|------|------|-----|
 | 1. Terminal Core | 18 | | | | |
 | 2. Tab Management | 9 | | | | |
-| 3. Session Persistence | 12 | | | | |
-| 4. Task List | 33 | | | | |
+| 3. Session Persistence | 8 | | | | |
+| 4. Task List | 32 | | | | |
 | 5. Layout & Detail | 12 | | | | |
 | 6. Task Operations | 12 | | | | |
 | 7. Undocumented Details | 30 | | | | |
-| **Total** | **126** | | | | |
+| **Total** | **121** | | | | |
 
 ## Issues Found
 

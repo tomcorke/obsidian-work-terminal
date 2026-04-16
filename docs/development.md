@@ -339,4 +339,3 @@ git worktree add .claude/worktrees/<name> -b <branch-name> origin/main
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Option+B/F/D, Shift+Enter, Option+Backspace, Cmd+Left/Right. xterm keeps Meta behavior by default, while Option+digit printable combos are preserved for layout-specific characters.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
-- **Session persistence**: Two tiers - window-global stash for hot-reload (survives module re-evaluation), disk persistence for full restart (7-day retention, UUID-based resume). Copilot restart resume uses native `--resume[=sessionId]`; Claude still needs hooks if users trigger Claude's in-app `/resume` and change session IDs.
