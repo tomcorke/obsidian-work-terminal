@@ -2116,22 +2116,12 @@ button.wt-spawn-claude-ctx:hover svg {
   flex-shrink: 0;
 }
 
-/* In compact/comfortable modes the move-to-top button is absolutely positioned
-   so it overlays the end of the row on hover without reserving any space in the
-   flow. This avoids both the layout shift from display toggling (#430) and the
-   permanent gap from visibility:hidden (#437). */
-.wt-card-compact-row .wt-move-to-top {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  /* display:none is safe here because absolute positioning removes it from flow */
-}
-
-.wt-card-compact-row:hover .wt-move-to-top,
-.wt-card-wrapper:hover .wt-card-compact-row .wt-move-to-top {
-  display: flex;
-  background: var(--background-modifier-hover);
+/* In compact/comfortable modes the move-to-top hover button is hidden entirely
+   because indicator dots and session badges overlap it (#439). Move-to-top
+   remains accessible via the right-click context menu. */
+.wt-compact .wt-move-to-top,
+.wt-comfortable .wt-move-to-top {
+  display: none !important;
 }
 
 /* Indicator dots container */
@@ -2183,13 +2173,6 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-compact .wt-drop-indicator {
   height: 1px;
   margin: 0 4px;
-}
-
-/* Compact mode: move-to-top smaller */
-.wt-compact .wt-move-to-top {
-  width: 16px;
-  height: 16px;
-  font-size: 10px;
 }
 
 /* Compact mode: session badge slightly smaller */
