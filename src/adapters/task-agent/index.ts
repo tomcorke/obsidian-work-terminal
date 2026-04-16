@@ -229,19 +229,21 @@ export class TaskAgentAdapter extends BaseAdapter {
         updated = content.replace(/^icon:[ \t]*[^\r\n]*\r?\n/m, "");
       } else {
         const safeIcon = yamlQuoteValue(icon);
-        if (/^icon:[ \t]*.+$/m.test(content)) {
-          // Update existing icon field
-          updated = content.replace(/^icon:[ \t]*.+$/m, `icon: ${safeIcon}`);
+        if (/^icon:[ \t]*[^\r\n]*$/m.test(content)) {
+          // Update existing icon field (also matches empty `icon:` lines)
+          updated = content.replace(/^icon:[ \t]*[^\r\n]*$/m, `icon: ${safeIcon}`);
         } else {
           // Insert icon field into frontmatter
           const fmMatch = content.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
           if (!fmMatch) return;
           const [fullMatch, openFence, body, closeFence] = fmMatch;
           const eol = openFence.endsWith("\r\n") ? "\r\n" : "\n";
-          const trimmedBody = body.endsWith(eol) ? body : body + eol;
+          // When body is empty (---\n---), insert directly after opening fence
+          // to avoid a leading blank line.
+          const prefix = body.length === 0 ? "" : body.endsWith(eol) ? body : body + eol;
           updated = content.replace(
             fullMatch,
-            `${openFence}${trimmedBody}icon: ${safeIcon}${eol}${closeFence}`,
+            `${openFence}${prefix}icon: ${safeIcon}${eol}${closeFence}`,
           );
         }
       }

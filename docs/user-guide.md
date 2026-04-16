@@ -124,7 +124,7 @@ Task cards can display icons as a leading visual element, visible in both standa
 - **Frontmatter**: Add an `icon` field to the task's YAML frontmatter with a Lucide icon name or an emoji:
   ```yaml
   icon: rocket        # Lucide icon name
-  icon: "\uD83D\uDE80"          # Emoji alternative
+  icon: "\U0001F680"          # Emoji (YAML Unicode escape)
   ```
 - **Context menu**: Right-click a task card and select **Set Icon...** to open a text input modal. Enter a Lucide icon name (e.g. `rocket`, `terminal`, `flame`) or paste an emoji. Select **Clear Icon** to remove a custom icon.
 
