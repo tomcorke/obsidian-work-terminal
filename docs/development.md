@@ -330,6 +330,15 @@ git fetch origin
 git worktree add .claude/worktrees/<name> -b <branch-name> origin/main
 ```
 
+## Releases
+
+Release notes are drafted in `CHANGELOG.md` and published to GitHub using the same section structure.
+
+Follow [Release Process](release-process.md) for:
+- version bumps in `manifest.json`, `package.json`, and `versions.json`
+- worktree-safe tagging from `origin/main`
+- publishing formatted notes with `gh release edit` or `gh release create`
+
 ## Known constraints
 
 - **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround. Non-negotiable.

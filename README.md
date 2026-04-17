@@ -63,11 +63,13 @@ For a complete, source-verified inventory of every process spawned, every file r
 
 ## Documentation
 
+- **[Changelog](CHANGELOG.md)** - concise release history using the same structure as the GitHub release notes
 - **[User Guide](docs/user-guide.md)** - comprehensive guide covering all features with screenshots
 - **[Process Spawning & Filesystem Disclosure](docs/process-spawning.md)** - full inventory of spawned processes, filesystem access, and security properties
 - **[Architecture](docs/architecture.md)** - three-layer design, extension model, key design decisions
 - **[Creating an Adapter](docs/creating-an-adapter.md)** - build your own work item system with code examples
 - **[Development](docs/development.md)** - build, test, hot-reload, CDP helper, isolated test vault
+- **[Release Process](docs/release-process.md)** - version bump, changelog, tagging, and GitHub release workflow
 
 ## License
 
