@@ -294,6 +294,29 @@ describe("writeEnrichmentLog", () => {
     }
   });
 
+  it("does not remove log files whose stat fails (conservative pruning)", async () => {
+    const now = Date.UTC(2026, 3, 20, 12, 0, 0);
+    const statFailName = `${LOG_FILE_PREFIX}stat-fails${LOG_FILE_SUFFIX}`;
+    const statFailPath = `.obsidian/plugins/work-terminal/logs/${statFailName}`;
+    const { app, removes } = makeApp({
+      list: vi.fn(async () => ({ files: [statFailPath], folders: [] })),
+      // stat always rejects for this entry
+      stat: vi.fn(async () => {
+        throw new Error("transient stat failure");
+      }),
+    });
+
+    await writeEnrichmentLog(app, {
+      timestamp: new Date(now),
+      category: "timeout",
+      summary: "t",
+    });
+
+    // Pruner should skip the unreadable entry rather than delete it as if
+    // it were ancient (mtime=0).
+    expect(removes).not.toContain(statFailPath);
+  });
+
   it("removes log files that the pruner selects", async () => {
     const now = Date.UTC(2026, 3, 20, 12, 0, 0);
     const oldName = `${LOG_FILE_PREFIX}old${LOG_FILE_SUFFIX}`;

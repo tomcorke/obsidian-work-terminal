@@ -292,7 +292,12 @@ export async function pruneEnrichmentLogs(app: App, dir: string, now: number): P
     const name = filePath.slice(filePath.lastIndexOf("/") + 1);
     if (!name.startsWith(LOG_FILE_PREFIX) || !name.endsWith(LOG_FILE_SUFFIX)) continue;
     const stat = await adapter.stat(filePath).catch(() => null);
-    entries.push({ name, mtime: stat?.mtime ?? 0 });
+    // Skip entries with unreadable metadata rather than treating them as
+    // mtime=0 (which would cause the pruner to aggressively delete valid
+    // logs on transient stat failures). Files whose stat fails stay put
+    // until they can be re-listed successfully on a later pass.
+    if (!stat || typeof stat.mtime !== "number") continue;
+    entries.push({ name, mtime: stat.mtime });
   }
   const toPrune = selectLogsToPrune(entries, now);
   for (const name of toPrune) {
