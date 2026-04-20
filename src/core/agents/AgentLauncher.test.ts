@@ -82,28 +82,6 @@ describe("AgentLauncher", () => {
     expect(buildAgentArgs("strands")).toEqual([]);
   });
 
-  it("appends additionalAgentContext to prompt for all agent types", () => {
-    expect(buildAgentArgs("claude", undefined, "Review this task", "Follow repo rules.")).toEqual([
-      "Review this task\n\nFollow repo rules.",
-    ]);
-
-    expect(buildAgentArgs("copilot", undefined, "Review this task", "Follow repo rules.")).toEqual([
-      "-i",
-      "Review this task\n\nFollow repo rules.",
-    ]);
-
-    expect(buildAgentArgs("strands", undefined, "Review this task", "Follow repo rules.")).toEqual([
-      "Review this task\n\nFollow repo rules.",
-    ]);
-  });
-
-  it("ignores additionalAgentContext when no prompt is provided", () => {
-    expect(buildAgentArgs("claude", "--model sonnet", undefined, "Follow repo rules.")).toEqual([
-      "--model",
-      "sonnet",
-    ]);
-  });
-
   it("reports found status for commands discovered on PATH", () => {
     const path = require("path") as typeof import("path");
     process.env.PATH = path.dirname(process.execPath);

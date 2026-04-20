@@ -1,16 +1,5 @@
 import type { WorkItem } from "../core/interfaces";
 
-export function getAgentContextTemplate(settings: Record<string, unknown>): string | null {
-  const template = settings["core.additionalAgentContext"];
-  if (typeof template !== "string" || template.trim() === "") {
-    return null;
-  }
-
-  return template;
-}
-
-export const getClaudeContextTemplate = getAgentContextTemplate;
-
 /**
  * Check whether a path is actually absolute in any common form we might
  * encounter at runtime. We intentionally accept POSIX, Windows drive letter,
@@ -62,41 +51,6 @@ function resolveAbsoluteFilePath(item: WorkItem, absolutePath?: string): string 
   }
   return item.path;
 }
-
-/**
- * Build the additional agent context prompt from the user-configured template.
- *
- * Supported placeholders:
- * - $title             - Work item title
- * - $state             - Work item state (e.g. "priority", "active")
- * - $filePath          - Work item file path (vault-relative)
- * - $absoluteFilePath  - Fully resolved absolute filesystem path to the work item file.
- *                        Falls back to the vault-relative `item.path` (with a console warning)
- *                        when no `fullPath` is supplied.
- * - $id                - Work item UUID
- */
-export function buildAgentContextPrompt(
-  item: WorkItem,
-  settings: Record<string, unknown>,
-  fullPath?: string,
-): string | null {
-  const template = getAgentContextTemplate(settings);
-  if (!template) {
-    return null;
-  }
-
-  const needsAbsolute = /\$absoluteFilePath/.test(template);
-  const absolute = needsAbsolute ? resolveAbsoluteFilePath(item, fullPath) : item.path;
-
-  return template
-    .replace(/\$absoluteFilePath/g, absolute)
-    .replace(/\$title/g, item.title)
-    .replace(/\$state/g, item.state)
-    .replace(/\$filePath/g, item.path)
-    .replace(/\$id/g, item.id);
-}
-
-export const buildClaudeContextPrompt = buildAgentContextPrompt;
 
 /**
  * Expand placeholder variables in a profile template string.

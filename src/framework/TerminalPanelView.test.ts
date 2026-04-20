@@ -766,51 +766,7 @@ describe("TerminalPanelView", () => {
     );
   });
 
-  it("reuses one settings snapshot for contextual Claude launch", async () => {
-    const loadData = vi.fn(async () => ({ settings: {} }));
-    const { view, plugin } = createView({}, { loadData });
-    await flushAsync();
-    (plugin.loadData as any).mockClear();
-    (plugin.loadData as any)
-      .mockResolvedValueOnce({
-        settings: {
-          "core.additionalAgentContext": "Prompt A for $title",
-          "core.claudeCommand": "/bin/echo",
-          "core.defaultTerminalCwd": "~/one",
-        },
-      })
-      .mockResolvedValueOnce({
-        settings: {
-          "core.additionalAgentContext": "Prompt B for $title",
-          "core.claudeCommand": "/bin/false",
-          "core.defaultTerminalCwd": "~/two",
-        },
-      });
-    mockState.activeItemId = "task-1";
-    view.setItems([
-      {
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks/task-1.md",
-      } as any,
-    ]);
-
-    await (view as any).spawnClaudeWithContext();
-
-    expect(plugin.loadData).toHaveBeenCalledOnce();
-    expect(mockState.latestCreateTabArgs).not.toBeNull();
-    expect(mockState.latestCreateTabArgs?.[0]).toBe("/bin/echo");
-    expect(mockState.latestCreateTabArgs?.[1]).toBe(expandTilde("~/one"));
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual(
-      expect.arrayContaining([expect.stringContaining("Prompt A for Task One")]),
-    );
-    expect(mockState.latestCreateTabArgs?.[5]).not.toEqual(
-      expect.arrayContaining([expect.stringContaining("Prompt B for Task One")]),
-    );
-  });
-
-  it("falls back to adapter prompt for Claude-with-context when no template is configured", async () => {
+  it("uses adapter prompt for Claude-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
@@ -839,115 +795,22 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
       "Built prompt for /vault/Tasks/task-1.md",
-    ]);
-  });
-
-  it("falls back to adapter prompt for Claude-with-context when template is whitespace only", async () => {
-    mockState.activeItemId = "task-1";
-    const promptBuilder = {
-      buildPrompt: vi.fn((_item, fullPath) => `Built prompt for ${fullPath}`),
-    };
-    const { view } = createView(
-      {
-        "core.additionalAgentContext": "  \n\t  ",
-        "core.claudeCommand": "/bin/echo",
-        "core.defaultTerminalCwd": "~/ctx",
-      },
-      {},
-      promptBuilder,
-    );
-    view.setItems([
-      {
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks/task-1.md",
-      } as any,
-    ]);
-    await flushAsync();
-
-    await (view as any).spawnClaudeWithContext();
-
-    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "Built prompt for /vault/Tasks/task-1.md",
-    ]);
-  });
-
-  it("combines adapter prompt and context template for Claude-with-context sessions", async () => {
-    mockState.activeItemId = "task-1";
-    const promptBuilder = {
-      buildPrompt: vi.fn(() => "Built prompt"),
-    };
-    const { view } = createView(
-      {
-        "core.additionalAgentContext": "Template for $title in $state",
-        "core.claudeCommand": "/bin/echo",
-        "core.defaultTerminalCwd": "~/ctx",
-      },
-      {},
-      promptBuilder,
-    );
-    view.setItems([
-      {
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks/task-1.md",
-      } as any,
-    ]);
-    await flushAsync();
-
-    await (view as any).spawnClaudeWithContext();
-
-    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "Built prompt\n\nTemplate for Task One in doing",
-    ]);
-  });
-
-  it("keeps template $filePath vault-relative and expands $absoluteFilePath to the resolved absolute path", async () => {
-    mockState.activeItemId = "task-1";
-    const promptBuilder = {
-      buildPrompt: vi.fn(() => "Built prompt"),
-    };
-    const { view } = createView(
-      {
-        "core.additionalAgentContext": "Rel: $filePath\nAbs: $absoluteFilePath",
-        "core.claudeCommand": "/bin/echo",
-        "core.defaultTerminalCwd": "~/ctx",
-      },
-      {},
-      promptBuilder,
-    );
-    view.setItems([
-      {
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks/task-1.md",
-      } as any,
-    ]);
-    await flushAsync();
-
-    await (view as any).spawnClaudeWithContext();
-
-    expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "Built prompt\n\nRel: Tasks/task-1.md\nAbs: /vault/Tasks/task-1.md",
     ]);
   });
 
   it("launches the same prompt exposed by getClaudeContextPrompt", async () => {
     mockState.activeItemId = "task-1";
-    const { view } = createView({
-      "core.additionalAgentContext": "Template for $title in $state",
-      "core.claudeCommand": "/bin/echo",
-      "core.defaultTerminalCwd": "~/ctx",
-    });
+    const promptBuilder = {
+      buildPrompt: vi.fn(() => "Built prompt"),
+    };
+    const { view } = createView(
+      {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
     const item = {
       id: "task-1",
       title: "Task One",
@@ -963,10 +826,9 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo", prompt]);
   });
 
-  it("does not inject the context template into plain Claude sessions", async () => {
+  it("does not pass a prompt to plain Claude sessions", async () => {
     mockState.activeItemId = "task-1";
     const { view } = createView({
-      "core.additionalAgentContext": "Template path: $filePath",
       "core.claudeCommand": "/bin/echo",
       "core.defaultTerminalCwd": "~/ctx",
     });
@@ -977,14 +839,13 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
-  it("injects context prompt into Copilot-with-context sessions", async () => {
+  it("uses adapter prompt for Copilot-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn(() => "Built prompt"),
     };
     const { view } = createView(
       {
-        "core.additionalAgentContext": "Template for $title in $state",
         "core.copilotCommand": "/bin/echo",
         "core.defaultTerminalCwd": "~/ctx",
       },
@@ -1006,17 +867,12 @@ describe("TerminalPanelView", () => {
       sessionType: "copilot-with-context",
     });
 
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "-i",
-      "Built prompt\n\nTemplate for Task One in doing",
-    ]);
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo", "-i", "Built prompt"]);
   });
 
-  it("does not inject context prompt into plain Copilot sessions", async () => {
+  it("does not pass a prompt to plain Copilot sessions", async () => {
     mockState.activeItemId = "task-1";
     const { view } = createView({
-      "core.additionalAgentContext": "Template path: $filePath",
       "core.copilotCommand": "/bin/echo",
       "core.defaultTerminalCwd": "~/ctx",
     });
@@ -1035,14 +891,13 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
-  it("injects context prompt into Strands-with-context sessions", async () => {
+  it("uses adapter prompt for Strands-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn(() => "Built prompt"),
     };
     const { view } = createView(
       {
-        "core.additionalAgentContext": "Template for $title in $state",
         "core.strandsCommand": "/bin/echo",
         "core.defaultTerminalCwd": "~/ctx",
       },
@@ -1064,10 +919,7 @@ describe("TerminalPanelView", () => {
       sessionType: "strands-with-context",
     });
 
-    expect(mockState.latestCreateTabArgs?.[5]).toEqual([
-      "/bin/echo",
-      "Built prompt\n\nTemplate for Task One in doing",
-    ]);
+    expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo", "Built prompt"]);
   });
 
   it("merges multiline continuation args from settings and custom launches", async () => {
@@ -1101,15 +953,6 @@ describe("TerminalPanelView", () => {
       "/path/b",
       "--verbose",
     ]);
-  });
-
-  it("hides the Claude-with-context button when no template is configured", async () => {
-    const { panelEl } = createView({
-      "core.additionalAgentContext": "",
-    });
-    await flushAsync();
-
-    expect(panelEl.querySelector(".wt-spawn-claude-ctx")).toBeNull();
   });
 
   it("shows a notice instead of launching Strands when the configured command is blank", async () => {
@@ -1212,92 +1055,6 @@ describe("TerminalPanelView", () => {
     expect(mockState.clipboardWriteText).toHaveBeenCalledTimes(1);
     expect(mockState.clipboardWriteText.mock.calls[0][0]).toContain('"activeTabCount": 1');
     expect(mockState.notices).toContain("Session diagnostics copied to clipboard");
-  });
-
-  it("keeps Windows absolute vault paths intact for Claude context prompts", async () => {
-    const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
-    const { view } = createView(
-      {
-        "core.additionalAgentContext": "Path: $absoluteFilePath",
-      },
-      {
-        app: {
-          setting: {
-            open: vi.fn(),
-            openTabById: vi.fn(),
-          },
-          vault: {
-            adapter: {
-              basePath: "C:\\Users\\me\\Vault",
-            },
-          },
-        },
-      },
-    );
-    await flushAsync();
-    vi.mocked(electronRequire).mockImplementation((moduleName: string) =>
-      moduleName === "path" ? path.win32 : defaultElectronRequire?.(moduleName),
-    );
-
-    try {
-      const prompt = await (view as any).getAgentContextPrompt({
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks\\task-1.md",
-      });
-
-      expect(prompt).toBe("Path: C:\\Users\\me\\Vault\\Tasks\\task-1.md");
-    } finally {
-      if (defaultElectronRequire) {
-        vi.mocked(electronRequire).mockImplementation(defaultElectronRequire);
-      } else {
-        vi.mocked(electronRequire).mockReset();
-      }
-    }
-  });
-
-  it("keeps UNC vault paths intact for Claude context prompts", async () => {
-    const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
-    const { view } = createView(
-      {
-        "core.additionalAgentContext": "Path: $absoluteFilePath",
-      },
-      {
-        app: {
-          setting: {
-            open: vi.fn(),
-            openTabById: vi.fn(),
-          },
-          vault: {
-            adapter: {
-              basePath: "\\\\server\\share\\Vault",
-            },
-          },
-        },
-      },
-    );
-    await flushAsync();
-    vi.mocked(electronRequire).mockImplementation((moduleName: string) =>
-      moduleName === "path" ? path.win32 : defaultElectronRequire?.(moduleName),
-    );
-
-    try {
-      const prompt = await (view as any).getAgentContextPrompt({
-        id: "task-1",
-        title: "Task One",
-        state: "doing",
-        path: "Tasks\\task-1.md",
-      });
-
-      expect(prompt).toBe("Path: \\\\server\\share\\Vault\\Tasks\\task-1.md");
-    } finally {
-      if (defaultElectronRequire) {
-        vi.mocked(electronRequire).mockImplementation(defaultElectronRequire);
-      } else {
-        vi.mocked(electronRequire).mockReset();
-      }
-    }
   });
 
   it("resolves pluginDir from a relative vault path using USERPROFILE semantics", async () => {
@@ -1705,46 +1462,6 @@ describe("profile launch", () => {
     const callArgs = spawnAgentSpy.mock.calls[0][0];
     expect(callArgs.prompt).toContain("adapter prompt");
     expect(callArgs.prompt).toContain("Context for Task");
-  });
-
-  it("excludes adapter base prompt when suppressAdapterPrompt is true", async () => {
-    const promptBuilder = {
-      buildPrompt: vi.fn(() => "adapter prompt"),
-    };
-    const { view } = createView(
-      { "core.additionalAgentContext": "Template for $title" },
-      {},
-      promptBuilder,
-    );
-    await flushAsync();
-
-    mockState.activeItemId = "task-1";
-    (view as any).allItems = [
-      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
-    ];
-    (view as any).profileManager = {
-      resolveCommand: () => "claude",
-      resolveCwd: () => "~/projects",
-      resolveArguments: () => "",
-      resolveContextPrompt: () => "",
-    };
-
-    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(undefined);
-
-    await (view as any).spawnFromProfile(
-      makeProfile({
-        useContext: true,
-        suppressAdapterPrompt: true,
-        contextPrompt: "",
-      }),
-    );
-
-    expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
-    expect(spawnAgentSpy).toHaveBeenCalledOnce();
-    const callArgs = spawnAgentSpy.mock.calls[0][0];
-    // Should contain only the template, not the adapter prompt
-    expect(callArgs.prompt).not.toContain("adapter prompt");
-    expect(callArgs.prompt).toContain("Template for Task");
   });
 
   it("excludes adapter base prompt from profile context template when suppressAdapterPrompt is true", async () => {

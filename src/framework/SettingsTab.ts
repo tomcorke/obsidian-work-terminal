@@ -13,13 +13,14 @@
  *      (default shell, default terminal CWD).
  *   4. Detail view - placement dropdown + placement-dependent auto-close,
  *      width override, split direction controls. Unchanged.
- *   5. Agents - umbrella heading with Profile Manager, inline context prompt
- *      textarea (core.additionalAgentContext), Background enrichment dialog
- *      button, Agent actions dialog button.
+ *   5. Agents - umbrella heading with Profile Manager, Background enrichment
+ *      dialog button, Agent actions dialog button.
  *
- * Every moved setting persists under the same key used before the
- * reorganisation - no schema change. Users who upgrade see the same values
- * in a new layout.
+ * The #462 reorganisation itself was a pure layout change - every moved
+ * setting persisted under the same key it used before, so that work
+ * introduced no schema change on its own. Subsequent Unreleased work (#472)
+ * did remove the `core.additionalAgentContext` key as a breaking change;
+ * see CHANGELOG.md "Removed" entry for details.
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
@@ -49,7 +50,6 @@ interface CoreSettings {
   "core.copilotExtraArgs": string;
   "core.strandsCommand": string;
   "core.strandsExtraArgs": string;
-  "core.additionalAgentContext": string;
   "core.defaultShell": string;
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
@@ -73,7 +73,6 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.copilotExtraArgs": "",
   "core.strandsCommand": "strands",
   "core.strandsExtraArgs": "",
-  "core.additionalAgentContext": "",
   "core.defaultShell": process.env.SHELL || "/bin/zsh",
   "core.defaultTerminalCwd": "~",
   "core.exposeDebugApi": false,
@@ -341,10 +340,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           }),
       );
 
-    // Additional agent context - inline textarea. Single-setting concept, not
-    // dialog-worthy by itself.
-    this.renderAdditionalAgentContext(containerEl);
-
     // Background enrichment dialog button (only if the adapter schema declares
     // enrichment fields).
     const schema = this.adapter.config.settingsSchema;
@@ -405,37 +400,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
             }),
         );
     }
-  }
-
-  /**
-   * Render the additional-agent-context textarea inline under the Agents
-   * heading. This is a single setting backed by `core.additionalAgentContext`
-   * so it doesn't justify its own dialog, but it benefits from being grouped
-   * with the other agent-related controls.
-   */
-  private async renderAdditionalAgentContext(containerEl: HTMLElement): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-    const value = (settings["core.additionalAgentContext"] as string) || "";
-
-    const setting = new Setting(containerEl)
-      .setName("Additional agent context prompt")
-      .setDesc(
-        "Optional template injected into context-aware agent launches. Supports placeholders: " +
-          "$title, $state, $filePath (vault-relative), $absoluteFilePath (absolute filesystem path), $id. " +
-          "Leave blank to skip context injection.",
-      );
-    setting.settingEl.style.flexWrap = "wrap";
-    setting.controlEl.style.width = "100%";
-    setting.addTextArea((text) => {
-      text.inputEl.dataset.settingKey = "core.additionalAgentContext";
-      text.inputEl.addClass("wt-agent-context-input");
-      text.setValue(value).onChange(async (newValue) => {
-        await this.saveSettings((s) => {
-          s["core.additionalAgentContext"] = newValue;
-        });
-      });
-    });
   }
 
   // ------------------------------------------------------------------ //

@@ -96,10 +96,6 @@ export class AgentProfileManager {
     if (typeof claudeExtraArgs === "string" && claudeExtraArgs.trim()) {
       claudeCtxProfile.arguments = claudeExtraArgs.trim();
     }
-    const additionalContext = settings["core.additionalAgentContext"];
-    if (typeof additionalContext === "string" && additionalContext.trim()) {
-      claudeCtxProfile.contextPrompt = additionalContext.trim();
-    }
     profiles.push(claudeCtxProfile);
 
     // Migrate Copilot profile
@@ -296,12 +292,10 @@ export class AgentProfileManager {
   }
 
   /**
-   * Resolve a profile's context prompt, falling back to the global setting.
+   * Resolve a profile's context prompt. Returns the profile's trimmed
+   * contextPrompt or an empty string when the profile has none configured.
    */
-  resolveContextPrompt(profile: AgentProfile, settings: Record<string, unknown>): string {
-    if (profile.contextPrompt.trim()) {
-      return profile.contextPrompt.trim();
-    }
-    return String(settings["core.additionalAgentContext"] || "");
+  resolveContextPrompt(profile: AgentProfile, _settings: Record<string, unknown>): string {
+    return profile.contextPrompt.trim();
   }
 }

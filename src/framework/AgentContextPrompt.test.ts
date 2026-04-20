@@ -1,12 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkItem } from "../core/interfaces";
-import {
-  buildAgentContextPrompt,
-  buildClaudeContextPrompt,
-  expandProfilePlaceholders,
-  getAgentContextTemplate,
-  getClaudeContextTemplate,
-} from "./AgentContextPrompt";
+import { expandProfilePlaceholders } from "./AgentContextPrompt";
 
 const item: WorkItem = {
   id: "task-123",
@@ -15,154 +9,6 @@ const item: WorkItem = {
   state: "priority",
   metadata: {},
 };
-
-describe("buildAgentContextPrompt", () => {
-  let warnSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    warnSpy.mockRestore();
-  });
-
-  it("uses the fresh template when available", () => {
-    const prompt = buildAgentContextPrompt(item, {
-      "core.additionalAgentContext": "Task: $title\nState: $state\nPath: $filePath\nId: $id",
-    });
-
-    expect(prompt).toBe(
-      "Task: Fix prompt sync\nState: priority\nPath: 2 - Areas/Tasks/priority/task.md\nId: task-123",
-    );
-  });
-
-  it("keeps $filePath vault-relative even when a fullPath is provided", () => {
-    const prompt = buildAgentContextPrompt(
-      item,
-      {
-        "core.additionalAgentContext": "Path: $filePath",
-      },
-      "/vault/2 - Areas/Tasks/priority/task.md",
-    );
-
-    expect(prompt).toBe("Path: 2 - Areas/Tasks/priority/task.md");
-  });
-
-  it("expands $filePath and $absoluteFilePath to distinct values when both are meaningful", () => {
-    const prompt = buildAgentContextPrompt(
-      item,
-      {
-        "core.additionalAgentContext": "Abs: $absoluteFilePath\nRel: $filePath",
-      },
-      "/vault/2 - Areas/Tasks/priority/task.md",
-    );
-
-    expect(prompt).toBe(
-      "Abs: /vault/2 - Areas/Tasks/priority/task.md\nRel: 2 - Areas/Tasks/priority/task.md",
-    );
-  });
-
-  it("expands $absoluteFilePath to the provided fullPath", () => {
-    const prompt = buildAgentContextPrompt(
-      item,
-      {
-        "core.additionalAgentContext": "Abs: $absoluteFilePath",
-      },
-      "/vault/2 - Areas/Tasks/priority/task.md",
-    );
-
-    expect(prompt).toBe("Abs: /vault/2 - Areas/Tasks/priority/task.md");
-    expect(warnSpy).not.toHaveBeenCalled();
-  });
-
-  it("falls back to item.path for $absoluteFilePath and warns when no fullPath is provided", () => {
-    const prompt = buildAgentContextPrompt(item, {
-      "core.additionalAgentContext": "Abs: $absoluteFilePath",
-    });
-
-    expect(prompt).toBe("Abs: 2 - Areas/Tasks/priority/task.md");
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("$absoluteFilePath");
-  });
-
-  it("falls back to item.path for $absoluteFilePath and warns when fullPath is not absolute", () => {
-    const prompt = buildAgentContextPrompt(
-      item,
-      {
-        "core.additionalAgentContext": "Abs: $absoluteFilePath",
-      },
-      "2 - Areas/Tasks/priority/task.md",
-    );
-
-    expect(prompt).toBe("Abs: 2 - Areas/Tasks/priority/task.md");
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("not absolute");
-  });
-
-  it("accepts Windows drive letter and UNC absolute paths for $absoluteFilePath", () => {
-    const windowsPrompt = buildAgentContextPrompt(
-      item,
-      {
-        "core.additionalAgentContext": "Abs: $absoluteFilePath",
-      },
-      "C:\\vault\\task.md",
-    );
-    expect(windowsPrompt).toBe("Abs: C:\\vault\\task.md");
-
-    const uncPrompt = buildAgentContextPrompt(
-      item,
-      {
-        "core.additionalAgentContext": "Abs: $absoluteFilePath",
-      },
-      "//server/share/task.md",
-    );
-    expect(uncPrompt).toBe("Abs: //server/share/task.md");
-
-    expect(warnSpy).not.toHaveBeenCalled();
-  });
-
-  it("does not warn about absolute fallback when the template does not reference $absoluteFilePath", () => {
-    buildAgentContextPrompt(item, {
-      "core.additionalAgentContext": "Task: $title\nPath: $filePath",
-    });
-
-    expect(warnSpy).not.toHaveBeenCalled();
-  });
-
-  it("treats an explicitly cleared template as unavailable", () => {
-    const prompt = buildAgentContextPrompt(item, {
-      "core.additionalAgentContext": "",
-    });
-
-    expect(prompt).toBeNull();
-  });
-
-  it("treats whitespace-only templates as unavailable", () => {
-    expect(
-      getAgentContextTemplate({
-        "core.additionalAgentContext": "  \n\t  ",
-      }),
-    ).toBeNull();
-  });
-
-  it("keeps Claude alias exports working", () => {
-    const prompt = buildClaudeContextPrompt(item, {
-      "core.additionalAgentContext": "Task: $title",
-    });
-
-    expect(getClaudeContextTemplate({ "core.additionalAgentContext": "Task: $title" })).toBe(
-      "Task: $title",
-    );
-    expect(prompt).toBe("Task: Fix prompt sync");
-  });
-
-  it("returns null when no template is configured", () => {
-    const prompt = buildAgentContextPrompt(item, {});
-
-    expect(prompt).toBeNull();
-  });
-});
 
 describe("expandProfilePlaceholders", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -296,6 +142,67 @@ describe("expandProfilePlaceholders", () => {
     expect(result).toBe(
       "--abs /vault/2 - Areas/Tasks/priority/task.md --rel 2 - Areas/Tasks/priority/task.md",
     );
+  });
+
+  it("expands $absoluteFilePath for a Windows drive-letter absolute path (backslashes)", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "C:\\vault\\2 - Areas\\Tasks\\priority\\task.md",
+    );
+    expect(result).toBe("--path C:\\vault\\2 - Areas\\Tasks\\priority\\task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath for a Windows drive-letter absolute path (forward slashes)", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "C:/vault/2 - Areas/Tasks/priority/task.md",
+    );
+    expect(result).toBe("--path C:/vault/2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath for a Windows UNC path", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "\\\\server\\share\\vault\\task.md",
+    );
+    expect(result).toBe("--path \\\\server\\share\\vault\\task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath for a POSIX-style UNC path (double slash)", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "//server/share/vault/task.md",
+    );
+    expect(result).toBe("--path //server/share/vault/task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back and warns when $absoluteFilePath is given a Windows-style relative path", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "vault\\task.md",
+    );
+    expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("not absolute");
   });
 
   it("expands $absoluteFilePath alongside all other placeholders", () => {

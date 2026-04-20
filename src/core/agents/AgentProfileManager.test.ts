@@ -65,7 +65,6 @@ describe("AgentProfileManager", () => {
           "core.claudeExtraArgs": "--model sonnet",
           "core.copilotCommand": "/usr/local/bin/copilot",
           "core.copilotExtraArgs": "--verbose",
-          "core.additionalAgentContext": "You are a helper for $title",
           "core.strandsCommand": "/usr/local/bin/strands",
         },
       });
@@ -80,7 +79,6 @@ describe("AgentProfileManager", () => {
 
       const claudeCtx = profiles.find((p) => p.name === "Claude (ctx)" && p.useContext);
       expect(claudeCtx).toBeTruthy();
-      expect(claudeCtx!.contextPrompt).toBe("You are a helper for $title");
 
       const copilot = profiles.find((p) => p.name === "Copilot");
       expect(copilot).toBeTruthy();
@@ -234,12 +232,10 @@ describe("AgentProfileManager", () => {
       expect(result).toBe("Custom context");
     });
 
-    it("falls back to global context", () => {
+    it("returns empty string when profile has no context prompt", () => {
       const profile = createDefaultProfile({ contextPrompt: "" });
-      const result = manager.resolveContextPrompt(profile, {
-        "core.additionalAgentContext": "Global context",
-      });
-      expect(result).toBe("Global context");
+      const result = manager.resolveContextPrompt(profile, {});
+      expect(result).toBe("");
     });
 
     it("resolveArguments merges global args exactly once", () => {
