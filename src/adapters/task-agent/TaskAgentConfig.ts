@@ -98,6 +98,24 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       default: "",
     },
     {
+      key: "splitTaskProfile",
+      name: "Split task agent profile",
+      description:
+        "Agent profile to use when launching Claude for Split Task. Select 'Default' to use the built-in Claude (ctx) profile, matching the 'Claude (ctx)' tab bar button.",
+      type: "dropdown",
+      default: "",
+      choices: "profiles",
+    },
+    {
+      key: "retryEnrichmentProfile",
+      name: "Retry enrichment agent profile",
+      description:
+        "Agent profile to use for the 'Retry Enrichment' context-menu action. Select 'Default' to fall back to the background enrichment profile, then the built-in Claude (ctx) profile.",
+      type: "dropdown",
+      default: "",
+      choices: "profiles",
+    },
+    {
       key: "showCardIndicators",
       name: "Show card indicators",
       description:
@@ -139,6 +157,8 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     retryEnrichmentPrompt: "",
     enrichmentProfile: "",
     enrichmentTimeout: "",
+    splitTaskProfile: "",
+    retryEnrichmentProfile: "",
     showCardIndicators: true,
     taskCardIcons: false,
     autoIconMode: "none",
