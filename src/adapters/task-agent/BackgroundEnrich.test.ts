@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { spawnHeadlessClaudeMock, spawnHeadlessAgentMock } = vi.hoisted(() => ({
-  spawnHeadlessClaudeMock: vi.fn(),
-  spawnHeadlessAgentMock: vi.fn(),
-}));
+const { spawnHeadlessClaudeMock, spawnHeadlessAgentMock, writeEnrichmentLogMock } = vi.hoisted(
+  () => ({
+    spawnHeadlessClaudeMock: vi.fn(),
+    spawnHeadlessAgentMock: vi.fn(),
+    writeEnrichmentLogMock: vi.fn(),
+  }),
+);
 
 vi.mock("../../core/claude/HeadlessClaude", () => ({
   spawnHeadlessClaude: spawnHeadlessClaudeMock,
   spawnHeadlessAgent: spawnHeadlessAgentMock,
   DEFAULT_TIMEOUT_MS: 300_000,
+}));
+
+vi.mock("./EnrichmentLogger", () => ({
+  writeEnrichmentLog: writeEnrichmentLogMock,
 }));
 
 import {
@@ -33,6 +40,7 @@ describe("BackgroundEnrich", () => {
       stdout: "",
       stderr: "",
     });
+    writeEnrichmentLogMock.mockResolvedValue(undefined);
   });
 
   describe("insertIngestionFailedFlag", () => {
@@ -750,6 +758,152 @@ describe("BackgroundEnrich", () => {
         "",
         expect.any(Number),
       );
+    });
+  });
+
+  describe("enrichment failure logging", () => {
+    const defaultSettings = {
+      _columnId: "todo",
+      "adapter.taskBasePath": "2 - Areas/Tasks",
+      "core.claudeCommand": "claude",
+      "core.defaultTerminalCwd": "~/work",
+      "core.claudeExtraArgs": "",
+    };
+
+    function makeItemCreatedApp({ fileExistsAfterEnrich = false } = {}) {
+      const existingPaths = new Set<string>();
+      let storedContent = "";
+      return {
+        vault: {
+          adapter: {
+            basePath: "/vault",
+            exists: vi.fn().mockResolvedValue(fileExistsAfterEnrich),
+          },
+          getAbstractFileByPath(path: string) {
+            return existingPaths.has(path) ? { path } : null;
+          },
+          async createFolder(path: string) {
+            existingPaths.add(path);
+            return { path };
+          },
+          async create(path: string, content: string) {
+            existingPaths.add(path);
+            storedContent = content;
+            return { path, content };
+          },
+          read: vi.fn(async () => storedContent),
+          modify: vi.fn(async (_file: any, content: string) => {
+            storedContent = content;
+          }),
+        },
+      } as any;
+    }
+
+    it("logs on timeout with timeout category and captured stderr", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: -1,
+        stdout: "partial",
+        stderr: "Headless Claude timed out after 300s",
+        timedOut: true,
+      });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Logged timeout", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).toHaveBeenCalledTimes(1);
+      const [, params] = writeEnrichmentLogMock.mock.calls[0];
+      expect(params.category).toBe("timeout");
+      expect(params.stderr).toContain("timed out");
+      expect(params.titleHint).toBe("Logged timeout");
+      expect(params.prompt).toContain("/vault/2 - Areas/Tasks/todo/");
+    });
+
+    it("logs on non-zero exit with exit code", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: 1,
+        stdout: "",
+        stderr: "boom",
+      });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Exit 1", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).toHaveBeenCalledTimes(1);
+      const [, params] = writeEnrichmentLogMock.mock.calls[0];
+      expect(params.category).toBe("non-zero-exit");
+      expect(params.exitCode).toBe(1);
+    });
+
+    it("logs on silent failure (Unknown skill stdout + exit 0)", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: 0,
+        stdout: "Unknown skill: foo\n",
+        stderr: "",
+      });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Silent failure", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).toHaveBeenCalledTimes(1);
+      const [, params] = writeEnrichmentLogMock.mock.calls[0];
+      expect(params.category).toBe("silent-failure");
+      expect(params.adapterValidation).toContain("Unknown skill");
+    });
+
+    it("logs on pending-not-renamed validation failure", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Pending stuck", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).toHaveBeenCalledTimes(1);
+      const [, params] = writeEnrichmentLogMock.mock.calls[0];
+      expect(params.category).toBe("pending-not-renamed");
+    });
+
+    it("logs on spawn rejection with the original error", async () => {
+      spawnHeadlessClaudeMock.mockRejectedValue(new Error("ENOENT"));
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Spawn fail", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).toHaveBeenCalledTimes(1);
+      const [, params] = writeEnrichmentLogMock.mock.calls[0];
+      expect(params.category).toBe("spawn-error");
+      expect(params.error).toBeInstanceOf(Error);
+      expect((params.error as Error).message).toBe("ENOENT");
+    });
+
+    it("does not log on success", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+
+      const result = await handleItemCreated(app, "Success path", defaultSettings);
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).not.toHaveBeenCalled();
+    });
+
+    it("respects core.enrichmentLogging=false and skips logging", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({
+        exitCode: 1,
+        stdout: "",
+        stderr: "nope",
+      });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "No logs please", {
+        ...defaultSettings,
+        "core.enrichmentLogging": false,
+      });
+      await result.enrichmentDone;
+
+      expect(writeEnrichmentLogMock).not.toHaveBeenCalled();
     });
   });
 
