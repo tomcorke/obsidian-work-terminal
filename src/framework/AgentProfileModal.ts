@@ -66,6 +66,14 @@ const ICON_LABELS: Record<ProfileIcon, string> = {
 export class AgentProfileEditModal extends Modal {
   private draft: AgentProfile;
   private isNew: boolean;
+  /**
+   * Snapshot of the profile as passed to the constructor, before any user
+   * edits. Used to evaluate the delete guard against the persisted/original
+   * state of the profile - editing the draft (e.g. changing agentType) must
+   * never unlock the Delete button, because clicking Delete always deletes
+   * the persisted profile by id (not the edited draft).
+   */
+  private originalProfile: AgentProfile | null;
 
   constructor(
     app: App,
@@ -74,17 +82,26 @@ export class AgentProfileEditModal extends Modal {
     private onDelete?: (id: string) => void,
     private adapterPromptDescription?: string,
     /**
-     * Optional guard invoked when rendering the Delete button. When it returns
-     * a non-empty string the button is disabled, the string is used as the
-     * hover tooltip, and clicking it (defensively) surfaces a Notice with the
-     * same reason. Returning null means deletion is allowed. The guard is
-     * evaluated lazily at render time so the caller can reflect the current
-     * state of the profile list (e.g. "this is the last Claude profile").
+     * Optional guard invoked when rendering the Delete button and again
+     * defensively inside the click handler. When it returns a non-empty
+     * string the button is visually disabled (aria-disabled), the string is
+     * used as the hover tooltip, and clicking surfaces a Notice with the
+     * same reason. Returning null means deletion is allowed.
+     *
+     * The guard is invoked with the *persisted* profile (the one passed to
+     * the constructor), never the live draft - changes to the draft (e.g.
+     * switching agentType away from "claude") must not bypass the guard,
+     * because delete operates on the persisted profile by id.
+     *
+     * The guard is also re-invoked at click time so state changes in the
+     * caller's profile list (e.g. a Claude profile added in another modal)
+     * can unlock or lock the button without re-rendering.
      */
     private deleteGuard?: (profile: AgentProfile) => string | null,
   ) {
     super(app);
     this.isNew = !profile;
+    this.originalProfile = profile ? { ...profile, button: { ...profile.button } } : null;
     this.draft = profile ? { ...profile, button: { ...profile.button } } : createDefaultProfile();
     // Normalize imported whitespace-only color values
     if (this.draft.button.color !== undefined) {
@@ -303,27 +320,43 @@ export class AgentProfileEditModal extends Modal {
 
     const buttons = contentEl.createDiv({ cls: "wt-profile-edit-buttons" });
 
-    if (!this.isNew && this.onDelete) {
+    if (!this.isNew && this.onDelete && this.originalProfile) {
       const deleteBtn = buttons.createEl("button", { text: "Delete", cls: "mod-warning" });
-      const blockedReason = this.deleteGuard ? this.deleteGuard(this.draft) : null;
-      if (blockedReason) {
-        // Greyed-out state + tooltip - matches the reorder-button UX pattern
-        // used in AgentProfileManagerModal. A defensive click handler still
-        // surfaces a Notice so users who bypass the disabled state (e.g.
-        // keyboard Enter on a focused button) get the same explanation.
-        deleteBtn.disabled = true;
-        deleteBtn.title = blockedReason;
-        deleteBtn.addEventListener("click", () => {
-          new Notice(blockedReason);
-        });
-      } else {
-        deleteBtn.addEventListener("click", () => {
-          if (confirm(`Delete profile "${this.draft.name}"?`)) {
-            this.onDelete!(this.draft.id);
-            this.close();
-          }
-        });
+      // Evaluate the guard against the *persisted* profile rather than the
+      // live draft, so edits to the draft (e.g. switching agentType) can
+      // never bypass the guard. Delete always operates on the persisted
+      // profile by id.
+      const originalProfile = this.originalProfile;
+      const evaluateGuard = (): string | null =>
+        this.deleteGuard ? this.deleteGuard(originalProfile) : null;
+      const initialBlockedReason = evaluateGuard();
+      if (initialBlockedReason) {
+        // Use aria-disabled rather than the native `disabled` property so the
+        // button still dispatches click events - a truly disabled button would
+        // swallow clicks silently, hiding the Notice from keyboard users who
+        // focus the button and press Enter or Space. Styling-wise Obsidian
+        // treats aria-disabled similarly to disabled for .mod-warning.
+        deleteBtn.setAttr("aria-disabled", "true");
+        deleteBtn.title = initialBlockedReason;
       }
+      deleteBtn.addEventListener("click", () => {
+        // Re-evaluate at click time against the persisted profile. This
+        // catches two cases:
+        //   1. The draft's agentType was changed but the guard must still
+        //      reflect the persisted profile's agentType (defence-in-depth
+        //      since we already pass originalProfile above).
+        //   2. The caller's profile list changed while the modal was open
+        //      (e.g. another modal added/removed a Claude profile).
+        const blockedReason = evaluateGuard();
+        if (blockedReason) {
+          new Notice(blockedReason);
+          return;
+        }
+        if (confirm(`Delete profile "${originalProfile.name}"?`)) {
+          this.onDelete!(originalProfile.id);
+          this.close();
+        }
+      });
     }
 
     // Spacer
