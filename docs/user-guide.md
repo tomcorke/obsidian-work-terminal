@@ -450,11 +450,11 @@ Type a lowercase identifier with hyphens (e.g. `review`, `blocked-upstream`, `te
 
 When enabled, new tasks created via the prompt box are automatically enriched by a headless agent session. The agent reads the task file and adds context, acceptance criteria, and other useful content.
 
-The **Enable background enrichment** toggle lives under the **Background enrichment** section in the main settings. The rest of the enrichment options live in a dedicated dialog opened by the **Configure enrichment...** button next to the toggle.
+All enrichment options live in a dedicated dialog opened by the **Configure enrichment...** button under the **Background enrichment** section in the main settings.
 
 The dialog contains:
 
-- **Enable background enrichment** - toggle on/off (also shown on the main settings page)
+- **Enable background enrichment** - toggle on/off
 - **Enrichment prompt** - custom prompt template sent to the agent. Use `{{FILE_PATH}}` as a placeholder for the task file path. Leave blank to use the built-in default; the full default prompt is shown in a collapsible "View default prompt" block below the textarea so you can read it before deciding whether to override.
 - **Retry enrichment prompt** - separate prompt used when retrying via the context menu. Same placeholder and default-preview treatment as the enrichment prompt.
 - **Enrichment agent profile** - which agent profile to use (defaults to core Claude settings)
@@ -645,7 +645,7 @@ These settings appear under the **Adapter** section and are specific to the task
 | Task base path | Vault path containing task folders | `2 - Areas/Tasks` |
 | State resolution strategy | How task state is determined (folder/frontmatter/composite) | `folder` |
 | Jira base URL | URL prefix for turning Jira keys into links (e.g. `https://your-org.atlassian.net/browse`) | (empty) |
-| Enable background enrichment | Auto-enrich new tasks via headless agent. Top-level toggle; rest of the options live in **Configure enrichment...** dialog | `true` |
+| Enable background enrichment | Auto-enrich new tasks via headless agent (edit via **Configure enrichment...**) | `true` |
 | Enrichment prompt | Custom prompt template for enrichment (edit via **Configure enrichment...**) | (default) |
 | Retry enrichment prompt | Custom prompt for retry enrichment (edit via **Configure enrichment...**) | (default) |
 | Enrichment agent profile | Which profile to use for enrichment (edit via **Configure enrichment...**) | Default |
