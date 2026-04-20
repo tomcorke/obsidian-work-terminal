@@ -1,5 +1,6 @@
 import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import type { WorkItem } from "../../core/interfaces";
+import { DETAIL_VIEW_DEFAULTS, type DetailViewOptions } from "../../core/detailViewPlacement";
 
 export class TaskDetailView {
   private editorLeaf: WorkspaceLeaf | null = null;
@@ -10,10 +11,27 @@ export class TaskDetailView {
   // Paths we've opened - used to identify leaves safe to adopt (they're showing
   // a file we put there, not something the user or another plugin opened).
   private openedPaths = new Set<string>();
+  // Containers whose flex styles we modified via applyMinEditorWidth. We track
+  // them so we can restore them when the width override is turned off.
+  private widthOverrideContainers: HTMLElement[] = [];
+  // Identifier of the last item we opened a detail view for. Used by the
+  // auto-close behaviour to detach the previous leaf when the selection moves
+  // to a different item.
+  private lastItemId: string | null = null;
 
   constructor(private app: App) {}
 
-  async show(item: WorkItem, ownerLeaf: WorkspaceLeaf): Promise<void> {
+  async show(
+    item: WorkItem,
+    ownerLeaf: WorkspaceLeaf,
+    options: DetailViewOptions = DETAIL_VIEW_DEFAULTS,
+  ): Promise<void> {
+    // "Disabled" short-circuits: no leaf creation, no file open. Respect the
+    // user's current workspace arrangement entirely.
+    if (options.placement === "disabled") {
+      return;
+    }
+
     const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
     if (!file) return;
 
@@ -21,7 +39,46 @@ export class TaskDetailView {
     if (this._showInProgress) return;
     this._showInProgress = true;
     try {
-      this.ensureEditorLeaf(ownerLeaf);
+      // Auto-close: when the selection moves to a different item, detach the
+      // previously-opened leaf so the detail view always opens fresh at the
+      // current placement target. Re-selecting the same item keeps the leaf.
+      if (options.autoClose && this.lastItemId && this.lastItemId !== item.id) {
+        this.detachLeaf();
+      }
+      this.lastItemId = item.id;
+
+      if (options.placement === "navigate") {
+        // Replace the contents of the active leaf. This matches Obsidian's
+        // standard "open file" behaviour and does not split or create tabs.
+        const activeLeaf = this.app.workspace.getLeaf(false);
+        if (!activeLeaf) return;
+        // Treat the active leaf as not-owned so we don't detach user state.
+        this.editorLeaf = activeLeaf;
+        this.leafIsOwned = false;
+        await activeLeaf.openFile(file);
+        this.openedPaths.add(item.path);
+        return;
+      }
+
+      if (options.placement === "tab") {
+        // Create a new tab in the active tab group. No splitting; no width
+        // override. If the file is already open in a tab we own we reuse it,
+        // matching the split-mode adoption behaviour.
+        this.ensureTabLeaf();
+        if (this.editorLeaf) {
+          await this.editorLeaf.openFile(file);
+          this.openedPaths.add(item.path);
+          const tabGroup = (this.editorLeaf as any).parent;
+          if (tabGroup?.selectTab) {
+            tabGroup.selectTab(this.editorLeaf);
+          }
+        }
+        return;
+      }
+
+      // Default: "split" - preserve the original behaviour, with configurable
+      // direction and an optional width override.
+      this.ensureEditorLeaf(ownerLeaf, options.splitDirection);
 
       if (this.editorLeaf) {
         await this.editorLeaf.openFile(file);
@@ -32,13 +89,27 @@ export class TaskDetailView {
         if (tabGroup?.selectTab) {
           tabGroup.selectTab(this.editorLeaf);
         }
+
+        if (!options.widthOverride) {
+          // The override may have been applied in a previous show() call.
+          // Clear any inline styles we set so Obsidian's flex layout takes over.
+          this.clearWidthOverride();
+        }
       }
     } finally {
       this._showInProgress = false;
     }
   }
 
-  private ensureEditorLeaf(ownerLeaf: WorkspaceLeaf): void {
+  /**
+   * Ensure we have an editor leaf to render the detail view into, for the
+   * "split" placement. Prefers reusing an owned leaf or an existing editor
+   * leaf in a sibling tab group; falls back to creating a fresh split.
+   */
+  private ensureEditorLeaf(
+    ownerLeaf: WorkspaceLeaf,
+    splitDirection: "vertical" | "horizontal",
+  ): void {
     // Check if our managed leaf is still attached to the workspace.
     // Uses parent reference instead of getLeavesOfType("markdown") because
     // a freshly-split leaf starts as type "empty" before openFile completes.
@@ -77,10 +148,41 @@ export class TaskDetailView {
 
     // No editor leaves at all - create a new split off our owner leaf
     this.leafIsOwned = true;
-    this.editorLeaf = this.app.workspace.createLeafBySplit(ownerLeaf, "vertical", false);
+    this.editorLeaf = this.app.workspace.createLeafBySplit(ownerLeaf, splitDirection, false);
 
     // Defer width application to let Obsidian's layout pass complete
     setTimeout(() => this.applyMinEditorWidth(), 100);
+  }
+
+  /**
+   * Ensure we have a leaf to render the detail view into for the "tab"
+   * placement. Uses Obsidian's active tab group via `getLeaf("tab")`, which
+   * opens a new tab in the currently active tab group without splitting.
+   * Reuses an owned leaf if one already exists.
+   */
+  private ensureTabLeaf(): void {
+    // Reuse our managed leaf if still attached
+    if (this.editorLeaf) {
+      const parent = (this.editorLeaf as any).parent;
+      if (!parent) {
+        this.editorLeaf = null;
+        this.leafIsOwned = false;
+      }
+    }
+    if (this.editorLeaf) return;
+
+    // Look for an owned leaf (one showing a file we previously opened) and
+    // reuse it to avoid piling up tabs on repeated selections.
+    const { ownedLeaf } = this.findEditorLeaves();
+    if (ownedLeaf) {
+      this.editorLeaf = ownedLeaf;
+      this.leafIsOwned = false;
+      return;
+    }
+
+    // Open a fresh tab in the currently active tab group.
+    this.leafIsOwned = true;
+    this.editorLeaf = this.app.workspace.getLeaf("tab");
   }
 
   /**
@@ -165,13 +267,29 @@ export class TaskDetailView {
       editorChild.containerEl.style.flexGrow = "0";
       editorChild.containerEl.style.flexShrink = "0";
       editorChild.containerEl.style.flexBasis = `${editorWidth}px`;
+      this.widthOverrideContainers.push(editorChild.containerEl);
     }
     // Terminal split: fill remaining space
     if (ttChild?.containerEl) {
       ttChild.containerEl.style.flexGrow = "1";
       ttChild.containerEl.style.flexShrink = "1";
       ttChild.containerEl.style.flexBasis = "0%";
+      this.widthOverrideContainers.push(ttChild.containerEl);
     }
+  }
+
+  /**
+   * Restore the flex styles on any containers we previously modified via
+   * applyMinEditorWidth(). Called when the width override setting is turned
+   * off so Obsidian's default flex layout resumes controlling the split.
+   */
+  private clearWidthOverride(): void {
+    for (const el of this.widthOverrideContainers) {
+      el.style.flexGrow = "";
+      el.style.flexShrink = "";
+      el.style.flexBasis = "";
+    }
+    this.widthOverrideContainers = [];
   }
 
   rekeyPath(oldPath: string, newPath: string): void {
@@ -180,14 +298,24 @@ export class TaskDetailView {
     }
   }
 
-  detach(): void {
+  /**
+   * Detach the managed leaf (if we own it) and clear width override styles.
+   * Leaves the `openedPaths` set intact so future adoption still works.
+   * Used by auto-close and `detach()`.
+   */
+  private detachLeaf(): void {
     if (this.editorLeaf) {
-      // Only detach leaves we created via split - leave adopted leaves intact
       if (this.leafIsOwned) {
         this.editorLeaf.detach();
       }
       this.editorLeaf = null;
       this.leafIsOwned = false;
     }
+    this.clearWidthOverride();
+  }
+
+  detach(): void {
+    this.detachLeaf();
+    this.lastItemId = null;
   }
 }
