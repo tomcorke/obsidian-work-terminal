@@ -1,6 +1,8 @@
 import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import type { WorkItem } from "../../core/interfaces";
 import { DETAIL_VIEW_DEFAULTS, type DetailViewOptions } from "../../core/detailViewPlacement";
+import { VIEW_TYPE } from "../../framework/PluginBase";
+import { findNavigateTargetLeaf } from "./findNavigateTargetLeaf";
 
 export class TaskDetailView {
   private editorLeaf: WorkspaceLeaf | null = null;
@@ -62,15 +64,23 @@ export class TaskDetailView {
       this.lastItemId = item.id;
 
       if (options.placement === "navigate") {
-        // Replace the contents of the active leaf. This matches Obsidian's
-        // standard "open file" behaviour and does not split or create tabs.
-        const activeLeaf = this.app.workspace.getLeaf(false);
-        if (!activeLeaf) return;
+        // The click target is inside the Work Terminal ItemView, so a naive
+        // `getLeaf(false)` returns the Work Terminal leaf and `openFile`
+        // replaces the entire workspace with the task file (#457). Find the
+        // most recent editor leaf that is NOT Work Terminal; fall back to a
+        // fresh tab if none exists.
+        let targetLeaf = findNavigateTargetLeaf(this.app, VIEW_TYPE);
+        if (!targetLeaf) {
+          targetLeaf = this.app.workspace.getLeaf("tab");
+        }
+        if (!targetLeaf) return;
         // Don't track navigate-mode leaves: keeps split/tab placements from
         // adopting user leaves later via findEditorLeaves's path-based match.
-        this.editorLeaf = activeLeaf;
+        // Also don't add the path to openedPaths - these are user leaves, not
+        // owned by us.
+        this.editorLeaf = targetLeaf;
         this.leafIsOwned = false;
-        await activeLeaf.openFile(file);
+        await targetLeaf.openFile(file);
         return;
       }
 
