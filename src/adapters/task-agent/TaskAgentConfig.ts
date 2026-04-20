@@ -101,7 +101,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       key: "splitTaskProfile",
       name: "Split task agent profile",
       description:
-        "Agent profile to use when launching Claude for Split Task. Select 'Default' to use the built-in Claude (ctx) profile, matching the 'Claude (ctx)' tab bar button.",
+        "Agent profile to use when launching Claude for Split Task. Select 'Default' to fall back through the built-in Claude-with-context profile and any other available Claude-family profiles.",
       type: "dropdown",
       default: "",
       choices: "profiles",
