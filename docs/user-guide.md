@@ -457,12 +457,12 @@ All enrichment options live in a dedicated dialog opened by the **Configure enri
 The dialog contains:
 
 - **Enable background enrichment** - toggle on/off
-- **Enrichment prompt** - custom prompt template sent to the agent. Use `$filePath` as a placeholder for the task file path. Leave blank to use the built-in default; the full default prompt is shown in a collapsible "View default prompt" block below the textarea so you can read it before deciding whether to override.
-- **Retry enrichment prompt** - separate prompt used when retrying via the context menu. Same placeholder and default-preview treatment as the enrichment prompt.
+- **Enrichment prompt** - custom prompt template sent to the agent. Use `$filePath` (vault-relative path, e.g. `2 - Areas/Tasks/todo/my-task.md`) or `$absoluteFilePath` (absolute filesystem path, e.g. `/Users/you/vault/2 - Areas/Tasks/todo/my-task.md`) as placeholders for the task file path. The built-in default uses `$absoluteFilePath` because the agent typically needs to `cd` into the folder and read the file directly. Leave blank to use the built-in default; the full default prompt is shown in a collapsible "View default prompt" block below the textarea so you can read it before deciding whether to override.
+- **Retry enrichment prompt** - separate prompt used when retrying via the context menu. Same placeholders and default-preview treatment as the enrichment prompt.
 - **Enrichment agent profile** - which agent profile to use (defaults to core Claude settings)
 - **Retry enrichment profile** - which agent profile to launch for the **Retry Enrichment** context-menu action. Lists Claude-family profiles only. Default: reuse the background enrichment profile above if it is set to a Claude-family profile; if the background enrichment profile is unset or is a non-Claude profile, it is ignored and Retry Enrichment falls back to the built-in Claude (ctx) profile.
 - **Enrichment timeout** - maximum time in seconds before the enrichment process is killed (default: 300s / 5 minutes)
-- **Preview resolved prompt** - pick either prompt and click **Preview** to see the template with `$filePath` substituted using the example path `vault/2 - Areas/Tasks/todo/example.md`. Useful for sanity-checking a customised prompt without creating a real task.
+- **Preview resolved prompt** - pick either prompt and click **Preview** to see the template with placeholders substituted using example paths (`$filePath` -> `2 - Areas/Tasks/todo/example.md`, `$absoluteFilePath` -> `/Users/you/vault/2 - Areas/Tasks/todo/example.md`). Useful for sanity-checking a customised prompt without creating a real task. The paths shown are illustrative; the actual paths used at launch time are derived from your real vault location and the created task file.
 
 Changes save as you type; there is no Save button. Close the dialog with **Done** when you are finished.
 

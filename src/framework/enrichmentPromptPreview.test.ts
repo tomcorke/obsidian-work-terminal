@@ -26,6 +26,31 @@ describe("resolvePromptPreview", () => {
     );
   });
 
+  it("substitutes $absoluteFilePath with the absolute-path example", () => {
+    const template = "Absolute: $absoluteFilePath";
+    expect(resolvePromptPreview(template)).toBe(
+      `Absolute: ${DEFAULT_PREVIEW_VARS.absoluteFilePath}`,
+    );
+  });
+
+  it("substitutes both $filePath and $absoluteFilePath independently in one pass", () => {
+    const template = "rel=$filePath abs=$absoluteFilePath";
+    expect(resolvePromptPreview(template)).toBe(
+      `rel=${DEFAULT_PREVIEW_VARS.filePath} abs=${DEFAULT_PREVIEW_VARS.absoluteFilePath}`,
+    );
+  });
+
+  it("treats $filePathBasename as a separate (unknown) identifier, not $filePath followed by Basename", () => {
+    // The regex matches the longest run of [a-zA-Z0-9]+ after the `$`, so
+    // `$filePathBasename` is the single token `filePathBasename`. Since we
+    // don't define that key, it passes through untouched - which is exactly
+    // what we want for prefix-collision safety.
+    const template = "path=$filePath basename=$filePathBasename";
+    expect(resolvePromptPreview(template)).toBe(
+      `path=${DEFAULT_PREVIEW_VARS.filePath} basename=$filePathBasename`,
+    );
+  });
+
   it("accepts a custom vars map", () => {
     const template = "Path is $filePath and id $itemId";
     expect(resolvePromptPreview(template, { filePath: "/tmp/a.md", itemId: "abc-123" })).toBe(

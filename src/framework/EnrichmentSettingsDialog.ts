@@ -85,7 +85,8 @@ export class EnrichmentSettingsDialog extends Modal {
       containerEl,
       "Enrichment prompt",
       "Prompt sent to the headless agent for background enrichment. Use " +
-        "$filePath as a placeholder for the task file path.",
+        "$filePath (vault-relative path) or $absoluteFilePath (absolute " +
+        "filesystem path) as placeholders for the task file path.",
       "adapter.enrichmentPrompt",
       DEFAULT_ENRICHMENT_PROMPT,
       settings,
@@ -94,7 +95,8 @@ export class EnrichmentSettingsDialog extends Modal {
       containerEl,
       "Retry enrichment prompt",
       "Prompt used when retrying enrichment via the right-click menu. Use " +
-        "$filePath as a placeholder for the task file path.",
+        "$filePath (vault-relative path) or $absoluteFilePath (absolute " +
+        "filesystem path) as placeholders for the task file path.",
       "adapter.retryEnrichmentPrompt",
       DEFAULT_RETRY_ENRICHMENT_PROMPT,
       settings,
@@ -107,19 +109,23 @@ export class EnrichmentSettingsDialog extends Modal {
 
   /**
    * Render a "Preview resolved prompt" section that substitutes `$filePath`
-   * (and any other known placeholder) using a fixed example path. Gives users
-   * a concrete view of what the agent will receive without actually creating
-   * a task. The substitution is synchronous and purely string-based; we do
-   * not load a real task or reach into BackgroundEnrich internals.
+   * and `$absoluteFilePath` (plus any other known placeholder) using fixed
+   * example paths. Gives users an approximate view of what the agent will
+   * receive without actually creating a task - the paths are illustrative,
+   * not drawn from the real vault. The substitution is synchronous and purely
+   * string-based; we do not load a real task or reach into BackgroundEnrich
+   * internals.
    */
   private renderPreviewPanel(containerEl: HTMLElement, settings: Record<string, unknown>): void {
     const section = containerEl.createDiv({ cls: "wt-enrichment-dialog__preview" });
     section.createEl("h4", { text: "Preview resolved prompt" });
     section.createEl("p", {
       text:
-        "Show the selected prompt with placeholders substituted using the example " +
-        `path ${DEFAULT_PREVIEW_VARS.filePath}. Useful for sanity-checking a customised prompt ` +
-        "before creating a real task.",
+        "Show the selected prompt with placeholders substituted using example " +
+        `paths ($filePath -> ${DEFAULT_PREVIEW_VARS.filePath}, $absoluteFilePath -> ` +
+        `${DEFAULT_PREVIEW_VARS.absoluteFilePath}). Useful for sanity-checking a ` +
+        "customised prompt before creating a real task. The actual paths used at " +
+        "launch time are derived from the vault location and the created task file.",
       cls: "wt-enrichment-dialog__help",
     });
 

@@ -68,7 +68,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       key: "enrichmentPrompt",
       name: "Enrichment prompt",
       description:
-        "Prompt sent to the headless agent for background enrichment. Use $filePath as a placeholder for the task file path. Leave empty for default.",
+        "Prompt sent to the headless agent for background enrichment. Use $filePath (vault-relative) or $absoluteFilePath (absolute filesystem path) as placeholders for the task file path. Leave empty for default.",
       type: "text",
       default: "",
     },
@@ -76,7 +76,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       key: "retryEnrichmentPrompt",
       name: "Retry enrichment prompt",
       description:
-        "Prompt used when retrying enrichment via right-click menu. Use $filePath as a placeholder. Leave empty for default.",
+        "Prompt used when retrying enrichment via right-click menu. Use $filePath (vault-relative) or $absoluteFilePath (absolute filesystem path) as placeholders for the task file path. Leave empty for default.",
       type: "text",
       default: "",
     },
