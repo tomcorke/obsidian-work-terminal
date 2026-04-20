@@ -16,6 +16,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Hiding card indicators](#hiding-card-indicators)
   - [Context menu](#context-menu)
   - [Detail panel](#detail-panel)
+  - [Detail view placement](#detail-view-placement)
   - [Drag-drop reordering](#drag-drop-reordering)
   - [Filtering](#filtering)
   - [Activity view](#activity-view)
@@ -218,6 +219,25 @@ The detail panel provides:
 - **Backlinks** - Obsidian's native backlinks panel shows other notes that reference this task
 
 Because the detail panel is a standard Obsidian markdown view, all Obsidian features work: live preview, reading view, plugins that operate on markdown views, and the command palette.
+
+### Detail view placement
+
+The way the detail file is opened is configurable under **Settings > Detail view**. By default, selecting a task opens its file in a vertical split next to the Work Terminal view and applies a readable line-width override - this matches the behaviour shipped in earlier versions, so users who never open the settings see no change.
+
+The **Placement** dropdown offers four strategies:
+
+- **Split (default)** - create a new split beside the Work Terminal view and apply the min-width override so the editor does not squish. Best when Work Terminal sits in its own tab group.
+- **Tab in active group** - open the task file as a new tab in the currently active tab group, with no splitting and no width override. Best when Work Terminal lives in a tab group alongside other files and you want the detail view to behave like any other tab.
+- **Navigate active leaf** - replace the contents of the active leaf, matching Obsidian's standard "open file" behaviour. No new tabs or splits are created.
+- **Disabled** - do nothing on selection. Useful if you prefer to open files manually via the file explorer, quick switcher, or Obsidian's hover preview, or if you only need the terminal side of Work Terminal.
+
+Additional options shape the behaviour:
+
+- **Auto-close on selection change** (all placements except Disabled) - detaches the detail leaf when you select a different item, so the next selection opens a fresh leaf at the current placement target. With this off, the same leaf is reused across selections.
+- **Apply readable line-width override to split** (Split only) - toggles the width override. When off, Obsidian's default flex layout controls the split and any previously-applied inline styles are cleared on the next selection.
+- **Split direction** (Split only) - choose Vertical (side by side) or Horizontal (top and bottom). Vertical matches the default behaviour.
+
+The plugin never touches leaves you opened yourself. Adopted leaves (ones Work Terminal discovered rather than created) are left in place when the selection changes; only leaves the plugin created are detached by auto-close or plugin reload.
 
 ### Drag-drop reordering
 
