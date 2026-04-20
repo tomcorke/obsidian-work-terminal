@@ -23,6 +23,7 @@ import { CardFlagManagerModal } from "./CardFlagManagerModal";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
+import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -312,8 +313,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   private async renderDetailViewSettings(containerEl: HTMLElement): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
     const settings = data.settings || {};
-    const placement =
-      (settings["core.detailViewPlacement"] as string) ?? CORE_DEFAULTS["core.detailViewPlacement"];
+    // Resolve via resolveDetailViewOptions so invalid persisted values (from
+    // manual edits or older plugin versions) fall back to the default and
+    // the dropdown/conditional rendering stay consistent.
+    const placement = resolveDetailViewOptions(settings).placement;
 
     // Placement dropdown - drives visibility of other fields in this section.
     new Setting(containerEl)
