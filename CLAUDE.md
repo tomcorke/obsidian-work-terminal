@@ -107,6 +107,9 @@ Every user-visible feature must have an appropriate settings UI or interaction s
 ### Documentation requirement
 Updates to the user guide (`docs/user-guide.md`) are always part of implementing a feature. PRs that add user-visible features or change existing behaviour must include corresponding user guide updates. Treat missing documentation the same as missing tests - the feature is not done.
 
+### Placeholder format
+All new placeholder variables must use the `$name` form (camelCase, dollar prefix), matching the existing `AgentContextPrompt` / profile-template resolver. Do not introduce `{{NAME}}` or `{name}` forms. When extending a resolver with a new placeholder, add it to `AgentContextPrompt.expandProfilePlaceholders` / `buildAgentContextPrompt` or the adjacent enrichment resolver rather than inventing a new parallel placeholder syntax.
+
 ## Known constraints
 
 - **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround. Non-negotiable.
