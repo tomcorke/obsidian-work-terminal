@@ -638,18 +638,18 @@ The `abandoned` state is a special terminal state - abandoned tasks are filtered
 
 ## Adapter settings reference
 
-These settings appear under the **Adapter** section and are specific to the task-agent adapter:
+These settings are specific to the task-agent adapter. Adapter-level fields appear under the **Adapter** section in settings; background-enrichment fields are edited inside the **Configure enrichment...** dialog (opened from the **Background enrichment** section) and are marked below.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Task base path | Vault path containing task folders | `2 - Areas/Tasks` |
 | State resolution strategy | How task state is determined (folder/frontmatter/composite) | `folder` |
 | Jira base URL | URL prefix for turning Jira keys into links (e.g. `https://your-org.atlassian.net/browse`) | (empty) |
-| Enable background enrichment | Auto-enrich new tasks via headless agent (edit via **Configure enrichment...**) | `true` |
-| Enrichment prompt | Custom prompt template for enrichment (edit via **Configure enrichment...**) | (default) |
-| Retry enrichment prompt | Custom prompt for retry enrichment (edit via **Configure enrichment...**) | (default) |
-| Enrichment agent profile | Which profile to use for enrichment (edit via **Configure enrichment...**) | Default |
-| Enrichment timeout | Max seconds for enrichment (edit via **Configure enrichment...**) | 300 |
+| Enable background enrichment | Auto-enrich new tasks via headless agent (edited via **Configure enrichment...**) | `true` |
+| Enrichment prompt | Custom prompt template for enrichment (edited via **Configure enrichment...**) | (default) |
+| Retry enrichment prompt | Custom prompt for retry enrichment (edited via **Configure enrichment...**) | (default) |
+| Enrichment agent profile | Which profile to use for enrichment (edited via **Configure enrichment...**) | Default |
+| Enrichment timeout | Max seconds for enrichment (edited via **Configure enrichment...**) | 300 |
 | Show card indicators | Show metadata indicators on cards (source badges, priority scores, goal tags, card flags, indicator dots). See [Hiding card indicators](#hiding-card-indicators). | `true` |
 | Task card icons | Show icons on task cards | `false` |
 | Automatic icon mode | How automatic icons are assigned (none/source/state) | `none` |
