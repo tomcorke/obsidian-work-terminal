@@ -344,11 +344,11 @@ describe("WorkTerminalSettingsTab", () => {
     expect(tab.containerEl.querySelector('[data-setting-key="core.copilotCommand"]')).toBeNull();
     expect(tab.containerEl.querySelector('[data-setting-key="core.strandsCommand"]')).toBeNull();
     expect(tab.containerEl.querySelector('[data-setting-key="core.claudeExtraArgs"]')).toBeNull();
-    // core.additionalAgentContext is now rendered inline under the Agents
-    // section (issue #462) so it should be present in the main tab.
+    // core.additionalAgentContext was removed in issue #472 - it has been
+    // superseded by per-profile context prompts on agent profiles.
     expect(
       tab.containerEl.querySelector('[data-setting-key="core.additionalAgentContext"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     // core.defaultShell lives inside the TerminalSettingsDialog now (issue
     // #462) so it should NOT appear on the main settings page.
     expect(tab.containerEl.querySelector('[data-setting-key="core.defaultShell"]')).toBeNull();
@@ -453,20 +453,6 @@ describe("WorkTerminalSettingsTab", () => {
     const buttons = Array.from(tab.containerEl.querySelectorAll("button"));
     const configureBtn = buttons.find((b) => b.textContent === "Configure terminal...");
     expect(configureBtn).toBeDefined();
-  });
-
-  it("renders the additional agent context textarea under Agents", async () => {
-    const plugin = makePlugin({ "core.additionalAgentContext": "existing context" });
-    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
-
-    tab.display();
-    await flushAsyncWork();
-
-    const textarea = tab.containerEl.querySelector(
-      'textarea[data-setting-key="core.additionalAgentContext"]',
-    ) as HTMLTextAreaElement | null;
-    expect(textarea).not.toBeNull();
-    expect(textarea!.value).toBe("existing context");
   });
 
   it("renders a reset guided tour button that calls resetGuidedTourStatus and shows a Notice", async () => {
