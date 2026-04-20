@@ -22,7 +22,11 @@ import {
   DEFAULT_ENRICHMENT_PROMPT,
   DEFAULT_RETRY_ENRICHMENT_PROMPT,
 } from "../adapters/task-agent/BackgroundEnrich";
-import { describePromptPlaceholder } from "./enrichmentPromptPreview";
+import {
+  describePromptPlaceholder,
+  resolvePromptPreview,
+  DEFAULT_PREVIEW_VARS,
+} from "./enrichmentPromptPreview";
 import { SETTINGS_CHANGED_EVENT, loadAllSettings } from "./SettingsTab";
 
 export class EnrichmentSettingsDialog extends Modal {
@@ -97,6 +101,64 @@ export class EnrichmentSettingsDialog extends Modal {
     );
     this.renderProfileDropdown(containerEl, settings);
     this.renderTimeoutField(containerEl, settings);
+    this.renderPreviewPanel(containerEl, settings);
+  }
+
+  /**
+   * Render a "Preview resolved prompt" section that substitutes `{{FILE_PATH}}`
+   * (and any other known placeholder) using a fixed example path. Gives users
+   * a concrete view of what the agent will receive without actually creating
+   * a task. The substitution is synchronous and purely string-based; we do
+   * not load a real task or reach into BackgroundEnrich internals.
+   */
+  private renderPreviewPanel(containerEl: HTMLElement, settings: Record<string, unknown>): void {
+    const section = containerEl.createDiv({ cls: "wt-enrichment-dialog__preview" });
+    section.createEl("h4", { text: "Preview resolved prompt" });
+    section.createEl("p", {
+      text:
+        "Show the selected prompt with placeholders substituted using the example " +
+        `path ${DEFAULT_PREVIEW_VARS.FILE_PATH}. Useful for sanity-checking a customised prompt ` +
+        "before creating a real task.",
+      cls: "wt-enrichment-dialog__help",
+    });
+
+    const actions = section.createDiv({ cls: "wt-enrichment-dialog__preview-actions" });
+    const select = actions.createEl("select", {
+      cls: "wt-enrichment-dialog__preview-select",
+    });
+    const opts: Array<{ value: "prompt" | "retry"; label: string }> = [
+      { value: "prompt", label: "Enrichment prompt" },
+      { value: "retry", label: "Retry enrichment prompt" },
+    ];
+    for (const opt of opts) {
+      const el = select.createEl("option", { text: opt.label });
+      el.value = opt.value;
+    }
+
+    const output = section.createEl("pre", {
+      cls: "wt-enrichment-dialog__preview-output",
+    });
+    output.textContent = "Click Preview to resolve the selected prompt.";
+
+    const previewBtn = actions.createEl("button", { text: "Preview" });
+    previewBtn.addEventListener("click", async () => {
+      // Re-read settings so the preview reflects any edits the user has made
+      // since the dialog was opened. saveSettings writes are debounced via
+      // mergeAndSavePluginData but have already resolved by the time onChange
+      // returns, so loadData here sees the latest values.
+      const latestData = (await this.plugin.loadData()) || {};
+      const latestSettings: Record<string, unknown> = latestData.settings || {};
+      const selected = (select.value as "prompt" | "retry") || "prompt";
+      const template =
+        selected === "retry"
+          ? (latestSettings["adapter.retryEnrichmentPrompt"] as string) ||
+            DEFAULT_RETRY_ENRICHMENT_PROMPT
+          : (latestSettings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
+      output.textContent = resolvePromptPreview(template);
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _unused = settings;
   }
 
   private renderEnabledToggle(containerEl: HTMLElement, settings: Record<string, unknown>): void {
