@@ -16,8 +16,15 @@ import type {
 } from "../core/interfaces";
 import type { TerminalPanelView } from "./TerminalPanelView";
 import type { PinStore } from "../core/PinStore";
+import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import type { AgentProfile } from "../core/agents/AgentProfile";
 import { DangerConfirm } from "./DangerConfirm";
-import { slugify, titleCase } from "../core/utils";
+import { electronRequire, slugify, titleCase } from "../core/utils";
+import {
+  resolveRetryEnrichmentProfile,
+  resolveSplitTaskCwd,
+  resolveSplitTaskProfile,
+} from "./splitTaskProfile";
 import {
   type ActivityTracker,
   type ViewMode,
@@ -47,6 +54,7 @@ export class ListPanel {
   private onSessionFilterChange: (active: boolean) => void;
   private pinStore: PinStore | null = null;
   private activityTracker: ActivityTracker | null = null;
+  private profileManager: AgentProfileManager | null = null;
   private pinnedCustomStates: Set<string> = new Set();
 
   // State
@@ -167,6 +175,16 @@ export class ListPanel {
   /** Inject an ActivityTracker after construction (created by MainView). */
   setActivityTracker(tracker: ActivityTracker): void {
     this.activityTracker = tracker;
+  }
+
+  /**
+   * Inject an AgentProfileManager after construction (created by MainView).
+   * Optional: when absent, Split Task / Retry Enrichment fall through to the
+   * legacy non-profile spawn path. This keeps ListPanel usable in test
+   * harnesses that don't wire the profile manager.
+   */
+  setProfileManager(profileManager: AgentProfileManager | null): void {
+    this.profileManager = profileManager;
   }
 
   /** Update the set of pinned custom state IDs (columns kept visible when empty). */
@@ -682,6 +700,20 @@ export class ListPanel {
     return vaultPath;
   }
 
+  /**
+   * Resolve a vault-relative work item path to an absolute filesystem path
+   * using Node's `path.resolve`, so platform-specific separators are handled
+   * correctly (rather than the previous `${base}/${path}` concat which could
+   * produce mixed-separator strings on Windows). Returns null when the vault
+   * base path is not available.
+   */
+  private resolveWorkItemAbsPath(itemPath: string): string | null {
+    const vaultBase = this.resolveVaultPath();
+    if (!vaultBase) return null;
+    const path = electronRequire("path") as typeof import("path");
+    return path.resolve(vaultBase, itemPath);
+  }
+
   private async insertAfter(
     existingId: string,
     newItem: WorkItem,
@@ -722,10 +754,10 @@ export class ListPanel {
       }
       console.log(`[work-terminal] Split task created: ${result.path} (id: ${result.id})`);
 
-      // Resolve full filesystem paths (CWD may differ from vault location)
-      const vaultBase = this.resolveVaultPath();
-      const sourceFullPath = `${vaultBase}/${sourceItem.path}`;
-      const newFullPath = `${vaultBase}/${result.path}`;
+      // Resolve full filesystem paths (CWD may differ from vault location).
+      // Use path.resolve so the cross-platform separator is honoured.
+      const sourceFullPath = this.resolveWorkItemAbsPath(sourceItem.path) ?? sourceItem.path;
+      const newFullPath = this.resolveWorkItemAbsPath(result.path) ?? result.path;
 
       // Build the split-scoping prompt.
       // Paths are NOT quoted to avoid Claude including literal quote characters
@@ -752,7 +784,13 @@ export class ListPanel {
       };
       this.items.push(newItem);
       this.selectItem(newItem);
-      this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope");
+
+      // Route the launch through the split-task profile so the session inherits
+      // the user's Claude profile settings (command, args, cwd, login shell wrap).
+      // resolveOverride returns null when no profile manager is wired, in which
+      // case spawnClaudeWithPrompt falls back to the pre-448 non-profile path.
+      const override = this.resolveSplitLaunchOverride(newFullPath);
+      this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope", override ?? undefined);
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
     }
@@ -772,12 +810,45 @@ export class ListPanel {
           return;
         }
         this.selectItem(item);
-        this.terminalPanel.spawnClaudeWithPrompt(prompt, "Enrich");
+
+        // Retry-enrichment launches now follow the configured enrichment
+        // profile (see splitTaskProfile.resolveRetryEnrichmentProfile for
+        // the fallback chain) so they match what background enrichment
+        // would have used. Use path.resolve via resolveWorkItemAbsPath so
+        // the cwd is computed correctly on any platform.
+        const taskFullPath = this.resolveWorkItemAbsPath(item.path);
+        const override = this.resolveRetryLaunchOverride(taskFullPath);
+        this.terminalPanel.spawnClaudeWithPrompt(prompt, "Enrich", override ?? undefined);
       } catch (err) {
         console.error("[work-terminal] retryEnrichment failed:", err);
         new Notice("Failed to start enrichment session. See console for details.");
       }
     })();
+  }
+
+  /**
+   * Resolve the profile + cwd override used when launching a Claude session
+   * for Split Task. Returns null when no profile manager is wired so callers
+   * fall back to the legacy non-profile path.
+   */
+  private resolveSplitLaunchOverride(
+    taskAbsPath: string | null,
+  ): { profile: AgentProfile; cwdOverride: string } | null {
+    if (!this.profileManager) return null;
+    const profile = resolveSplitTaskProfile(this.settings, this.profileManager.getProfiles());
+    if (!profile) return null;
+    const cwdOverride = resolveSplitTaskCwd(profile, taskAbsPath, this.settings);
+    return { profile, cwdOverride };
+  }
+
+  private resolveRetryLaunchOverride(
+    taskAbsPath: string | null,
+  ): { profile: AgentProfile; cwdOverride: string } | null {
+    if (!this.profileManager) return null;
+    const profile = resolveRetryEnrichmentProfile(this.settings, this.profileManager.getProfiles());
+    if (!profile) return null;
+    const cwdOverride = resolveSplitTaskCwd(profile, taskAbsPath, this.settings);
+    return { profile, cwdOverride };
   }
 
   private deleteItem(item: WorkItem): void {

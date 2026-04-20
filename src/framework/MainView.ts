@@ -418,6 +418,10 @@ export class MainView extends ItemView {
       await this.writeLastActive(itemId, isoTimestamp);
     });
     this.listPanel.setActivityTracker(this.activityTracker);
+
+    // Inject profile manager so Split Task / Retry Enrichment can resolve
+    // the configured agent profile (#448).
+    this.listPanel.setProfileManager(this.profileManager);
   }
 
   // ---------------------------------------------------------------------------

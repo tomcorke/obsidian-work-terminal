@@ -843,13 +843,125 @@ export class TerminalPanelView {
     await this.spawnAgentSession({ agentType: "claude", sessionType: "claude-with-context" });
   }
 
-  async spawnClaudeWithPrompt(prompt: string, label?: string): Promise<void> {
-    await this.spawnAgentSession({
-      agentType: "claude",
-      sessionType: "claude-with-context",
-      prompt,
-      label: label || "Claude (ctx)",
+  /**
+   * Spawn an agent with a pre-built prompt. Optionally routes through a
+   * resolved agent profile so the launched session inherits the profile's
+   * command, arguments, cwd, and login-shell wrapping.
+   *
+   * When `profileOverride` is provided:
+   *   - agentType/sessionType come from the profile
+   *   - command / cwd / extraArgs are resolved via AgentProfileManager
+   *   - `skipGlobalArgs` is set so profile-level arg merging is not doubled
+   *   - an explicit `cwd` override wins over the profile's defaultCwd
+   *
+   * When `profileOverride` is omitted, behaviour matches the legacy call
+   * site: plain `claude-with-context` spawn using core settings only.
+   */
+  async spawnClaudeWithPrompt(
+    prompt: string,
+    label?: string,
+    profileOverride?: {
+      profile: AgentProfile;
+      cwdOverride?: string;
+    },
+  ): Promise<void> {
+    if (!profileOverride) {
+      await this.spawnAgentSession({
+        agentType: "claude",
+        sessionType: "claude-with-context",
+        prompt,
+        label: label || "Claude (ctx)",
+      });
+      return;
+    }
+
+    await this.spawnFromResolvedProfile(profileOverride.profile, prompt, {
+      label,
+      cwdOverride: profileOverride.cwdOverride,
     });
+  }
+
+  /**
+   * Launch a session for a concrete profile with a pre-assembled prompt.
+   * Mirrors `spawnFromProfile` but accepts a caller-supplied prompt and
+   * cwd override, used by action-driven launches (split-task, retry-enrichment)
+   * rather than interactive button clicks.
+   */
+  private async spawnFromResolvedProfile(
+    profile: AgentProfile,
+    prompt: string,
+    options: {
+      label?: string;
+      cwdOverride?: string;
+    },
+  ): Promise<void> {
+    if (!this.profileManager) {
+      // Should never happen - fall back to the legacy path rather than throwing.
+      await this.spawnAgentSession({
+        agentType: "claude",
+        sessionType: "claude-with-context",
+        prompt,
+        label: options.label || "Claude (ctx)",
+      });
+      return;
+    }
+
+    const fresh = await this.loadFreshSettings();
+    const sessionType = agentTypeToSessionType(
+      profile.agentType,
+      profile.useContext,
+      profile.agentType === "custom" ? profile.id : undefined,
+    );
+    const command = this.profileManager.resolveCommand(profile, fresh);
+    const cwd = options.cwdOverride || this.profileManager.resolveCwd(profile, fresh);
+    const extraArgs = this.profileManager.resolveArguments(profile, fresh);
+    const label = options.label || profile.button.label || profile.name;
+
+    // Expand $sessionId lazily (TabManager resolves it) and $workTerminalPrompt now.
+    const item = this.getActiveItem();
+    let expandedArgs = extraArgs;
+    if (item && expandedArgs) {
+      const absPath = this.resolveWorkItemPath(item.path);
+      expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt, absPath);
+    }
+
+    const resolvedConfig = this.resolveLaunchConfig(profile.agentType, profile);
+    const launchConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
+
+    await this.spawnAgentSession({
+      agentType: profile.agentType,
+      sessionType,
+      command,
+      cwd,
+      extraArgs: expandedArgs,
+      skipGlobalArgs: true,
+      label,
+      prompt,
+      freshSettings: fresh,
+      launchConfigOverrides,
+      loginShellWrap: profile.loginShellWrap,
+    });
+
+    // Apply profile metadata to the newly created tab so it styles / rekeys
+    // identically to button-launched profile sessions.
+    const activeItemId = this.tabManager.getActiveItemId();
+    if (activeItemId) {
+      const tabs = this.tabManager.getTabs(activeItemId);
+      const lastTab = tabs[tabs.length - 1];
+      if (lastTab) {
+        lastTab.profileId = profile.id;
+        if (profile.button.color) lastTab.profileColor = profile.button.color;
+        lastTab.activityPatterns =
+          resolvedConfig.activityPatterns ??
+          (profile.agentType === "custom"
+            ? { activeLinePatterns: [], activeJoinedPatterns: [] }
+            : undefined);
+        if (profile.loginShellWrap) {
+          lastTab.loginShellWrap = true;
+        }
+        this.renderTabBar();
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------

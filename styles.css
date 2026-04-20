@@ -2363,3 +2363,31 @@ button.wt-spawn-claude-ctx:hover svg {
   font-family: var(--font-monospace);
   font-size: var(--font-ui-smaller);
 }
+
+/* =============================================================================
+   Agent Actions Dialog (Split Task / Retry Enrichment profile bindings)
+   ============================================================================= */
+
+.wt-agent-actions-dialog {
+  max-width: 640px;
+}
+
+.wt-agent-actions-dialog__help {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 12px;
+}
+
+.wt-agent-actions-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.wt-agent-actions-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
