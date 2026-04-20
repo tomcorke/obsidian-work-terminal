@@ -6,6 +6,9 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+### Fixed
+- Fixed `$filePath` and `$absoluteFilePath` placeholders in agent context prompts and profile templates so they now resolve to distinct values: `$filePath` is always the vault-relative path and `$absoluteFilePath` is the fully resolved absolute filesystem path. Previously both placeholders expanded to the same value when an absolute path was available. When `$absoluteFilePath` is used but no absolute path can be resolved, the placeholder falls back to the vault-relative path and logs a `console.warn`. (#465)
+
 ### Added
 - Added diagnostic log files for failed background enrichment attempts. Each failure now writes a categorised log to `<vault>/<configDir>/plugins/work-terminal/logs/enrich-<ts>-<slug>.log` (usually `<vault>/.obsidian/plugins/work-terminal/logs/...`) containing the enrichment prompt, agent stdout/stderr, exit code, adapter validation detail, and any JS error plus stack trace. Retention is 7 days / 50 files with auto-pruning on every write. Controlled by the new **Enrichment failure logs** toggle under Core settings (default: enabled). (#449)
 - Moved the enrichment prompt, retry prompt, agent profile, and timeout into a dedicated **Configure enrichment...** dialog opened from a new **Background enrichment** section in settings. The dialog shows each default prompt in a collapsible "View default prompt" block so users can read the built-in defaults before customising, and includes a **Preview resolved prompt** helper that substitutes `{{FILE_PATH}}` with an example path. The `enrichmentEnabled` toggle stays at the top level. No setting keys changed, so enrichment behaviour is identical for users who never open the dialog. (#451)

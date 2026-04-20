@@ -11,6 +11,34 @@ export function getAgentContextTemplate(settings: Record<string, unknown>): stri
 
 export const getClaudeContextTemplate = getAgentContextTemplate;
 
+/**
+ * Resolve the value for `$absoluteFilePath`. When a fully resolved absolute
+ * path is provided, use it. Otherwise warn and fall back to the vault-relative
+ * `item.path` so the placeholder still expands to something rather than the
+ * literal `$absoluteFilePath`.
+ */
+function resolveAbsoluteFilePath(item: WorkItem, absolutePath?: string): string {
+  if (absolutePath) {
+    return absolutePath;
+  }
+  console.warn(
+    `[work-terminal] $absoluteFilePath requested but no absolute path available for item "${item.id}"; falling back to vault-relative path "${item.path}".`,
+  );
+  return item.path;
+}
+
+/**
+ * Build the additional agent context prompt from the user-configured template.
+ *
+ * Supported placeholders:
+ * - $title             - Work item title
+ * - $state             - Work item state (e.g. "priority", "active")
+ * - $filePath          - Work item file path (vault-relative)
+ * - $absoluteFilePath  - Fully resolved absolute filesystem path to the work item file.
+ *                        Falls back to the vault-relative `item.path` (with a console warning)
+ *                        when no `fullPath` is supplied.
+ * - $id                - Work item UUID
+ */
 export function buildAgentContextPrompt(
   item: WorkItem,
   settings: Record<string, unknown>,
@@ -21,11 +49,14 @@ export function buildAgentContextPrompt(
     return null;
   }
 
+  const needsAbsolute = /\$absoluteFilePath/.test(template);
+  const absolute = needsAbsolute ? resolveAbsoluteFilePath(item, fullPath) : item.path;
+
   return template
-    .replace(/\$absoluteFilePath/g, fullPath ?? item.path)
+    .replace(/\$absoluteFilePath/g, absolute)
     .replace(/\$title/g, item.title)
     .replace(/\$state/g, item.state)
-    .replace(/\$filePath/g, fullPath ?? item.path)
+    .replace(/\$filePath/g, item.path)
     .replace(/\$id/g, item.id);
 }
 
@@ -38,7 +69,9 @@ export const buildClaudeContextPrompt = buildAgentContextPrompt;
  * - $title             - Work item title
  * - $state             - Work item state (e.g. "priority", "active")
  * - $filePath          - Work item file path (vault-relative)
- * - $absoluteFilePath  - Fully resolved absolute filesystem path to the work item file
+ * - $absoluteFilePath  - Fully resolved absolute filesystem path to the work item file.
+ *                        Falls back to the vault-relative `item.path` (with a console warning)
+ *                        when no `absoluteFilePath` is supplied.
  * - $id                - Work item UUID
  * - $sessionId         - Agent session ID (may be a literal "$sessionId" when deferred)
  * - $workTerminalPrompt - The fully assembled context prompt string, when provided via
@@ -55,9 +88,12 @@ export function expandProfilePlaceholders(
   contextPrompt?: string,
   absoluteFilePath?: string,
 ): string {
+  const needsAbsolute = /\$absoluteFilePath/.test(template);
+  const absolute = needsAbsolute ? resolveAbsoluteFilePath(item, absoluteFilePath) : item.path;
+
   return template
     .replace(/\$workTerminalPrompt/g, contextPrompt ?? "")
-    .replace(/\$absoluteFilePath/g, absoluteFilePath ?? item.path)
+    .replace(/\$absoluteFilePath/g, absolute)
     .replace(/\$title/g, item.title)
     .replace(/\$state/g, item.state)
     .replace(/\$filePath/g, item.path)

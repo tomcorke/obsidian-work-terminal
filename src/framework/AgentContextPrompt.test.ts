@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkItem } from "../core/interfaces";
 import {
   buildAgentContextPrompt,
@@ -17,6 +17,16 @@ const item: WorkItem = {
 };
 
 describe("buildAgentContextPrompt", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   it("uses the fresh template when available", () => {
     const prompt = buildAgentContextPrompt(item, {
       "core.additionalAgentContext": "Task: $title\nState: $state\nPath: $filePath\nId: $id",
@@ -27,7 +37,7 @@ describe("buildAgentContextPrompt", () => {
     );
   });
 
-  it("uses the resolved absolute path when provided", () => {
+  it("keeps $filePath vault-relative even when a fullPath is provided", () => {
     const prompt = buildAgentContextPrompt(
       item,
       {
@@ -36,10 +46,10 @@ describe("buildAgentContextPrompt", () => {
       "/vault/2 - Areas/Tasks/priority/task.md",
     );
 
-    expect(prompt).toBe("Path: /vault/2 - Areas/Tasks/priority/task.md");
+    expect(prompt).toBe("Path: 2 - Areas/Tasks/priority/task.md");
   });
 
-  it("expands $absoluteFilePath to the resolved absolute path", () => {
+  it("expands $filePath and $absoluteFilePath to distinct values when both are meaningful", () => {
     const prompt = buildAgentContextPrompt(
       item,
       {
@@ -49,16 +59,39 @@ describe("buildAgentContextPrompt", () => {
     );
 
     expect(prompt).toBe(
-      "Abs: /vault/2 - Areas/Tasks/priority/task.md\nRel: /vault/2 - Areas/Tasks/priority/task.md",
+      "Abs: /vault/2 - Areas/Tasks/priority/task.md\nRel: 2 - Areas/Tasks/priority/task.md",
     );
   });
 
-  it("falls back to item.path for $absoluteFilePath when no fullPath provided", () => {
+  it("expands $absoluteFilePath to the provided fullPath", () => {
+    const prompt = buildAgentContextPrompt(
+      item,
+      {
+        "core.additionalAgentContext": "Abs: $absoluteFilePath",
+      },
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+
+    expect(prompt).toBe("Abs: /vault/2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to item.path for $absoluteFilePath and warns when no fullPath is provided", () => {
     const prompt = buildAgentContextPrompt(item, {
       "core.additionalAgentContext": "Abs: $absoluteFilePath",
     });
 
     expect(prompt).toBe("Abs: 2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("$absoluteFilePath");
+  });
+
+  it("does not warn about absolute fallback when the template does not reference $absoluteFilePath", () => {
+    buildAgentContextPrompt(item, {
+      "core.additionalAgentContext": "Task: $title\nPath: $filePath",
+    });
+
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("treats an explicitly cleared template as unavailable", () => {
@@ -96,6 +129,16 @@ describe("buildAgentContextPrompt", () => {
 });
 
 describe("expandProfilePlaceholders", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   it("expands $title, $state, $filePath, $id", () => {
     const result = expandProfilePlaceholders(
       "--title $title --state $state --path $filePath --id $id",
@@ -158,6 +201,17 @@ describe("expandProfilePlaceholders", () => {
     expect(result).toBe("--verbose --model opus");
   });
 
+  it("keeps $filePath vault-relative even when an absolute path is provided", () => {
+    const result = expandProfilePlaceholders(
+      "--path $filePath",
+      item,
+      "sess-abc",
+      undefined,
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+    expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
+  });
+
   it("expands $absoluteFilePath when provided", () => {
     const result = expandProfilePlaceholders(
       "--path $absoluteFilePath",
@@ -167,14 +221,22 @@ describe("expandProfilePlaceholders", () => {
       "/vault/2 - Areas/Tasks/priority/task.md",
     );
     expect(result).toBe("--path /vault/2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it("falls back to item.path for $absoluteFilePath when not provided", () => {
+  it("falls back to item.path for $absoluteFilePath and warns when not provided", () => {
     const result = expandProfilePlaceholders("--path $absoluteFilePath", item, "sess-abc");
     expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("$absoluteFilePath");
   });
 
-  it("expands $absoluteFilePath and $filePath independently", () => {
+  it("does not warn about absolute fallback when the template does not reference $absoluteFilePath", () => {
+    expandProfilePlaceholders("--path $filePath", item, "sess-abc");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath and $filePath to distinct values when both are meaningful", () => {
     const result = expandProfilePlaceholders(
       "--abs $absoluteFilePath --rel $filePath",
       item,
@@ -189,14 +251,14 @@ describe("expandProfilePlaceholders", () => {
 
   it("expands $absoluteFilePath alongside all other placeholders", () => {
     const result = expandProfilePlaceholders(
-      "--title $title --abs $absoluteFilePath --id $id --session $sessionId",
+      "--title $title --abs $absoluteFilePath --rel $filePath --id $id --session $sessionId",
       item,
       "sess-abc",
       undefined,
       "/vault/task.md",
     );
     expect(result).toBe(
-      "--title Fix prompt sync --abs /vault/task.md --id task-123 --session sess-abc",
+      "--title Fix prompt sync --abs /vault/task.md --rel 2 - Areas/Tasks/priority/task.md --id task-123 --session sess-abc",
     );
   });
 });
