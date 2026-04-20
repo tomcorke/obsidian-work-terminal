@@ -9,6 +9,7 @@ import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate
 import type { SplitSource, EnrichmentMeta } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
 import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
+import { writeEnrichmentLog, type EnrichmentLogParams } from "./EnrichmentLogger";
 
 /**
  * Find a vault file by its frontmatter UUID. Scans all markdown files under
@@ -100,6 +101,31 @@ export interface ItemCreatedResult {
   enrichmentDone: Promise<void>;
 }
 
+/**
+ * Resolve whether enrichment-failure logging is enabled. Defaults to `true`
+ * so users benefit from the log files even without opting in explicitly.
+ */
+function isEnrichmentLoggingEnabled(settings: Record<string, any>): boolean {
+  return settings["core.enrichmentLogging"] !== false;
+}
+
+/**
+ * Dispatch an enrichment failure log write. Never throws; callers treat
+ * logging as a pure side-effect that must not interfere with the ordinary
+ * failure-handling flow (marking the task as failed, notifying the user).
+ */
+function logEnrichmentFailure(
+  app: App,
+  settings: Record<string, any>,
+  params: EnrichmentLogParams,
+): void {
+  if (!isEnrichmentLoggingEnabled(settings)) return;
+  // Fire-and-forget: writeEnrichmentLog itself swallows adapter errors.
+  void writeEnrichmentLog(app, params).catch((err) => {
+    console.error("[work-terminal] Unexpected enrichment log failure:", err);
+  });
+}
+
 /** Resolved enrichment profile data passed by the adapter. */
 export interface EnrichmentProfileOverride {
   command: string;
@@ -187,6 +213,21 @@ export async function handleItemCreated(
         })
       : spawnHeadlessClaude(enrichPrompt!, enrichCwd!, claudeCommand, claudeExtraArgs, timeoutMs!);
 
+  // Common metadata captured once so every failure branch can attach it to
+  // the log entry without recomputing.
+  const logBase: Omit<EnrichmentLogParams, "category" | "summary"> = {
+    itemId: id,
+    filePath,
+    originalFilename: filename,
+    titleHint: title,
+    prompt: enrichPrompt,
+    command: claudeCommand,
+    args: claudeExtraArgs,
+    cwd: enrichCwd,
+    agentName: profileOverride?.agentName || "claude",
+    timeoutMs,
+  };
+
   const enrichmentDone = spawnPromise.then(
     async (result) => {
       // Resolve current file location: original path may have changed if
@@ -197,12 +238,29 @@ export async function handleItemCreated(
       if (result.missingCli) {
         new Notice(result.stderr);
         console.warn("[work-terminal] Background enrich skipped:", result.stderr);
+        logEnrichmentFailure(app, settings, {
+          ...logBase,
+          filePath: currentPath,
+          category: "missing-cli",
+          summary: "Configured agent CLI could not be resolved",
+          stderr: result.stderr,
+          stdout: result.stdout,
+        });
         await markIngestionFailed(app, currentPath);
         return;
       }
       if (result.timedOut) {
         console.error(`[work-terminal] Background enrich timed out: ${currentPath}`, result.stderr);
         new Notice("Background enrichment timed out. Right-click the card to retry.", 8000);
+        logEnrichmentFailure(app, settings, {
+          ...logBase,
+          filePath: currentPath,
+          category: "timeout",
+          summary: result.stderr || "Headless agent timed out",
+          stderr: result.stderr,
+          stdout: result.stdout,
+          exitCode: result.exitCode,
+        });
         await markIngestionFailed(app, currentPath);
         return;
       }
@@ -212,6 +270,16 @@ export async function handleItemCreated(
           console.error(
             `[work-terminal] Background enrich exited 0 but reported: ${silentFailure}`,
           );
+          logEnrichmentFailure(app, settings, {
+            ...logBase,
+            filePath: currentPath,
+            category: "silent-failure",
+            summary: `Exit 0 but stdout reported: ${silentFailure}`,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: 0,
+            adapterValidation: silentFailure,
+          });
           await markIngestionFailed(app, currentPath);
           return;
         }
@@ -234,6 +302,16 @@ export async function handleItemCreated(
               `[work-terminal] Task moved during enrichment: ${filePath} -> ${currentPath}. Marking for retry.`,
             );
             new Notice("Task was moved during enrichment. Right-click the card to retry.", 8000);
+            logEnrichmentFailure(app, settings, {
+              ...logBase,
+              filePath: currentPath,
+              category: "moved-during-enrichment",
+              summary: `Task moved during enrichment: ${filePath} -> ${currentPath}`,
+              stdout: result.stdout,
+              stderr: result.stderr,
+              exitCode: 0,
+              adapterValidation: `original=${filePath} current=${currentPath}`,
+            });
             await markIngestionFailed(app, currentPath);
             return;
           }
@@ -248,6 +326,16 @@ export async function handleItemCreated(
           console.warn(
             `[work-terminal] Background enrich exited 0 but pending file was not renamed: ${filePath}`,
           );
+          logEnrichmentFailure(app, settings, {
+            ...logBase,
+            filePath,
+            category: "pending-not-renamed",
+            summary: "Exit 0 but pending file was not renamed by the agent",
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: 0,
+            adapterValidation: "pending file still exists on disk after exit 0",
+          });
           await markIngestionFailed(app, filePath);
           return;
         }
@@ -258,13 +346,33 @@ export async function handleItemCreated(
           result.stderr.slice(0, 500),
         );
         new Notice("Background enrichment failed. Right-click the card to retry.", 8000);
+        logEnrichmentFailure(app, settings, {
+          ...logBase,
+          filePath: currentPath,
+          category: "non-zero-exit",
+          summary: `Agent exited with code ${result.exitCode}`,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        });
         await markIngestionFailed(app, currentPath);
       }
     },
     async (err) => {
       console.error("[work-terminal] Background enrich error:", err);
       const currentFile = resolveFileByPathOrUuid(app, filePath, id, basePath);
-      await markIngestionFailed(app, currentFile?.path ?? filePath);
+      const resolvedPath = currentFile?.path ?? filePath;
+      logEnrichmentFailure(app, settings, {
+        ...logBase,
+        filePath: resolvedPath,
+        category: "spawn-error",
+        summary:
+          err instanceof Error
+            ? `Spawn rejected: ${err.message}`
+            : `Spawn rejected: ${String(err)}`,
+        error: err,
+      });
+      await markIngestionFailed(app, resolvedPath);
     },
   );
 

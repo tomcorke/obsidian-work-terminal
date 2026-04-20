@@ -37,6 +37,7 @@ interface CoreSettings {
   "core.defaultTerminalCwd": string;
   "core.exposeDebugApi": boolean;
   "core.keepSessionsAlive": boolean;
+  "core.enrichmentLogging": boolean;
   "core.cardDisplayMode": CardDisplayMode;
   "core.viewMode": ViewMode;
   "core.recentThreshold": RecentThreshold;
@@ -60,6 +61,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.defaultTerminalCwd": "~",
   "core.exposeDebugApi": false,
   "core.keepSessionsAlive": true,
+  "core.enrichmentLogging": true,
   "core.cardDisplayMode": "standard",
   "core.viewMode": "kanban",
   "core.recentThreshold": "3h",
@@ -142,6 +144,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "core.keepSessionsAlive",
       "Keep sessions alive when tab is closed",
       "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state.",
+    );
+    this.addCoreToggle(
+      containerEl,
+      "core.enrichmentLogging",
+      "Enrichment failure logs",
+      "When a background enrichment attempt fails, write a detailed log file (prompt, agent stdout/stderr, error details) to the plugin's logs/ directory. Logs older than 7 days are auto-pruned and only the 50 most recent are retained. Logs may contain task content and agent output - see the user guide for details.",
     );
     this.addCoreDropdown(
       containerEl,
