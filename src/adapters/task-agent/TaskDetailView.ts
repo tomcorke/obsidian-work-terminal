@@ -59,11 +59,11 @@ export class TaskDetailView {
         // standard "open file" behaviour and does not split or create tabs.
         const activeLeaf = this.app.workspace.getLeaf(false);
         if (!activeLeaf) return;
-        // Treat the active leaf as not-owned so we don't detach user state.
+        // Don't track navigate-mode leaves: keeps split/tab placements from
+        // adopting user leaves later via findEditorLeaves's path-based match.
         this.editorLeaf = activeLeaf;
         this.leafIsOwned = false;
         await activeLeaf.openFile(file);
-        this.openedPaths.add(item.path);
         return;
       }
 
