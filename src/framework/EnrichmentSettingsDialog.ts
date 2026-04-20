@@ -100,6 +100,7 @@ export class EnrichmentSettingsDialog extends Modal {
       settings,
     );
     this.renderProfileDropdown(containerEl, settings);
+    this.renderRetryProfileDropdown(containerEl, settings);
     this.renderTimeoutField(containerEl, settings);
     this.renderPreviewPanel(containerEl, settings);
   }
@@ -236,6 +237,39 @@ export class EnrichmentSettingsDialog extends Modal {
         dropdown.setValue(value).onChange(async (newValue) => {
           await this.saveSettings((s) => {
             s["adapter.enrichmentProfile"] = newValue;
+          });
+        });
+      });
+  }
+
+  /**
+   * Render the Retry enrichment profile dropdown. Lives alongside the main
+   * enrichment profile so users can configure everything enrichment-related
+   * in one place (issue #464). Only Claude-family profiles are surfaced
+   * because the Retry Enrichment action launches through spawnClaudeWithPrompt
+   * which rejects non-Claude profiles at launch time.
+   */
+  private renderRetryProfileDropdown(
+    containerEl: HTMLElement,
+    settings: Record<string, unknown>,
+  ): void {
+    const value = (settings["adapter.retryEnrichmentProfile"] as string) || "";
+    const claudeProfiles = this.profileManager.getProfilesByType("claude");
+    new Setting(containerEl)
+      .setName("Retry enrichment profile")
+      .setDesc(
+        "Profile used when re-running enrichment from the card context menu. " +
+          "Default: the background enrichment profile above if set, otherwise " +
+          "the built-in Claude (ctx) profile.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Default (see description)");
+        for (const profile of claudeProfiles) {
+          dropdown.addOption(profile.id, profile.name);
+        }
+        dropdown.setValue(value).onChange(async (newValue) => {
+          await this.saveSettings((s) => {
+            s["adapter.retryEnrichmentProfile"] = newValue;
           });
         });
       });
