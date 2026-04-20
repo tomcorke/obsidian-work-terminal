@@ -2295,13 +2295,6 @@ button.wt-spawn-claude-ctx:hover svg {
   margin-bottom: 12px;
 }
 
-.wt-enrichment-dialog__placeholder {
-  color: var(--text-muted);
-  font-style: italic;
-  text-align: center;
-  padding: 16px 0;
-}
-
 .wt-enrichment-dialog__actions {
   display: flex;
   justify-content: flex-end;
