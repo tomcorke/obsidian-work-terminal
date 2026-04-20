@@ -83,10 +83,18 @@ export function resolveRetryEnrichmentProfile(
  *  Avoids spamming the console on every context-menu open. */
 let warnedNonClaudeConfig = false;
 
-function isClaudeProfile(profile: AgentProfile): boolean {
-  // Split Task / Retry Enrichment launch through spawnClaudeWithPrompt, which
-  // assumes the Claude agent type. Keep this check aligned with the AgentType
-  // enum in AgentProfile.ts - only claude-family profiles are accepted.
+/**
+ * Identifies Claude-family profiles (agentType === "claude").
+ *
+ * Split Task / Retry Enrichment launch through spawnClaudeWithPrompt, which
+ * assumes the Claude agent type. Keep this check aligned with the AgentType
+ * enum in AgentProfile.ts - only claude-family profiles are accepted.
+ *
+ * Exported because AgentProfileManagerModal uses the same definition to guard
+ * against deleting the last Claude profile - the two call sites must agree
+ * on what "Claude profile" means.
+ */
+export function isClaudeProfile(profile: AgentProfile): boolean {
   return profile.agentType === "claude";
 }
 

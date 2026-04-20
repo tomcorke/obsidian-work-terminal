@@ -7,6 +7,35 @@ import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import { AgentProfileEditModal } from "./AgentProfileModal";
 import { electronRequire, isValidCssColor } from "../core/utils";
+import { isClaudeProfile } from "./splitTaskProfile";
+
+export const LAST_CLAUDE_PROFILE_DELETE_REASON =
+  "At least one Claude profile must remain - required for Split Task and Retry Enrichment.";
+
+/**
+ * Build a delete guard for the edit modal. Blocks deletion when removing the
+ * profile would leave zero Claude-family profiles in the list, since Split
+ * Task and Retry Enrichment both require a Claude profile to resolve at the
+ * end of their fallback chain (see splitTaskProfile.ts).
+ *
+ * Non-Claude profiles can always be deleted - they never count towards the
+ * Claude-profile minimum.
+ *
+ * Exported so unit tests can exercise the guard logic without mounting the
+ * modal DOM.
+ */
+export function buildLastClaudeDeleteGuard(
+  allProfiles: AgentProfile[],
+): (profile: AgentProfile) => string | null {
+  return (profile) => {
+    if (!isClaudeProfile(profile)) return null;
+    const claudeCount = allProfiles.filter(isClaudeProfile).length;
+    if (claudeCount <= 1) {
+      return LAST_CLAUDE_PROFILE_DELETE_REASON;
+    }
+    return null;
+  };
+}
 
 const AGENT_TYPE_LABELS: Record<string, string> = {
   claude: "Claude",
@@ -163,6 +192,9 @@ export class AgentProfileManagerModal extends Modal {
           this.render();
         },
         this.adapterPromptDescription,
+        // Evaluate against the current profile list so a user who has just
+        // added or removed a Claude profile gets the up-to-date guard state.
+        buildLastClaudeDeleteGuard(this.manager.getProfiles()),
       ).open();
     });
   }

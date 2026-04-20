@@ -73,6 +73,15 @@ export class AgentProfileEditModal extends Modal {
     private onSave: (profile: AgentProfile) => void,
     private onDelete?: (id: string) => void,
     private adapterPromptDescription?: string,
+    /**
+     * Optional guard invoked when rendering the Delete button. When it returns
+     * a non-empty string the button is disabled, the string is used as the
+     * hover tooltip, and clicking it (defensively) surfaces a Notice with the
+     * same reason. Returning null means deletion is allowed. The guard is
+     * evaluated lazily at render time so the caller can reflect the current
+     * state of the profile list (e.g. "this is the last Claude profile").
+     */
+    private deleteGuard?: (profile: AgentProfile) => string | null,
   ) {
     super(app);
     this.isNew = !profile;
@@ -296,12 +305,25 @@ export class AgentProfileEditModal extends Modal {
 
     if (!this.isNew && this.onDelete) {
       const deleteBtn = buttons.createEl("button", { text: "Delete", cls: "mod-warning" });
-      deleteBtn.addEventListener("click", () => {
-        if (confirm(`Delete profile "${this.draft.name}"?`)) {
-          this.onDelete!(this.draft.id);
-          this.close();
-        }
-      });
+      const blockedReason = this.deleteGuard ? this.deleteGuard(this.draft) : null;
+      if (blockedReason) {
+        // Greyed-out state + tooltip - matches the reorder-button UX pattern
+        // used in AgentProfileManagerModal. A defensive click handler still
+        // surfaces a Notice so users who bypass the disabled state (e.g.
+        // keyboard Enter on a focused button) get the same explanation.
+        deleteBtn.disabled = true;
+        deleteBtn.title = blockedReason;
+        deleteBtn.addEventListener("click", () => {
+          new Notice(blockedReason);
+        });
+      } else {
+        deleteBtn.addEventListener("click", () => {
+          if (confirm(`Delete profile "${this.draft.name}"?`)) {
+            this.onDelete!(this.draft.id);
+            this.close();
+          }
+        });
+      }
     }
 
     // Spacer
