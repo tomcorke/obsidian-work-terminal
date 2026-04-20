@@ -31,9 +31,10 @@
  *
  * To keep this invariant obvious and impossible to accidentally break:
  *
- *   - `display()` is the ONLY method that calls `this.plugin.loadData()`.
- *     It loads once at the top, builds a `settings` snapshot, then passes
- *     that snapshot into every render helper synchronously.
+ *   - No private render helper calls `loadData()`; the render pass loads
+ *     once via `display()` / `loadSnapshotAndRender()`, builds a
+ *     `settings` snapshot, then passes that snapshot into every render
+ *     helper synchronously.
  *
  *   - Every private render helper is SYNCHRONOUS and receives the
  *     pre-loaded `settings` object as a parameter. Helpers must not
@@ -191,8 +192,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // still awaiting loadData(), the newer pass will bump renderSeq,
     // and the older pass will bail out on resume.
     const seq = ++this.renderSeq;
-    // Kick off the single load. The renderWithSnapshot callback runs in
-    // one synchronous block once data has resolved.
+    // Kick off the single load. `loadSnapshotAndRender()` runs in one
+    // synchronous block once data has resolved.
     void this.loadSnapshotAndRender(seq);
   }
 
