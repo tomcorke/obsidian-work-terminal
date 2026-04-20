@@ -132,13 +132,14 @@ export function resolveSplitTaskCwd(
 
 /**
  * Return the parent directory portion of an absolute path, or null if the
- * path has no separator. Uses a simple string split so this stays
- * platform-independent for unit tests (Node's path.dirname differs on win32,
- * which we do not support, but keeping this plain avoids a module import).
+ * path has no usable separator. Handles both POSIX (`/`) and Windows/UNC
+ * (`\`) separators so it behaves correctly regardless of how the vault
+ * adapter reports its base path. Uses a simple string split so this stays
+ * dependency-free and trivially unit-testable.
  */
 function parentDirectory(absPath: string): string | null {
-  const trimmed = absPath.replace(/\/+$/, "");
-  const idx = trimmed.lastIndexOf("/");
+  const trimmed = absPath.replace(/[\\/]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   if (idx <= 0) return null;
   return trimmed.slice(0, idx);
 }

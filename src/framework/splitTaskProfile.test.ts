@@ -143,4 +143,21 @@ describe("resolveSplitTaskCwd", () => {
     });
     expect(cwd).toBe("~/work");
   });
+
+  it("extracts the parent from a Windows-style path using backslashes", () => {
+    const cwd = resolveSplitTaskCwd(claude, "C:\\vault\\tasks\\todo\\foo.md", {});
+    expect(cwd).toBe("C:\\vault\\tasks\\todo");
+  });
+
+  it("extracts the parent from a UNC path", () => {
+    const cwd = resolveSplitTaskCwd(claude, "\\\\server\\share\\tasks\\foo.md", {});
+    expect(cwd).toBe("\\\\server\\share\\tasks");
+  });
+
+  it("strips trailing separators before splitting (POSIX and Windows)", () => {
+    const posix = resolveSplitTaskCwd(claude, "/vault/tasks/todo/foo.md///", {});
+    expect(posix).toBe("/vault/tasks/todo");
+    const windows = resolveSplitTaskCwd(claude, "C:\\vault\\tasks\\todo\\foo.md\\\\", {});
+    expect(windows).toBe("C:\\vault\\tasks\\todo");
+  });
 });
