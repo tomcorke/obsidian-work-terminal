@@ -228,7 +228,7 @@ The **Placement** dropdown offers four strategies:
 
 - **Split (default)** - create a new split beside the Work Terminal view and apply the min-width override so the editor does not squish. Best when Work Terminal sits in its own tab group.
 - **Tab in active group** - open the task file as a new tab in the currently active tab group, with no splitting and no width override. Best when Work Terminal lives in a tab group alongside other files and you want the detail view to behave like any other tab.
-- **Navigate active leaf** - replace the contents of the active leaf, matching Obsidian's standard "open file" behaviour. No new tabs or splits are created.
+- **Navigate active leaf** - open the task file in the most recent editor leaf that is not the Work Terminal view, falling back to a new tab if no suitable leaf exists. Does not replace the Work Terminal view itself. No new tabs or splits are created when a suitable editor leaf is already open.
 - **Disabled** - do nothing on selection. Useful if you prefer to open files manually via the file explorer, quick switcher, or Obsidian's hover preview, or if you only need the terminal side of Work Terminal.
 
 Additional options shape the behaviour:

@@ -1,6 +1,8 @@
 import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import type { WorkItem } from "../../core/interfaces";
 import { DETAIL_VIEW_DEFAULTS, type DetailViewOptions } from "../../core/detailViewPlacement";
+import { VIEW_TYPE } from "../../framework/PluginBase";
+import { findNavigateTargetLeaf } from "./findNavigateTargetLeaf";
 
 export class TaskDetailView {
   private editorLeaf: WorkspaceLeaf | null = null;
@@ -62,15 +64,31 @@ export class TaskDetailView {
       this.lastItemId = item.id;
 
       if (options.placement === "navigate") {
-        // Replace the contents of the active leaf. This matches Obsidian's
-        // standard "open file" behaviour and does not split or create tabs.
-        const activeLeaf = this.app.workspace.getLeaf(false);
-        if (!activeLeaf) return;
-        // Don't track navigate-mode leaves: keeps split/tab placements from
-        // adopting user leaves later via findEditorLeaves's path-based match.
-        this.editorLeaf = activeLeaf;
-        this.leafIsOwned = false;
-        await activeLeaf.openFile(file);
+        // The click target is inside the Work Terminal ItemView, so a naive
+        // `getLeaf(false)` returns the Work Terminal leaf and `openFile`
+        // replaces the entire workspace with the task file (#457). Find the
+        // most recent editor leaf that is NOT Work Terminal; fall back to a
+        // fresh tab if none exists.
+
+        // Clean up any leaf we own from a previous placement (split/tab) so
+        // it doesn't linger in the workspace. Doing this before opening the
+        // file also means `this.editorLeaf`/`this.leafIsOwned` are cleared,
+        // so a later switch back to split/tab won't short-circuit in
+        // `ensureEditorLeaf`/`ensureTabLeaf` and try to reuse the user leaf
+        // we're about to open the task file in.
+        this.detachLeaf();
+
+        let targetLeaf = findNavigateTargetLeaf(this.app, VIEW_TYPE);
+        if (!targetLeaf) {
+          targetLeaf = this.app.workspace.getLeaf("tab");
+        }
+        if (!targetLeaf) return;
+        // Deliberately do NOT assign `this.editorLeaf` / `this.leafIsOwned`
+        // here: the target is a user leaf we've adopted for this single
+        // openFile call. Tracking it would let a subsequent split/tab
+        // placement short-circuit its ensureXxxLeaf() check and overwrite
+        // the user's leaf content. Also don't add the path to `openedPaths`.
+        await targetLeaf.openFile(file);
         return;
       }
 
