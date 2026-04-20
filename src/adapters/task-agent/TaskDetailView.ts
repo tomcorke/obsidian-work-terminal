@@ -69,17 +69,25 @@ export class TaskDetailView {
         // replaces the entire workspace with the task file (#457). Find the
         // most recent editor leaf that is NOT Work Terminal; fall back to a
         // fresh tab if none exists.
+
+        // Clean up any leaf we own from a previous placement (split/tab) so
+        // it doesn't linger in the workspace. Doing this before opening the
+        // file also means `this.editorLeaf`/`this.leafIsOwned` are cleared,
+        // so a later switch back to split/tab won't short-circuit in
+        // `ensureEditorLeaf`/`ensureTabLeaf` and try to reuse the user leaf
+        // we're about to open the task file in.
+        this.detachLeaf();
+
         let targetLeaf = findNavigateTargetLeaf(this.app, VIEW_TYPE);
         if (!targetLeaf) {
           targetLeaf = this.app.workspace.getLeaf("tab");
         }
         if (!targetLeaf) return;
-        // Don't track navigate-mode leaves: keeps split/tab placements from
-        // adopting user leaves later via findEditorLeaves's path-based match.
-        // Also don't add the path to openedPaths - these are user leaves, not
-        // owned by us.
-        this.editorLeaf = targetLeaf;
-        this.leafIsOwned = false;
+        // Deliberately do NOT assign `this.editorLeaf` / `this.leafIsOwned`
+        // here: the target is a user leaf we've adopted for this single
+        // openFile call. Tracking it would let a subsequent split/tab
+        // placement short-circuit its ensureXxxLeaf() check and overwrite
+        // the user's leaf content. Also don't add the path to `openedPaths`.
         await targetLeaf.openFile(file);
         return;
       }
