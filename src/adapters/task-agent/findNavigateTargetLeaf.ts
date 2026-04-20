@@ -51,11 +51,13 @@ export function findNavigateTargetLeaf(
     return typeof t === "number" ? t : 0;
   };
 
-  // 1. Active leaf shortcut. If the user has focused a non-WT leaf we already
-  //    have our answer, regardless of whether it is markdown or something
-  //    else - matches "replace active leaf" semantics for non-WT cases.
+  // 1. Active leaf shortcut. If the user has focused a non-WT editor leaf
+  //    (markdown or empty) we already have our answer. Non-editor active
+  //    leaves like file-explorer/outline/search are skipped so we don't
+  //    replace a sidebar/utility pane with the task file - fall through to
+  //    the recency-based search instead.
   const activeLeaf = workspace.activeLeaf ?? null;
-  if (activeLeaf && !isWorkTerminal(activeLeaf)) {
+  if (activeLeaf && !isWorkTerminal(activeLeaf) && isEditorLeaf(activeLeaf)) {
     return activeLeaf;
   }
 

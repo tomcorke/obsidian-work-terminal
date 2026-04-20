@@ -113,6 +113,29 @@ describe("findNavigateTargetLeaf", () => {
     expect(findNavigateTargetLeaf(app, WT)).toBeNull();
   });
 
+  it("skips a non-editor active leaf (file-explorer) and falls through to the recent markdown leaf", () => {
+    const sidebar = leaf("file-explorer", 500);
+    const mdOld = leaf("markdown", 50);
+    const mdNew = leaf("markdown", 150);
+    const root = split(sidebar, mdOld, mdNew);
+    const app = makeApp({ activeLeaf: sidebar, rootSplit: root });
+
+    // file-explorer active leaf must NOT be returned - we'd replace the
+    // sidebar with the task file otherwise. Fall through to the recent
+    // markdown leaf instead.
+    expect(findNavigateTargetLeaf(app, WT)).toBe(mdNew);
+  });
+
+  it("skips a non-editor active leaf (outline) even when no markdown leaves exist", () => {
+    const outline = leaf("outline", 500);
+    const wt = leaf(WT, 100);
+    const root = split(outline, wt);
+    const app = makeApp({ activeLeaf: outline, rootSplit: root });
+
+    // No editor leaves at all, so returns null - caller will open a new tab.
+    expect(findNavigateTargetLeaf(app, WT)).toBeNull();
+  });
+
   it("returns null when only Work Terminal leaves exist", () => {
     const wt1 = leaf(WT, 100);
     const wt2 = leaf(WT, 200);
