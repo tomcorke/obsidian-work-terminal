@@ -12,18 +12,54 @@ export function getAgentContextTemplate(settings: Record<string, unknown>): stri
 export const getClaudeContextTemplate = getAgentContextTemplate;
 
 /**
+ * Check whether a path is actually absolute in any common form we might
+ * encounter at runtime. We intentionally accept POSIX, Windows drive letter,
+ * and UNC style paths regardless of the current platform - the Obsidian
+ * renderer might be asked to format paths from a different OS convention,
+ * and it's cheap to be permissive here.
+ */
+function isAbsolutePath(candidate: string): boolean {
+  // POSIX absolute ("/foo") and POSIX-style UNC ("//server/share").
+  if (candidate.startsWith("/")) {
+    return true;
+  }
+  // Windows UNC ("\\\\server\\share") and Windows root ("\\foo").
+  if (candidate.startsWith("\\")) {
+    return true;
+  }
+  // Windows drive letter ("C:/foo" or "C:\\foo").
+  if (/^[a-zA-Z]:[\\/]/.test(candidate)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Resolve the value for `$absoluteFilePath`. When a fully resolved absolute
  * path is provided, use it. Otherwise warn and fall back to the vault-relative
  * `item.path` so the placeholder still expands to something rather than the
  * literal `$absoluteFilePath`.
+ *
+ * Callers occasionally can't resolve the vault base path (e.g.
+ * `TerminalPanelView.resolveWorkItemPath` returns `itemPath` unchanged when
+ * `vaultPath` is empty), which would hand us a vault-relative string even
+ * though the parameter is typed as the absolute path. Validate the shape of
+ * the input and treat non-absolute values the same as if nothing was
+ * provided - warn and fall back to `item.path`.
  */
 function resolveAbsoluteFilePath(item: WorkItem, absolutePath?: string): string {
-  if (absolutePath) {
+  if (absolutePath && isAbsolutePath(absolutePath)) {
     return absolutePath;
   }
-  console.warn(
-    `[work-terminal] $absoluteFilePath requested but no absolute path available for item "${item.id}"; falling back to vault-relative path "${item.path}".`,
-  );
+  if (absolutePath) {
+    console.warn(
+      `[work-terminal] $absoluteFilePath requested but the supplied path "${absolutePath}" is not absolute for item "${item.id}"; falling back to vault-relative path "${item.path}".`,
+    );
+  } else {
+    console.warn(
+      `[work-terminal] $absoluteFilePath requested but no absolute path available for item "${item.id}"; falling back to vault-relative path "${item.path}".`,
+    );
+  }
   return item.path;
 }
 

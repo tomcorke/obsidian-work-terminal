@@ -86,6 +86,42 @@ describe("buildAgentContextPrompt", () => {
     expect(warnSpy.mock.calls[0][0]).toContain("$absoluteFilePath");
   });
 
+  it("falls back to item.path for $absoluteFilePath and warns when fullPath is not absolute", () => {
+    const prompt = buildAgentContextPrompt(
+      item,
+      {
+        "core.additionalAgentContext": "Abs: $absoluteFilePath",
+      },
+      "2 - Areas/Tasks/priority/task.md",
+    );
+
+    expect(prompt).toBe("Abs: 2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("not absolute");
+  });
+
+  it("accepts Windows drive letter and UNC absolute paths for $absoluteFilePath", () => {
+    const windowsPrompt = buildAgentContextPrompt(
+      item,
+      {
+        "core.additionalAgentContext": "Abs: $absoluteFilePath",
+      },
+      "C:\\vault\\task.md",
+    );
+    expect(windowsPrompt).toBe("Abs: C:\\vault\\task.md");
+
+    const uncPrompt = buildAgentContextPrompt(
+      item,
+      {
+        "core.additionalAgentContext": "Abs: $absoluteFilePath",
+      },
+      "//server/share/task.md",
+    );
+    expect(uncPrompt).toBe("Abs: //server/share/task.md");
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
   it("does not warn about absolute fallback when the template does not reference $absoluteFilePath", () => {
     buildAgentContextPrompt(item, {
       "core.additionalAgentContext": "Task: $title\nPath: $filePath",
@@ -229,6 +265,19 @@ describe("expandProfilePlaceholders", () => {
     expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0][0]).toContain("$absoluteFilePath");
+  });
+
+  it("falls back to item.path for $absoluteFilePath and warns when a relative path is provided", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "2 - Areas/Tasks/priority/task.md",
+    );
+    expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("not absolute");
   });
 
   it("does not warn about absolute fallback when the template does not reference $absoluteFilePath", () => {
