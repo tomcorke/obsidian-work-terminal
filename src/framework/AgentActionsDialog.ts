@@ -16,7 +16,8 @@
  *
  * The resolution chain (see splitTaskProfile.ts) means that leaving the
  * dropdown on "Default" still produces sensible behaviour: Split Task
- * falls back to the built-in Claude (ctx) profile.
+ * falls back to the built-in Claude-with-context profile, then to any
+ * remaining Claude-family profile.
  */
 import { App, Modal, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
@@ -80,7 +81,9 @@ export class AgentActionsDialog extends Modal {
       containerEl,
       "Split task profile",
       "Profile used when launching Claude for the Split Task context menu action. " +
-        "Default: the built-in Claude (ctx) profile, matching the 'Claude (ctx)' tab bar button.",
+        "Default: the first available Claude-family profile (preferring the built-in " +
+        "Claude-with-context profile when present). Renaming or deleting profiles does " +
+        "not break this binding - the fallback chain still resolves to any remaining Claude profile.",
       "adapter.splitTaskProfile",
       settings,
     );

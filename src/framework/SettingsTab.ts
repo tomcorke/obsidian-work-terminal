@@ -258,8 +258,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         .setName("Configure agent actions")
         .setDesc(
           "Open a dialog to bind agent profiles to adapter-driven actions " +
-            "(currently Split Task). Defaults follow the built-in 'Claude (ctx)' " +
-            "profile so users who never open this dialog still get profile-aware launches. " +
+            "(currently Split Task). Defaults fall back through the available Claude-family " +
+            "profiles so users who never open this dialog still get profile-aware launches. " +
             "The Retry Enrichment profile now lives in the Configure enrichment... dialog.",
         )
         .addButton((btn) =>
