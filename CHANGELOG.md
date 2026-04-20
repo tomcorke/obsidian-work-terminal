@@ -7,7 +7,7 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 ## [Unreleased]
 
 ### Added
-- Added diagnostic log files for failed background enrichment attempts. Each failure now writes a categorised log to `<vault>/.obsidian/plugins/work-terminal/logs/enrich-<ts>-<slug>.log` containing the enrichment prompt, agent stdout/stderr, exit code, adapter validation detail, and any JS error plus stack trace. Retention is 7 days / 50 files with auto-pruning on every write. Controlled by the new **Enrichment failure logs** toggle under Core settings (default: enabled). (#449)
+- Added diagnostic log files for failed background enrichment attempts. Each failure now writes a categorised log to `<vault>/<configDir>/plugins/work-terminal/logs/enrich-<ts>-<slug>.log` (usually `<vault>/.obsidian/plugins/work-terminal/logs/...`) containing the enrichment prompt, agent stdout/stderr, exit code, adapter validation detail, and any JS error plus stack trace. Retention is 7 days / 50 files with auto-pruning on every write. Controlled by the new **Enrichment failure logs** toggle under Core settings (default: enabled). (#449)
 
 ## [0.3.0] - 2026-04-17
 
