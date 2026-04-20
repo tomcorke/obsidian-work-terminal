@@ -252,7 +252,7 @@ describe("AgentProfileManager", () => {
     });
 
     it("resolves command for each agent type", () => {
-      for (const [agentType, settingKey, fallback] of [
+      for (const [agentType, settingKey, _fallback] of [
         ["claude", "core.claudeCommand", "claude"],
         ["copilot", "core.copilotCommand", "copilot"],
         ["strands", "core.strandsCommand", "strands"],

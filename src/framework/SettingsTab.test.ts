@@ -269,6 +269,7 @@ const adapter = {
     defaultSettings: {},
     itemName: "task",
   },
+  createPromptBuilder: () => null,
 } as any;
 
 const mockProfileManager = {

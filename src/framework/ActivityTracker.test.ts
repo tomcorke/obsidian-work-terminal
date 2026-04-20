@@ -9,8 +9,6 @@ import {
   thresholdToMs,
   ACTIVITY_BUCKETS,
   ACTIVITY_BUCKET_LABELS,
-  type RecentThreshold,
-  type ActivityBucket,
 } from "./ActivityTracker";
 
 describe("thresholdToMs", () => {

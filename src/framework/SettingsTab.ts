@@ -402,7 +402,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * agent context textarea, and buttons to the Background enrichment and
    * Agent actions dialogs.
    */
-  private renderAgentsSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
+  private renderAgentsSection(containerEl: HTMLElement, _settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "Agents" });
 
     // Profile Manager - first because it's the most frequent touchpoint.

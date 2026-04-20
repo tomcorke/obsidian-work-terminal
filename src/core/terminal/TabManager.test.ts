@@ -562,8 +562,7 @@ describe("TabManager - onProcessExit auto-close behaviour", () => {
     terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
     const baseTime = 1000000;
     // First call (spawnTime) returns baseTime, subsequent calls return 31s later
-    const nowMock = vi
-      .spyOn(Date, "now")
+    vi.spyOn(Date, "now")
       .mockReturnValueOnce(baseTime) // spawnTime in createTabForItem
       .mockReturnValue(baseTime + 31_000); // exit check in onProcessExit
 
@@ -580,8 +579,7 @@ describe("TabManager - onProcessExit auto-close behaviour", () => {
   it("keeps the tab open when a long-running process exits with non-zero code", () => {
     terminalTabMock.MockTerminalTab.constructorArgs.length = 0;
     const baseTime = 1000000;
-    const nowMock = vi
-      .spyOn(Date, "now")
+    vi.spyOn(Date, "now")
       .mockReturnValueOnce(baseTime)
       .mockReturnValue(baseTime + 31_000);
 
