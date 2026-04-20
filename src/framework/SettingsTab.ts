@@ -21,6 +21,7 @@ import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
 import { EnrichmentSettingsDialog } from "./EnrichmentSettingsDialog";
+import { AgentActionsDialog } from "./AgentActionsDialog";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
@@ -212,8 +213,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "enrichmentProfile",
       "enrichmentTimeout",
     ]);
+    // Agent-action profile bindings live behind a dedicated dialog (#448) so
+    // the main adapter section stays focused on adapter-intrinsic settings.
+    const agentActionsDialogKeys = new Set(["splitTaskProfile", "retryEnrichmentProfile"]);
     const hasEnrichmentSchema = schema.some((field) => enrichmentDialogKeys.has(field.key));
-    const nonEnrichmentSchema = schema.filter((field) => !enrichmentDialogKeys.has(field.key));
+    const hasAgentActionsSchema = schema.some((field) => agentActionsDialogKeys.has(field.key));
+    const nonEnrichmentSchema = schema.filter(
+      (field) => !enrichmentDialogKeys.has(field.key) && !agentActionsDialogKeys.has(field.key),
+    );
 
     if (hasEnrichmentSchema) {
       containerEl.createEl("h2", { text: "Background enrichment" });
@@ -244,6 +251,39 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
               // The enrichmentEnabled toggle is rendered both here and inside
               // the dialog. Re-render the settings tab after the dialog closes
               // so the two stay in sync if the user toggles inside the dialog.
+              const originalOnClose = dialog.onClose.bind(dialog);
+              dialog.onClose = () => {
+                originalOnClose();
+                this.display();
+              };
+              dialog.open();
+            }),
+        );
+    }
+
+    if (hasAgentActionsSchema) {
+      containerEl.createEl("h2", { text: "Agent actions" });
+      new Setting(containerEl)
+        .setName("Configure agent actions")
+        .setDesc(
+          "Open a dialog to bind agent profiles to adapter-driven actions " +
+            "(Split Task, Retry Enrichment). Defaults follow the built-in 'Claude (ctx)' " +
+            "profile so users who never open this dialog still get profile-aware launches.",
+        )
+        .addButton((btn) =>
+          btn
+            .setButtonText("Configure agent actions...")
+            .setCta()
+            .onClick(() => {
+              const dialog = new AgentActionsDialog(
+                this.app,
+                this.plugin,
+                this.adapter,
+                this.profileManager,
+              );
+              // Re-render the settings tab on close so any visible state (e.g.
+              // future inline summaries) stays in sync. Mirrors the
+              // EnrichmentSettingsDialog wrap-around pattern.
               const originalOnClose = dialog.onClose.bind(dialog);
               dialog.onClose = () => {
                 originalOnClose();
