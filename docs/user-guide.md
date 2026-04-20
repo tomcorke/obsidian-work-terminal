@@ -450,13 +450,18 @@ Type a lowercase identifier with hyphens (e.g. `review`, `blocked-upstream`, `te
 
 When enabled, new tasks created via the prompt box are automatically enriched by a headless agent session. The agent reads the task file and adds context, acceptance criteria, and other useful content.
 
-Configure under **Adapter** in settings:
+The **Enable background enrichment** toggle lives under the **Background enrichment** section in the main settings. The rest of the enrichment options live in a dedicated dialog opened by the **Configure enrichment...** button next to the toggle.
 
-- **Enable background enrichment** - toggle on/off
-- **Enrichment prompt** - custom prompt template sent to the agent. Use `{{FILE_PATH}}` as a placeholder for the task file path.
-- **Retry enrichment prompt** - separate prompt used when retrying via the context menu
+The dialog contains:
+
+- **Enable background enrichment** - toggle on/off (also shown on the main settings page)
+- **Enrichment prompt** - custom prompt template sent to the agent. Use `{{FILE_PATH}}` as a placeholder for the task file path. Leave blank to use the built-in default; the full default prompt is shown in a collapsible "View default prompt" block below the textarea so you can read it before deciding whether to override.
+- **Retry enrichment prompt** - separate prompt used when retrying via the context menu. Same placeholder and default-preview treatment as the enrichment prompt.
 - **Enrichment agent profile** - which agent profile to use (defaults to core Claude settings)
 - **Enrichment timeout** - maximum time in seconds before the enrichment process is killed (default: 300s / 5 minutes)
+- **Preview resolved prompt** - pick either prompt and click **Preview** to see the template with `{{FILE_PATH}}` substituted using the example path `vault/2 - Areas/Tasks/todo/example.md`. Useful for sanity-checking a customised prompt without creating a real task.
+
+Changes save as you type; there is no Save button. Close the dialog with **Done** when you are finished.
 
 Tasks being enriched show an "ingesting..." indicator on their card. If enrichment fails, a red "enrichment failed" badge appears, and the context menu offers a "Retry Enrichment" option.
 
@@ -621,11 +626,11 @@ These settings appear under the **Adapter** section and are specific to the task
 | Task base path | Vault path containing task folders | `2 - Areas/Tasks` |
 | State resolution strategy | How task state is determined (folder/frontmatter/composite) | `folder` |
 | Jira base URL | URL prefix for turning Jira keys into links (e.g. `https://your-org.atlassian.net/browse`) | (empty) |
-| Enable background enrichment | Auto-enrich new tasks via headless agent | `true` |
-| Enrichment prompt | Custom prompt template for enrichment | (default) |
-| Retry enrichment prompt | Custom prompt for retry enrichment | (default) |
-| Enrichment agent profile | Which profile to use for enrichment | Default |
-| Enrichment timeout | Max seconds for enrichment | 300 |
+| Enable background enrichment | Auto-enrich new tasks via headless agent. Top-level toggle; rest of the options live in **Configure enrichment...** dialog | `true` |
+| Enrichment prompt | Custom prompt template for enrichment (edit via **Configure enrichment...**) | (default) |
+| Retry enrichment prompt | Custom prompt for retry enrichment (edit via **Configure enrichment...**) | (default) |
+| Enrichment agent profile | Which profile to use for enrichment (edit via **Configure enrichment...**) | Default |
+| Enrichment timeout | Max seconds for enrichment (edit via **Configure enrichment...**) | 300 |
 | Show card indicators | Show metadata indicators on cards (source badges, priority scores, goal tags, card flags, indicator dots). See [Hiding card indicators](#hiding-card-indicators). | `true` |
 | Task card icons | Show icons on task cards | `false` |
 | Automatic icon mode | How automatic icons are assigned (none/source/state) | `none` |
