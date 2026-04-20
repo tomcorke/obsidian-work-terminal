@@ -138,7 +138,12 @@ export class EnrichmentSettingsDialog extends Modal {
     const output = section.createEl("pre", {
       cls: "wt-enrichment-dialog__preview-output",
     });
-    output.textContent = "Click Preview to resolve the selected prompt.";
+    // Seed the preview with the currently-persisted enrichment prompt so the
+    // panel is useful immediately, without requiring the user to click Preview
+    // just to see what their saved prompt resolves to.
+    const initialTemplate =
+      (settings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
+    output.textContent = resolvePromptPreview(initialTemplate);
 
     const previewBtn = actions.createEl("button", { text: "Preview" });
     previewBtn.addEventListener("click", async () => {
@@ -156,9 +161,6 @@ export class EnrichmentSettingsDialog extends Modal {
           : (latestSettings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
       output.textContent = resolvePromptPreview(template);
     });
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _unused = settings;
   }
 
   private renderEnabledToggle(containerEl: HTMLElement, settings: Record<string, unknown>): void {
