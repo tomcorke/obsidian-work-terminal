@@ -527,9 +527,28 @@ Split a complex task into smaller pieces using the **Split Task** context menu o
 
 1. Creates a new task file with a reference back to the original task
 2. Places the new task in the specified column
-3. Optionally launches a Claude session to help scope the new sub-task
+3. Launches a Claude session scoped to the new sub-task
 
 The split task includes metadata linking it to the parent task, making it easy to trace the relationship.
+
+The Claude session launched by Split Task runs through the same agent-profile pipeline as the **Claude (ctx)** tab bar button. This means the session inherits your configured command, arguments, login-shell wrapping, and any custom profile flags (e.g. `--dangerously-skip-permissions`, `--allowedTools`, `--model`). The working directory defaults to the **parent folder of the new task file**, so relative paths mentioned in the split scope prompt resolve against the task's own location. To override the profile for Split Task specifically, see [Agent actions settings](#agent-actions-settings).
+
+### Retry enrichment
+
+When background enrichment for a newly created task fails, the card shows a warning and a **Retry Enrichment** context menu entry. Running it opens a Claude session that picks up where background enrichment left off.
+
+The retry session also runs through a resolvable agent profile. By default it follows the **background enrichment profile** (so the retry matches what automated enrichment would have used); if none is set, it falls back to the built-in Claude (ctx) profile. You can override this to any profile via [Agent actions settings](#agent-actions-settings).
+
+### Agent actions settings
+
+Profile bindings for adapter-driven actions (Split Task, Retry Enrichment) live behind the **Configure agent actions...** button under **Settings > Agent actions**. The dialog exposes two dropdowns:
+
+- **Split task profile** - which agent profile to launch for Split Task. Default: the built-in Claude (ctx) profile.
+- **Retry enrichment profile** - which agent profile to launch for Retry Enrichment. Default: the background enrichment profile if set, otherwise the built-in Claude (ctx) profile.
+
+Both dropdowns list all configured agent profiles. Select **Default (see description)** to restore the fallback chain described above. Changes persist immediately; no save button is required.
+
+The fallback chain ensures new users get sensible, profile-aware behaviour without touching the dialog, while power users can bind a dedicated profile (e.g. one with `--dangerously-skip-permissions` pre-configured) to any agent-driven action.
 
 ### Guided tour
 
