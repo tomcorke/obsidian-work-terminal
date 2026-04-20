@@ -25,7 +25,7 @@ import type {
 import { electronRequire, expandTilde } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
-import { buildAgentContextPrompt, expandProfilePlaceholders } from "./AgentContextPrompt";
+import { expandProfilePlaceholders } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import { getDefaultSessionLabel } from "./CustomSessionConfig";
@@ -1044,26 +1044,18 @@ export class TerminalPanelView {
 
   async getAgentContextPrompt(
     item: WorkItem,
-    freshSettings?: Record<string, unknown>,
+    _freshSettings?: Record<string, unknown>,
     suppressAdapterPrompt = false,
   ): Promise<string | null> {
-    const settings = freshSettings ?? (await this.loadFreshSettings());
     const resolvedPath = this.resolveWorkItemPath(item.path);
     const basePrompt = suppressAdapterPrompt
       ? null
       : this.promptBuilder.buildPrompt(item, resolvedPath);
-    const templatePrompt = buildAgentContextPrompt(item, settings, resolvedPath);
 
-    if (!basePrompt && !templatePrompt) {
+    if (!basePrompt) {
       return null;
     }
-    if (!basePrompt) {
-      return templatePrompt;
-    }
-    if (!templatePrompt) {
-      return basePrompt;
-    }
-    return `${basePrompt}\n\n${templatePrompt}`;
+    return basePrompt;
   }
 
   private resolveVaultBasePath(): string {
@@ -1309,7 +1301,6 @@ export class TerminalPanelView {
       options.agentType,
       mergedExtraArgs,
       prompt,
-      undefined,
       options.launchConfigOverrides,
     );
 
