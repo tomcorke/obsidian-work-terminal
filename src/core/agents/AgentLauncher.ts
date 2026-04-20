@@ -506,13 +506,11 @@ export function mergeExtraArgs(...extraArgs: Array<string | undefined>): string 
  *
  * Uses AgentLaunchConfig to determine:
  * - How the prompt is injected (promptInjectionMode / promptFlag)
- * - Whether additionalAgentContext is appended to the prompt (all agent types)
  */
 export function buildAgentArgs(
   agentType: AgentType,
   extraArgs?: string,
   prompt?: string,
-  additionalAgentContext?: string,
   launchConfigOverride?: import("./AgentProfile").AgentLaunchConfig,
 ): string[] {
   const config = launchConfigOverride ?? getLaunchConfig(agentType);
@@ -523,15 +521,11 @@ export function buildAgentArgs(
   }
 
   if (prompt) {
-    let fullPrompt = prompt;
-    if (additionalAgentContext) {
-      fullPrompt += "\n\n" + additionalAgentContext;
-    }
     if (config.promptInjectionMode === "flag" && config.promptFlag) {
-      args.push(config.promptFlag, fullPrompt);
+      args.push(config.promptFlag, prompt);
     } else {
       // positional: append prompt as trailing arg
-      args.push(fullPrompt);
+      args.push(prompt);
     }
   }
 
