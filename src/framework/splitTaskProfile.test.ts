@@ -69,6 +69,27 @@ describe("resolveSplitTaskProfile", () => {
     expect(resolveSplitTaskProfile({}, [shell])).toBeNull();
     expect(resolveSplitTaskProfile({}, [])).toBeNull();
   });
+
+  it("rejects a configured non-claude profile and falls back to defaults", () => {
+    const shell = makeProfile({ id: "my-shell", agentType: "shell" });
+    const profile = resolveSplitTaskProfile({ "adapter.splitTaskProfile": "my-shell" }, [
+      shell,
+      claudeCtx,
+      claude,
+    ]);
+    expect(profile?.id).toBe("default-claude-ctx");
+  });
+
+  it("rejects a non-claude default-claude-ctx and continues the fallback chain", () => {
+    const notClaude = makeProfile({ id: "default-claude-ctx", agentType: "shell" });
+    const profile = resolveSplitTaskProfile({}, [notClaude, claude]);
+    expect(profile?.id).toBe("default-claude");
+  });
+
+  it("rejects a non-claude last-resort fallback", () => {
+    const copilot = makeProfile({ id: "default-copilot", agentType: "copilot" });
+    expect(resolveSplitTaskProfile({}, [copilot])).toBeNull();
+  });
 });
 
 describe("resolveRetryEnrichmentProfile", () => {

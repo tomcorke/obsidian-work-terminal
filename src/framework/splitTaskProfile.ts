@@ -78,6 +78,17 @@ export function resolveRetryEnrichmentProfile(
   );
 }
 
+/** Tracks whether we have already warned about a non-Claude configured profile.
+ *  Avoids spamming the console on every context-menu open. */
+let warnedNonClaudeConfig = false;
+
+function isClaudeProfile(profile: AgentProfile): boolean {
+  // Split Task / Retry Enrichment launch through spawnClaudeWithPrompt, which
+  // assumes the Claude agent type. Keep this check aligned with the AgentType
+  // enum in AgentProfile.ts - only claude-family profiles are accepted.
+  return profile.agentType === "claude";
+}
+
 function resolveProfileWithFallbacks(
   configuredId: string | undefined,
   availableProfiles: AgentProfile[],
@@ -87,19 +98,31 @@ function resolveProfileWithFallbacks(
 
   if (configuredId && configuredId.trim()) {
     const match = byId.get(configuredId.trim());
-    if (match) return match;
-    // Configured id no longer exists - fall through to defaults rather than
-    // throwing, so a renamed/deleted profile does not silently break the
-    // feature for the user.
+    if (match && isClaudeProfile(match)) return match;
+    if (match && !isClaudeProfile(match)) {
+      // Configured profile exists but is not claude-family - fall through to
+      // defaults rather than launching a shell/copilot/custom profile that
+      // spawnClaudeWithPrompt cannot handle. Warn once so the user can notice
+      // the stale binding.
+      if (!warnedNonClaudeConfig) {
+        console.warn(
+          `[work-terminal] Configured profile "${match.id}" (agentType="${match.agentType}") is not a Claude profile; ignoring and falling back.`,
+        );
+        warnedNonClaudeConfig = true;
+      }
+    }
+    // Configured id no longer exists or was rejected - fall through to
+    // defaults rather than throwing, so a renamed/deleted profile does not
+    // silently break the feature for the user.
   }
 
   for (const id of fallbackIds) {
     const match = byId.get(id);
-    if (match) return match;
+    if (match && isClaudeProfile(match)) return match;
   }
 
   // Last resort: any Claude profile at all.
-  const anyClaude = availableProfiles.find((p) => p.agentType === "claude");
+  const anyClaude = availableProfiles.find(isClaudeProfile);
   return anyClaude ?? null;
 }
 
