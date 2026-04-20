@@ -103,12 +103,17 @@ export class AgentActionsDialog extends Modal {
     settings: Record<string, unknown>,
   ): void {
     const value = (settings[key] as string) || "";
+    // Split Task / Retry Enrichment actions launch Claude specifically - the
+    // resolution helpers and spawnClaudeWithPrompt assume a Claude profile.
+    // Only surface Claude profiles in the dropdown so users cannot bind a
+    // shell/copilot/custom profile that would be rejected at launch time.
+    const claudeProfiles = this.profileManager.getProfilesByType("claude");
     new Setting(containerEl)
       .setName(name)
       .setDesc(description)
       .addDropdown((dropdown) => {
         dropdown.addOption("", "Default (see description)");
-        for (const profile of this.profileManager.getProfiles()) {
+        for (const profile of claudeProfiles) {
           dropdown.addOption(profile.id, profile.name);
         }
         dropdown.setValue(value).onChange(async (newValue) => {
