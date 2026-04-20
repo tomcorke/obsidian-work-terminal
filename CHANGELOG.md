@@ -6,6 +6,9 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+### Changed
+- Removed the duplicate **Enable background enrichment** toggle from the main settings list. The toggle now lives exclusively inside the **Configure enrichment...** dialog, matching the button-only pattern used for Agent Profiles and Card Flag Rules. The **Background enrichment** section in settings shows just the **Configure enrichment...** button. (#461)
+
 ### Fixed
 - Fixed `$filePath` and `$absoluteFilePath` placeholders in agent context prompts and profile templates so they now resolve to distinct values: `$filePath` is always the vault-relative path and `$absoluteFilePath` is the fully resolved absolute filesystem path. Previously both placeholders expanded to the same value when an absolute path was available. When `$absoluteFilePath` is used but no absolute path can be resolved, the placeholder falls back to the vault-relative path and logs a `console.warn`. (#465)
 
