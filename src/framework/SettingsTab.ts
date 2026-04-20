@@ -22,6 +22,7 @@ import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
+import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -38,6 +39,10 @@ interface CoreSettings {
   "core.cardDisplayMode": CardDisplayMode;
   "core.viewMode": ViewMode;
   "core.recentThreshold": RecentThreshold;
+  "core.detailViewPlacement": DetailViewPlacement;
+  "core.detailViewWidthOverride": boolean;
+  "core.detailViewAutoClose": boolean;
+  "core.detailViewSplitDirection": DetailViewSplitDirection;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -57,6 +62,10 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.cardDisplayMode": "standard",
   "core.viewMode": "kanban",
   "core.recentThreshold": "3h",
+  "core.detailViewPlacement": "split",
+  "core.detailViewWidthOverride": true,
+  "core.detailViewAutoClose": false,
+  "core.detailViewSplitDirection": "vertical",
 };
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
