@@ -2273,3 +2273,93 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-activity-view .wt-section[data-column="__pinned__"] {
   display: none;
 }
+
+/* =============================================================================
+   Enrichment Settings Dialog
+   ============================================================================= */
+
+.wt-enrichment-dialog {
+  max-width: 640px;
+}
+
+.wt-enrichment-dialog__help {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-bottom: 12px;
+}
+
+.wt-enrichment-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.wt-enrichment-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.wt-enrichment-dialog__default-prompt {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  white-space: pre-wrap;
+  background: var(--background-secondary);
+  padding: 8px 10px;
+  margin: 6px 0 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wt-enrichment-dialog__default-prompt-toggle {
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.wt-enrichment-dialog__default-prompt-toggle summary {
+  list-style: revert;
+}
+
+.wt-enrichment-dialog__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.wt-enrichment-dialog__preview-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.wt-enrichment-dialog__preview-select {
+  font-size: var(--font-ui-smaller);
+}
+
+.wt-enrichment-dialog__preview-output {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  white-space: pre-wrap;
+  background: var(--background-secondary);
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.wt-enrichment-dialog__prompt-input {
+  width: 100%;
+  min-height: 80px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
