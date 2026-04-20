@@ -49,7 +49,7 @@ export class TerminalSettingsDialog extends Modal {
     contentEl.createEl("p", {
       text:
         "Configure how terminal tabs are launched. These settings apply to " +
-        "new shell tabs - existing tabs keep whatever shell and working " +
+        "new terminal tabs - existing tabs keep whatever shell and working " +
         "directory they were opened with.",
       cls: "wt-terminal-dialog__help",
     });
@@ -71,14 +71,16 @@ export class TerminalSettingsDialog extends Modal {
       "Default shell",
       "Shell used for new terminal tabs. Defaults to $SHELL at plugin load time.",
       "core.defaultShell",
-      (settings["core.defaultShell"] as string) || process.env.SHELL || "/bin/zsh",
+      (settings["core.defaultShell"] as string | null | undefined) ??
+        process.env.SHELL ??
+        "/bin/zsh",
     );
     this.renderTextField(
       containerEl,
       "Default terminal CWD",
       "Working directory for new terminal tabs. Supports ~ which expands to your home directory.",
       "core.defaultTerminalCwd",
-      (settings["core.defaultTerminalCwd"] as string) || "~",
+      (settings["core.defaultTerminalCwd"] as string | null | undefined) ?? "~",
     );
   }
 
