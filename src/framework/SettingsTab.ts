@@ -21,6 +21,39 @@
  * introduced no schema change on its own. Subsequent Unreleased work (#472)
  * did remove the `core.additionalAgentContext` key as a breaking change;
  * see CHANGELOG.md "Removed" entry for details.
+ *
+ * ----------------------------------------------------------------------
+ * Render-order invariant (issue #473)
+ * ----------------------------------------------------------------------
+ *
+ * Settings MUST render in the exact order their `new Setting(containerEl)`
+ * calls are issued from `display()`. No exceptions.
+ *
+ * To keep this invariant obvious and impossible to accidentally break:
+ *
+ *   - `display()` is the ONLY method that calls `this.plugin.loadData()`.
+ *     It loads once at the top, builds a `settings` snapshot, then passes
+ *     that snapshot into every render helper synchronously.
+ *
+ *   - Every private render helper is SYNCHRONOUS and receives the
+ *     pre-loaded `settings` object as a parameter. Helpers must not
+ *     `await` anything between `new Setting()` calls - any await gives
+ *     the microtask queue an opportunity to interleave another render's
+ *     output into the middle of the current section.
+ *
+ *   - Change handlers attached to inputs are async (they call
+ *     `saveSettings` + re-render), but they run in response to user
+ *     input, not during the initial render pass, so they cannot reorder
+ *     the DOM.
+ *
+ * The historical bug: a since-removed `renderAdditionalAgentContext`
+ * helper awaited `loadData()` and then called `new Setting(containerEl)`
+ * AFTER the Detail view section had rendered its first row synchronously
+ * but was still awaiting further sub-renders. That setting's microtask
+ * resolved mid-section and appended to `containerEl`, landing between
+ * Placement and Auto-close. The fix enforced by this file is to pull ALL
+ * `loadData` calls up into `display()` and make every helper pure and
+ * sync.
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
@@ -65,6 +98,13 @@ interface CoreSettings {
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
+
+/**
+ * Snapshot of all settings as read at the top of `display()`. Rendered
+ * sections pull their values from this object rather than re-fetching
+ * via `loadData()` - see the render-order invariant above.
+ */
+type SettingsSnapshot = Record<string, unknown>;
 
 const CORE_DEFAULTS: CoreSettings = {
   "core.claudeCommand": "claude",
@@ -131,16 +171,53 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     }
   }
 
+  /**
+   * Render the settings page. See the render-order invariant at the top
+   * of this file: this method MUST be the only entry point that calls
+   * `loadData()` during a render pass, and every helper it calls MUST be
+   * synchronous. Do not introduce `await` between `new Setting()` calls
+   * anywhere on this render path.
+   *
+   * Obsidian's `PluginSettingTab.display()` returns `void`. We kick off
+   * an async load-and-render sequence; `containerEl.empty()` runs first
+   * so a stale DOM is never displayed alongside the load. After the
+   * `loadData()` promise resolves, every `new Setting(containerEl)` call
+   * runs inside a single synchronous block - no interleaving possible.
+   */
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-
-    this.renderGeneralSection(containerEl);
-    this.renderBoardAndColumnsSection(containerEl);
-    this.renderTerminalSection(containerEl);
-    this.renderDetailViewSection(containerEl);
-    this.renderAgentsSection(containerEl);
+    // Tag this render pass. If display() is called again while we're
+    // still awaiting loadData(), the newer pass will bump renderSeq,
+    // and the older pass will bail out on resume.
+    const seq = ++this.renderSeq;
+    // Kick off the single load. The renderWithSnapshot callback runs in
+    // one synchronous block once data has resolved.
+    void this.loadSnapshotAndRender(seq);
   }
+
+  private async loadSnapshotAndRender(seq: number): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings: SettingsSnapshot = data.settings || {};
+
+    // If a second display() fired while we were awaiting, bail out - the
+    // newer pass has already called containerEl.empty() and scheduled its
+    // own render. Appending now would either duplicate rows or interleave.
+    if (seq !== this.renderSeq) return;
+
+    // From here down, everything is synchronous. The render-order
+    // invariant depends on this - do NOT introduce `await` between
+    // these calls.
+    const { containerEl } = this;
+    this.renderGeneralSection(containerEl, settings);
+    this.renderBoardAndColumnsSection(containerEl, settings);
+    this.renderTerminalSection(containerEl);
+    this.renderDetailViewSection(containerEl, settings);
+    this.renderAgentsSection(containerEl, settings);
+  }
+
+  /** Incremented on every display() call; used to abandon stale renders. */
+  private renderSeq = 0;
 
   // ------------------------------------------------------------------ //
   // Section renderers                                                   //
@@ -156,18 +233,19 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * mode, recent threshold, card display) then rarer ones (debug API,
    * enrichment logs).
    */
-  private renderGeneralSection(containerEl: HTMLElement): void {
+  private renderGeneralSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "General" });
 
     // Task base path + state strategy are adapter-level but conceptually
     // "where are my tasks stored and how is state computed" - users reach for
     // them during initial setup and rarely after, so they go near the top of
     // the section rather than getting lost at the bottom.
-    this.addAdapterSettingByKey(containerEl, "taskBasePath");
-    this.addAdapterSettingByKey(containerEl, "stateStrategy");
+    this.addAdapterSettingByKey(containerEl, settings, "taskBasePath");
+    this.addAdapterSettingByKey(containerEl, settings, "stateStrategy");
 
     this.addCoreDropdown(
       containerEl,
+      settings,
       "core.viewMode",
       "View mode",
       "Kanban groups tasks by state columns. Activity groups tasks by recency (recent, last 7 days, last 30 days, older).",
@@ -175,6 +253,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     );
     this.addCoreDropdown(
       containerEl,
+      settings,
       "core.recentThreshold",
       "Recent activity threshold",
       'How far back the "Recent" section extends in activity view. The section always includes today, or the configured threshold, whichever is longer.',
@@ -182,6 +261,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     );
     this.addCoreDropdown(
       containerEl,
+      settings,
       "core.cardDisplayMode",
       "Card display mode",
       "Standard shows full card details. Comfortable adds extra padding and spacing for easier scanning. Compact shows single-line cards with indicator dots replacing verbose badges.",
@@ -190,28 +270,31 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
     // Card-indicator adapter toggles live here because they're display
     // preferences (what you see on each card) rather than board layout.
-    this.addAdapterSettingByKey(containerEl, "showCardIndicators");
-    this.addAdapterSettingByKey(containerEl, "taskCardIcons");
-    this.addAdapterSettingByKey(containerEl, "autoIconMode");
+    this.addAdapterSettingByKey(containerEl, settings, "showCardIndicators");
+    this.addAdapterSettingByKey(containerEl, settings, "taskCardIcons");
+    this.addAdapterSettingByKey(containerEl, settings, "autoIconMode");
 
     // Jira integration - rarely changed after setup.
-    this.addAdapterSettingByKey(containerEl, "jiraBaseUrl");
+    this.addAdapterSettingByKey(containerEl, settings, "jiraBaseUrl");
 
     // Session/lifecycle toggles.
     this.addCoreToggle(
       containerEl,
+      settings,
       "core.keepSessionsAlive",
       "Keep sessions alive when tab is closed",
       "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state.",
     );
     this.addCoreToggle(
       containerEl,
+      settings,
       "core.enrichmentLogging",
       "Enrichment failure logs",
       "When a background enrichment attempt fails, write a detailed log file (prompt, agent stdout/stderr, error details) to the plugin's logs/ directory. Logs older than 7 days are auto-pruned and only the 50 most recent are retained. Logs may contain task content and agent output - see the user guide for details.",
     );
     this.addCoreToggle(
       containerEl,
+      settings,
       "core.exposeDebugApi",
       "Expose debug API",
       "Publishes window.__workTerminalDebug for CDP inspection. Disabled by default because it exposes active session metadata to other renderer plugins.",
@@ -244,7 +327,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       if (handledKeys.has(field.key)) continue;
       if (ENRICHMENT_DIALOG_KEYS.has(field.key)) continue;
       if (AGENT_ACTIONS_DIALOG_KEYS.has(field.key)) continue;
-      this.addAdapterSetting(containerEl, field);
+      this.addAdapterSetting(containerEl, settings, field);
     }
   }
 
@@ -254,7 +337,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * provides neither columns nor card-flag defaults (i.e. a minimal adapter
    * with no kanban board).
    */
-  private renderBoardAndColumnsSection(containerEl: HTMLElement): void {
+  private renderBoardAndColumnsSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     const hasColumns = this.adapter.config.columns.length > 0;
     const hasCardFlags = this.adapter.config.cardFlags !== undefined;
     if (!hasColumns && !hasCardFlags) return;
@@ -262,11 +345,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Board & Columns" });
 
     if (hasColumns) {
-      this.renderColumnOrderControls(containerEl);
+      this.renderColumnOrderControls(containerEl, settings);
       this.renderCreationColumnControls(containerEl);
     }
     if (hasCardFlags) {
-      this.addCardFlagRulesButton(containerEl);
+      this.addCardFlagRulesButton(containerEl, settings);
     }
   }
 
@@ -308,9 +391,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * work item is selected. Placement-dependent controls are only shown when
    * they apply (unchanged from the pre-reorganisation behaviour).
    */
-  private renderDetailViewSection(containerEl: HTMLElement): void {
+  private renderDetailViewSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "Detail view" });
-    this.renderDetailViewSettings(containerEl);
+    this.renderDetailViewSettings(containerEl, settings);
   }
 
   /**
@@ -318,7 +401,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * agent context textarea, and buttons to the Background enrichment and
    * Agent actions dialogs.
    */
-  private renderAgentsSection(containerEl: HTMLElement): void {
+  private renderAgentsSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "Agents" });
 
     // Profile Manager - first because it's the most frequent touchpoint.
@@ -411,10 +494,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * declare that key. Used to pull specific adapter fields into the General
    * section at chosen positions.
    */
-  private addAdapterSettingByKey(containerEl: HTMLElement, key: string): void {
+  private addAdapterSettingByKey(
+    containerEl: HTMLElement,
+    settings: SettingsSnapshot,
+    key: string,
+  ): void {
     const field = this.adapter.config.settingsSchema.find((f) => f.key === key);
     if (!field) return;
-    this.addAdapterSetting(containerEl, field);
+    this.addAdapterSetting(containerEl, settings, field);
   }
 
   private async saveSettings(update: (settings: Record<string, unknown>) => void): Promise<void> {
@@ -429,15 +516,20 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: allSettings }));
   }
 
-  private async addCoreToggle(
+  /**
+   * Synchronous (issue #473). The value is read from the pre-loaded
+   * snapshot; only the onChange handler awaits (for persistence), which
+   * runs in response to user input - well after render - so it cannot
+   * affect render order.
+   */
+  private addCoreToggle(
     containerEl: HTMLElement,
+    settings: SettingsSnapshot,
     key: keyof CoreSettings,
     name: string,
     description: string,
     tourId?: string,
-  ): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
+  ): void {
     const value = settings[key] ?? CORE_DEFAULTS[key];
 
     const setting = new Setting(containerEl)
@@ -445,8 +537,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       .setDesc(description)
       .addToggle((toggle) =>
         toggle.setValue(!!value).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
+          await this.saveSettings((s) => {
+            s[key] = newValue;
           });
         }),
       );
@@ -455,15 +547,17 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     }
   }
 
-  private async addCoreDropdown(
+  /**
+   * Synchronous (issue #473). See `addCoreToggle` for rationale.
+   */
+  private addCoreDropdown(
     containerEl: HTMLElement,
+    settings: SettingsSnapshot,
     key: keyof CoreSettings,
     name: string,
     description: string,
     choices: Record<string, string>,
-  ): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
+  ): void {
     const value = settings[key] ?? CORE_DEFAULTS[key];
 
     new Setting(containerEl)
@@ -474,8 +568,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           dropdown.addOption(val, label);
         }
         dropdown.setValue(String(value || "")).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
+          await this.saveSettings((s) => {
+            s[key] = newValue;
           });
         });
       });
@@ -486,10 +580,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * placement-dependent width override, auto-close, and split direction
    * controls. Re-renders the whole settings page on placement change so the
    * conditional controls appear or disappear.
+   *
+   * Synchronous (issue #473): reads from the snapshot.
    */
-  private async renderDetailViewSettings(containerEl: HTMLElement): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
+  private renderDetailViewSettings(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     // Resolve via resolveDetailViewOptions so invalid persisted values (from
     // manual edits or older plugin versions) fall back to the default and
     // the dropdown/conditional rendering stay consistent.
@@ -524,6 +618,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (placement !== "disabled") {
       this.addCoreToggle(
         containerEl,
+        settings,
         "core.detailViewAutoClose",
         "Auto-close on selection change",
         "Detach the detail leaf when you select a different item, opening a fresh one at the current placement target. When off, the same leaf is reused across selections.",
@@ -534,12 +629,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (placement === "split") {
       this.addCoreToggle(
         containerEl,
+        settings,
         "core.detailViewWidthOverride",
         "Apply readable line-width override to split",
         "Forces the editor split to the Obsidian readable line width and lets the terminal panel fill the rest. Turn off if you prefer Obsidian's default flex sizing for the split.",
       );
       this.addCoreDropdown(
         containerEl,
+        settings,
         "core.detailViewSplitDirection",
         "Split direction",
         "Orientation of the split created alongside the Work Terminal view. Vertical stacks side-by-side; horizontal stacks top-and-bottom.",
@@ -548,9 +645,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     }
   }
 
-  private async addCardFlagRulesButton(containerEl: HTMLElement): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
+  /**
+   * Synchronous (issue #473): reads from the snapshot.
+   */
+  private addCardFlagRulesButton(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     const customJson = (settings["adapter.customCardFlags"] as string) || "[]";
     const customRules = parseCardFlagRulesJson(customJson);
     const defaultRules = this.adapter.config.cardFlags || [];
@@ -575,8 +673,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
               defaultRules,
               async (updatedRules: CardFlagRule[]) => {
                 const json = serializeCardFlagRules(updatedRules);
-                await this.saveSettings((settings) => {
-                  settings["adapter.customCardFlags"] = json;
+                await this.saveSettings((s) => {
+                  s["adapter.customCardFlags"] = json;
                 });
                 // Refresh the settings display to update the rule count
                 this.display();
@@ -589,14 +687,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   /**
    * Render column display order controls: a list of columns with up/down
    * buttons, pin toggles for dynamic columns, and a reset-to-default action.
+   *
+   * Synchronous (issue #473): reads from the snapshot.
    */
-  private async renderColumnOrderControls(containerEl: HTMLElement): Promise<void> {
+  private renderColumnOrderControls(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     // Resolve effective column order (current config reflects it)
     const columns = this.adapter.config.columns;
 
-    // Load pinned custom states
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
+    // Load pinned custom states from snapshot
     const pinnedJson = (settings["adapter.pinnedCustomStates"] as string) || "[]";
     let pinnedStates: string[] = [];
     try {
@@ -619,9 +717,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Reset button
     desc.addButton((btn) =>
       btn.setButtonText("Reset to default").onClick(async () => {
-        await this.saveSettings((settings) => {
-          settings["adapter.columnOrder"] = "";
-          settings["adapter.pinnedCustomStates"] = "[]";
+        await this.saveSettings((s) => {
+          s["adapter.columnOrder"] = "";
+          s["adapter.pinnedCustomStates"] = "[]";
         });
         this.display();
       }),
@@ -653,8 +751,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           } else {
             currentPinned.add(col.id);
           }
-          await this.saveSettings((settings) => {
-            settings["adapter.pinnedCustomStates"] = JSON.stringify([...currentPinned]);
+          await this.saveSettings((s) => {
+            s["adapter.pinnedCustomStates"] = JSON.stringify([...currentPinned]);
           });
           this.display();
         });
@@ -671,8 +769,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         if (i === 0) return;
         const ids = columns.map((c) => c.id);
         [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
-        await this.saveSettings((settings) => {
-          settings["adapter.columnOrder"] = JSON.stringify(ids);
+        await this.saveSettings((s) => {
+          s["adapter.columnOrder"] = JSON.stringify(ids);
         });
         this.display();
       });
@@ -688,8 +786,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         if (i === columns.length - 1) return;
         const ids = columns.map((c) => c.id);
         [ids[i], ids[i + 1]] = [ids[i + 1], ids[i]];
-        await this.saveSettings((settings) => {
-          settings["adapter.columnOrder"] = JSON.stringify(ids);
+        await this.saveSettings((s) => {
+          s["adapter.columnOrder"] = JSON.stringify(ids);
         });
         this.display();
       });
@@ -732,9 +830,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           ids.push(value);
           const newPinned = [...currentPinnedStates, value];
 
-          await this.saveSettings((settings) => {
-            settings["adapter.columnOrder"] = JSON.stringify(ids);
-            settings["adapter.pinnedCustomStates"] = JSON.stringify(newPinned);
+          await this.saveSettings((s) => {
+            s["adapter.columnOrder"] = JSON.stringify(ids);
+            s["adapter.pinnedCustomStates"] = JSON.stringify(newPinned);
           });
           new Notice(`Custom state "${value}" created and pinned`);
           this.display();
@@ -763,8 +861,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
     desc.addButton((btn) =>
       btn.setButtonText("Reset to default").onClick(async () => {
-        await this.saveSettings((settings) => {
-          settings["adapter.creationColumnIds"] = "";
+        await this.saveSettings((s) => {
+          s["adapter.creationColumnIds"] = "";
         });
         this.display();
       }),
@@ -811,8 +909,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           if (creationIdx === 0) return;
           const ids = creationColumns.map((c) => c.id);
           [ids[creationIdx - 1], ids[creationIdx]] = [ids[creationIdx], ids[creationIdx - 1]];
-          await this.saveSettings((settings) => {
-            settings["adapter.creationColumnIds"] = JSON.stringify(ids);
+          await this.saveSettings((s) => {
+            s["adapter.creationColumnIds"] = JSON.stringify(ids);
           });
           this.display();
         });
@@ -827,8 +925,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           if (creationIdx === creationColumns.length - 1) return;
           const ids = creationColumns.map((c) => c.id);
           [ids[creationIdx], ids[creationIdx + 1]] = [ids[creationIdx + 1], ids[creationIdx]];
-          await this.saveSettings((settings) => {
-            settings["adapter.creationColumnIds"] = JSON.stringify(ids);
+          await this.saveSettings((s) => {
+            s["adapter.creationColumnIds"] = JSON.stringify(ids);
           });
           this.display();
         });
@@ -851,18 +949,23 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
             return;
           }
         }
-        await this.saveSettings((settings) => {
-          settings["adapter.creationColumnIds"] = JSON.stringify(currentIds);
+        await this.saveSettings((s) => {
+          s["adapter.creationColumnIds"] = JSON.stringify(currentIds);
         });
         this.display();
       });
     }
   }
 
-  private async addAdapterSetting(containerEl: HTMLElement, field: SettingField): Promise<void> {
+  /**
+   * Synchronous (issue #473): reads from the snapshot.
+   */
+  private addAdapterSetting(
+    containerEl: HTMLElement,
+    settings: SettingsSnapshot,
+    field: SettingField,
+  ): void {
     const key = `adapter.${field.key}`;
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
     const defaultVal = this.adapter.config.defaultSettings[field.key] ?? field.default;
     const value = settings[key] ?? defaultVal;
 
@@ -871,16 +974,16 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (field.type === "text") {
       setting.addText((text) =>
         text.setValue(String(value)).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
+          await this.saveSettings((s) => {
+            s[key] = newValue;
           });
         }),
       );
     } else if (field.type === "toggle") {
       setting.addToggle((toggle) =>
         toggle.setValue(!!value).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
+          await this.saveSettings((s) => {
+            s[key] = newValue;
           });
         }),
       );
@@ -900,8 +1003,8 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           dropdown.addOption(val, label);
         }
         dropdown.setValue(String(value || "")).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
+          await this.saveSettings((s) => {
+            s[key] = newValue;
           });
         });
       });
