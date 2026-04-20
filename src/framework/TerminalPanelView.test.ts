@@ -1713,7 +1713,7 @@ describe("profile launch", () => {
       getProfile: () => null,
     };
 
-    const tab = await (view as any).spawnAgentSession({
+    await (view as any).spawnAgentSession({
       agentType: "custom",
       sessionType: "custom",
       command: "pi",

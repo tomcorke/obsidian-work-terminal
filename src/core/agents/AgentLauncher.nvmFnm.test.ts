@@ -28,7 +28,7 @@ vi.mock("../utils", async () => {
       if (moduleName === "fs") {
         return {
           existsSync: (p: string) => p in mockFs,
-          readFileSync: (p: string, encoding: string) => {
+          readFileSync: (p: string, _encoding: string) => {
             if (p in mockFs && typeof mockFs[p] === "string") {
               return mockFs[p];
             }

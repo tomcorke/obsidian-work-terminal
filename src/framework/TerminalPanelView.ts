@@ -24,7 +24,6 @@ import type {
 } from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
-import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { expandProfilePlaceholders } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";

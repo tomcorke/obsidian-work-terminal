@@ -3,7 +3,6 @@ import {
   spawnHeadlessClaude,
   spawnHeadlessAgent,
   DEFAULT_TIMEOUT_MS,
-  type HeadlessAgentConfig,
 } from "../../core/claude/HeadlessClaude";
 import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource, EnrichmentMeta } from "./TaskFileTemplate";
@@ -485,26 +484,6 @@ export function insertIngestionFailedFlag(content: string): string {
   }
 
   return result;
-}
-
-/**
- * Clear the `background-ingestion: failed` flag from a task file by setting it to `retrying`.
- * Called before retrying enrichment.
- */
-async function clearIngestionFailedFlag(app: App, filePath: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(filePath) as TFile | null;
-  if (!file) return;
-
-  try {
-    let content = await app.vault.read(file);
-    content = content.replace(
-      /^background-ingestion:[ \t]*failed[^\r\n]*/m,
-      "background-ingestion: retrying",
-    );
-    await app.vault.modify(file, content);
-  } catch (err) {
-    console.error(`[work-terminal] Failed to clear ingestion flag on ${filePath}:`, err);
-  }
 }
 
 /**

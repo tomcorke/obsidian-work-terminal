@@ -799,6 +799,7 @@ export class GuidedTourController {
 
   private async waitForTarget(selector: string): Promise<HTMLElement | null> {
     for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (this.isDisposed) return null;
       const target = document.querySelector<HTMLElement>(selector);
       if (target) return target;
       await new Promise((resolve) => window.setTimeout(resolve, 50));

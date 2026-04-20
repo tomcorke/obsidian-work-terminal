@@ -1028,7 +1028,7 @@ describe("ListPanel", () => {
     });
 
     it("passes comfortable displayMode to card renderer", () => {
-      const renderSpy = vi.fn((item: WorkItem) => {
+      const renderSpy = vi.fn((_item: WorkItem) => {
         const el = document.createElement("div");
         el.createDiv({ cls: "wt-card-actions" });
         return el;
@@ -1098,7 +1098,7 @@ describe("ListPanel", () => {
     });
 
     it("passes displayMode to card renderer", () => {
-      const renderSpy = vi.fn((item: WorkItem) => {
+      const renderSpy = vi.fn((_item: WorkItem) => {
         const el = document.createElement("div");
         el.createDiv({ cls: "wt-card-actions" });
         return el;
@@ -1144,7 +1144,7 @@ describe("ListPanel", () => {
     });
 
     it("passes standard displayMode to card renderer when not compact", () => {
-      const renderSpy = vi.fn((item: WorkItem) => {
+      const renderSpy = vi.fn((_item: WorkItem) => {
         const el = document.createElement("div");
         el.createDiv({ cls: "wt-card-actions" });
         return el;
