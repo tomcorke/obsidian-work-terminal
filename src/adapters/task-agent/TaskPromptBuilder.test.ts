@@ -102,12 +102,18 @@ describe("TaskPromptBuilder", () => {
     expect(prompt).not.toContain("Blocker:");
   });
 
-  it("describes prompt format for settings UI", () => {
+  it("describes prompt format for settings UI using $name placeholders", () => {
     const description = builder.describePromptFormat();
-    expect(description).toContain("{title}");
-    expect(description).toContain("{state}");
-    expect(description).toContain("{path}");
-    expect(description).toContain("{deadline}");
-    expect(description).toContain("{blocker}");
+    expect(description).toContain("$title");
+    expect(description).toContain("$state");
+    expect(description).toContain("$filePath");
+    expect(description).toContain("$deadline");
+    expect(description).toContain("$blocker");
+    // Should not regress to older brace-style placeholders.
+    expect(description).not.toContain("{title}");
+    expect(description).not.toContain("{state}");
+    expect(description).not.toContain("{path}");
+    expect(description).not.toContain("{deadline}");
+    expect(description).not.toContain("{blocker}");
   });
 });

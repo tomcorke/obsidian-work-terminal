@@ -247,7 +247,7 @@ export interface WorkItemPromptBuilder {
   /**
    * Return a human-readable description of the prompt format this builder produces.
    * Used in the profile settings UI to show users what the adapter prepends.
-   * Example: "Task: {title}\nState: {state}\nFile: {path}"
+   * Example: "Task: $title\nState: $state\nFile: $filePath"
    */
   describePromptFormat?(): string;
 }
