@@ -445,8 +445,10 @@ Tasks being enriched show an "ingesting..." indicator on their card. If enrichme
 When an enrichment attempt fails, the plugin writes a diagnostic log file so you can see what went wrong without attaching a debugger or reproducing the failure. Logs are stored in the plugin directory at:
 
 ```
-<vault>/.obsidian/plugins/work-terminal/logs/enrich-<YYYYMMDD-HHMMSS>-<slug>.log
+<vault>/<configDir>/plugins/work-terminal/logs/enrich-<YYYYMMDD-HHMMSS-sss>-<slug>-<rand>.log
 ```
+
+`<configDir>` is whatever Obsidian is configured to use for its config directory, and is `.obsidian` by default - so on most vaults the path will be `<vault>/.obsidian/plugins/work-terminal/logs/...`.
 
 Each log records:
 
@@ -476,7 +478,7 @@ The core settings section covers:
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
 | **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |
-| **Enrichment failure logs** | When enabled, each failed background enrichment writes a diagnostic log file to `.obsidian/plugins/work-terminal/logs/`. See [Enrichment failure logs](#enrichment-failure-logs). |
+| **Enrichment failure logs** | When enabled, each failed background enrichment writes a diagnostic log file to `<configDir>/plugins/work-terminal/logs/` (usually `.obsidian/plugins/work-terminal/logs/`). See [Enrichment failure logs](#enrichment-failure-logs). |
 | **Expose debug API** | Publishes `window.__workTerminalDebug` for CDP inspection (see [Debug API](#debug-api)) |
 | **Reset guided tour** | Clears the guided tour completion status so it starts again on next open |
 
