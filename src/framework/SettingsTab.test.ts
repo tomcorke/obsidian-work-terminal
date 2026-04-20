@@ -344,11 +344,41 @@ describe("WorkTerminalSettingsTab", () => {
     expect(tab.containerEl.querySelector('[data-setting-key="core.copilotCommand"]')).toBeNull();
     expect(tab.containerEl.querySelector('[data-setting-key="core.strandsCommand"]')).toBeNull();
     expect(tab.containerEl.querySelector('[data-setting-key="core.claudeExtraArgs"]')).toBeNull();
+    // core.additionalAgentContext is now rendered inline under the Agents
+    // section (issue #462) so it should be present in the main tab.
     expect(
       tab.containerEl.querySelector('[data-setting-key="core.additionalAgentContext"]'),
-    ).toBeNull();
-    // But core settings like defaultShell should still be present
-    expect(tab.containerEl.querySelector('[data-setting-key="core.defaultShell"]')).not.toBeNull();
+    ).not.toBeNull();
+    // core.defaultShell lives inside the TerminalSettingsDialog now (issue
+    // #462) so it should NOT appear on the main settings page.
+    expect(tab.containerEl.querySelector('[data-setting-key="core.defaultShell"]')).toBeNull();
+  });
+
+  it("renders the five top-level section headings in order", async () => {
+    const adapterWithColumns = {
+      config: {
+        columns: [{ id: "todo", label: "To Do", folderName: "todo" }],
+        creationColumns: [{ id: "todo", label: "To Do", default: true }],
+        settingsSchema: [],
+        defaultSettings: {},
+        itemName: "task",
+      },
+    } as any;
+    const plugin = makePlugin({});
+    const tab = new WorkTerminalSettingsTab(
+      {} as any,
+      plugin as any,
+      adapterWithColumns,
+      mockProfileManager,
+    );
+
+    tab.display();
+    await flushAsyncWork();
+
+    const headings = Array.from(tab.containerEl.querySelectorAll("h2")).map(
+      (h) => h.textContent || "",
+    );
+    expect(headings).toEqual(["General", "Board & Columns", "Terminal", "Detail view", "Agents"]);
   });
 
   it("renders column order controls when adapter has columns", async () => {
@@ -381,9 +411,9 @@ describe("WorkTerminalSettingsTab", () => {
     tab.display();
     await flushAsyncWork();
 
-    // Should render the "Column Order & Creation" heading
+    // Should render the merged "Board & Columns" heading (issue #462)
     const headings = Array.from(tab.containerEl.querySelectorAll("h2"));
-    const columnHeading = headings.find((h) => h.textContent === "Column Order & Creation");
+    const columnHeading = headings.find((h) => h.textContent === "Board & Columns");
     expect(columnHeading).toBeDefined();
 
     // Should render column order rows
@@ -401,7 +431,7 @@ describe("WorkTerminalSettingsTab", () => {
     expect(tab.containerEl.textContent).toContain("Done");
   });
 
-  it("does not render column controls when adapter has no columns", async () => {
+  it("does not render Board & Columns section when adapter has no columns and no card flags", async () => {
     const plugin = makePlugin({});
     const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
 
@@ -409,8 +439,34 @@ describe("WorkTerminalSettingsTab", () => {
     await flushAsyncWork();
 
     const headings = Array.from(tab.containerEl.querySelectorAll("h2"));
-    const columnHeading = headings.find((h) => h.textContent === "Column Order & Creation");
+    const columnHeading = headings.find((h) => h.textContent === "Board & Columns");
     expect(columnHeading).toBeUndefined();
+  });
+
+  it("renders the Configure terminal button in the Terminal section", async () => {
+    const plugin = makePlugin({});
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
+
+    tab.display();
+    await flushAsyncWork();
+
+    const buttons = Array.from(tab.containerEl.querySelectorAll("button"));
+    const configureBtn = buttons.find((b) => b.textContent === "Configure terminal...");
+    expect(configureBtn).toBeDefined();
+  });
+
+  it("renders the additional agent context textarea under Agents", async () => {
+    const plugin = makePlugin({ "core.additionalAgentContext": "existing context" });
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
+
+    tab.display();
+    await flushAsyncWork();
+
+    const textarea = tab.containerEl.querySelector(
+      'textarea[data-setting-key="core.additionalAgentContext"]',
+    ) as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    expect(textarea!.value).toBe("existing context");
   });
 
   it("renders a reset guided tour button that calls resetGuidedTourStatus and shows a Notice", async () => {

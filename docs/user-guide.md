@@ -27,11 +27,14 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Session persistence](#session-persistence)
   - [Agent state detection](#agent-state-detection)
 - [Configuration](#configuration)
+  - [Settings layout at a glance](#settings-layout-at-a-glance)
   - [Agent profiles](#agent-profiles)
   - [Card indicator rules](#card-indicator-rules)
   - [State resolution strategies](#state-resolution-strategies)
   - [Dynamic columns](#dynamic-columns)
+  - [Terminal settings](#terminal-settings)
   - [Background enrichment](#background-enrichment)
+  - [Additional agent context](#additional-agent-context)
   - [Core settings](#core-settings)
 - [Advanced features](#advanced-features)
   - [Pinning tasks](#pinning-tasks)
@@ -120,7 +123,7 @@ When a task has an active terminal session, a small indicator appears on the car
 
 Task cards can display icons as a leading visual element, visible in both standard and compact display modes.
 
-**Enabling icons**: Go to **Settings > Adapter > Task card icons** and toggle the feature on. Icons are disabled by default.
+**Enabling icons**: Go to **Settings > General > Task card icons** and toggle the feature on. Icons are disabled by default.
 
 **Custom per-task icons**: Set a custom icon for any task via:
 
@@ -131,7 +134,7 @@ Task cards can display icons as a leading visual element, visible in both standa
   ```
 - **Context menu**: Right-click a task card and select **Set Icon...** to open a text input modal. Enter a Lucide icon name (e.g. `rocket`, `terminal`, `flame`) or paste an emoji. Select **Clear Icon** to remove a custom icon.
 
-**Automatic icon modes**: When a task has no custom icon, the plugin can assign icons automatically based on a configurable mode (Settings > Adapter > Automatic icon mode):
+**Automatic icon modes**: When a task has no custom icon, the plugin can assign icons automatically based on a configurable mode (Settings > General > Automatic icon mode):
 
 | Mode | Description |
 |------|-------------|
@@ -145,7 +148,7 @@ Custom per-task icons always take priority over automatic icons regardless of mo
 
 ### Card display modes
 
-Work Terminal offers three card display modes, configurable under **Settings > Core > Card display mode**:
+Work Terminal offers three card display modes, configurable under **Settings > General > Card display mode**:
 
 | Mode | Description |
 |------|-------------|
@@ -180,7 +183,7 @@ Switch between modes at any time from the settings dropdown.
 
 ### Hiding card indicators
 
-The **Show card indicators** setting (under **Settings > Adapter**) controls whether metadata badges and indicator dots appear on task cards. When disabled:
+The **Show card indicators** setting (under **Settings > General**) controls whether metadata badges and indicator dots appear on task cards. When disabled:
 
 - **Standard/Comfortable mode** - the metadata row below the title is hidden. This removes source badges (e.g. Jira keys), priority scores, goal tags, and card flag labels, reclaiming vertical space on the board.
 - **Compact mode** - the coloured indicator dots after the title are hidden.
@@ -255,7 +258,7 @@ Below the text filter is an **Active sessions only** checkbox. When enabled, onl
 
 Work Terminal offers an alternative view mode that groups and orders tasks by recent activity instead of by state columns. This is useful when you want to see what you have been working on recently, regardless of task state.
 
-To switch, go to **Settings > Core > View mode** and select **Activity (by recency)**.
+To switch, go to **Settings > General > View mode** and select **Activity (by recency)**.
 
 In activity mode, the kanban board is replaced with four recency sections:
 
@@ -273,7 +276,7 @@ In activity mode, the kanban board is replaced with four recency sections:
 - A `last-active` field is written to task frontmatter (at most once per minute) so timestamps survive plugin/Obsidian restarts
 - On load, the plugin reads `last-active` from frontmatter to seed the initial ordering
 
-**Configurable threshold**: The "Recent" section threshold can be adjusted in **Settings > Core > Recent activity threshold**:
+**Configurable threshold**: The "Recent" section threshold can be adjusted in **Settings > General > Recent activity threshold**:
 
 - Last hour
 - Last 3 hours (default)
@@ -357,6 +360,22 @@ Open the plugin settings via Obsidian's Settings dialog, then select **Work Term
 
 ![Settings tab showing agent profiles, core settings, and adapter configuration](screenshots/settings-tab.png)
 
+### Settings layout at a glance
+
+The settings page is organised into five top-level sections. Use this map to jump to the right place:
+
+| Section | What lives here |
+|---------|-----------------|
+| **General** | Task base path, state resolution strategy, view mode (kanban/activity), recent activity threshold, card display mode (standard/comfortable/compact), card indicator toggles, task card icons, automatic icon mode, Jira base URL, keep sessions alive, enrichment failure logs, expose debug API, reset guided tour. |
+| **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
+| **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
+| **Detail view** | Placement dropdown (split / tab / navigate / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
+| **Agents** | **Open Profile Manager** for agent profiles, the **Additional agent context prompt** inline textarea, **Configure enrichment...** for background enrichment, and **Configure agent actions...** for Split Task profile binding. |
+
+Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Background enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (additional agent context, detail view) stay inline.
+
+The reorganisation is cosmetic: every setting persists under the same key it used before, so upgrading does not change any behaviour. If you are looking for a setting that used to be on the main page and cannot find it, check the nearest dialog button.
+
 ### Agent profiles
 
 Agent profiles define reusable launch configurations for terminal sessions. Open the **Profile Manager** from the settings tab to create, edit, and manage profiles.
@@ -438,21 +457,30 @@ This is useful for workflows that need temporary or project-specific states like
 
 Dynamic columns can be **pinned** to keep them visible on the board even when they have no tasks. This is useful for permanent workflow stages that should always appear regardless of whether tasks currently occupy them.
 
-To pin a dynamic column, go to **Settings > Column Order & Creation** and click the **Pin** button next to the dynamic column's entry in the column order list. Pinned columns show "(pinned)" next to their label. Click **Unpin** to allow the column to auto-clean when empty.
+To pin a dynamic column, go to **Settings > Board & Columns** and click the **Pin** button next to the dynamic column's entry in the column order list. Pinned columns show "(pinned)" next to their label. Click **Unpin** to allow the column to auto-clean when empty.
 
 Resetting the column order to defaults also clears all pinned custom states.
 
 #### Creating custom states from settings
 
-You can pre-create a custom state column without needing to first create a task with that state. In **Settings > Column Order & Creation**, use the **Create custom state** input at the bottom of the column order section.
+You can pre-create a custom state column without needing to first create a task with that state. In **Settings > Board & Columns**, use the **Create custom state** input at the bottom of the column order section.
 
 Type a lowercase identifier with hyphens (e.g. `review`, `blocked-upstream`, `testing`) and press Enter. The new column is added to the column order and pinned by default so it stays visible even with zero tasks. You can then drag tasks into the new column or set the `state` frontmatter field to match the column ID.
+
+### Terminal settings
+
+Terminal-launch configuration lives in a dedicated dialog opened by the **Configure terminal...** button under **Settings > Terminal**. The dialog currently exposes:
+
+- **Default shell** - shell used for new terminal tabs. Defaults to `$SHELL` at plugin load time (typically `/bin/zsh` on macOS).
+- **Default terminal CWD** - working directory for new terminal tabs. Supports `~`, which expands to your home directory.
+
+Existing tabs keep whatever shell and CWD they were opened with - changing these settings only affects terminals opened after the change. The dialog persists changes as you type; close it with **Done** when finished.
 
 ### Background enrichment
 
 When enabled, new tasks created via the prompt box are automatically enriched by a headless agent session. The agent reads the task file and adds context, acceptance criteria, and other useful content.
 
-All enrichment options live in a dedicated dialog opened by the **Configure enrichment...** button under the **Background enrichment** section in the main settings.
+All enrichment options live in a dedicated dialog opened by the **Configure enrichment...** button under **Settings > Agents**.
 
 The dialog contains:
 
@@ -490,25 +518,47 @@ Each log records:
 
 **Retention**: on every failure the pruner removes logs older than 7 days AND caps the total at 50 files. You should not need to clean the directory manually.
 
-**Toggle**: the **Enrichment failure logs** checkbox under **Core** enables or disables the feature (default: enabled). Disabling it stops new logs being written; existing files on disk are not removed retroactively - delete the `logs/` folder by hand if you want to purge the history immediately.
+**Toggle**: the **Enrichment failure logs** checkbox under **Settings > General** enables or disables the feature (default: enabled). Disabling it stops new logs being written; existing files on disk are not removed retroactively - delete the `logs/` folder by hand if you want to purge the history immediately.
 
 **Sensitive content warning**: log files include the full enrichment prompt and the raw agent output. If your prompt template or task content references sensitive data (API keys, internal URLs, personal notes) those values will also appear in the log. Treat the `logs/` directory as you would any other local debug dump, and share logs only with people you are comfortable reading that content.
 
+### Additional agent context
+
+An **Additional agent context prompt** textarea lives inline under **Settings > Agents**. When set, its value is expanded and injected into context-aware agent launches (for example, the **Claude (ctx)** tab bar button and the Split Task / Retry Enrichment actions) on top of the adapter's own prompt.
+
+The template supports the same `$name` placeholders used everywhere else:
+
+| Placeholder | Description |
+|-------------|-------------|
+| `$title` | Work item title |
+| `$state` | Work item state (e.g. "priority", "active") |
+| `$filePath` | Vault-relative file path |
+| `$absoluteFilePath` | Fully resolved absolute filesystem path |
+| `$id` | Work item UUID |
+
+Leave the textarea blank to skip context injection entirely. Changes save as you type.
+
 ### Core settings
 
-The core settings section covers:
+The **General** section covers board-wide preferences and utility toggles. The most commonly-used items:
 
 | Setting | Description |
 |---------|-------------|
-| **Card display mode** | Choose between **Standard** (full multi-line card details), **Compact** (single-line cards with indicator dots), and **Comfortable** (single-line like Compact but with more padding). See [Card display modes](#card-display-modes). |
+| **Task base path** | Vault path containing task folders (adapter setting, shown first because it is typically set once at install time). |
+| **State resolution strategy** | How task state is determined: folder (default), frontmatter, or composite. See [State resolution strategies](#state-resolution-strategies). |
 | **View mode** | Choose between **Kanban** (group by state columns) and **Activity** (group by recency). See [Activity view](#activity-view). |
 | **Recent activity threshold** | How far back the "Recent" section extends in activity view: Last hour, Last 3 hours (default), or Last 24 hours. |
-| **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
-| **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
+| **Card display mode** | Choose between **Standard** (full multi-line card details), **Compact** (single-line cards with indicator dots), and **Comfortable** (single-line like Compact but with more padding). See [Card display modes](#card-display-modes). |
+| **Show card indicators** | Whether metadata badges and indicator dots appear on task cards. See [Hiding card indicators](#hiding-card-indicators). |
+| **Task card icons** | Whether icons are shown on task cards at all. See [Task card icons](#task-card-icons). |
+| **Automatic icon mode** | Which automatic icon scheme to apply when a task has no custom icon (none, source-based, state-based). |
+| **Jira base URL** | Browse URL prefix used to turn Jira keys like `AUTH-2847` into clickable external links. |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |
 | **Enrichment failure logs** | When enabled, each failed background enrichment writes a diagnostic log file to `<configDir>/plugins/work-terminal/logs/` (usually `.obsidian/plugins/work-terminal/logs/`). See [Enrichment failure logs](#enrichment-failure-logs). |
-| **Expose debug API** | Publishes `window.__workTerminalDebug` for CDP inspection (see [Debug API](#debug-api)) |
-| **Reset guided tour** | Clears the guided tour completion status so it starts again on next open |
+| **Expose debug API** | Publishes `window.__workTerminalDebug` for CDP inspection (see [Debug API](#debug-api)). |
+| **Reset guided tour** | Clears the guided tour completion status so it starts again on next open. |
+
+**Default shell** and **Default terminal CWD** moved into the [Terminal settings](#terminal-settings) dialog in the #462 reorganisation. Their setting keys (`core.defaultShell`, `core.defaultTerminalCwd`) are unchanged.
 
 ---
 
@@ -544,7 +594,7 @@ The retry session also runs through a resolvable agent profile. By default it fo
 
 ### Agent actions settings
 
-Profile binding for the **Split Task** adapter-driven action lives behind the **Configure agent actions...** button under **Settings > Agent actions**. The dialog exposes one dropdown:
+Profile binding for the **Split Task** adapter-driven action lives behind the **Configure agent actions...** button under **Settings > Agents**. The dialog exposes one dropdown:
 
 - **Split task profile** - which agent profile to launch for Split Task. Default: the built-in Claude (ctx) profile.
 
@@ -642,7 +692,7 @@ The `abandoned` state is a special terminal state - abandoned tasks are filtered
 
 ## Adapter settings reference
 
-These settings are specific to the task-agent adapter. Adapter-level fields appear under the **Adapter** section in settings; background-enrichment fields are edited inside the **Configure enrichment...** dialog (opened from the **Background enrichment** section) and are marked below.
+These settings are specific to the task-agent adapter. Adapter-level fields now appear across the new top-level sections (see [Settings layout at a glance](#settings-layout-at-a-glance)) - mostly under **General** and **Board & Columns** - rather than in a single **Adapter** block. Background-enrichment fields are edited inside the **Configure enrichment...** dialog (opened from the **Agents** section) and are marked below.
 
 | Setting | Description | Default |
 |---------|-------------|---------|

@@ -2,10 +2,24 @@
  * WorkTerminalSettingsTab - single settings UI combining core framework
  * settings with adapter-provided settings via namespaced keys.
  *
- * Core settings: core.defaultShell, core.defaultTerminalCwd, toggles
- * Agent settings: managed via Agent Profile Manager (profiles replace
- *   the legacy per-agent command/args/context fields)
- * Adapter settings: adapter.* (from adapter.config.settingsSchema)
+ * Structure (issue #462 reorganisation):
+ *   1. General - base path, state resolution, view mode, recent threshold,
+ *      card display mode, card indicator toggles, Jira base URL, guided tour
+ *      reset, debug API, keepSessionsAlive, enrichmentLogging.
+ *   2. Board & Columns - column order list + creation column list + custom
+ *      card flag rules button (merges the old "Column Order & Creation" and
+ *      "Card Indicators" sections).
+ *   3. Terminal - "Configure terminal..." button opening a dedicated dialog
+ *      (default shell, default terminal CWD).
+ *   4. Detail view - placement dropdown + placement-dependent auto-close,
+ *      width override, split direction controls. Unchanged.
+ *   5. Agents - umbrella heading with Profile Manager, inline context prompt
+ *      textarea (core.additionalAgentContext), Background enrichment dialog
+ *      button, Agent actions dialog button.
+ *
+ * Every moved setting persists under the same key used before the
+ * reorganisation - no schema change. Users who upgrade see the same values
+ * in a new layout.
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
@@ -22,6 +36,7 @@ import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
 import { EnrichmentSettingsDialog } from "./EnrichmentSettingsDialog";
 import { AgentActionsDialog } from "./AgentActionsDialog";
+import { TerminalSettingsDialog } from "./TerminalSettingsDialog";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
@@ -73,6 +88,21 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.detailViewSplitDirection": "vertical",
 };
 
+/**
+ * Adapter-setting keys that are surfaced inside dedicated dialogs (not the
+ * top-level list). Used to filter which adapter fields the General section
+ * renders inline.
+ */
+const ENRICHMENT_DIALOG_KEYS = new Set([
+  "enrichmentEnabled",
+  "enrichmentPrompt",
+  "retryEnrichmentPrompt",
+  "enrichmentProfile",
+  "enrichmentTimeout",
+  "retryEnrichmentProfile",
+]);
+const AGENT_ACTIONS_DIALOG_KEYS = new Set(["splitTaskProfile"]);
+
 export class WorkTerminalSettingsTab extends PluginSettingTab {
   private adapter: AdapterBundle;
   private plugin: Plugin;
@@ -106,60 +136,37 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    // Agent Profiles section
-    containerEl.createEl("h2", { text: "Agent Profiles" });
-    new Setting(containerEl)
-      .setName("Manage agent profiles")
-      .setDesc(
-        "Configure reusable agent launch profiles with custom commands, arguments, and tab bar buttons.",
-      )
-      .addButton((btn) =>
-        btn
-          .setButtonText("Open Profile Manager")
-          .setCta()
-          .onClick(() => {
-            new AgentProfileManagerModal(
-              this.app,
-              this.profileManager,
-              this.adapterPromptDescription,
-            ).open();
-          }),
-      );
+    this.renderGeneralSection(containerEl);
+    this.renderBoardAndColumnsSection(containerEl);
+    this.renderTerminalSection(containerEl);
+    this.renderDetailViewSection(containerEl);
+    this.renderAgentsSection(containerEl);
+  }
 
-    // Core settings section
-    containerEl.createEl("h2", { text: "Core" });
+  // ------------------------------------------------------------------ //
+  // Section renderers                                                   //
+  // ------------------------------------------------------------------ //
 
-    this.addCoreSetting(
-      containerEl,
-      "core.defaultShell",
-      "Default shell",
-      "Shell used for new terminal tabs",
-    );
-    this.addCoreSetting(
-      containerEl,
-      "core.defaultTerminalCwd",
-      "Default terminal CWD",
-      "Working directory for new terminals (supports ~)",
-    );
-    this.addCoreToggle(
-      containerEl,
-      "core.keepSessionsAlive",
-      "Keep sessions alive when tab is closed",
-      "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state.",
-    );
-    this.addCoreToggle(
-      containerEl,
-      "core.enrichmentLogging",
-      "Enrichment failure logs",
-      "When a background enrichment attempt fails, write a detailed log file (prompt, agent stdout/stderr, error details) to the plugin's logs/ directory. Logs older than 7 days are auto-pruned and only the 50 most recent are retained. Logs may contain task content and agent output - see the user guide for details.",
-    );
-    this.addCoreDropdown(
-      containerEl,
-      "core.cardDisplayMode",
-      "Card display mode",
-      "Standard shows full card details. Comfortable adds extra padding and spacing for easier scanning. Compact shows single-line cards with indicator dots replacing verbose badges.",
-      { standard: "Standard", comfortable: "Comfortable", compact: "Compact" },
-    );
+  /**
+   * General section: task base path, state resolution, view mode, recent
+   * threshold, card display mode, card-indicator toggles (showCardIndicators,
+   * taskCardIcons, autoIconMode), jiraBaseUrl, keepSessionsAlive,
+   * enrichmentLogging, debug API toggle, reset guided tour.
+   *
+   * Ordering within the section puts frequently-touched items first (view
+   * mode, recent threshold, card display) then rarer ones (debug API,
+   * enrichment logs).
+   */
+  private renderGeneralSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h2", { text: "General" });
+
+    // Task base path + state strategy are adapter-level but conceptually
+    // "where are my tasks stored and how is state computed" - users reach for
+    // them during initial setup and rarely after, so they go near the top of
+    // the section rather than getting lost at the bottom.
+    this.addAdapterSettingByKey(containerEl, "taskBasePath");
+    this.addAdapterSettingByKey(containerEl, "stateStrategy");
+
     this.addCoreDropdown(
       containerEl,
       "core.viewMode",
@@ -174,7 +181,36 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       'How far back the "Recent" section extends in activity view. The section always includes today, or the configured threshold, whichever is longer.',
       { "1h": "Last hour", "3h": "Last 3 hours (default)", "24h": "Last 24 hours" },
     );
+    this.addCoreDropdown(
+      containerEl,
+      "core.cardDisplayMode",
+      "Card display mode",
+      "Standard shows full card details. Comfortable adds extra padding and spacing for easier scanning. Compact shows single-line cards with indicator dots replacing verbose badges.",
+      { standard: "Standard", comfortable: "Comfortable", compact: "Compact" },
+    );
 
+    // Card-indicator adapter toggles live here because they're display
+    // preferences (what you see on each card) rather than board layout.
+    this.addAdapterSettingByKey(containerEl, "showCardIndicators");
+    this.addAdapterSettingByKey(containerEl, "taskCardIcons");
+    this.addAdapterSettingByKey(containerEl, "autoIconMode");
+
+    // Jira integration - rarely changed after setup.
+    this.addAdapterSettingByKey(containerEl, "jiraBaseUrl");
+
+    // Session/lifecycle toggles.
+    this.addCoreToggle(
+      containerEl,
+      "core.keepSessionsAlive",
+      "Keep sessions alive when tab is closed",
+      "Stash terminal sessions to memory instead of killing them when the Work Terminal tab is closed. Reopening the tab restores sessions with full PTY state.",
+    );
+    this.addCoreToggle(
+      containerEl,
+      "core.enrichmentLogging",
+      "Enrichment failure logs",
+      "When a background enrichment attempt fails, write a detailed log file (prompt, agent stdout/stderr, error details) to the plugin's logs/ directory. Logs older than 7 days are auto-pruned and only the 50 most recent are retained. Logs may contain task content and agent output - see the user guide for details.",
+    );
     this.addCoreToggle(
       containerEl,
       "core.exposeDebugApi",
@@ -194,48 +230,133 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         }),
       );
 
-    // Detail view section - controls how task detail files are opened when
-    // a work item is selected. Placement-dependent controls are only shown
-    // when they apply.
+    // Any remaining adapter settings that aren't claimed by a section-specific
+    // renderer end up here so adapters shipping bespoke fields don't silently
+    // drop off the UI.
+    const handledKeys = new Set<string>([
+      "taskBasePath",
+      "stateStrategy",
+      "jiraBaseUrl",
+      "showCardIndicators",
+      "taskCardIcons",
+      "autoIconMode",
+    ]);
+    for (const field of this.adapter.config.settingsSchema) {
+      if (handledKeys.has(field.key)) continue;
+      if (ENRICHMENT_DIALOG_KEYS.has(field.key)) continue;
+      if (AGENT_ACTIONS_DIALOG_KEYS.has(field.key)) continue;
+      this.addAdapterSetting(containerEl, field);
+    }
+  }
+
+  /**
+   * Board & Columns section: merges the old "Column Order & Creation" and
+   * "Card Indicators" sections into one umbrella. Hidden when the adapter
+   * provides neither columns nor card-flag defaults (i.e. a minimal adapter
+   * with no kanban board).
+   */
+  private renderBoardAndColumnsSection(containerEl: HTMLElement): void {
+    const hasColumns = this.adapter.config.columns.length > 0;
+    const hasCardFlags = this.adapter.config.cardFlags !== undefined;
+    if (!hasColumns && !hasCardFlags) return;
+
+    containerEl.createEl("h2", { text: "Board & Columns" });
+
+    if (hasColumns) {
+      this.renderColumnOrderControls(containerEl);
+      this.renderCreationColumnControls(containerEl);
+    }
+    if (hasCardFlags) {
+      this.addCardFlagRulesButton(containerEl);
+    }
+  }
+
+  /**
+   * Terminal section: surfaces a single "Configure terminal..." button that
+   * opens the dedicated TerminalSettingsDialog. Default shell and default
+   * terminal CWD live inside the dialog so the top-level page stays scannable
+   * and future terminal controls (keyboard-capture toggles, resize behaviour)
+   * have room to grow without adding noise here.
+   */
+  private renderTerminalSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h2", { text: "Terminal" });
+
+    new Setting(containerEl)
+      .setName("Configure terminal")
+      .setDesc(
+        "Open a dialog to configure how new terminal tabs are launched: " +
+          "default shell and default working directory. Existing tabs keep " +
+          "whatever shell and CWD they were opened with.",
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Configure terminal...")
+          .setCta()
+          .onClick(() => {
+            const dialog = new TerminalSettingsDialog(this.app, this.plugin, this.adapter);
+            const originalOnClose = dialog.onClose.bind(dialog);
+            dialog.onClose = () => {
+              originalOnClose();
+              this.display();
+            };
+            dialog.open();
+          }),
+      );
+  }
+
+  /**
+   * Detail view section: controls how task detail files are opened when a
+   * work item is selected. Placement-dependent controls are only shown when
+   * they apply (unchanged from the pre-reorganisation behaviour).
+   */
+  private renderDetailViewSection(containerEl: HTMLElement): void {
     containerEl.createEl("h2", { text: "Detail view" });
     this.renderDetailViewSettings(containerEl);
+  }
 
-    // Adapter settings section
+  /**
+   * Agents section: umbrella heading with Profile Manager, inline additional
+   * agent context textarea, and buttons to the Background enrichment and
+   * Agent actions dialogs.
+   */
+  private renderAgentsSection(containerEl: HTMLElement): void {
+    containerEl.createEl("h2", { text: "Agents" });
+
+    // Profile Manager - first because it's the most frequent touchpoint.
+    new Setting(containerEl)
+      .setName("Manage agent profiles")
+      .setDesc(
+        "Configure reusable agent launch profiles with custom commands, arguments, and tab bar buttons.",
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Profile Manager")
+          .setCta()
+          .onClick(() => {
+            new AgentProfileManagerModal(
+              this.app,
+              this.profileManager,
+              this.adapterPromptDescription,
+            ).open();
+          }),
+      );
+
+    // Additional agent context - inline textarea. Single-setting concept, not
+    // dialog-worthy by itself.
+    this.renderAdditionalAgentContext(containerEl);
+
+    // Background enrichment dialog button (only if the adapter schema declares
+    // enrichment fields).
     const schema = this.adapter.config.settingsSchema;
-    // Enrichment settings live behind a dedicated dialog to reduce clutter in
-    // the main adapter section. The Background enrichment section now shows
-    // only a "Configure enrichment..." button; the enabled toggle lives
-    // exclusively inside the dialog (consistent with Agent Profiles / Card
-    // Flag Rules button pattern).
-    const enrichmentDialogKeys = new Set([
-      "enrichmentEnabled",
-      "enrichmentPrompt",
-      "retryEnrichmentPrompt",
-      "enrichmentProfile",
-      "enrichmentTimeout",
-      // retryEnrichmentProfile moved from Agent actions dialog to the
-      // enrichment dialog (#464) so all enrichment-related settings live
-      // in one place.
-      "retryEnrichmentProfile",
-    ]);
-    // Agent-action profile bindings live behind a dedicated dialog (#448) so
-    // the main adapter section stays focused on adapter-intrinsic settings.
-    const agentActionsDialogKeys = new Set(["splitTaskProfile"]);
-    const hasEnrichmentSchema = schema.some((field) => enrichmentDialogKeys.has(field.key));
-    const hasAgentActionsSchema = schema.some((field) => agentActionsDialogKeys.has(field.key));
-    const nonEnrichmentSchema = schema.filter(
-      (field) => !enrichmentDialogKeys.has(field.key) && !agentActionsDialogKeys.has(field.key),
-    );
-
+    const hasEnrichmentSchema = schema.some((field) => ENRICHMENT_DIALOG_KEYS.has(field.key));
     if (hasEnrichmentSchema) {
-      containerEl.createEl("h2", { text: "Background enrichment" });
       new Setting(containerEl)
-        .setName("Configure enrichment")
+        .setName("Background enrichment")
         .setDesc(
           "Open a dialog to enable/disable background enrichment and customise " +
-            "the enrichment prompt, retry prompt, agent profile, and timeout. The " +
-            "built-in default prompts are displayed inside the dialog so you can " +
-            "read them before deciding whether to override.",
+            "the enrichment prompt, retry prompt, agent profile, and timeout. " +
+            "The built-in default prompts are displayed inside the dialog so you " +
+            "can read them before deciding whether to override.",
         )
         .addButton((btn) =>
           btn
@@ -252,15 +373,17 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         );
     }
 
+    // Agent actions dialog button (only if the adapter schema declares
+    // agent-action bindings).
+    const hasAgentActionsSchema = schema.some((field) => AGENT_ACTIONS_DIALOG_KEYS.has(field.key));
     if (hasAgentActionsSchema) {
-      containerEl.createEl("h2", { text: "Agent actions" });
       new Setting(containerEl)
-        .setName("Configure agent actions")
+        .setName("Agent actions")
         .setDesc(
           "Open a dialog to bind agent profiles to adapter-driven actions " +
             "(currently Split Task). Defaults fall back through the available Claude-family " +
             "profiles so users who never open this dialog still get profile-aware launches. " +
-            "The Retry Enrichment profile now lives in the Configure enrichment... dialog.",
+            "The Retry Enrichment profile lives in the Configure enrichment... dialog.",
         )
         .addButton((btn) =>
           btn
@@ -273,9 +396,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
                 this.adapter,
                 this.profileManager,
               );
-              // Re-render the settings tab on close so any visible state (e.g.
-              // future inline summaries) stays in sync. Mirrors the
-              // EnrichmentSettingsDialog wrap-around pattern.
               const originalOnClose = dialog.onClose.bind(dialog);
               dialog.onClose = () => {
                 originalOnClose();
@@ -285,26 +405,52 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
             }),
         );
     }
+  }
 
-    if (nonEnrichmentSchema.length > 0) {
-      containerEl.createEl("h2", { text: "Adapter" });
-      for (const field of nonEnrichmentSchema) {
-        this.addAdapterSetting(containerEl, field);
-      }
-    }
+  /**
+   * Render the additional-agent-context textarea inline under the Agents
+   * heading. This is a single setting backed by `core.additionalAgentContext`
+   * so it doesn't justify its own dialog, but it benefits from being grouped
+   * with the other agent-related controls.
+   */
+  private async renderAdditionalAgentContext(containerEl: HTMLElement): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    const value = (settings["core.additionalAgentContext"] as string) || "";
 
-    // Column management section (shown when the adapter has columns)
-    if (this.adapter.config.columns.length > 0) {
-      containerEl.createEl("h2", { text: "Column Order & Creation" });
-      this.renderColumnOrderControls(containerEl);
-      this.renderCreationColumnControls(containerEl);
-    }
+    const setting = new Setting(containerEl)
+      .setName("Additional agent context prompt")
+      .setDesc(
+        "Optional template injected into context-aware agent launches. Supports placeholders: " +
+          "$title, $state, $filePath (vault-relative), $absoluteFilePath (absolute filesystem path), $id. " +
+          "Leave blank to skip context injection.",
+      );
+    setting.settingEl.style.flexWrap = "wrap";
+    setting.controlEl.style.width = "100%";
+    setting.addTextArea((text) => {
+      text.inputEl.dataset.settingKey = "core.additionalAgentContext";
+      text.inputEl.addClass("wt-agent-context-input");
+      text.setValue(value).onChange(async (newValue) => {
+        await this.saveSettings((s) => {
+          s["core.additionalAgentContext"] = newValue;
+        });
+      });
+    });
+  }
 
-    // Card flag rules section (shown when the adapter provides cardFlags)
-    if (this.adapter.config.cardFlags !== undefined) {
-      containerEl.createEl("h2", { text: "Card Indicators" });
-      this.addCardFlagRulesButton(containerEl);
-    }
+  // ------------------------------------------------------------------ //
+  // Helpers                                                             //
+  // ------------------------------------------------------------------ //
+
+  /**
+   * Render an adapter setting by schema key, no-op if the adapter doesn't
+   * declare that key. Used to pull specific adapter fields into the General
+   * section at chosen positions.
+   */
+  private addAdapterSettingByKey(containerEl: HTMLElement, key: string): void {
+    const field = this.adapter.config.settingsSchema.find((f) => f.key === key);
+    if (!field) return;
+    this.addAdapterSetting(containerEl, field);
   }
 
   private async saveSettings(update: (settings: Record<string, unknown>) => void): Promise<void> {
@@ -317,33 +463,6 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // the Work Terminal view is not open (and thus no MainView listener exists).
     this.adapter.onSettingsChanged?.(allSettings);
     window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: allSettings }));
-  }
-
-  private async addCoreSetting(
-    containerEl: HTMLElement,
-    key: keyof CoreSettings,
-    name: string,
-    description: string,
-    tourId?: string,
-  ): Promise<void> {
-    const data = (await this.plugin.loadData()) || {};
-    const settings = data.settings || {};
-    const value = settings[key] ?? CORE_DEFAULTS[key];
-
-    const setting = new Setting(containerEl)
-      .setName(name)
-      .setDesc(description)
-      .addText((text) => {
-        text.inputEl.dataset.settingKey = key;
-        text.setValue(String(value)).onChange(async (newValue) => {
-          await this.saveSettings((settings) => {
-            settings[key] = newValue;
-          });
-        });
-      });
-    if (tourId) {
-      setting.settingEl.setAttribute("data-wt-tour", tourId);
-    }
   }
 
   private async addCoreToggle(
