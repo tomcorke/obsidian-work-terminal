@@ -13,21 +13,21 @@ import {
 } from "./EnrichmentLogger";
 
 describe("formatTimestampForFilename", () => {
-  it("pads components to two digits and uses UTC", () => {
-    const date = new Date(Date.UTC(2026, 0, 5, 3, 7, 9));
-    expect(formatTimestampForFilename(date)).toBe("20260105-030709");
+  it("pads components and includes milliseconds in UTC", () => {
+    const date = new Date(Date.UTC(2026, 0, 5, 3, 7, 9, 42));
+    expect(formatTimestampForFilename(date)).toBe("20260105-030709-042");
   });
 });
 
 describe("buildLogFilename", () => {
-  const date = new Date(Date.UTC(2026, 3, 20, 14, 30, 0));
+  const date = new Date(Date.UTC(2026, 3, 20, 14, 30, 0, 123));
 
-  it("uses the titleHint slug when provided", () => {
+  it("uses the titleHint slug when provided, with ms and random suffix", () => {
     const name = buildLogFilename(
       { category: "timeout", summary: "", titleHint: "Fix the Thing!" },
       date,
     );
-    expect(name).toBe("enrich-20260420-143000-fix-the-thing.log");
+    expect(name).toMatch(/^enrich-20260420-143000-123-fix-the-thing-[0-9a-f]{6}\.log$/);
   });
 
   it("falls back to the original filename without .md", () => {
@@ -50,7 +50,18 @@ describe("buildLogFilename", () => {
 
   it("falls back to 'unknown' when no slug source is usable", () => {
     const name = buildLogFilename({ category: "timeout", summary: "" }, date);
-    expect(name).toBe("enrich-20260420-143000-unknown.log");
+    expect(name).toMatch(/^enrich-20260420-143000-123-unknown-[0-9a-f]{6}\.log$/);
+  });
+
+  it("produces unique filenames for repeated calls with identical params", () => {
+    const params = { category: "timeout" as const, summary: "", titleHint: "Same Title" };
+    const names = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      names.add(buildLogFilename(params, date));
+    }
+    // With 24 bits of random entropy and 20 draws, collision is extremely
+    // unlikely; if this ever flakes it still indicates weak uniqueness.
+    expect(names.size).toBe(20);
   });
 });
 
@@ -240,14 +251,14 @@ describe("writeEnrichmentLog", () => {
   it("writes a log file under the plugin logs directory", async () => {
     const { app, writes } = makeApp();
     await writeEnrichmentLog(app, {
-      timestamp: new Date(Date.UTC(2026, 3, 20, 12, 0, 0)),
+      timestamp: new Date(Date.UTC(2026, 3, 20, 12, 0, 0, 456)),
       category: "timeout",
       summary: "timed out",
       titleHint: "My Task",
     });
     expect(writes).toHaveLength(1);
-    expect(writes[0].path).toBe(
-      ".obsidian/plugins/work-terminal/logs/enrich-20260420-120000-my-task.log",
+    expect(writes[0].path).toMatch(
+      /^\.obsidian\/plugins\/work-terminal\/logs\/enrich-20260420-120000-456-my-task-[0-9a-f]{6}\.log$/,
     );
     expect(writes[0].body).toContain("category: timeout");
   });

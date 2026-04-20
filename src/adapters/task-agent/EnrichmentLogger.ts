@@ -86,20 +86,41 @@ export interface EnrichmentLogParams {
 }
 
 /**
- * Format a timestamp as `YYYYMMDD-HHMMSS` in UTC. Used in log filenames so
- * chronological sort order matches lexicographic sort.
+ * Format a timestamp as `YYYYMMDD-HHMMSS-sss` in UTC. Used in log filenames so
+ * chronological sort order matches lexicographic sort. Milliseconds are
+ * included to reduce the chance of collisions when multiple failures occur in
+ * the same second (e.g. two tasks with the same title hint).
  */
 export function formatTimestampForFilename(date: Date): string {
   const pad = (n: number, w = 2): string => String(n).padStart(w, "0");
   return (
     `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
-    `-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}`
+    `-${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}` +
+    `-${pad(date.getUTCMilliseconds(), 3)}`
   );
 }
 
 /**
- * Build the log filename for an enrichment failure: `enrich-<ts>-<slug>.log`.
- * Falls back to "unknown" when no usable title/filename is available.
+ * Generate a short random hex token (default 6 hex chars = 24 bits of entropy).
+ * Used as a final collision guard on log filenames: even if two failures share
+ * the same millisecond timestamp and title, the random suffix effectively
+ * eliminates collisions in practice.
+ */
+export function randomFilenameToken(length = 6): string {
+  const chars = "0123456789abcdef";
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+/**
+ * Build the log filename for an enrichment failure:
+ * `enrich-<ts>-<slug>-<rand>.log`. Falls back to "unknown" when no usable
+ * title/filename is available. The millisecond-precision timestamp plus a
+ * short random token ensure two failures with the same title in the same
+ * second still produce distinct filenames.
  */
 export function buildLogFilename(params: EnrichmentLogParams, date: Date): string {
   const tsPart = formatTimestampForFilename(date);
@@ -109,7 +130,8 @@ export function buildLogFilename(params: EnrichmentLogParams, date: Date): strin
     params.itemId ||
     "unknown";
   const slug = slugify(raw) || "unknown";
-  return `${LOG_FILE_PREFIX}${tsPart}-${slug}${LOG_FILE_SUFFIX}`;
+  const rand = randomFilenameToken();
+  return `${LOG_FILE_PREFIX}${tsPart}-${slug}-${rand}${LOG_FILE_SUFFIX}`;
 }
 
 /**
