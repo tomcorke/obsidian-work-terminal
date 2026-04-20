@@ -213,10 +213,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "retryEnrichmentPrompt",
       "enrichmentProfile",
       "enrichmentTimeout",
+      // retryEnrichmentProfile moved from Agent actions dialog to the
+      // enrichment dialog (#464) so all enrichment-related settings live
+      // in one place.
+      "retryEnrichmentProfile",
     ]);
     // Agent-action profile bindings live behind a dedicated dialog (#448) so
     // the main adapter section stays focused on adapter-intrinsic settings.
-    const agentActionsDialogKeys = new Set(["splitTaskProfile", "retryEnrichmentProfile"]);
+    const agentActionsDialogKeys = new Set(["splitTaskProfile"]);
     const hasEnrichmentSchema = schema.some((field) => enrichmentDialogKeys.has(field.key));
     const hasAgentActionsSchema = schema.some((field) => agentActionsDialogKeys.has(field.key));
     const nonEnrichmentSchema = schema.filter(
@@ -254,8 +258,9 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         .setName("Configure agent actions")
         .setDesc(
           "Open a dialog to bind agent profiles to adapter-driven actions " +
-            "(Split Task, Retry Enrichment). Defaults follow the built-in 'Claude (ctx)' " +
-            "profile so users who never open this dialog still get profile-aware launches.",
+            "(currently Split Task). Defaults follow the built-in 'Claude (ctx)' " +
+            "profile so users who never open this dialog still get profile-aware launches. " +
+            "The Retry Enrichment profile now lives in the Configure enrichment... dialog.",
         )
         .addButton((btn) =>
           btn

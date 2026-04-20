@@ -16,7 +16,8 @@
  *     -> first Claude profile
  *     -> null
  *
- * Retry Enrichment profile:
+ * Retry Enrichment profile (configured in the Configure Enrichment
+ * dialog, key `adapter.retryEnrichmentProfile`):
  *   adapter.retryEnrichmentProfile
  *     -> adapter.enrichmentProfile (shared with background enrichment)
  *     -> default-claude-ctx

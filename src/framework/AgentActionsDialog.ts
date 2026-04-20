@@ -1,7 +1,6 @@
 /**
  * AgentActionsDialog - dedicated modal housing profile bindings for
- * agent-driven adapter actions (Split Task, Retry Enrichment, and future
- * per-action hooks).
+ * agent-driven adapter actions (Split Task, and future per-action hooks).
  *
  * Mirrors the structure of EnrichmentSettingsDialog - the pattern is
  * deliberately duplicated (not extracted to a base class) so each dialog
@@ -10,13 +9,14 @@
  * Settings are persisted through the same `plugin.loadData`/saveData path
  * as the rest of the adapter schema. Keys written here are:
  *   - adapter.splitTaskProfile
- *   - adapter.retryEnrichmentProfile
  *
- * The resolution chains (see splitTaskProfile.ts) mean that leaving
- * either dropdown on "Default" still produces sensible behaviour:
- *   - Split Task -> built-in Claude (ctx) profile.
- *   - Retry Enrichment -> adapter.enrichmentProfile if set, else the
- *     built-in Claude (ctx) profile.
+ * The `adapter.retryEnrichmentProfile` binding used to live here too but
+ * moved to EnrichmentSettingsDialog (issue #464) so all enrichment-related
+ * settings are configurable in one place.
+ *
+ * The resolution chain (see splitTaskProfile.ts) means that leaving the
+ * dropdown on "Default" still produces sensible behaviour: Split Task
+ * falls back to the built-in Claude (ctx) profile.
  */
 import { App, Modal, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
@@ -82,15 +82,6 @@ export class AgentActionsDialog extends Modal {
       "Profile used when launching Claude for the Split Task context menu action. " +
         "Default: the built-in Claude (ctx) profile, matching the 'Claude (ctx)' tab bar button.",
       "adapter.splitTaskProfile",
-      settings,
-    );
-
-    this.renderProfileDropdown(
-      containerEl,
-      "Retry enrichment profile",
-      "Profile used when re-running enrichment from the card context menu. " +
-        "Default: the background enrichment profile if set, otherwise the built-in Claude (ctx) profile.",
-      "adapter.retryEnrichmentProfile",
       settings,
     );
   }
