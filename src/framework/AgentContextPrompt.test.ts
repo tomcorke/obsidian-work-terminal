@@ -144,6 +144,67 @@ describe("expandProfilePlaceholders", () => {
     );
   });
 
+  it("expands $absoluteFilePath for a Windows drive-letter absolute path (backslashes)", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "C:\\vault\\2 - Areas\\Tasks\\priority\\task.md",
+    );
+    expect(result).toBe("--path C:\\vault\\2 - Areas\\Tasks\\priority\\task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath for a Windows drive-letter absolute path (forward slashes)", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "C:/vault/2 - Areas/Tasks/priority/task.md",
+    );
+    expect(result).toBe("--path C:/vault/2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath for a Windows UNC path", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "\\\\server\\share\\vault\\task.md",
+    );
+    expect(result).toBe("--path \\\\server\\share\\vault\\task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("expands $absoluteFilePath for a POSIX-style UNC path (double slash)", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "//server/share/vault/task.md",
+    );
+    expect(result).toBe("--path //server/share/vault/task.md");
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("falls back and warns when $absoluteFilePath is given a Windows-style relative path", () => {
+    const result = expandProfilePlaceholders(
+      "--path $absoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "vault\\task.md",
+    );
+    expect(result).toBe("--path 2 - Areas/Tasks/priority/task.md");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("not absolute");
+  });
+
   it("expands $absoluteFilePath alongside all other placeholders", () => {
     const result = expandProfilePlaceholders(
       "--title $title --abs $absoluteFilePath --rel $filePath --id $id --session $sessionId",

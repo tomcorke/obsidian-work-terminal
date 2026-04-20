@@ -373,7 +373,7 @@ The settings page is organised into five top-level sections. Use this map to jum
 
 Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Background enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.
 
-The reorganisation is cosmetic: every setting persists under the same key it used before, so upgrading does not change any behaviour. If you are looking for a setting that used to be on the main page and cannot find it, check the nearest dialog button.
+The layout reorganisation itself is cosmetic: existing settings were regrouped, not renamed, so most upgrades should not change behaviour just because the settings page looks different. One exception is that `core.additionalAgentContext` was removed as a breaking change. If you are looking for a setting that used to be on the main page and cannot find it, check the nearest dialog button.
 
 ### Agent profiles
 

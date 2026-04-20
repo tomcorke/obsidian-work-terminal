@@ -16,9 +16,11 @@
  *   5. Agents - umbrella heading with Profile Manager, Background enrichment
  *      dialog button, Agent actions dialog button.
  *
- * Every moved setting persists under the same key used before the
- * reorganisation - no schema change. Users who upgrade see the same values
- * in a new layout.
+ * The #462 reorganisation itself was a pure layout change - every moved
+ * setting persisted under the same key it used before, so that work
+ * introduced no schema change on its own. Subsequent Unreleased work (#472)
+ * did remove the `core.additionalAgentContext` key as a breaking change;
+ * see CHANGELOG.md "Removed" entry for details.
  */
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
