@@ -259,8 +259,8 @@ export class EnrichmentSettingsDialog extends Modal {
       .setName("Retry enrichment profile")
       .setDesc(
         "Profile used when re-running enrichment from the card context menu. " +
-          "Default: the background enrichment profile above if set, otherwise " +
-          "the built-in Claude (ctx) profile.",
+          "Default: the background enrichment profile above if it is Claude-family; " +
+          "otherwise the built-in Claude (ctx) profile.",
       )
       .addDropdown((dropdown) => {
         dropdown.addOption("", "Default (see description)");
