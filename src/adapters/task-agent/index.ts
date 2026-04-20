@@ -16,6 +16,7 @@ import { TaskMover } from "./TaskMover";
 import { TaskCard } from "./TaskCard";
 import { TaskPromptBuilder } from "./TaskPromptBuilder";
 import { TaskDetailView } from "./TaskDetailView";
+import { resolveDetailViewOptions } from "../../core/detailViewPlacement";
 import {
   handleItemCreated,
   handleSplitTaskCreated,
@@ -129,10 +130,17 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   createDetailView(item: WorkItem, app: App, ownerLeaf: WorkspaceLeaf): void {
     this._app = app;
+    const options = resolveDetailViewOptions(this._settings);
+    // "Disabled" placement means: do not instantiate a detail view at all.
+    // Early-return also prevents opening the file so the user's layout is
+    // left untouched on selection.
+    if (options.placement === "disabled") {
+      return;
+    }
     if (!this.detailView) {
       this.detailView = new TaskDetailView(app);
     }
-    this.detailView.show(item, ownerLeaf);
+    this.detailView.show(item, ownerLeaf, options);
   }
 
   rekeyDetailPath(oldPath: string, newPath: string): void {

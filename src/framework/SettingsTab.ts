@@ -22,6 +22,8 @@ import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
+import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
+import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -38,6 +40,10 @@ interface CoreSettings {
   "core.cardDisplayMode": CardDisplayMode;
   "core.viewMode": ViewMode;
   "core.recentThreshold": RecentThreshold;
+  "core.detailViewPlacement": DetailViewPlacement;
+  "core.detailViewWidthOverride": boolean;
+  "core.detailViewAutoClose": boolean;
+  "core.detailViewSplitDirection": DetailViewSplitDirection;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -57,6 +63,10 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.cardDisplayMode": "standard",
   "core.viewMode": "kanban",
   "core.recentThreshold": "3h",
+  "core.detailViewPlacement": "split",
+  "core.detailViewWidthOverride": true,
+  "core.detailViewAutoClose": false,
+  "core.detailViewSplitDirection": "vertical",
 };
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
@@ -174,6 +184,12 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         }),
       );
 
+    // Detail view section - controls how task detail files are opened when
+    // a work item is selected. Placement-dependent controls are only shown
+    // when they apply.
+    containerEl.createEl("h2", { text: "Detail view" });
+    this.renderDetailViewSettings(containerEl);
+
     // Adapter settings section
     const schema = this.adapter.config.settingsSchema;
     if (schema.length > 0) {
@@ -286,6 +302,73 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           });
         });
       });
+  }
+
+  /**
+   * Render the Detail view settings group: placement dropdown plus
+   * placement-dependent width override, auto-close, and split direction
+   * controls. Re-renders the whole settings page on placement change so the
+   * conditional controls appear or disappear.
+   */
+  private async renderDetailViewSettings(containerEl: HTMLElement): Promise<void> {
+    const data = (await this.plugin.loadData()) || {};
+    const settings = data.settings || {};
+    // Resolve via resolveDetailViewOptions so invalid persisted values (from
+    // manual edits or older plugin versions) fall back to the default and
+    // the dropdown/conditional rendering stay consistent.
+    const placement = resolveDetailViewOptions(settings).placement;
+
+    // Placement dropdown - drives visibility of other fields in this section.
+    new Setting(containerEl)
+      .setName("Placement")
+      .setDesc(
+        "How the task file opens when you select a work item. " +
+          "Split opens a new split beside the Work Terminal view (default). " +
+          "Tab opens a new tab in the active tab group. " +
+          "Navigate replaces the contents of the active editor. " +
+          "Disabled does nothing - open files manually via the file explorer or quick switcher.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("split", "Split (default)");
+        dropdown.addOption("tab", "Tab in active group");
+        dropdown.addOption("navigate", "Navigate active leaf");
+        dropdown.addOption("disabled", "Disabled");
+        dropdown.setValue(placement).onChange(async (newValue) => {
+          await this.saveSettings((s) => {
+            s["core.detailViewPlacement"] = newValue;
+          });
+          // Re-render to update visibility of placement-dependent settings
+          this.display();
+        });
+      });
+
+    // Auto-close applies to any placement except "disabled" (where nothing is
+    // opened anyway). It's a general behaviour toggle, not split-specific.
+    if (placement !== "disabled") {
+      this.addCoreToggle(
+        containerEl,
+        "core.detailViewAutoClose",
+        "Auto-close on selection change",
+        "Detach the detail leaf when you select a different item, opening a fresh one at the current placement target. When off, the same leaf is reused across selections.",
+      );
+    }
+
+    // Width override and split direction only apply when placement is "split".
+    if (placement === "split") {
+      this.addCoreToggle(
+        containerEl,
+        "core.detailViewWidthOverride",
+        "Apply readable line-width override to split",
+        "Forces the editor split to the Obsidian readable line width and lets the terminal panel fill the rest. Turn off if you prefer Obsidian's default flex sizing for the split.",
+      );
+      this.addCoreDropdown(
+        containerEl,
+        "core.detailViewSplitDirection",
+        "Split direction",
+        "Orientation of the split created alongside the Work Terminal view. Vertical stacks side-by-side; horizontal stacks top-and-bottom.",
+        { vertical: "Vertical (side by side)", horizontal: "Horizontal (top and bottom)" },
+      );
+    }
   }
 
   private async addCardFlagRulesButton(containerEl: HTMLElement): Promise<void> {
