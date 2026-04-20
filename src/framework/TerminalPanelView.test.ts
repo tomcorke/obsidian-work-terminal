@@ -908,14 +908,14 @@ describe("TerminalPanelView", () => {
     ]);
   });
 
-  it("expands template $filePath with the resolved absolute work item path", async () => {
+  it("keeps template $filePath vault-relative and expands $absoluteFilePath to the resolved absolute path", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {
       buildPrompt: vi.fn(() => "Built prompt"),
     };
     const { view } = createView(
       {
-        "core.additionalAgentContext": "Template path: $filePath",
+        "core.additionalAgentContext": "Rel: $filePath\nAbs: $absoluteFilePath",
         "core.claudeCommand": "/bin/echo",
         "core.defaultTerminalCwd": "~/ctx",
       },
@@ -937,7 +937,7 @@ describe("TerminalPanelView", () => {
     expect(promptBuilder.buildPrompt).toHaveBeenCalledOnce();
     expect(mockState.latestCreateTabArgs?.[5]).toEqual([
       "/bin/echo",
-      "Built prompt\n\nTemplate path: /vault/Tasks/task-1.md",
+      "Built prompt\n\nRel: Tasks/task-1.md\nAbs: /vault/Tasks/task-1.md",
     ]);
   });
 
@@ -1218,7 +1218,7 @@ describe("TerminalPanelView", () => {
     const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
     const { view } = createView(
       {
-        "core.additionalAgentContext": "Path: $filePath",
+        "core.additionalAgentContext": "Path: $absoluteFilePath",
       },
       {
         app: {
@@ -1261,7 +1261,7 @@ describe("TerminalPanelView", () => {
     const defaultElectronRequire = vi.mocked(electronRequire).getMockImplementation();
     const { view } = createView(
       {
-        "core.additionalAgentContext": "Path: $filePath",
+        "core.additionalAgentContext": "Path: $absoluteFilePath",
       },
       {
         app: {
