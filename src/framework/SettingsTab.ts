@@ -20,6 +20,7 @@ import { resetGuidedTourStatus } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { CardFlagManagerModal } from "./CardFlagManagerModal";
+import { EnrichmentSettingsDialog } from "./EnrichmentSettingsDialog";
 import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlags";
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
@@ -200,9 +201,53 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
     // Adapter settings section
     const schema = this.adapter.config.settingsSchema;
-    if (schema.length > 0) {
+    // Enrichment settings live behind a dedicated dialog to reduce clutter in
+    // the main adapter section. The enrichmentEnabled toggle stays top-level
+    // so users see at a glance that enrichment exists and can switch it off
+    // without opening the dialog.
+    const enrichmentDialogKeys = new Set([
+      "enrichmentEnabled",
+      "enrichmentPrompt",
+      "retryEnrichmentPrompt",
+      "enrichmentProfile",
+      "enrichmentTimeout",
+    ]);
+    const hasEnrichmentSchema = schema.some((field) => enrichmentDialogKeys.has(field.key));
+    const nonEnrichmentSchema = schema.filter((field) => !enrichmentDialogKeys.has(field.key));
+
+    if (hasEnrichmentSchema) {
+      containerEl.createEl("h2", { text: "Background enrichment" });
+      // Render the enabled toggle if it is in the schema (keeps the default
+      // wiring intact for non-task-agent adapters that might omit it).
+      const enabledField = schema.find((f) => f.key === "enrichmentEnabled");
+      if (enabledField) {
+        this.addAdapterSetting(containerEl, enabledField);
+      }
+      new Setting(containerEl)
+        .setName("Configure enrichment")
+        .setDesc(
+          "Open a dialog to customise the enrichment prompt, retry prompt, agent " +
+            "profile, and timeout. The built-in default prompts are displayed inside " +
+            "the dialog so you can read them before deciding whether to override.",
+        )
+        .addButton((btn) =>
+          btn
+            .setButtonText("Configure enrichment...")
+            .setCta()
+            .onClick(() => {
+              new EnrichmentSettingsDialog(
+                this.app,
+                this.plugin,
+                this.adapter,
+                this.profileManager,
+              ).open();
+            }),
+        );
+    }
+
+    if (nonEnrichmentSchema.length > 0) {
       containerEl.createEl("h2", { text: "Adapter" });
-      for (const field of schema) {
+      for (const field of nonEnrichmentSchema) {
         this.addAdapterSetting(containerEl, field);
       }
     }
