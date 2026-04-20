@@ -235,12 +235,21 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
             .setButtonText("Configure enrichment...")
             .setCta()
             .onClick(() => {
-              new EnrichmentSettingsDialog(
+              const dialog = new EnrichmentSettingsDialog(
                 this.app,
                 this.plugin,
                 this.adapter,
                 this.profileManager,
-              ).open();
+              );
+              // The enrichmentEnabled toggle is rendered both here and inside
+              // the dialog. Re-render the settings tab after the dialog closes
+              // so the two stay in sync if the user toggles inside the dialog.
+              const originalOnClose = dialog.onClose.bind(dialog);
+              dialog.onClose = () => {
+                originalOnClose();
+                this.display();
+              };
+              dialog.open();
             }),
         );
     }
