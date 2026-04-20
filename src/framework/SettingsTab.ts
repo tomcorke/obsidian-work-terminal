@@ -203,9 +203,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     // Adapter settings section
     const schema = this.adapter.config.settingsSchema;
     // Enrichment settings live behind a dedicated dialog to reduce clutter in
-    // the main adapter section. The enrichmentEnabled toggle stays top-level
-    // so users see at a glance that enrichment exists and can switch it off
-    // without opening the dialog.
+    // the main adapter section. The Background enrichment section now shows
+    // only a "Configure enrichment..." button; the enabled toggle lives
+    // exclusively inside the dialog (consistent with Agent Profiles / Card
+    // Flag Rules button pattern).
     const enrichmentDialogKeys = new Set([
       "enrichmentEnabled",
       "enrichmentPrompt",
@@ -224,39 +225,25 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
     if (hasEnrichmentSchema) {
       containerEl.createEl("h2", { text: "Background enrichment" });
-      // Render the enabled toggle if it is in the schema (keeps the default
-      // wiring intact for non-task-agent adapters that might omit it).
-      const enabledField = schema.find((f) => f.key === "enrichmentEnabled");
-      if (enabledField) {
-        this.addAdapterSetting(containerEl, enabledField);
-      }
       new Setting(containerEl)
         .setName("Configure enrichment")
         .setDesc(
-          "Open a dialog to customise the enrichment prompt, retry prompt, agent " +
-            "profile, and timeout. The built-in default prompts are displayed inside " +
-            "the dialog so you can read them before deciding whether to override.",
+          "Open a dialog to enable/disable background enrichment and customise " +
+            "the enrichment prompt, retry prompt, agent profile, and timeout. The " +
+            "built-in default prompts are displayed inside the dialog so you can " +
+            "read them before deciding whether to override.",
         )
         .addButton((btn) =>
           btn
             .setButtonText("Configure enrichment...")
             .setCta()
             .onClick(() => {
-              const dialog = new EnrichmentSettingsDialog(
+              new EnrichmentSettingsDialog(
                 this.app,
                 this.plugin,
                 this.adapter,
                 this.profileManager,
-              );
-              // The enrichmentEnabled toggle is rendered both here and inside
-              // the dialog. Re-render the settings tab after the dialog closes
-              // so the two stay in sync if the user toggles inside the dialog.
-              const originalOnClose = dialog.onClose.bind(dialog);
-              dialog.onClose = () => {
-                originalOnClose();
-                this.display();
-              };
-              dialog.open();
+              ).open();
             }),
         );
     }
