@@ -14,6 +14,13 @@ export class TaskDetailView {
   // Containers whose flex styles we modified via applyMinEditorWidth. We track
   // them so we can restore them when the width override is turned off.
   private widthOverrideContainers: HTMLElement[] = [];
+  // Tracks whether the width override is currently enabled. Checked inside
+  // applyMinEditorWidth() so a deferred timeout can't re-apply styles after
+  // the setting has been turned off or placement has switched away from split.
+  private widthOverrideActive = false;
+  // Pending timeout handle for applyMinEditorWidth. Cleared when placement
+  // changes or width override is disabled to prevent races.
+  private applyWidthTimer: ReturnType<typeof setTimeout> | null = null;
   // Identifier of the last item we opened a detail view for. Used by the
   // auto-close behaviour to detach the previous leaf when the selection moves
   // to a different item.
@@ -90,7 +97,14 @@ export class TaskDetailView {
           tabGroup.selectTab(this.editorLeaf);
         }
 
-        if (!options.widthOverride) {
+        if (options.widthOverride) {
+          // Mark the override as active and schedule application once
+          // Obsidian's layout pass settles. The flag is also checked inside
+          // applyMinEditorWidth so a stale timer can't re-apply styles after
+          // the setting has flipped off or placement has changed.
+          this.widthOverrideActive = true;
+          this.scheduleApplyMinEditorWidth();
+        } else {
           // The override may have been applied in a previous show() call.
           // Clear any inline styles we set so Obsidian's flex layout takes over.
           this.clearWidthOverride();
@@ -149,9 +163,21 @@ export class TaskDetailView {
     // No editor leaves at all - create a new split off our owner leaf
     this.leafIsOwned = true;
     this.editorLeaf = this.app.workspace.createLeafBySplit(ownerLeaf, splitDirection, false);
+  }
 
-    // Defer width application to let Obsidian's layout pass complete
-    setTimeout(() => this.applyMinEditorWidth(), 100);
+  /**
+   * Schedule a deferred width override application once Obsidian's layout
+   * pass has settled. Any pending timer is cleared first so rapid placement
+   * changes can't stack or race.
+   */
+  private scheduleApplyMinEditorWidth(): void {
+    if (this.applyWidthTimer !== null) {
+      clearTimeout(this.applyWidthTimer);
+    }
+    this.applyWidthTimer = setTimeout(() => {
+      this.applyWidthTimer = null;
+      this.applyMinEditorWidth();
+    }, 100);
   }
 
   /**
@@ -241,6 +267,10 @@ export class TaskDetailView {
   }
 
   private applyMinEditorWidth(): void {
+    // Defensive check - a stale timer may fire after the override was turned
+    // off or placement changed. Don't write inline styles unless the override
+    // is still the active configuration.
+    if (!this.widthOverrideActive) return;
     if (!this.editorLeaf) return;
 
     // createLeafBySplit wraps each side in its own split container,
@@ -284,6 +314,12 @@ export class TaskDetailView {
    * off so Obsidian's default flex layout resumes controlling the split.
    */
   private clearWidthOverride(): void {
+    // Mark inactive first so any in-flight timer becomes a no-op.
+    this.widthOverrideActive = false;
+    if (this.applyWidthTimer !== null) {
+      clearTimeout(this.applyWidthTimer);
+      this.applyWidthTimer = null;
+    }
     for (const el of this.widthOverrideContainers) {
       el.style.flexGrow = "";
       el.style.flexShrink = "";
