@@ -34,7 +34,6 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Dynamic columns](#dynamic-columns)
   - [Terminal settings](#terminal-settings)
   - [Background enrichment](#background-enrichment)
-  - [Additional agent context](#additional-agent-context)
   - [Core settings](#core-settings)
 - [Advanced features](#advanced-features)
   - [Pinning tasks](#pinning-tasks)
@@ -370,9 +369,9 @@ The settings page is organised into five top-level sections. Use this map to jum
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
 | **Detail view** | Placement dropdown (split / tab / navigate / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
-| **Agents** | **Open Profile Manager** for agent profiles, the **Additional agent context prompt** inline textarea, **Configure enrichment...** for background enrichment, and **Configure agent actions...** for Split Task profile binding. |
+| **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for background enrichment, and **Configure agent actions...** for Split Task profile binding. |
 
-Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Background enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (additional agent context, detail view) stay inline.
+Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Background enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.
 
 The reorganisation is cosmetic: every setting persists under the same key it used before, so upgrading does not change any behaviour. If you are looking for a setting that used to be on the main page and cannot find it, check the nearest dialog button.
 
@@ -389,6 +388,8 @@ Each profile includes:
 - **Default CWD** - working directory for the session (supports `~` expansion)
 - **Tab bar button** - optionally add a quick-launch button to the tab bar
 - **Context prompt** - a prompt template injected when launching with task context
+
+The per-profile **Context prompt** field is the place to configure additional context that used to live in the removed **Additional agent context prompt** setting (issue #472). Set it on each profile that should inject task context on top of the adapter prompt.
 
 **Placeholders**: The **Arguments** and **Context prompt** fields support placeholder variables that expand to work item data at launch time:
 
@@ -521,22 +522,6 @@ Each log records:
 **Toggle**: the **Enrichment failure logs** checkbox under **Settings > General** enables or disables the feature (default: enabled). Disabling it stops new logs being written; existing files on disk are not removed retroactively - delete the `logs/` folder by hand if you want to purge the history immediately.
 
 **Sensitive content warning**: log files include the full enrichment prompt and the raw agent output. If your prompt template or task content references sensitive data (API keys, internal URLs, personal notes) those values will also appear in the log. Treat the `logs/` directory as you would any other local debug dump, and share logs only with people you are comfortable reading that content.
-
-### Additional agent context
-
-An **Additional agent context prompt** textarea lives inline under **Settings > Agents**. When set, its value is expanded and injected into context-aware agent launches (for example, the **Claude (ctx)** tab bar button and the Split Task / Retry Enrichment actions) on top of the adapter's own prompt.
-
-The template supports the same `$name` placeholders used everywhere else:
-
-| Placeholder | Description |
-|-------------|-------------|
-| `$title` | Work item title |
-| `$state` | Work item state (e.g. "priority", "active") |
-| `$filePath` | Vault-relative file path |
-| `$absoluteFilePath` | Fully resolved absolute filesystem path |
-| `$id` | Work item UUID |
-
-Leave the textarea blank to skip context injection entirely. Changes save as you type.
 
 ### Core settings
 
