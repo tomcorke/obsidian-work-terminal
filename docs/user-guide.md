@@ -440,6 +440,30 @@ Configure under **Adapter** in settings:
 
 Tasks being enriched show an "ingesting..." indicator on their card. If enrichment fails, a red "enrichment failed" badge appears, and the context menu offers a "Retry Enrichment" option.
 
+#### Enrichment failure logs
+
+When an enrichment attempt fails, the plugin writes a diagnostic log file so you can see what went wrong without attaching a debugger or reproducing the failure. Logs are stored in the plugin directory at:
+
+```
+<vault>/.obsidian/plugins/work-terminal/logs/enrich-<YYYYMMDD-HHMMSS>-<slug>.log
+```
+
+Each log records:
+
+- Timestamp, item UUID, and the task file path at the time of failure
+- A failure category: `timeout`, `non-zero-exit`, `silent-failure`, `moved-during-enrichment`, `pending-not-renamed`, `spawn-error`, or `missing-cli`
+- The full enrichment prompt that was sent to the agent
+- Raw stdout and stderr captured from the agent process
+- Exit code when applicable, plus an adapter-validation note (e.g. "pending file still exists on disk after exit 0")
+- JS error message and stack trace when the spawn/promise rejected
+- Agent command, arguments, working directory, and configured timeout
+
+**Retention**: on every failure the pruner removes logs older than 7 days AND caps the total at 50 files. You should not need to clean the directory manually.
+
+**Toggle**: the **Enrichment failure logs** checkbox under **Core** enables or disables the feature (default: enabled). Disabling it stops new logs being written; existing files on disk are not removed retroactively - delete the `logs/` folder by hand if you want to purge the history immediately.
+
+**Sensitive content warning**: log files include the full enrichment prompt and the raw agent output. If your prompt template or task content references sensitive data (API keys, internal URLs, personal notes) those values will also appear in the log. Treat the `logs/` directory as you would any other local debug dump, and share logs only with people you are comfortable reading that content.
+
 ### Core settings
 
 The core settings section covers:
@@ -452,6 +476,7 @@ The core settings section covers:
 | **Default shell** | Shell used for new terminal tabs (defaults to your system shell) |
 | **Default terminal CWD** | Working directory for new terminals (supports `~` expansion) |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |
+| **Enrichment failure logs** | When enabled, each failed background enrichment writes a diagnostic log file to `.obsidian/plugins/work-terminal/logs/`. See [Enrichment failure logs](#enrichment-failure-logs). |
 | **Expose debug API** | Publishes `window.__workTerminalDebug` for CDP inspection (see [Debug API](#debug-api)) |
 | **Reset guided tour** | Clears the guided tour completion status so it starts again on next open |
 
