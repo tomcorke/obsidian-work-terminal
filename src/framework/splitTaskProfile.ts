@@ -10,12 +10,17 @@
  * ## Fallback chains
  *
  * Split Task profile:
- *   adapter.splitTaskProfile -> default-claude-ctx -> first Claude profile -> null
+ *   adapter.splitTaskProfile
+ *     -> default-claude-ctx
+ *     -> default-claude
+ *     -> first Claude profile
+ *     -> null
  *
  * Retry Enrichment profile:
  *   adapter.retryEnrichmentProfile
  *     -> adapter.enrichmentProfile (shared with background enrichment)
  *     -> default-claude-ctx
+ *     -> default-claude
  *     -> first Claude profile
  *     -> null
  *
