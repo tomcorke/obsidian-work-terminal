@@ -189,9 +189,13 @@ export class TaskDetailView {
 
   /**
    * Ensure we have a leaf to render the detail view into for the "tab"
-   * placement. Uses Obsidian's active tab group via `getLeaf("tab")`, which
-   * opens a new tab in the currently active tab group without splitting.
-   * Reuses an owned leaf if one already exists.
+   * placement. Prefers the currently-managed leaf if still attached; falls
+   * back to a fresh tab in the active tab group via `getLeaf("tab")`.
+   *
+   * Deliberately does NOT scan the workspace for arbitrary owned leaves -
+   * doing so can adopt a leaf that lives in a different tab group than the
+   * active one, which would violate the documented "open in the active tab
+   * group" semantics of this placement.
    */
   private ensureTabLeaf(): void {
     // Reuse our managed leaf if still attached
@@ -203,15 +207,6 @@ export class TaskDetailView {
       }
     }
     if (this.editorLeaf) return;
-
-    // Look for an owned leaf (one showing a file we previously opened) and
-    // reuse it to avoid piling up tabs on repeated selections.
-    const { ownedLeaf } = this.findEditorLeaves();
-    if (ownedLeaf) {
-      this.editorLeaf = ownedLeaf;
-      this.leafIsOwned = false;
-      return;
-    }
 
     // Open a fresh tab in the currently active tab group.
     this.leafIsOwned = true;
