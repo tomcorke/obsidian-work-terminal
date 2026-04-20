@@ -19,7 +19,7 @@ import type { PinStore } from "../core/PinStore";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import { DangerConfirm } from "./DangerConfirm";
-import { slugify, titleCase } from "../core/utils";
+import { electronRequire, slugify, titleCase } from "../core/utils";
 import {
   resolveRetryEnrichmentProfile,
   resolveSplitTaskCwd,
@@ -700,6 +700,20 @@ export class ListPanel {
     return vaultPath;
   }
 
+  /**
+   * Resolve a vault-relative work item path to an absolute filesystem path
+   * using Node's `path.resolve`, so platform-specific separators are handled
+   * correctly (rather than the previous `${base}/${path}` concat which could
+   * produce mixed-separator strings on Windows). Returns null when the vault
+   * base path is not available.
+   */
+  private resolveWorkItemAbsPath(itemPath: string): string | null {
+    const vaultBase = this.resolveVaultPath();
+    if (!vaultBase) return null;
+    const path = electronRequire("path") as typeof import("path");
+    return path.resolve(vaultBase, itemPath);
+  }
+
   private async insertAfter(
     existingId: string,
     newItem: WorkItem,
@@ -740,10 +754,10 @@ export class ListPanel {
       }
       console.log(`[work-terminal] Split task created: ${result.path} (id: ${result.id})`);
 
-      // Resolve full filesystem paths (CWD may differ from vault location)
-      const vaultBase = this.resolveVaultPath();
-      const sourceFullPath = `${vaultBase}/${sourceItem.path}`;
-      const newFullPath = `${vaultBase}/${result.path}`;
+      // Resolve full filesystem paths (CWD may differ from vault location).
+      // Use path.resolve so the cross-platform separator is honoured.
+      const sourceFullPath = this.resolveWorkItemAbsPath(sourceItem.path) ?? sourceItem.path;
+      const newFullPath = this.resolveWorkItemAbsPath(result.path) ?? result.path;
 
       // Build the split-scoping prompt.
       // Paths are NOT quoted to avoid Claude including literal quote characters
@@ -800,9 +814,9 @@ export class ListPanel {
         // Retry-enrichment launches now follow the configured enrichment
         // profile (see splitTaskProfile.resolveRetryEnrichmentProfile for
         // the fallback chain) so they match what background enrichment
-        // would have used.
-        const vaultBase = this.resolveVaultPath();
-        const taskFullPath = vaultBase ? `${vaultBase}/${item.path}` : null;
+        // would have used. Use path.resolve via resolveWorkItemAbsPath so
+        // the cwd is computed correctly on any platform.
+        const taskFullPath = this.resolveWorkItemAbsPath(item.path);
         const override = this.resolveRetryLaunchOverride(taskFullPath);
         this.terminalPanel.spawnClaudeWithPrompt(prompt, "Enrich", override ?? undefined);
       } catch (err) {
