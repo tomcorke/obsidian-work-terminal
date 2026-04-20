@@ -102,15 +102,47 @@ describe("BackgroundEnrich", () => {
       } as any;
     }
 
-    it("returns enrichment prompt containing the full file path", async () => {
+    it("returns enrichment prompt containing the absolute file path", async () => {
       const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
       const app = makeApp(content);
 
       const prompt = await prepareRetryEnrichment(app, "tasks/test.md");
 
+      // The default retry prompt uses $absoluteFilePath, so the absolute
+      // filesystem path ("/vault/tasks/test.md") must appear in the resolved
+      // prompt and the vault-relative path ("tasks/test.md") must not appear
+      // as a bare substring unless part of the absolute path.
       expect(prompt).toContain("/vault/tasks/test.md");
       expect(prompt).toContain("needs enrichment");
       expect(prompt).toContain("rename the file to match the convention");
+    });
+
+    it("substitutes $filePath with vault-relative and $absoluteFilePath with absolute path", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      const app = makeApp(content);
+
+      const prompt = await prepareRetryEnrichment(
+        app,
+        "tasks/test.md",
+        "relative=$filePath absolute=$absoluteFilePath",
+      );
+
+      expect(prompt).toBe("relative=tasks/test.md absolute=/vault/tasks/test.md");
+    });
+
+    it("does not mangle $filePathX / $filePathBasename identifiers", async () => {
+      const content = `---\nid: abc\nbackground-ingestion: failed\nstate: todo\n---\n# Task\n`;
+      const app = makeApp(content);
+
+      const prompt = await prepareRetryEnrichment(
+        app,
+        "tasks/test.md",
+        "path=$filePath custom=$filePathX basename=$filePathBasename absCustom=$absoluteFilePathX",
+      );
+
+      expect(prompt).toBe(
+        "path=tasks/test.md custom=$filePathX basename=$filePathBasename absCustom=$absoluteFilePathX",
+      );
     });
 
     it("fully removes ingestion flag and callout from non-pending files", async () => {
@@ -159,10 +191,10 @@ describe("BackgroundEnrich", () => {
       const prompt = await prepareRetryEnrichment(
         app,
         "tasks/test.md",
-        "Custom retry for {{FILE_PATH}} with extra instructions",
+        "Custom retry for $filePath with extra instructions",
       );
 
-      expect(prompt).toBe("Custom retry for /vault/tasks/test.md with extra instructions");
+      expect(prompt).toBe("Custom retry for tasks/test.md with extra instructions");
     });
 
     it("uses default retry prompt when no template is provided", async () => {
@@ -172,6 +204,7 @@ describe("BackgroundEnrich", () => {
       const prompt = await prepareRetryEnrichment(app, "tasks/test.md");
 
       expect(prompt).toContain("needs enrichment");
+      // Default prompt uses $absoluteFilePath, so the absolute path appears.
       expect(prompt).toContain("/vault/tasks/test.md");
     });
 
@@ -472,7 +505,7 @@ describe("BackgroundEnrich", () => {
     it("uses custom enrichment prompt when adapter.enrichmentPrompt is set", async () => {
       spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
       const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
-      const customPrompt = "Custom enrich: {{FILE_PATH}} please do things";
+      const customPrompt = "Custom enrich: $filePath please do things";
 
       const result = await handleItemCreated(app, "My task", {
         ...defaultSettings,
@@ -482,9 +515,58 @@ describe("BackgroundEnrich", () => {
 
       const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
       expect(promptArg).toContain("Custom enrich:");
-      expect(promptArg).toContain("/vault/2 - Areas/Tasks/todo/");
+      // $filePath substitutes to the vault-relative path, not the absolute
+      // path, so expect the base path prefix rather than the vault root.
+      expect(promptArg).toContain("2 - Areas/Tasks/todo/");
+      expect(promptArg).not.toContain("/vault/2 - Areas/Tasks/todo/");
       expect(promptArg).toContain("please do things");
-      expect(promptArg).not.toContain("{{FILE_PATH}}");
+      expect(promptArg).not.toContain("$filePath");
+    });
+
+    it("substitutes $filePath with vault-relative and $absoluteFilePath with absolute path", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+      const customPrompt = "rel=$filePath abs=$absoluteFilePath";
+
+      const result = await handleItemCreated(app, "Both placeholders", {
+        ...defaultSettings,
+        "adapter.enrichmentPrompt": customPrompt,
+      });
+      await result.enrichmentDone;
+
+      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
+      // Two segments separated by " abs=". The vault-relative one must not
+      // start with "/vault"; the absolute one must.
+      const match = promptArg.match(/^rel=(.+?) abs=(.+)$/);
+      expect(match).not.toBeNull();
+      const [, rel, abs] = match!;
+      expect(rel.startsWith("2 - Areas/Tasks/todo/")).toBe(true);
+      expect(abs.startsWith("/vault/2 - Areas/Tasks/todo/")).toBe(true);
+      // Absolute path should end with the vault-relative path.
+      expect(abs.endsWith(rel)).toBe(true);
+    });
+
+    it("does not substitute $filePath embedded in longer identifiers like $filePathBasename", async () => {
+      spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
+      // Mix of real placeholders and prefix-colliding identifiers. The real
+      // placeholders must substitute; the prefixed identifiers must not.
+      const customPrompt =
+        "path=$filePath custom=$filePathBasename other=$filePathX absCustom=$absoluteFilePathBasename";
+
+      const result = await handleItemCreated(app, "Prefix test", {
+        ...defaultSettings,
+        "adapter.enrichmentPrompt": customPrompt,
+      });
+      await result.enrichmentDone;
+
+      const [promptArg] = spawnHeadlessClaudeMock.mock.calls[0];
+      expect(promptArg).toContain("custom=$filePathBasename");
+      expect(promptArg).toContain("other=$filePathX");
+      expect(promptArg).toContain("absCustom=$absoluteFilePathBasename");
+      // The "path=" value should be the vault-relative path and must not
+      // include the $filePath literal (i.e. substitution still happened).
+      expect(promptArg).toMatch(/path=2 - Areas\/Tasks\/todo\//);
     });
 
     it("uses default enrichment prompt when adapter.enrichmentPrompt is empty", async () => {

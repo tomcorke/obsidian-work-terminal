@@ -35,9 +35,14 @@ const RENAME_INSTRUCTION =
 
 const PRESERVE_ENRICHMENT_BLOCK = `Preserve the \`enrichment:\` block in the YAML frontmatter exactly as-is - do not remove, modify, or reformat it.`;
 
-/** Default enrichment prompt template. {{FILE_PATH}} is replaced with the full file path. */
+/**
+ * Default enrichment prompt template. `$filePath` is replaced with the
+ * vault-relative path, `$absoluteFilePath` with the absolute filesystem path
+ * (which is what the agent needs in order to `cd` into the folder and read
+ * the file contents directly).
+ */
 export const DEFAULT_ENRICHMENT_PROMPT =
-  `The task file at {{FILE_PATH}} was just created with minimal data. ` +
+  `The task file at $absoluteFilePath was just created with minimal data. ` +
   `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
   PRESERVE_ENRICHMENT_BLOCK +
   " " +
@@ -45,15 +50,31 @@ export const DEFAULT_ENRICHMENT_PROMPT =
 
 /** Default retry enrichment prompt template. */
 export const DEFAULT_RETRY_ENRICHMENT_PROMPT =
-  `The task file at {{FILE_PATH}} needs enrichment. ` +
+  `The task file at $absoluteFilePath needs enrichment. ` +
   `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
   PRESERVE_ENRICHMENT_BLOCK +
   " " +
   RENAME_INSTRUCTION;
 
-/** Resolve an enrichment prompt template, replacing {{FILE_PATH}} with the actual path. */
-function resolveEnrichmentPrompt(template: string, filePath: string): string {
-  return template.replace(/\{\{FILE_PATH\}\}/g, filePath);
+/**
+ * Resolve an enrichment prompt template, substituting `$filePath` with the
+ * vault-relative path and `$absoluteFilePath` with the fully resolved absolute
+ * filesystem path. A negative lookahead on `[A-Za-z0-9_]` prevents the
+ * replacement from matching placeholder prefixes embedded in longer
+ * identifiers (e.g. `$filePathBasename` stays untouched), so only the exact
+ * placeholders are substituted. `$absoluteFilePath` is replaced first because
+ * the two placeholders share a prefix; substituting `$filePath` first would
+ * still respect the lookahead (the next character is `A`), but replacing the
+ * longer form first keeps the intent obvious to future readers.
+ */
+function resolveEnrichmentPrompt(
+  template: string,
+  vaultRelativePath: string,
+  absolutePath: string,
+): string {
+  return template
+    .replace(/\$absoluteFilePath(?![A-Za-z0-9_])/g, absolutePath)
+    .replace(/\$filePath(?![A-Za-z0-9_])/g, vaultRelativePath);
 }
 
 function resolveVaultPath(app: App): string {
@@ -168,7 +189,7 @@ export async function handleItemCreated(
     const fullPath = resolveFullPath(app, filePath);
     const promptTemplate =
       (settings["adapter.enrichmentPrompt"] as string) || DEFAULT_ENRICHMENT_PROMPT;
-    enrichPrompt = resolveEnrichmentPrompt(promptTemplate, fullPath);
+    enrichPrompt = resolveEnrichmentPrompt(promptTemplate, filePath, fullPath);
     timeoutMs = resolveEnrichmentTimeout(settings);
     enrichCwd = profileOverride?.cwd
       ? expandTilde(profileOverride.cwd)
@@ -514,7 +535,7 @@ export async function prepareRetryEnrichment(
 
   const fullPath = resolveFullPath(app, filePath);
   const template = retryPromptTemplate || DEFAULT_RETRY_ENRICHMENT_PROMPT;
-  return resolveEnrichmentPrompt(template, fullPath);
+  return resolveEnrichmentPrompt(template, filePath, fullPath);
 }
 
 /**

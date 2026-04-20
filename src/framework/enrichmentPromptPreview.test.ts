@@ -7,28 +7,53 @@ import {
 
 describe("resolvePromptPreview", () => {
   it("substitutes a known placeholder with the default example vars", () => {
-    const template = "Review the task file at {{FILE_PATH}} and enrich it.";
+    const template = "Review the task file at $filePath and enrich it.";
     expect(resolvePromptPreview(template)).toBe(
-      `Review the task file at ${DEFAULT_PREVIEW_VARS.FILE_PATH} and enrich it.`,
+      `Review the task file at ${DEFAULT_PREVIEW_VARS.filePath} and enrich it.`,
     );
   });
 
   it("substitutes multiple occurrences of the same placeholder", () => {
-    const template = "{{FILE_PATH}} then again {{FILE_PATH}}";
-    const expected = `${DEFAULT_PREVIEW_VARS.FILE_PATH} then again ${DEFAULT_PREVIEW_VARS.FILE_PATH}`;
+    const template = "$filePath then again $filePath";
+    const expected = `${DEFAULT_PREVIEW_VARS.filePath} then again ${DEFAULT_PREVIEW_VARS.filePath}`;
     expect(resolvePromptPreview(template)).toBe(expected);
   });
 
   it("leaves unknown placeholders untouched", () => {
-    const template = "Hello {{UNKNOWN}} world {{FILE_PATH}}";
+    const template = "Hello $unknown world $filePath";
     expect(resolvePromptPreview(template)).toBe(
-      `Hello {{UNKNOWN}} world ${DEFAULT_PREVIEW_VARS.FILE_PATH}`,
+      `Hello $unknown world ${DEFAULT_PREVIEW_VARS.filePath}`,
+    );
+  });
+
+  it("substitutes $absoluteFilePath with the absolute-path example", () => {
+    const template = "Absolute: $absoluteFilePath";
+    expect(resolvePromptPreview(template)).toBe(
+      `Absolute: ${DEFAULT_PREVIEW_VARS.absoluteFilePath}`,
+    );
+  });
+
+  it("substitutes both $filePath and $absoluteFilePath independently in one pass", () => {
+    const template = "rel=$filePath abs=$absoluteFilePath";
+    expect(resolvePromptPreview(template)).toBe(
+      `rel=${DEFAULT_PREVIEW_VARS.filePath} abs=${DEFAULT_PREVIEW_VARS.absoluteFilePath}`,
+    );
+  });
+
+  it("treats $filePathBasename as a separate (unknown) identifier, not $filePath followed by Basename", () => {
+    // The regex matches the longest run of [a-zA-Z0-9]+ after the `$`, so
+    // `$filePathBasename` is the single token `filePathBasename`. Since we
+    // don't define that key, it passes through untouched - which is exactly
+    // what we want for prefix-collision safety.
+    const template = "path=$filePath basename=$filePathBasename";
+    expect(resolvePromptPreview(template)).toBe(
+      `path=${DEFAULT_PREVIEW_VARS.filePath} basename=$filePathBasename`,
     );
   });
 
   it("accepts a custom vars map", () => {
-    const template = "Path is {{FILE_PATH}} and id {{ITEM_ID}}";
-    expect(resolvePromptPreview(template, { FILE_PATH: "/tmp/a.md", ITEM_ID: "abc-123" })).toBe(
+    const template = "Path is $filePath and id $itemId";
+    expect(resolvePromptPreview(template, { filePath: "/tmp/a.md", itemId: "abc-123" })).toBe(
       "Path is /tmp/a.md and id abc-123",
     );
   });

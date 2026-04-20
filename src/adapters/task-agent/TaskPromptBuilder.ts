@@ -19,6 +19,9 @@ export class TaskPromptBuilder implements WorkItemPromptBuilder {
   }
 
   describePromptFormat(): string {
-    return "Task: {title}\nState: {state}\nFile: {path}\nDeadline: {deadline} (if set)\nBlocker: {blocker} (if set)";
+    // This string is a non-editable descriptor shown in the profile UI, not a
+    // user-editable template. It is cosmetic only; `buildPrompt` is the
+    // single source of truth for the actual adapter prompt contents.
+    return "Task: $title\nState: $state\nFile: $filePath\nDeadline: $deadline (if set)\nBlocker: $blocker (if set)";
   }
 }
