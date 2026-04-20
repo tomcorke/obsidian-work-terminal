@@ -33,6 +33,13 @@ export class TaskDetailView {
     ownerLeaf: WorkspaceLeaf,
     options: DetailViewOptions = DETAIL_VIEW_DEFAULTS,
   ): Promise<void> {
+    // Any non-split placement must clear the split width override so stale
+    // inline flex styles from a previous split don't persist after the user
+    // switches placement. Runs before early returns for "disabled" etc.
+    if (options.placement !== "split") {
+      this.clearWidthOverride();
+    }
+
     // "Disabled" short-circuits: no leaf creation, no file open. Respect the
     // user's current workspace arrangement entirely.
     if (options.placement === "disabled") {
