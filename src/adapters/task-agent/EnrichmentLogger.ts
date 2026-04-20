@@ -272,11 +272,11 @@ export async function writeEnrichmentLog(
       console.error("[work-terminal] Enrichment log pruning failed:", pruneErr);
     }
   } catch (err) {
-    console.error(
-      `[work-terminal] Failed to write enrichment log to ${fullPath}. ` +
-        `Log body:\n${body}\nReason:`,
-      err,
-    );
+    // Intentionally do not dump `body` here: it can contain the full
+    // enrichment prompt and raw agent stdout/stderr, which may include
+    // sensitive task content. The path + error is enough to diagnose the
+    // write failure itself.
+    console.error(`[work-terminal] Failed to write enrichment log to ${fullPath}.`, err);
   }
 }
 
