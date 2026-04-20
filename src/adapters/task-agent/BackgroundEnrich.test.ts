@@ -159,7 +159,7 @@ describe("BackgroundEnrich", () => {
       const prompt = await prepareRetryEnrichment(
         app,
         "tasks/test.md",
-        "Custom retry for {{FILE_PATH}} with extra instructions",
+        "Custom retry for $filePath with extra instructions",
       );
 
       expect(prompt).toBe("Custom retry for /vault/tasks/test.md with extra instructions");
@@ -472,7 +472,7 @@ describe("BackgroundEnrich", () => {
     it("uses custom enrichment prompt when adapter.enrichmentPrompt is set", async () => {
       spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
       const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });
-      const customPrompt = "Custom enrich: {{FILE_PATH}} please do things";
+      const customPrompt = "Custom enrich: $filePath please do things";
 
       const result = await handleItemCreated(app, "My task", {
         ...defaultSettings,
@@ -484,7 +484,7 @@ describe("BackgroundEnrich", () => {
       expect(promptArg).toContain("Custom enrich:");
       expect(promptArg).toContain("/vault/2 - Areas/Tasks/todo/");
       expect(promptArg).toContain("please do things");
-      expect(promptArg).not.toContain("{{FILE_PATH}}");
+      expect(promptArg).not.toContain("$filePath");
     });
 
     it("uses default enrichment prompt when adapter.enrichmentPrompt is empty", async () => {

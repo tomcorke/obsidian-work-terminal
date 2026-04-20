@@ -7,20 +7,22 @@
 
 /** The example placeholder substitutions used when users request a preview. */
 export const DEFAULT_PREVIEW_VARS: Record<string, string> = {
-  FILE_PATH: "vault/2 - Areas/Tasks/todo/example.md",
+  filePath: "vault/2 - Areas/Tasks/todo/example.md",
 };
 
 /**
- * Substitute `{{KEY}}` placeholders in a prompt template with the provided
+ * Substitute `$name` placeholders in a prompt template with the provided
  * variable map. Unknown placeholders are left untouched so users can see
- * exactly which ones the resolver recognises.
+ * exactly which ones the resolver recognises. Matches camelCase identifiers
+ * starting with a letter - so `$filePath` resolves but adjacent text like
+ * `$1filePath` does not accidentally absorb digits as a placeholder.
  */
 export function resolvePromptPreview(
   template: string,
   vars: Record<string, string> = DEFAULT_PREVIEW_VARS,
 ): string {
   if (!template) return "";
-  return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, name: string) => {
+  return template.replace(/\$([a-zA-Z][a-zA-Z0-9]*)/g, (match, name: string) => {
     if (Object.prototype.hasOwnProperty.call(vars, name)) {
       return vars[name];
     }

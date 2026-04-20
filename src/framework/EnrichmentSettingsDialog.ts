@@ -85,7 +85,7 @@ export class EnrichmentSettingsDialog extends Modal {
       containerEl,
       "Enrichment prompt",
       "Prompt sent to the headless agent for background enrichment. Use " +
-        "{{FILE_PATH}} as a placeholder for the task file path.",
+        "$filePath as a placeholder for the task file path.",
       "adapter.enrichmentPrompt",
       DEFAULT_ENRICHMENT_PROMPT,
       settings,
@@ -94,7 +94,7 @@ export class EnrichmentSettingsDialog extends Modal {
       containerEl,
       "Retry enrichment prompt",
       "Prompt used when retrying enrichment via the right-click menu. Use " +
-        "{{FILE_PATH}} as a placeholder for the task file path.",
+        "$filePath as a placeholder for the task file path.",
       "adapter.retryEnrichmentPrompt",
       DEFAULT_RETRY_ENRICHMENT_PROMPT,
       settings,
@@ -106,7 +106,7 @@ export class EnrichmentSettingsDialog extends Modal {
   }
 
   /**
-   * Render a "Preview resolved prompt" section that substitutes `{{FILE_PATH}}`
+   * Render a "Preview resolved prompt" section that substitutes `$filePath`
    * (and any other known placeholder) using a fixed example path. Gives users
    * a concrete view of what the agent will receive without actually creating
    * a task. The substitution is synchronous and purely string-based; we do
@@ -118,7 +118,7 @@ export class EnrichmentSettingsDialog extends Modal {
     section.createEl("p", {
       text:
         "Show the selected prompt with placeholders substituted using the example " +
-        `path ${DEFAULT_PREVIEW_VARS.FILE_PATH}. Useful for sanity-checking a customised prompt ` +
+        `path ${DEFAULT_PREVIEW_VARS.filePath}. Useful for sanity-checking a customised prompt ` +
         "before creating a real task.",
       cls: "wt-enrichment-dialog__help",
     });

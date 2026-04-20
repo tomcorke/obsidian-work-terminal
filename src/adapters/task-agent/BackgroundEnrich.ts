@@ -35,9 +35,9 @@ const RENAME_INSTRUCTION =
 
 const PRESERVE_ENRICHMENT_BLOCK = `Preserve the \`enrichment:\` block in the YAML frontmatter exactly as-is - do not remove, modify, or reformat it.`;
 
-/** Default enrichment prompt template. {{FILE_PATH}} is replaced with the full file path. */
+/** Default enrichment prompt template. `$filePath` is replaced with the full file path. */
 export const DEFAULT_ENRICHMENT_PROMPT =
-  `The task file at {{FILE_PATH}} was just created with minimal data. ` +
+  `The task file at $filePath was just created with minimal data. ` +
   `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
   PRESERVE_ENRICHMENT_BLOCK +
   " " +
@@ -45,15 +45,19 @@ export const DEFAULT_ENRICHMENT_PROMPT =
 
 /** Default retry enrichment prompt template. */
 export const DEFAULT_RETRY_ENRICHMENT_PROMPT =
-  `The task file at {{FILE_PATH}} needs enrichment. ` +
+  `The task file at $filePath needs enrichment. ` +
   `Review it, run duplicate check, goal alignment, and related task detection. Update the file in place. ` +
   PRESERVE_ENRICHMENT_BLOCK +
   " " +
   RENAME_INSTRUCTION;
 
-/** Resolve an enrichment prompt template, replacing {{FILE_PATH}} with the actual path. */
+/**
+ * Resolve an enrichment prompt template, replacing `$filePath` with the actual
+ * path. We match only the exact placeholder (no word boundary) and run a single
+ * global replace so repeated occurrences expand correctly.
+ */
 function resolveEnrichmentPrompt(template: string, filePath: string): string {
-  return template.replace(/\{\{FILE_PATH\}\}/g, filePath);
+  return template.replace(/\$filePath/g, filePath);
 }
 
 function resolveVaultPath(app: App): string {
