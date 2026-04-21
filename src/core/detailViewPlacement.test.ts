@@ -21,7 +21,7 @@ describe("resolveDetailViewOptions", () => {
   });
 
   it("accepts each valid placement value", () => {
-    for (const placement of ["split", "tab", "navigate", "disabled"] as const) {
+    for (const placement of ["split", "tab", "navigate", "preview", "disabled"] as const) {
       const options = resolveDetailViewOptions({
         "core.detailViewPlacement": placement,
       });
@@ -110,5 +110,12 @@ describe("resolveDetailViewOptions", () => {
       "core.viewMode": "kanban",
     });
     expect(options).toEqual(DETAIL_VIEW_DEFAULTS);
+  });
+
+  it("resolves the preview placement (issue #480)", () => {
+    const options = resolveDetailViewOptions({
+      "core.detailViewPlacement": "preview",
+    });
+    expect(options.placement).toBe("preview");
   });
 });

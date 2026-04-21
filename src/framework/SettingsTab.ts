@@ -598,12 +598,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           "Split opens a new split beside the Work Terminal view (default). " +
           "Tab opens a new tab in the active tab group. " +
           "Navigate replaces the contents of the active editor. " +
+          "Preview shows a read-only markdown preview of the file inside the Work Terminal panel, with an Open in editor button. " +
           "Disabled does nothing - open files manually via the file explorer or quick switcher.",
       )
       .addDropdown((dropdown) => {
         dropdown.addOption("split", "Split (default)");
         dropdown.addOption("tab", "Tab in active group");
         dropdown.addOption("navigate", "Navigate active leaf");
+        dropdown.addOption("preview", "Preview in Work Terminal panel");
         dropdown.addOption("disabled", "Disabled");
         dropdown.setValue(placement).onChange(async (newValue) => {
           await this.saveSettings((s) => {

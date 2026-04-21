@@ -3,6 +3,7 @@ import type { WorkItem } from "../../core/interfaces";
 import { DETAIL_VIEW_DEFAULTS, type DetailViewOptions } from "../../core/detailViewPlacement";
 import { VIEW_TYPE } from "../../framework/PluginBase";
 import { findNavigateTargetLeaf } from "../../core/workspace/findNavigateTargetLeaf";
+import { TaskPreviewView } from "./TaskPreviewView";
 
 export class TaskDetailView {
   private editorLeaf: WorkspaceLeaf | null = null;
@@ -27,6 +28,11 @@ export class TaskDetailView {
   // auto-close behaviour to detach the previous leaf when the selection moves
   // to a different item.
   private lastItemId: string | null = null;
+  // Lazily-initialised preview overlay used by the `preview` placement. A
+  // single instance is reused across show() calls; detached (and nulled)
+  // when placement switches away from preview so its DOM and modify listener
+  // are released.
+  private previewView: TaskPreviewView | null = null;
 
   constructor(private app: App) {}
 
@@ -42,9 +48,32 @@ export class TaskDetailView {
       this.clearWidthOverride();
     }
 
+    // Switching away from preview: dispose the overlay so the terminal area
+    // is visible again and the modify listener is released. Runs before the
+    // "disabled" short-circuit so disabling the detail view still cleans up
+    // a previously-active preview overlay.
+    if (options.placement !== "preview" && this.previewView) {
+      this.previewView.detach();
+      this.previewView = null;
+    }
+
     // "Disabled" short-circuits: no leaf creation, no file open. Respect the
     // user's current workspace arrangement entirely.
     if (options.placement === "disabled") {
+      return;
+    }
+
+    if (options.placement === "preview") {
+      // Tear down any leaf we own from a previous split/tab placement so it
+      // doesn't linger in the workspace while the overlay is showing.
+      this.detachLeaf();
+      this.lastItemId = item.id;
+      const hostEl = this.resolvePreviewHost(ownerLeaf);
+      if (!hostEl) return;
+      if (!this.previewView) {
+        this.previewView = new TaskPreviewView(this.app);
+      }
+      await this.previewView.show(item, hostEl);
       return;
     }
 
@@ -352,6 +381,20 @@ export class TaskDetailView {
     if (this.openedPaths.delete(oldPath)) {
       this.openedPaths.add(newPath);
     }
+    this.previewView?.rekeyPath(oldPath, newPath);
+  }
+
+  /**
+   * Resolve the host element the preview overlay should attach to. Prefers
+   * the terminal wrapper inside the Work Terminal view so the overlay
+   * visually occupies the same region as the tab content. Falls back to
+   * the view's container element when the wrapper cannot be found.
+   */
+  private resolvePreviewHost(ownerLeaf: WorkspaceLeaf): HTMLElement | null {
+    const containerEl = (ownerLeaf.view as { containerEl?: HTMLElement } | undefined)?.containerEl;
+    if (!containerEl) return null;
+    const wrapper = containerEl.querySelector<HTMLElement>(".wt-terminal-wrapper");
+    return wrapper ?? containerEl;
   }
 
   /**
@@ -372,6 +415,10 @@ export class TaskDetailView {
 
   detach(): void {
     this.detachLeaf();
+    if (this.previewView) {
+      this.previewView.detach();
+      this.previewView = null;
+    }
     this.lastItemId = null;
   }
 }

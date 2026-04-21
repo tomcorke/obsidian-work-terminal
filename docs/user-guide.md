@@ -226,11 +226,12 @@ Because the detail panel is a standard Obsidian markdown view, all Obsidian feat
 
 The way the detail file is opened is configurable under **Settings > Detail view**. By default, selecting a task opens its file in a vertical split next to the Work Terminal view and applies a readable line-width override - this matches the behaviour shipped in earlier versions, so users who never open the settings see no change.
 
-The **Placement** dropdown offers four strategies:
+The **Placement** dropdown offers five strategies:
 
 - **Split (default)** - create a new split beside the Work Terminal view and apply the min-width override so the editor does not squish. Best when Work Terminal sits in its own tab group.
 - **Tab in active group** - open the task file as a new tab in the currently active tab group, with no splitting and no width override. Best when Work Terminal lives in a tab group alongside other files and you want the detail view to behave like any other tab.
 - **Navigate active leaf** - open the task file in the most recent editor leaf that is not the Work Terminal view, falling back to a new tab if no suitable leaf exists. Does not replace the Work Terminal view itself. No new tabs or splits are created when a suitable editor leaf is already open.
+- **Preview in Work Terminal panel** - render the task file's markdown read-only as an overlay inside the Work Terminal panel itself, layered above the terminal tabs. Provides an **Open in editor** button that opens the file in a workspace leaf using the same target-leaf resolution as the Navigate placement. The preview re-renders automatically when the file is modified in another leaf, so edits you make elsewhere show up immediately. Best for small screens or single-pane layouts where keeping the terminal visible while glancing at the task description matters more than editing in place. There is intentionally no way to edit the file from the preview - use **Open in editor** for that.
 - **Disabled** - do nothing on selection. Useful if you prefer to open files manually via the file explorer, quick switcher, or Obsidian's hover preview, or if you only need the terminal side of Work Terminal.
 
 Additional options shape the behaviour:
@@ -370,7 +371,7 @@ The settings page is organised into five top-level sections. Use this map to jum
 | **General** | Task base path, state resolution strategy, view mode (kanban/activity), recent activity threshold, card display mode (standard/comfortable/compact), card indicator toggles, task card icons, automatic icon mode, Jira base URL, keep sessions alive, enrichment failure logs, expose debug API, reset guided tour. |
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
-| **Detail view** | Placement dropdown (split / tab / navigate / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
+| **Detail view** | Placement dropdown (split / tab / navigate / preview / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
 | **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for background enrichment, and **Configure agent actions...** for Split Task profile binding. |
 
 Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Background enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.

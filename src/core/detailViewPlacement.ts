@@ -11,10 +11,13 @@
  *   group (no splitting, no width override).
  * - `navigate` - replace the contents of the currently active leaf, matching
  *   the standard Obsidian "file open" behaviour.
+ * - `preview` - render the task file's markdown read-only inside the Work
+ *   Terminal panel itself, as an overlay above the terminal area. Provides
+ *   an "Open in editor" button that falls back to the `navigate` behaviour.
  * - `disabled` - do nothing on selection. Users open files manually via the
  *   file explorer, quick switcher, or context menu.
  */
-export type DetailViewPlacement = "split" | "tab" | "navigate" | "disabled";
+export type DetailViewPlacement = "split" | "tab" | "navigate" | "preview" | "disabled";
 
 /** Orientation for the `split` placement. Matches Obsidian's createLeafBySplit arg. */
 export type DetailViewSplitDirection = "vertical" | "horizontal";
@@ -37,7 +40,13 @@ export const DETAIL_VIEW_DEFAULTS: DetailViewOptions = {
   splitDirection: "vertical",
 };
 
-const VALID_PLACEMENTS: ReadonlySet<string> = new Set(["split", "tab", "navigate", "disabled"]);
+const VALID_PLACEMENTS: ReadonlySet<string> = new Set([
+  "split",
+  "tab",
+  "navigate",
+  "preview",
+  "disabled",
+]);
 
 const VALID_SPLIT_DIRECTIONS: ReadonlySet<string> = new Set(["vertical", "horizontal"]);
 
