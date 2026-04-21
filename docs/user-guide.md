@@ -241,6 +241,8 @@ Additional options shape the behaviour:
 
 The plugin never touches leaves you opened yourself. Adopted leaves (ones Work Terminal discovered rather than created) are left in place when the selection changes; only leaves the plugin created are detached by auto-close or plugin reload.
 
+When the placement is set to anything other than **Split**, a small document-style icon button appears at the left of the task title bar above the terminal tabs. Click it to open the current task file in a workspace leaf, using the same strategy as the **Navigate active leaf** placement (reuses the most recent non-Work-Terminal editor leaf, falling back to a new tab). The button is hidden in Split mode because the task file is already visible beside the terminal in that layout, and it updates automatically when you change the placement setting.
+
 ### Drag-drop reordering
 
 Tasks within a column can be reordered by dragging. Grab a card and drag it to a new position within the same column. The custom sort order is persisted and survives plugin reloads.

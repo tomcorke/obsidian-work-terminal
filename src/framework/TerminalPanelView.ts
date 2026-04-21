@@ -3,9 +3,12 @@
  * custom session spawning, state aggregation, tab context menu, and
  * inline rename.
  */
-import { Menu, Notice } from "obsidian";
+import { Menu, Notice, TFile, setIcon } from "obsidian";
 
 import type { Plugin } from "obsidian";
+import { resolveDetailViewOptions } from "../core/detailViewPlacement";
+import { findNavigateTargetLeaf } from "../core/workspace/findNavigateTargetLeaf";
+import { VIEW_TYPE } from "./viewType";
 import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
@@ -117,6 +120,11 @@ export class TerminalPanelView {
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
 
+  // Last item passed to setTitle. Retained so the title bar can be re-rendered
+  // when settings change at runtime (e.g. toggling the detail view placement
+  // shows or hides the "open task file" button).
+  private lastTitleItem: WorkItem | null = null;
+
   // Active inline rename input, if any
   private activeRenameInput: HTMLInputElement | null = null;
 
@@ -129,6 +137,9 @@ export class TerminalPanelView {
   private readonly handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     this.renderTabBar();
+    // Re-render title so the "open task file" button reflects the current
+    // detail view placement setting (only visible when placement is not split).
+    this.setTitle(this.lastTitleItem);
     this.refreshDebugGlobal();
   };
   private readonly handleProfilesChanged = () => {
@@ -974,6 +985,7 @@ export class TerminalPanelView {
   }
 
   setTitle(item: WorkItem | null): void {
+    this.lastTitleItem = item;
     this.titleEl.empty();
     this.titleEl.style.removeProperty("--wt-task-color");
 
@@ -990,6 +1002,34 @@ export class TerminalPanelView {
     }
 
     const titleRow = this.titleEl.createDiv({ cls: "wt-task-title-row" });
+
+    // Open-task-file button: only shown when the detail view placement is not
+    // "split". In split mode the file is already visible beside the terminal,
+    // so the button would be redundant. For all other placements (tab,
+    // navigate, disabled) it gives a one-click way to open the task file.
+    const placement = resolveDetailViewOptions(this.settings).placement;
+    if (placement !== "split") {
+      const openBtn = titleRow.createEl("button", {
+        cls: "wt-task-open-file-btn",
+        attr: {
+          type: "button",
+          "aria-label": "Open task file",
+          title: "Open task file",
+        },
+      });
+      setIcon(openBtn, "file-text");
+      openBtn.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        void this.openItemFile(item).catch((error) => {
+          console.error(`[work-terminal] Failed to open task file: ${item.path}`, error);
+          new Notice(
+            `Failed to open task file: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      });
+    }
+
     const jiraUrl = typeof source.url === "string" ? source.url.trim() : "";
     const jiraId = typeof source.id === "string" ? source.id.trim().toUpperCase() : "";
     if (source.type === "jira" && jiraUrl) {
@@ -1028,6 +1068,28 @@ export class TerminalPanelView {
     titleText.textContent = item.title;
     titleText.title = item.title;
     this.titleEl.style.display = "block";
+  }
+
+  /**
+   * Open the task file for the given work item in a workspace leaf. Mirrors
+   * the "navigate" detail view placement strategy: pick the most recent
+   * editor leaf that is not the Work Terminal view, falling back to a fresh
+   * tab if no suitable leaf exists. Never replaces the Work Terminal view
+   * itself.
+   */
+  private async openItemFile(item: WorkItem): Promise<void> {
+    const app = this.plugin.app;
+    const file = app.vault.getAbstractFileByPath(item.path);
+    if (!(file instanceof TFile)) {
+      new Notice(`Task file not found: ${item.path}`);
+      return;
+    }
+    let targetLeaf = findNavigateTargetLeaf(app, VIEW_TYPE);
+    if (!targetLeaf) {
+      targetLeaf = app.workspace.getLeaf("tab");
+    }
+    if (!targetLeaf) return;
+    await targetLeaf.openFile(file);
   }
 
   /**

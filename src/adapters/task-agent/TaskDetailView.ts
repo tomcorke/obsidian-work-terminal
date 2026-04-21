@@ -2,7 +2,7 @@ import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import type { WorkItem } from "../../core/interfaces";
 import { DETAIL_VIEW_DEFAULTS, type DetailViewOptions } from "../../core/detailViewPlacement";
 import { VIEW_TYPE } from "../../framework/PluginBase";
-import { findNavigateTargetLeaf } from "./findNavigateTargetLeaf";
+import { findNavigateTargetLeaf } from "../../core/workspace/findNavigateTargetLeaf";
 
 export class TaskDetailView {
   private editorLeaf: WorkspaceLeaf | null = null;

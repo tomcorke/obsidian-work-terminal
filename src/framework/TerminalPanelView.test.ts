@@ -55,6 +55,16 @@ vi.mock("../core/utils", async () => {
 
 vi.mock("obsidian", () => ({
   App: class {},
+  TFile: class {
+    path = "";
+  },
+  setIcon: (el: HTMLElement, icon: string) => {
+    el.setAttribute("data-icon", icon);
+    const svg = document.createElement("span");
+    svg.className = "svg-icon";
+    svg.setAttribute("data-icon-name", icon);
+    el.appendChild(svg);
+  },
   PluginSettingTab: class {
     app: unknown;
     plugin: unknown;
@@ -1237,6 +1247,171 @@ describe("TerminalPanelView", () => {
 
     expect(panelEl.querySelector(".wt-task-jira-link")).toBeNull();
     expect(panelEl.querySelector(".wt-task-title-text")?.textContent).toBe("Plain task");
+  });
+
+  it("does not render the open-file button when detail view placement is split", async () => {
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "split" });
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-3",
+      path: "Tasks/task-3.md",
+      title: "Split placement task",
+      state: "todo",
+      metadata: {},
+    });
+
+    expect(panelEl.querySelector(".wt-task-open-file-btn")).toBeNull();
+  });
+
+  it("renders the open-file button when detail view placement is not split", async () => {
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "navigate" });
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-4",
+      path: "Tasks/task-4.md",
+      title: "Navigate placement task",
+      state: "todo",
+      metadata: {},
+    });
+
+    const btn = panelEl.querySelector(".wt-task-open-file-btn") as HTMLButtonElement | null;
+    expect(btn).not.toBeNull();
+    expect(btn?.getAttribute("aria-label")).toBe("Open task file");
+    // The button should sit before the title text inside the title row
+    const titleRow = panelEl.querySelector(".wt-task-title-row") as HTMLElement;
+    const children = Array.from(titleRow.children);
+    const btnIndex = children.indexOf(btn as Element);
+    const titleTextIndex = children.indexOf(
+      titleRow.querySelector(".wt-task-title-text") as Element,
+    );
+    expect(btnIndex).toBeGreaterThanOrEqual(0);
+    expect(btnIndex).toBeLessThan(titleTextIndex);
+  });
+
+  it("places the open-file button before the Jira link badge", async () => {
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "tab" });
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-5",
+      path: "Tasks/task-5.md",
+      title: "Tabbed placement task",
+      state: "todo",
+      metadata: {
+        source: {
+          type: "jira",
+          id: "PROJ-9",
+          url: "https://example.atlassian.net/browse/PROJ-9",
+        },
+      },
+    });
+
+    const titleRow = panelEl.querySelector(".wt-task-title-row") as HTMLElement;
+    const children = Array.from(titleRow.children);
+    const btnIndex = children.indexOf(titleRow.querySelector(".wt-task-open-file-btn") as Element);
+    const jiraIndex = children.indexOf(titleRow.querySelector(".wt-task-jira-link") as Element);
+    expect(btnIndex).toBeGreaterThanOrEqual(0);
+    expect(jiraIndex).toBeGreaterThan(btnIndex);
+  });
+
+  it("updates open-file button visibility when the placement setting changes at runtime", async () => {
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "split" });
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-6",
+      path: "Tasks/task-6.md",
+      title: "Runtime placement change",
+      state: "todo",
+      metadata: {},
+    });
+    expect(panelEl.querySelector(".wt-task-open-file-btn")).toBeNull();
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.detailViewPlacement": "navigate",
+        },
+      }),
+    );
+    await flushAsync();
+    expect(panelEl.querySelector(".wt-task-open-file-btn")).not.toBeNull();
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.detailViewPlacement": "split",
+        },
+      }),
+    );
+    await flushAsync();
+    expect(panelEl.querySelector(".wt-task-open-file-btn")).toBeNull();
+  });
+
+  it("opens the task file via a non-work-terminal leaf when the open-file button is clicked", async () => {
+    const openFile = vi.fn(async () => {});
+    const getLeaf = vi.fn();
+    const targetLeaf = {
+      openFile,
+      view: { getViewType: () => "markdown" },
+      activeTime: 10,
+    };
+    const workTerminalLeaf = {
+      openFile: vi.fn(),
+      view: { getViewType: () => "work-terminal-view" },
+      activeTime: 20,
+    };
+    const fakeFile = { path: "Tasks/task-7.md" };
+    const getAbstractFileByPath = vi.fn(() => fakeFile);
+
+    // Make the fake file pass the `instanceof TFile` check from the mock.
+    const { TFile } = await import("obsidian");
+    Object.setPrototypeOf(fakeFile, (TFile as any).prototype);
+
+    const rootSplit = { children: [targetLeaf, workTerminalLeaf] };
+    (targetLeaf as any).parent = rootSplit;
+    (workTerminalLeaf as any).parent = rootSplit;
+
+    const { panelEl, view } = createView(
+      { "core.detailViewPlacement": "navigate" },
+      {
+        app: {
+          setting: {
+            open: vi.fn(),
+            openTabById: vi.fn(),
+          },
+          vault: {
+            adapter: { basePath: "/vault" },
+            getAbstractFileByPath,
+          },
+          workspace: {
+            activeLeaf: workTerminalLeaf,
+            rootSplit,
+            getLeaf,
+          },
+        } as any,
+      },
+    );
+    await flushAsync();
+
+    view.setTitle({
+      id: "task-7",
+      path: "Tasks/task-7.md",
+      title: "Open me",
+      state: "todo",
+      metadata: {},
+    });
+
+    const btn = panelEl.querySelector(".wt-task-open-file-btn") as HTMLButtonElement;
+    btn.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    await flushAsync();
+
+    expect(getAbstractFileByPath).toHaveBeenCalledWith("Tasks/task-7.md");
+    expect(openFile).toHaveBeenCalledWith(fakeFile);
+    expect(getLeaf).not.toHaveBeenCalled();
+    expect(workTerminalLeaf.openFile).not.toHaveBeenCalled();
   });
 });
 

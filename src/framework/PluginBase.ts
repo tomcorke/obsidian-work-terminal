@@ -6,8 +6,9 @@ import { type App, Notice, type PluginManifest, Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
 import { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { WorkTerminalSettingsTab } from "./SettingsTab";
+import { VIEW_TYPE } from "./viewType";
 
-export const VIEW_TYPE = "work-terminal-view";
+export { VIEW_TYPE };
 
 export abstract class PluginBase extends Plugin {
   protected adapter: AdapterBundle;
