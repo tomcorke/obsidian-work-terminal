@@ -1364,8 +1364,11 @@ export class TerminalPanelView {
           if (promptBuilder?.describePromptFormat) {
             adapterPromptDescription = promptBuilder.describePromptFormat();
           }
-        } catch {
-          // Ignore adapter prompt description errors - the modal works without it.
+        } catch (error) {
+          console.warn(
+            "[work-terminal] Failed to get adapter prompt format description; opening profile manager without description.",
+            error,
+          );
         }
         new AgentProfileManagerModal(
           this.plugin.app,
