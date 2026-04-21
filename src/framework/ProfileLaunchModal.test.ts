@@ -348,38 +348,38 @@ describe("ProfileLaunchModal placeholders", () => {
   });
 });
 
-describe("ProfileLaunchModal settings link", () => {
-  function createModalWithSettings(profiles: AgentProfile[], onOpenSettings?: () => void) {
-    const modal = new ProfileLaunchModal({} as any, profiles, "/vault", vi.fn(), onOpenSettings);
+describe("ProfileLaunchModal manage profiles link", () => {
+  function createModalWithCallback(profiles: AgentProfile[], onManageProfiles?: () => void) {
+    const modal = new ProfileLaunchModal({} as any, profiles, "/vault", vi.fn(), onManageProfiles);
     modal.open();
     return modal;
   }
 
-  it("shows settings link when onOpenSettings callback is provided", () => {
-    const modal = createModalWithSettings([makeProfile()], vi.fn());
+  it("shows manage profiles link when onManageProfiles callback is provided", () => {
+    const modal = createModalWithCallback([makeProfile()], vi.fn());
     const el = (modal as any).contentEl as HTMLElement;
-    const link = el.querySelector(".wt-custom-spawn-settings-link");
+    const link = el.querySelector(".wt-custom-spawn-manage-profiles-link");
     expect(link).not.toBeNull();
-    expect(link?.textContent).toBe("Manage profiles in settings");
+    expect(link?.textContent).toBe("Manage profiles");
   });
 
-  it("does not show settings link when no onOpenSettings callback", () => {
-    const modal = createModalWithSettings([makeProfile()]);
+  it("does not show manage profiles link when no onManageProfiles callback", () => {
+    const modal = createModalWithCallback([makeProfile()]);
     const el = (modal as any).contentEl as HTMLElement;
-    const link = el.querySelector(".wt-custom-spawn-settings-link");
+    const link = el.querySelector(".wt-custom-spawn-manage-profiles-link");
     expect(link).toBeNull();
   });
 
-  it("calls onOpenSettings and closes modal when link is clicked", () => {
-    const onOpenSettings = vi.fn();
-    const modal = createModalWithSettings([makeProfile()], onOpenSettings);
+  it("calls onManageProfiles and closes modal when link is clicked", () => {
+    const onManageProfiles = vi.fn();
+    const modal = createModalWithCallback([makeProfile()], onManageProfiles);
     const closeSpy = vi.spyOn(modal, "close");
     const el = (modal as any).contentEl as HTMLElement;
-    const link = el.querySelector(".wt-custom-spawn-settings-link") as HTMLElement;
+    const link = el.querySelector(".wt-custom-spawn-manage-profiles-link") as HTMLElement;
 
     link.click();
 
-    expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(onManageProfiles).toHaveBeenCalledOnce();
     expect(closeSpy).toHaveBeenCalledOnce();
   });
 });
