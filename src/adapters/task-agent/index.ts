@@ -38,6 +38,10 @@ export class TaskAgentAdapter extends BaseAdapter {
   private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
   private embeddedDetailView: EmbeddedDetailView | null = null;
+  // Identifier of the last item we mounted into the embedded host. Used by
+  // the auto-close behaviour to detach the hidden leaf when the selection
+  // moves to a different item, mirroring `TaskDetailView.lastItemId`.
+  private embeddedLastItemId: string | null = null;
   private _cardRenderer: TaskCard | null = null;
   private _stateResolver: StateResolver | null = null;
   private _resolverStrategy: StateStrategy | null = null;
@@ -161,6 +165,20 @@ export class TaskAgentAdapter extends BaseAdapter {
         );
         return;
       }
+      // Auto-close: when selection moves to a different item, detach the
+      // hidden leaf so show() remounts fresh. Mirrors TaskDetailView's
+      // lastItemId/detachLeaf pattern - re-selecting the same item keeps
+      // the existing view.
+      if (
+        options.autoClose &&
+        this.embeddedLastItemId &&
+        this.embeddedLastItemId !== item.id &&
+        this.embeddedDetailView
+      ) {
+        this.embeddedDetailView.detach();
+        this.embeddedDetailView = null;
+      }
+      this.embeddedLastItemId = item.id;
       if (!this.embeddedDetailView) {
         this.embeddedDetailView = new EmbeddedDetailView(app);
       }
@@ -173,6 +191,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (this.embeddedDetailView) {
       this.embeddedDetailView.detach();
       this.embeddedDetailView = null;
+      this.embeddedLastItemId = null;
     }
 
     if (!this.detailView) {
@@ -195,6 +214,7 @@ export class TaskAgentAdapter extends BaseAdapter {
       this.embeddedDetailView.detach();
       this.embeddedDetailView = null;
     }
+    this.embeddedLastItemId = null;
   }
 
   async onItemCreated(

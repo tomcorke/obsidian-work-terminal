@@ -239,7 +239,7 @@ The **Placement** dropdown offers six strategies:
 
 Additional options shape the behaviour:
 
-- **Auto-close on selection change** (all placements except Disabled) - detaches the detail leaf when you select a different item, so the next selection opens a fresh leaf at the current placement target. With this off, the same leaf is reused across selections.
+- **Auto-close on selection change** (all placements except Disabled) - detaches the detail leaf when you select a different item, so the next selection opens a fresh leaf at the current placement target. With this off, the same leaf is reused across selections. Applies to the embedded placement too: the hidden Obsidian leaf backing the embedded view is torn down and remounted on each selection when the toggle is on.
 - **Apply readable line-width override to split** (Split only) - toggles the width override. When off, Obsidian's default flex layout controls the split and any previously-applied inline styles are cleared on the next selection.
 - **Split direction** (Split only) - choose Vertical (side by side) or Horizontal (top and bottom). Vertical matches the default behaviour.
 
