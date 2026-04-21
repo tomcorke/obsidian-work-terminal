@@ -24,7 +24,7 @@ export class ProfileLaunchModal extends Modal {
     private profiles: AgentProfile[],
     private defaultCwd: string,
     private onSubmit: (overrides: ProfileLaunchOverrides) => void,
-    private onOpenSettings?: () => void,
+    private onManageProfiles?: () => void,
   ) {
     super(app);
     this.selectedProfile = profiles[0];
@@ -48,17 +48,17 @@ export class ProfileLaunchModal extends Modal {
     helpEl.appendChild(
       document.createTextNode("Pick a profile and optionally override settings for this launch."),
     );
-    if (this.onOpenSettings) {
+    if (this.onManageProfiles) {
       helpEl.appendChild(document.createTextNode(" "));
       const link = helpEl.createEl("a", {
-        text: "Manage profiles in settings",
+        text: "Manage profiles",
         cls: "wt-custom-spawn-settings-link",
         attr: { href: "#" },
       });
       link.addEventListener("click", (e) => {
         e.preventDefault();
         this.close();
-        this.onOpenSettings?.();
+        this.onManageProfiles?.();
       });
     }
 

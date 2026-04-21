@@ -8,6 +8,7 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ### Improvements
 - Added a `Preview in Work Terminal panel` detail-view placement that renders the task file's markdown read-only as an overlay inside the Work Terminal panel, with an **Open in editor** button and automatic re-render on vault modify. Uses public Obsidian APIs (MarkdownRenderer) only. (#480)
+- The **Manage profiles** link in the Launch Profile dialog now opens the Agent Profile Manager directly instead of scrolling to the settings tab, saving a click and avoiding unrelated General settings. Link text shortened from "Manage profiles in settings". (#485)
 
 ## [0.4.1] - 2026-04-20
 

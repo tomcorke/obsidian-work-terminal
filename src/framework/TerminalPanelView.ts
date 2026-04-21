@@ -29,6 +29,7 @@ import { electronRequire, expandTilde } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { expandProfilePlaceholders } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
+import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
 import { getDefaultSessionLabel } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
@@ -1356,8 +1357,21 @@ export class TerminalPanelView {
         this.launchAction("profile launch", () => this.spawnFromProfileWithOverrides(overrides));
       },
       () => {
-        (this.plugin.app as any).setting.open();
-        (this.plugin.app as any).setting.openTabById(this.plugin.manifest.id);
+        if (!this.profileManager) return;
+        let adapterPromptDescription: string | undefined;
+        try {
+          const promptBuilder = this.adapter.createPromptBuilder?.();
+          if (promptBuilder?.describePromptFormat) {
+            adapterPromptDescription = promptBuilder.describePromptFormat();
+          }
+        } catch {
+          // Ignore adapter prompt description errors - the modal works without it.
+        }
+        new AgentProfileManagerModal(
+          this.plugin.app,
+          this.profileManager,
+          adapterPromptDescription,
+        ).open();
       },
     ).open();
   }
