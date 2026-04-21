@@ -485,6 +485,33 @@
   line-height: 1;
 }
 
+.wt-task-open-file-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.wt-task-open-file-btn:hover,
+.wt-task-open-file-btn:focus-visible {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.wt-task-open-file-btn .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
 /* =============================================================================
    Tab bar
    ============================================================================= */
