@@ -14,10 +14,21 @@
  * - `preview` - render the task file's markdown read-only inside the Work
  *   Terminal panel itself, as an overlay above the terminal area. Provides
  *   an "Open in editor" button that falls back to the `navigate` behaviour.
+ * - `embedded` - EXPERIMENTAL. Render the detail view as a MarkdownView
+ *   embedded inside the terminal panel (alongside shell/agent tabs), by
+ *   reparenting a hidden Obsidian leaf's content element into a host slot
+ *   managed by the terminal panel. Relies on internal Obsidian APIs and may
+ *   break across Obsidian versions.
  * - `disabled` - do nothing on selection. Users open files manually via the
  *   file explorer, quick switcher, or context menu.
  */
-export type DetailViewPlacement = "split" | "tab" | "navigate" | "preview" | "disabled";
+export type DetailViewPlacement =
+  | "split"
+  | "tab"
+  | "navigate"
+  | "preview"
+  | "embedded"
+  | "disabled";
 
 /** Orientation for the `split` placement. Matches Obsidian's createLeafBySplit arg. */
 export type DetailViewSplitDirection = "vertical" | "horizontal";
@@ -45,6 +56,7 @@ const VALID_PLACEMENTS: ReadonlySet<string> = new Set([
   "tab",
   "navigate",
   "preview",
+  "embedded",
   "disabled",
 ]);
 

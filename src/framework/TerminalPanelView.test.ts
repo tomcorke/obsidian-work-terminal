@@ -379,7 +379,7 @@ function createView(
   );
   createdViews.push(view);
 
-  return { panelEl, plugin, view };
+  return { panelEl, terminalWrapperEl, plugin, view };
 }
 
 async function flushAsync(ticks = 3) {
@@ -1412,6 +1412,187 @@ describe("TerminalPanelView", () => {
     expect(openFile).toHaveBeenCalledWith(fakeFile);
     expect(getLeaf).not.toHaveBeenCalled();
     expect(workTerminalLeaf.openFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("embedded detail placement", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    vi.stubGlobal("Element", dom.window.Element);
+    vi.stubGlobal("Node", dom.window.Node);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    installDomHelpers({
+      window: dom.window,
+      document: dom.window.document,
+      HTMLElement: dom.window.HTMLElement,
+      Element: dom.window.Element,
+      Node: dom.window.Node,
+    });
+
+    mockState.activeSessions = new Map();
+    mockState.activeTabs = [];
+    mockState.activeItemId = null;
+    mockState.tabsByItem = new Map();
+    mockState.activeTabIndex = 0;
+    mockState.tabDiagnostics = [];
+    mockState.idleSinceByItem = new Map();
+    mockState.menuTitles = [];
+    mockState.menuActions = new Map();
+    mockState.notices = [];
+    mockState.clipboardWriteText.mockClear();
+    mockState.latestCreateTabArgs = null;
+    mockState.tabManagerCalls = [];
+    mockState.openExternal.mockClear();
+    mockState.latestTabManager = null;
+    mockState.latestTabManagerCtorArgs = null;
+  });
+
+  afterEach(() => {
+    while (createdViews.length > 0) {
+      createdViews.pop()?.disposeAll();
+    }
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function setupSingleTab() {
+    mockState.tabsByItem = new Map([
+      [
+        "task-1",
+        [
+          {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            agentState: "inactive",
+          },
+        ],
+      ],
+    ]);
+  }
+
+  it("renders the Detail pseudo-tab only when placement is embedded", async () => {
+    setupSingleTab();
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "split" });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    expect(panelEl.querySelector(".wt-tab-detail")).toBeNull();
+
+    // Switch to embedded placement - the pseudo-tab should appear
+    window.dispatchEvent(
+      new dom.window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.defaultTerminalCwd": "~",
+          "core.detailViewPlacement": "embedded",
+        },
+      }),
+    );
+
+    expect(panelEl.querySelector(".wt-tab-detail")).not.toBeNull();
+  });
+
+  it("does not render the Detail pseudo-tab when no item is active", async () => {
+    const { panelEl } = createView({ "core.detailViewPlacement": "embedded" });
+    await flushAsync();
+
+    // No active item set, so no Detail tab either
+    expect(panelEl.querySelector(".wt-tab-detail")).toBeNull();
+  });
+
+  it("hides the terminal wrapper when the Detail pseudo-tab is clicked", async () => {
+    setupSingleTab();
+    const { panelEl, terminalWrapperEl, view } = createView({
+      "core.detailViewPlacement": "embedded",
+    });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    // Create the embedded detail host (MainView would do this via
+    // getEmbeddedDetailHost before activating); here we invoke it directly.
+    view.getEmbeddedDetailHost();
+
+    const detailTab = panelEl.querySelector(".wt-tab-detail") as HTMLElement;
+    expect(detailTab).not.toBeNull();
+
+    detailTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(view.isEmbeddedDetailActive()).toBe(true);
+    expect(terminalWrapperEl.style.display).toBe("none");
+    // Re-query: activateEmbeddedDetail re-renders the tab bar, replacing the
+    // original detailTab element with a fresh one that carries the active class.
+    const activeDetailTab = panelEl.querySelector(".wt-tab-detail") as HTMLElement;
+    expect(activeDetailTab.classList.contains("wt-tab-active")).toBe(true);
+  });
+
+  it("restores terminal wrapper visibility when a terminal tab is clicked", async () => {
+    setupSingleTab();
+    const { panelEl, terminalWrapperEl, view } = createView({
+      "core.detailViewPlacement": "embedded",
+    });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    view.getEmbeddedDetailHost();
+
+    // Activate embedded detail first
+    const detailTab = panelEl.querySelector(".wt-tab-detail") as HTMLElement;
+    detailTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(terminalWrapperEl.style.display).toBe("none");
+
+    // Now click the first terminal tab - should flip back
+    vi.useFakeTimers();
+    const terminalTab = panelEl.querySelector(".wt-tab:not(.wt-tab-detail)") as HTMLElement;
+    terminalTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    vi.advanceTimersByTime(250);
+    vi.useRealTimers();
+
+    expect(view.isEmbeddedDetailActive()).toBe(false);
+    expect(terminalWrapperEl.style.display).toBe("");
+  });
+
+  it("restores terminal wrapper when placement changes away from embedded", async () => {
+    setupSingleTab();
+    const { panelEl, terminalWrapperEl, view } = createView({
+      "core.detailViewPlacement": "embedded",
+    });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    view.getEmbeddedDetailHost();
+
+    // Activate embedded detail
+    const detailTab = panelEl.querySelector(".wt-tab-detail") as HTMLElement;
+    detailTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(terminalWrapperEl.style.display).toBe("none");
+    expect(view.isEmbeddedDetailActive()).toBe(true);
+
+    // Dispatch settings change flipping placement away from embedded
+    window.dispatchEvent(
+      new dom.window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.defaultTerminalCwd": "~",
+          "core.detailViewPlacement": "split",
+        },
+      }),
+    );
+
+    expect(view.isEmbeddedDetailActive()).toBe(false);
+    expect(terminalWrapperEl.style.display).toBe("");
+    // Detail pseudo-tab should no longer be in the tab bar
+    expect(panelEl.querySelector(".wt-tab-detail")).toBeNull();
   });
 });
 

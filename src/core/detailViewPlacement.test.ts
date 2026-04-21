@@ -21,7 +21,14 @@ describe("resolveDetailViewOptions", () => {
   });
 
   it("accepts each valid placement value", () => {
-    for (const placement of ["split", "tab", "navigate", "preview", "disabled"] as const) {
+    for (const placement of [
+      "split",
+      "tab",
+      "navigate",
+      "preview",
+      "embedded",
+      "disabled",
+    ] as const) {
       const options = resolveDetailViewOptions({
         "core.detailViewPlacement": placement,
       });

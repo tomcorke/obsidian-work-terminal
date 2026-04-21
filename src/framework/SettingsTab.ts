@@ -599,6 +599,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           "Tab opens a new tab in the active tab group. " +
           "Navigate replaces the contents of the active editor. " +
           "Preview shows a read-only markdown preview of the file inside the Work Terminal panel, with an Open in editor button. " +
+          "Embedded (experimental) renders the detail view inside the terminal panel as a pseudo-tab, alongside shell and agent tabs. " +
           "Disabled does nothing - open files manually via the file explorer or quick switcher.",
       )
       .addDropdown((dropdown) => {
@@ -606,6 +607,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
         dropdown.addOption("tab", "Tab in active group");
         dropdown.addOption("navigate", "Navigate active leaf");
         dropdown.addOption("preview", "Preview in Work Terminal panel");
+        dropdown.addOption("embedded", "Embedded in terminal panel (experimental)");
         dropdown.addOption("disabled", "Disabled");
         dropdown.setValue(placement).onChange(async (newValue) => {
           await this.saveSettings((s) => {
@@ -615,6 +617,18 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           this.display();
         });
       });
+
+    // Embedded placement is experimental - surface a warning so users know
+    // what they are opting into. Only shown when this placement is selected.
+    if (placement === "embedded") {
+      const warning = containerEl.createDiv({ cls: "wt-setting-experimental-note" });
+      warning.createSpan({ text: "Experimental: ", cls: "wt-setting-experimental-label" });
+      warning.appendText(
+        "the embedded placement reparents an Obsidian MarkdownView into a host element " +
+          "inside the terminal panel. It relies on internal Obsidian APIs and may break " +
+          "across Obsidian versions. If you hit issues, switch back to Split or Tab placement.",
+      );
+    }
 
     // Auto-close applies to any placement except "disabled" (where nothing is
     // opened anyway). It's a general behaviour toggle, not split-specific.

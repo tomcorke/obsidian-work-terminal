@@ -1039,6 +1039,49 @@ button.wt-spawn-claude-ctx:hover svg {
   position: relative;
 }
 
+/* =============================================================================
+   Embedded detail host (experimental - issue #479)
+   ============================================================================= */
+
+/* Sits in the terminal panel area next to .wt-terminal-wrapper. Only one of
+   the two is shown at a time; visibility is toggled inline by the "Detail"
+   pseudo-tab in the tab bar. */
+.wt-embedded-detail-host {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  min-height: 0;
+}
+
+.wt-embedded-detail-host.wt-embedded-detail-active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The "Detail" pseudo-tab inherits .wt-tab styling; nudge it visually so users
+   can spot the experimental slot. */
+.wt-tab-detail .wt-tab-label {
+  font-style: italic;
+}
+
+/* Experimental-option note rendered beneath the placement dropdown when the
+   embedded mode is selected. */
+.wt-setting-experimental-note {
+  margin: 0 0 12px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--color-orange, #d97706);
+  background: var(--background-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.wt-setting-experimental-label {
+  font-weight: 600;
+  color: var(--color-orange, #d97706);
+}
+
 .wt-terminal-instance {
   width: 100% !important;
   height: 100%;

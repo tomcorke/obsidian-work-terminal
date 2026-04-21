@@ -389,7 +389,23 @@ export class MainView extends ItemView {
         this.terminalPanel?.setActiveItem(item?.id ?? null);
         this.terminalPanel?.setTitle(item);
         if (item && typeof this.adapter.createDetailView === "function") {
-          this.adapter.createDetailView(item, this.app, this.leaf);
+          // Supply an embedded host only when the user has opted into the
+          // experimental "embedded" placement. The adapter falls back to
+          // leaf-based placements otherwise.
+          const placement = this.settings?.["core.detailViewPlacement"];
+          const embeddedHost =
+            placement === "embedded" ? (this.terminalPanel?.getEmbeddedDetailHost() ?? null) : null;
+          this.adapter.createDetailView(item, this.app, this.leaf, embeddedHost);
+          if (placement === "embedded" && embeddedHost) {
+            // Auto-focus the Detail pseudo-tab whenever a new item is
+            // selected under embedded placement. Users can still click a
+            // terminal tab to flip back to the shell view.
+            this.terminalPanel?.activateEmbeddedDetail();
+          } else {
+            // Placement changed away from embedded: make sure we are not
+            // still showing a stale embedded host.
+            this.terminalPanel?.deactivateEmbeddedDetail();
+          }
         }
         if (item) {
           void this.ensureSelectedItemHasDurableId(item);
