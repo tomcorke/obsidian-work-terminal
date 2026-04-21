@@ -10,8 +10,11 @@ import { findNavigateTargetLeaf } from "../../core/workspace/findNavigateTargetL
  * The preview lives as an overlay `div` layered on top of the terminal
  * wrapper element. When active it fully covers the tab content - the
  * terminal is still mounted underneath but is hidden from view. Clicking
- * "Open in editor" dismisses the overlay and opens the file in a workspace
- * leaf via the same target-leaf resolution the `navigate` placement uses.
+ * "Open in editor" opens the file in a workspace leaf via the same
+ * target-leaf resolution the `navigate` placement uses, but leaves the
+ * preview overlay in place. The preview is only dismissed when the user
+ * changes the detail-view placement setting away from `preview`, which is
+ * handled by `TaskDetailView` calling `detach()`.
  *
  * Rendering uses `MarkdownRenderer.render` (public Obsidian API). A vault
  * `modify` listener re-renders the preview when the currently-displayed
