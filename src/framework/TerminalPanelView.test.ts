@@ -1596,6 +1596,203 @@ describe("embedded detail placement", () => {
   });
 });
 
+describe("preview detail placement", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    vi.stubGlobal("Element", dom.window.Element);
+    vi.stubGlobal("Node", dom.window.Node);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    installDomHelpers({
+      window: dom.window,
+      document: dom.window.document,
+      HTMLElement: dom.window.HTMLElement,
+      Element: dom.window.Element,
+      Node: dom.window.Node,
+    });
+
+    mockState.activeSessions = new Map();
+    mockState.activeTabs = [];
+    mockState.activeItemId = null;
+    mockState.tabsByItem = new Map();
+    mockState.activeTabIndex = 0;
+    mockState.tabDiagnostics = [];
+    mockState.idleSinceByItem = new Map();
+    mockState.menuTitles = [];
+    mockState.menuActions = new Map();
+    mockState.notices = [];
+    mockState.clipboardWriteText.mockClear();
+    mockState.latestCreateTabArgs = null;
+    mockState.tabManagerCalls = [];
+    mockState.openExternal.mockClear();
+    mockState.latestTabManager = null;
+    mockState.latestTabManagerCtorArgs = null;
+  });
+
+  afterEach(() => {
+    while (createdViews.length > 0) {
+      createdViews.pop()?.disposeAll();
+    }
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function setupSingleTab() {
+    mockState.tabsByItem = new Map([
+      [
+        "task-1",
+        [
+          {
+            label: "Shell",
+            sessionType: "shell",
+            isResumableAgent: false,
+            agentState: "inactive",
+          },
+        ],
+      ],
+    ]);
+  }
+
+  it("renders the Preview pseudo-tab only when placement is preview", async () => {
+    setupSingleTab();
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "split" });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    expect(panelEl.querySelector(".wt-tab-preview")).toBeNull();
+
+    // Switch to preview placement - the pseudo-tab should appear
+    window.dispatchEvent(
+      new dom.window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.defaultTerminalCwd": "~",
+          "core.detailViewPlacement": "preview",
+        },
+      }),
+    );
+
+    expect(panelEl.querySelector(".wt-tab-preview")).not.toBeNull();
+  });
+
+  it("does not render the Preview pseudo-tab when no item is active", async () => {
+    const { panelEl } = createView({ "core.detailViewPlacement": "preview" });
+    await flushAsync();
+
+    expect(panelEl.querySelector(".wt-tab-preview")).toBeNull();
+  });
+
+  it("hides the terminal wrapper when the Preview pseudo-tab is clicked", async () => {
+    setupSingleTab();
+    const { panelEl, terminalWrapperEl, view } = createView({
+      "core.detailViewPlacement": "preview",
+    });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    // Create the preview host (MainView would normally do this via
+    // getPreviewDetailHost before activating); here we invoke directly.
+    view.getPreviewDetailHost();
+
+    const previewTab = panelEl.querySelector(".wt-tab-preview") as HTMLElement;
+    expect(previewTab).not.toBeNull();
+
+    previewTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    expect(view.isPreviewDetailActive()).toBe(true);
+    expect(terminalWrapperEl.style.display).toBe("none");
+    // Re-query: activatePreviewDetail re-renders the tab bar, replacing
+    // the original previewTab element with a fresh one that carries the
+    // active class.
+    const activePreviewTab = panelEl.querySelector(".wt-tab-preview") as HTMLElement;
+    expect(activePreviewTab.classList.contains("wt-tab-active")).toBe(true);
+  });
+
+  it("restores terminal wrapper visibility when a terminal tab is clicked", async () => {
+    setupSingleTab();
+    const { panelEl, terminalWrapperEl, view } = createView({
+      "core.detailViewPlacement": "preview",
+    });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    view.getPreviewDetailHost();
+
+    // Activate preview first
+    const previewTab = panelEl.querySelector(".wt-tab-preview") as HTMLElement;
+    previewTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(terminalWrapperEl.style.display).toBe("none");
+
+    // Now click the first terminal tab - should flip back
+    vi.useFakeTimers();
+    const terminalTab = panelEl.querySelector(".wt-tab:not(.wt-tab-preview)") as HTMLElement;
+    terminalTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    vi.advanceTimersByTime(250);
+    vi.useRealTimers();
+
+    expect(view.isPreviewDetailActive()).toBe(false);
+    expect(terminalWrapperEl.style.display).toBe("");
+  });
+
+  it("restores terminal wrapper when placement changes away from preview", async () => {
+    setupSingleTab();
+    const { panelEl, terminalWrapperEl, view } = createView({
+      "core.detailViewPlacement": "preview",
+    });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    view.getPreviewDetailHost();
+
+    // Activate preview
+    const previewTab = panelEl.querySelector(".wt-tab-preview") as HTMLElement;
+    previewTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+    expect(terminalWrapperEl.style.display).toBe("none");
+    expect(view.isPreviewDetailActive()).toBe(true);
+
+    // Dispatch settings change flipping placement away from preview
+    window.dispatchEvent(
+      new dom.window.CustomEvent("work-terminal:settings-changed", {
+        detail: {
+          "core.defaultTerminalCwd": "~",
+          "core.detailViewPlacement": "split",
+        },
+      }),
+    );
+
+    expect(view.isPreviewDetailActive()).toBe(false);
+    expect(terminalWrapperEl.style.display).toBe("");
+    // Preview pseudo-tab should no longer be in the tab bar
+    expect(panelEl.querySelector(".wt-tab-preview")).toBeNull();
+  });
+
+  it("does not mark terminal tabs active when the Preview pseudo-tab is showing", async () => {
+    setupSingleTab();
+    const { panelEl, view } = createView({ "core.detailViewPlacement": "preview" });
+    await flushAsync();
+    view.setActiveItem("task-1");
+
+    view.getPreviewDetailHost();
+
+    const previewTab = panelEl.querySelector(".wt-tab-preview") as HTMLElement;
+    previewTab.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+
+    const shellTab = panelEl.querySelector(".wt-tab:not(.wt-tab-preview)") as HTMLElement;
+    expect(shellTab).not.toBeNull();
+    expect(shellTab.classList.contains("wt-tab-active")).toBe(false);
+  });
+});
+
 describe("profile launch", () => {
   let dom: JSDOM;
 
