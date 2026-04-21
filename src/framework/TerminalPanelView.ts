@@ -142,7 +142,15 @@ export class TerminalPanelView {
   private tabBarResizeObserver: ResizeObserver | null = null;
   private readonly handleSettingsChanged = (event: Event) => {
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
-    this.renderTabBar();
+    // If the user was viewing the embedded detail and then switched the
+    // placement away from "embedded", restore terminal wrapper visibility so
+    // they're not left staring at a hidden wrapper with no way back.
+    // `deactivateEmbeddedDetail` re-renders the tab bar itself.
+    if (this.embeddedDetailActive && !this.isEmbeddedPlacementActive()) {
+      this.deactivateEmbeddedDetail();
+    } else {
+      this.renderTabBar();
+    }
     // Re-render title so the "open task file" button reflects the current
     // detail view placement setting (only visible when placement is not split).
     this.setTitle(this.lastTitleItem);
@@ -249,6 +257,8 @@ export class TerminalPanelView {
   /**
    * Hide the embedded detail host and restore the terminal wrapper. Used when
    * the user switches back to a terminal tab or when placement changes.
+   * Always re-renders the tab bar so the Detail pseudo-tab loses its
+   * highlight and terminal tab highlights refresh to reflect the active tab.
    */
   deactivateEmbeddedDetail(): void {
     this.embeddedDetailActive = false;
@@ -256,6 +266,7 @@ export class TerminalPanelView {
       this.embeddedDetailHostEl.style.display = "none";
     }
     this.terminalWrapperEl.style.display = "";
+    this.renderTabBar();
   }
 
   /** True when the pseudo "Detail" tab is currently showing. */
