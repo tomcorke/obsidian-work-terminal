@@ -76,15 +76,22 @@ export class TaskDetailView {
         this.previewView = null;
       }
       this.lastItemId = item.id;
-      // Prefer the framework-supplied host (the sibling preview slot owned
-      // by TerminalPanelView). Fall back to the legacy wrapper query when
-      // the framework does not supply one - keeps older callers working.
-      const hostEl = previewHost ?? this.resolvePreviewHost(ownerLeaf);
-      if (!hostEl) return;
+      // The framework always supplies the preview host via MainView; any
+      // call path that fails to is a programming error. Previously this
+      // fell back to querying `.wt-terminal-wrapper`, which was written
+      // for the overlay-era preview (absolute + z-index) and breaks the
+      // new flex-based layout (`flex: 1; min-height: 0`) because the
+      // terminal wrapper is not a flex container. Warn and no-op instead.
+      if (!previewHost) {
+        console.warn(
+          "[work-terminal] Preview detail placement selected but no preview host element was supplied",
+        );
+        return;
+      }
       if (!this.previewView) {
         this.previewView = new TaskPreviewView(this.app);
       }
-      await this.previewView.show(item, hostEl);
+      await this.previewView.show(item, previewHost);
       return;
     }
 
@@ -393,19 +400,6 @@ export class TaskDetailView {
       this.openedPaths.add(newPath);
     }
     this.previewView?.rekeyPath(oldPath, newPath);
-  }
-
-  /**
-   * Resolve the host element the preview overlay should attach to. Prefers
-   * the terminal wrapper inside the Work Terminal view so the overlay
-   * visually occupies the same region as the tab content. Falls back to
-   * the view's container element when the wrapper cannot be found.
-   */
-  private resolvePreviewHost(ownerLeaf: WorkspaceLeaf): HTMLElement | null {
-    const containerEl = (ownerLeaf.view as { containerEl?: HTMLElement } | undefined)?.containerEl;
-    if (!containerEl) return null;
-    const wrapper = containerEl.querySelector<HTMLElement>(".wt-terminal-wrapper");
-    return wrapper ?? containerEl;
   }
 
   /**

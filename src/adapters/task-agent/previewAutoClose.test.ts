@@ -179,4 +179,25 @@ describe("TaskDetailView preview auto-close (issue #487)", () => {
 
     expect(previewDetachMock).toHaveBeenCalledTimes(1);
   });
+
+  it("warns and no-ops when no preview host is supplied", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await view.show(
+      makeItem("task-1"),
+      ownerLeaf,
+      { placement: "preview", autoClose: true } as any,
+      // no previewHost - the legacy workspace-query fallback was removed
+      // because it returned the terminal wrapper, which is not a flex
+      // container and breaks the new preview layout.
+      null,
+    );
+
+    expect(previewShowMock).not.toHaveBeenCalled();
+    expect(previewInstanceCount).toBe(0);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("no preview host");
+
+    warnSpy.mockRestore();
+  });
 });
