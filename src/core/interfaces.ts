@@ -286,12 +286,18 @@ export interface AdapterBundle {
    * into which the adapter can mount an embedded detail view (used by the
    * experimental "embedded" placement). Adapters are free to ignore it when
    * the current placement does not embed.
+   *
+   * `previewHost`, when supplied, is a DOM element owned by the framework
+   * into which the adapter can mount the read-only preview view (used by
+   * the "preview" placement). Adapters are free to ignore it when the
+   * current placement is not preview.
    */
   createDetailView?(
     item: WorkItem,
     app: App,
     ownerLeaf: WorkspaceLeaf,
     embeddedHost?: HTMLElement | null,
+    previewHost?: HTMLElement | null,
   ): void;
   /** Detach the detail view leaf on close/reload. */
   detachDetailView?(): void;
@@ -382,6 +388,7 @@ export abstract class BaseAdapter implements AdapterBundle {
     _app: App,
     _ownerLeaf: WorkspaceLeaf,
     _embeddedHost?: HTMLElement | null,
+    _previewHost?: HTMLElement | null,
   ): void {
     return undefined;
   }

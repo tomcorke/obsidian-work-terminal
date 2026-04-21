@@ -139,6 +139,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     app: App,
     ownerLeaf: WorkspaceLeaf,
     embeddedHost?: HTMLElement | null,
+    previewHost?: HTMLElement | null,
   ): void {
     this._app = app;
     const options = resolveDetailViewOptions(this._settings);
@@ -197,7 +198,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (!this.detailView) {
       this.detailView = new TaskDetailView(app);
     }
-    this.detailView.show(item, ownerLeaf, options);
+    this.detailView.show(item, ownerLeaf, options, previewHost);
   }
 
   rekeyDetailPath(oldPath: string, newPath: string): void {

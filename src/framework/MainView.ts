@@ -80,6 +80,7 @@ export class MainView extends ItemView {
   // Settings change handler - keeps this.settings in sync and notifies adapter
   private readonly _handleSettingsChanged = (event: Event) => {
     const prevCreationColumnIds = this.adapter.config.creationColumns;
+    const prevPlacement = this.settings["core.detailViewPlacement"];
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     // Notify adapter so it can update internal state (e.g. card flag rules, column order)
     this.adapter.onSettingsChanged?.(this.settings);
@@ -90,8 +91,54 @@ export class MainView extends ItemView {
     if (prevCreationColumnIds !== newCreationColumnIds) {
       this.promptBox?.updateCreationColumns();
     }
+    // If the detail view placement changed, force a clean detach of the
+    // previous placement's resources (leaf, embedded reparent, preview
+    // overlay + vault modify listener) and re-mount the current selection
+    // at the new placement. Without this, switching away from "preview"
+    // would only hide the DOM while leaving TaskPreviewView's modify
+    // listener alive; switching *to* preview while an item was already
+    // selected would render the Preview pseudo-tab without ever calling
+    // createDetailView, so the host / content would stay unmounted until
+    // the next reselect.
+    const newPlacement = this.settings["core.detailViewPlacement"];
+    if (prevPlacement !== newPlacement) {
+      this.remountDetailViewForCurrentSelection();
+    }
     this.scheduleRefresh();
   };
+
+  /**
+   * Detach the adapter's detail view and re-mount it for the currently
+   * selected item (if any) at the current placement. Called when the
+   * detail view placement setting changes so the switch takes effect
+   * without requiring the user to reselect an item. Safe to call when
+   * nothing is selected or when the adapter does not provide a detail
+   * view - both short-circuit to the detach-only path.
+   */
+  private remountDetailViewForCurrentSelection(): void {
+    this.adapter.detachDetailView?.();
+    if (typeof this.adapter.createDetailView !== "function") return;
+    const activeItemId = this.terminalPanel?.getActiveItemId() ?? null;
+    if (!activeItemId) return;
+    const item = this.allItems.find((i) => i.id === activeItemId) ?? null;
+    if (!item) return;
+    const placement = this.settings["core.detailViewPlacement"];
+    const embeddedHost =
+      placement === "embedded" ? (this.terminalPanel?.getEmbeddedDetailHost() ?? null) : null;
+    const previewHost =
+      placement === "preview" ? (this.terminalPanel?.getPreviewDetailHost() ?? null) : null;
+    this.adapter.createDetailView(item, this.app, this.leaf, embeddedHost, previewHost);
+    if (placement === "embedded" && embeddedHost) {
+      this.terminalPanel?.activateEmbeddedDetail();
+    } else {
+      this.terminalPanel?.deactivateEmbeddedDetail();
+    }
+    if (placement === "preview" && previewHost) {
+      this.terminalPanel?.activatePreviewDetail();
+    } else {
+      this.terminalPanel?.deactivatePreviewDetail();
+    }
+  }
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -389,13 +436,16 @@ export class MainView extends ItemView {
         this.terminalPanel?.setActiveItem(item?.id ?? null);
         this.terminalPanel?.setTitle(item);
         if (item && typeof this.adapter.createDetailView === "function") {
-          // Supply an embedded host only when the user has opted into the
-          // experimental "embedded" placement. The adapter falls back to
-          // leaf-based placements otherwise.
+          // Supply a framework host that matches the current placement so
+          // the adapter can mount into the right slot. Embedded and preview
+          // each own their own sibling slot next to the terminal wrapper;
+          // placement-based visibility is toggled via the pseudo-tabs.
           const placement = this.settings?.["core.detailViewPlacement"];
           const embeddedHost =
             placement === "embedded" ? (this.terminalPanel?.getEmbeddedDetailHost() ?? null) : null;
-          this.adapter.createDetailView(item, this.app, this.leaf, embeddedHost);
+          const previewHost =
+            placement === "preview" ? (this.terminalPanel?.getPreviewDetailHost() ?? null) : null;
+          this.adapter.createDetailView(item, this.app, this.leaf, embeddedHost, previewHost);
           if (placement === "embedded" && embeddedHost) {
             // Auto-focus the Detail pseudo-tab whenever a new item is
             // selected under embedded placement. Users can still click a
@@ -405,6 +455,16 @@ export class MainView extends ItemView {
             // Placement changed away from embedded: make sure we are not
             // still showing a stale embedded host.
             this.terminalPanel?.deactivateEmbeddedDetail();
+          }
+          if (placement === "preview" && previewHost) {
+            // Auto-focus the Preview pseudo-tab whenever a new item is
+            // selected under preview placement. Users can still click a
+            // terminal tab to flip back to the shell view.
+            this.terminalPanel?.activatePreviewDetail();
+          } else {
+            // Placement changed away from preview: make sure we are not
+            // still showing a stale preview host.
+            this.terminalPanel?.deactivatePreviewDetail();
           }
         }
         if (item) {

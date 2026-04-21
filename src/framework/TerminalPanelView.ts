@@ -123,6 +123,14 @@ export class TerminalPanelView {
   // Tracks whether the pseudo-"Detail" tab is currently selected. When true
   // the terminal wrapper is hidden and the embedded detail host is visible.
   private embeddedDetailActive = false;
+  // Slot for the "preview" detail view placement. Hosts the read-only
+  // MarkdownRenderer output. Lazily created on first use. Sibling to the
+  // terminal wrapper; visibility is toggled by the Preview pseudo-tab in
+  // the tab bar, matching the embedded-placement pattern.
+  private previewDetailHostEl: HTMLElement | null = null;
+  // Tracks whether the pseudo-"Preview" tab is currently selected. When
+  // true the terminal wrapper is hidden and the preview host is visible.
+  private previewDetailActive = false;
 
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
@@ -147,9 +155,22 @@ export class TerminalPanelView {
     // placement away from "embedded", restore terminal wrapper visibility so
     // they're not left staring at a hidden wrapper with no way back.
     // `deactivateEmbeddedDetail` re-renders the tab bar itself.
+    //
+    // Same rule for the preview pseudo-tab: if the user had the preview
+    // tab selected and then switched placement away from "preview", flip
+    // back to the terminal wrapper so the preview host doesn't linger
+    // with stale content. When both are active (shouldn't happen but
+    // defensive), handle embedded first then preview.
+    let tabBarRerendered = false;
     if (this.embeddedDetailActive && !this.isEmbeddedPlacementActive()) {
       this.deactivateEmbeddedDetail();
-    } else {
+      tabBarRerendered = true;
+    }
+    if (this.previewDetailActive && !this.isPreviewPlacementActive()) {
+      this.deactivatePreviewDetail();
+      tabBarRerendered = true;
+    }
+    if (!tabBarRerendered) {
       this.renderTabBar();
     }
     // Re-render title so the "open task file" button reflects the current
@@ -276,6 +297,70 @@ export class TerminalPanelView {
   }
 
   // ---------------------------------------------------------------------------
+  // Preview detail host (see issue #487)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Return true when the current settings select the "preview" detail
+   * placement. Drives conditional tab-bar rendering (the Preview pseudo-
+   * tab) and the settings-change handler that restores terminal visibility
+   * when the user switches placement away from preview.
+   */
+  private isPreviewPlacementActive(): boolean {
+    return this.settings["core.detailViewPlacement"] === "preview";
+  }
+
+  /**
+   * Lazily create and return the host element for the preview detail view.
+   * Adapters mount the read-only MarkdownRenderer output into this slot.
+   * The host sits next to the terminal wrapper and is hidden until
+   * activated by selecting the Preview pseudo-tab.
+   */
+  getPreviewDetailHost(): HTMLElement {
+    if (!this.previewDetailHostEl) {
+      this.previewDetailHostEl = this.panelEl.createDiv({ cls: "wt-preview-detail-host" });
+      this.previewDetailHostEl.style.display = "none";
+      // Insert before the terminal wrapper so the preview and terminal
+      // occupy the same DOM slot; show one at a time based on activation
+      // state.
+      this.panelEl.insertBefore(this.previewDetailHostEl, this.terminalWrapperEl);
+    }
+    return this.previewDetailHostEl;
+  }
+
+  /**
+   * Show the preview host and hide the terminal wrapper. Safe to call
+   * when no host exists yet (it becomes a no-op).
+   */
+  activatePreviewDetail(): void {
+    if (!this.previewDetailHostEl) return;
+    this.previewDetailActive = true;
+    this.previewDetailHostEl.style.display = "";
+    this.terminalWrapperEl.style.display = "none";
+    this.renderTabBar();
+  }
+
+  /**
+   * Hide the preview host and restore the terminal wrapper. Used when
+   * the user switches back to a terminal tab or when placement changes.
+   * Always re-renders the tab bar so the Preview pseudo-tab loses its
+   * highlight and terminal tab highlights refresh.
+   */
+  deactivatePreviewDetail(): void {
+    this.previewDetailActive = false;
+    if (this.previewDetailHostEl) {
+      this.previewDetailHostEl.style.display = "none";
+    }
+    this.terminalWrapperEl.style.display = "";
+    this.renderTabBar();
+  }
+
+  /** True when the pseudo "Preview" tab is currently showing. */
+  isPreviewDetailActive(): boolean {
+    return this.previewDetailActive;
+  }
+
+  // ---------------------------------------------------------------------------
   // Tab bar rendering
   // ---------------------------------------------------------------------------
 
@@ -303,6 +388,20 @@ export class TerminalPanelView {
       });
     }
 
+    // Render the "Preview" pseudo-tab when the preview placement is selected
+    // and an item is active. Mirrors the embedded Detail pseudo-tab: clicking
+    // it shows the preview host and hides the terminal wrapper. Clicking any
+    // terminal tab flips back to the terminal wrapper (handled below).
+    if (activeItemId && this.isPreviewPlacementActive()) {
+      const previewTabEl = tabsContainer.createDiv({ cls: "wt-tab wt-tab-preview" });
+      if (this.previewDetailActive) previewTabEl.addClass("wt-tab-active");
+      previewTabEl.setAttribute("data-wt-preview-tab", "true");
+      previewTabEl.createSpan({ cls: "wt-tab-label", text: "Preview" });
+      previewTabEl.addEventListener("click", () => {
+        this.activatePreviewDetail();
+      });
+    }
+
     if (activeItemId) {
       const tabs = this.tabManager.getTabs(activeItemId);
       const activeIdx = this.tabManager.getActiveTabIndex();
@@ -310,9 +409,11 @@ export class TerminalPanelView {
       for (let i = 0; i < tabs.length; i++) {
         const tab = tabs[i];
         const tabEl = tabsContainer.createDiv({ cls: "wt-tab" });
-        // Terminal tabs are "active" only when the embedded detail tab is not
-        // currently showing. Otherwise the highlight moves to the Detail tab.
-        if (i === activeIdx && !this.embeddedDetailActive) tabEl.addClass("wt-tab-active");
+        // Terminal tabs are "active" only when neither pseudo-tab (Detail or
+        // Preview) is currently showing. Otherwise the highlight moves to the
+        // matching pseudo-tab.
+        if (i === activeIdx && !this.embeddedDetailActive && !this.previewDetailActive)
+          tabEl.addClass("wt-tab-active");
         if (tab.isAgentTab) {
           const state = tab.agentState;
           if (state !== "inactive") tabEl.addClass(`wt-tab-agent-${state}`);
@@ -333,10 +434,10 @@ export class TerminalPanelView {
         // Click to switch (delayed to allow double-click cancellation)
         tabEl.addEventListener("click", (event) => {
           if (this.isRenameActive()) return;
-          // If we're showing the embedded detail view, any terminal-tab click
-          // should exit embedded mode even when the click lands on what was
-          // previously the active terminal tab.
-          if (i === activeIdx && !this.embeddedDetailActive) return;
+          // If we're showing an embedded or preview detail view, any terminal
+          // tab click should exit that mode even when the click lands on what
+          // was previously the active terminal tab.
+          if (i === activeIdx && !this.embeddedDetailActive && !this.previewDetailActive) return;
           if ((event as MouseEvent).detail > 1) return;
           if (this.tabClickTimer !== null) {
             clearTimeout(this.tabClickTimer);
@@ -345,6 +446,7 @@ export class TerminalPanelView {
           this.tabClickTimer = setTimeout(() => {
             this.tabClickTimer = null;
             this.deactivateEmbeddedDetail();
+            this.deactivatePreviewDetail();
             this.tabManager.switchToTab(i);
             this.renderTabBar();
           }, 250);

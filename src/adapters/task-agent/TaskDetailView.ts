@@ -40,6 +40,7 @@ export class TaskDetailView {
     item: WorkItem,
     ownerLeaf: WorkspaceLeaf,
     options: DetailViewOptions = DETAIL_VIEW_DEFAULTS,
+    previewHost?: HTMLElement | null,
   ): Promise<void> {
     // Any non-split placement must clear the split width override so stale
     // inline flex styles from a previous split don't persist after the user
@@ -65,15 +66,32 @@ export class TaskDetailView {
 
     if (options.placement === "preview") {
       // Tear down any leaf we own from a previous split/tab placement so it
-      // doesn't linger in the workspace while the overlay is showing.
+      // doesn't linger in the workspace while the preview tab is showing.
       this.detachLeaf();
+      // Auto-close: when the selection moves to a different item with
+      // autoClose enabled, detach the preview so show() remounts fresh for
+      // the new item. Mirrors the leaf/embedded auto-close pattern.
+      if (options.autoClose && this.lastItemId && this.lastItemId !== item.id && this.previewView) {
+        this.previewView.detach();
+        this.previewView = null;
+      }
       this.lastItemId = item.id;
-      const hostEl = this.resolvePreviewHost(ownerLeaf);
-      if (!hostEl) return;
+      // The framework always supplies the preview host via MainView; any
+      // call path that fails to is a programming error. Previously this
+      // fell back to querying `.wt-terminal-wrapper`, which was written
+      // for the overlay-era preview (absolute + z-index) and breaks the
+      // new flex-based layout (`flex: 1; min-height: 0`) because the
+      // terminal wrapper is not a flex container. Warn and no-op instead.
+      if (!previewHost) {
+        console.warn(
+          "[work-terminal] Preview detail placement selected but no preview host element was supplied",
+        );
+        return;
+      }
       if (!this.previewView) {
         this.previewView = new TaskPreviewView(this.app);
       }
-      await this.previewView.show(item, hostEl);
+      await this.previewView.show(item, previewHost);
       return;
     }
 
@@ -382,19 +400,6 @@ export class TaskDetailView {
       this.openedPaths.add(newPath);
     }
     this.previewView?.rekeyPath(oldPath, newPath);
-  }
-
-  /**
-   * Resolve the host element the preview overlay should attach to. Prefers
-   * the terminal wrapper inside the Work Terminal view so the overlay
-   * visually occupies the same region as the tab content. Falls back to
-   * the view's container element when the wrapper cannot be found.
-   */
-  private resolvePreviewHost(ownerLeaf: WorkspaceLeaf): HTMLElement | null {
-    const containerEl = (ownerLeaf.view as { containerEl?: HTMLElement } | undefined)?.containerEl;
-    if (!containerEl) return null;
-    const wrapper = containerEl.querySelector<HTMLElement>(".wt-terminal-wrapper");
-    return wrapper ?? containerEl;
   }
 
   /**

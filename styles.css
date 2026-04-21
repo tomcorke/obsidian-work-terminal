@@ -2463,18 +2463,37 @@ button.wt-spawn-claude-ctx:hover svg {
 }
 
 /* =============================================================================
-   Detail preview overlay (preview placement, issue #480)
-   Read-only markdown preview layered over the terminal wrapper.
+   Detail preview (preview placement, issues #480 and #487)
+   Read-only markdown preview hosted in a sibling slot next to the terminal
+   wrapper. The Preview pseudo-tab in the tab bar toggles visibility so
+   users can still reach their terminal tabs.
    ============================================================================= */
 
+/* Host slot owned by TerminalPanelView. Fills the terminal content area
+   when the Preview pseudo-tab is active (visibility is toggled by
+   TerminalPanelView.activatePreviewDetail/deactivatePreviewDetail). */
+.wt-preview-detail-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The preview itself fills its host. No more overlay/z-index; this is a
+   plain block alongside the terminal wrapper, not layered on top of it. */
 .wt-preview-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
+  flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--background-primary);
   overflow: hidden;
+  min-height: 0;
+}
+
+/* Preview pseudo-tab label nudge, matches the embedded Detail tab. */
+.wt-tab-preview .wt-tab-label {
+  font-style: italic;
 }
 
 .wt-preview-toolbar {

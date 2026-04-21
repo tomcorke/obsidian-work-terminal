@@ -695,3 +695,112 @@ describe("MainView dynamic column cleanup", () => {
     );
   });
 });
+
+describe("MainView detail placement remount on settings change", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function setupView(initialPlacement: string) {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const detachDetailView = vi.fn();
+    const createDetailView = vi.fn();
+    const embeddedHost = document.createElement("div");
+    const previewHost = document.createElement("div");
+    const terminalPanel = {
+      getActiveItemId: vi.fn(() => "task-1"),
+      getEmbeddedDetailHost: vi.fn(() => embeddedHost),
+      getPreviewDetailHost: vi.fn(() => previewHost),
+      activateEmbeddedDetail: vi.fn(),
+      deactivateEmbeddedDetail: vi.fn(),
+      activatePreviewDetail: vi.fn(),
+      deactivatePreviewDetail: vi.fn(),
+    };
+    const adapter = {
+      config: { creationColumns: [] },
+      onSettingsChanged: vi.fn(),
+      detachDetailView,
+      createDetailView,
+    };
+    const item = makeItem({ id: "task-1", path: "Tasks/task-1.md" });
+    (view as any).adapter = adapter;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).listPanel = { updateSettings: vi.fn() };
+    (view as any).promptBox = { updateCreationColumns: vi.fn() };
+    (view as any).allItems = [item];
+    (view as any).settings = { "core.detailViewPlacement": initialPlacement };
+    (view as any).app = {};
+    (view as any).leaf = {};
+    // Stub scheduleRefresh to avoid triggering a real timer-backed refresh
+    vi.spyOn(view as any, "scheduleRefresh").mockImplementation(() => {});
+    return { view, adapter, terminalPanel, item, embeddedHost, previewHost };
+  }
+
+  it("re-mounts the detail view when placement changes away from preview", () => {
+    const { view, adapter, terminalPanel, item } = setupView("preview");
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.detailViewPlacement": "split" },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(adapter.detachDetailView).toHaveBeenCalledTimes(1);
+    // Non-embedded / non-preview placements receive null for both hosts
+    expect(adapter.createDetailView).toHaveBeenCalledWith(item, {}, {}, null, null);
+    // Should flip both detail modes off so neither pseudo-tab host lingers
+    expect(terminalPanel.deactivatePreviewDetail).toHaveBeenCalled();
+    expect(terminalPanel.deactivateEmbeddedDetail).toHaveBeenCalled();
+  });
+
+  it("re-mounts the detail view when placement changes TO preview", () => {
+    const { view, adapter, terminalPanel, item, previewHost } = setupView("split");
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.detailViewPlacement": "preview" },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(adapter.detachDetailView).toHaveBeenCalledTimes(1);
+    // Preview placement should receive the preview host and no embedded host
+    expect(adapter.createDetailView).toHaveBeenCalledWith(item, {}, {}, null, previewHost);
+    // Preview pseudo-tab should be activated so the new host becomes visible
+    // without requiring a reselect
+    expect(terminalPanel.activatePreviewDetail).toHaveBeenCalled();
+  });
+
+  it("does not remount when placement is unchanged", () => {
+    const { view, adapter } = setupView("split");
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.detailViewPlacement": "split", "core.other": "changed" },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(adapter.detachDetailView).not.toHaveBeenCalled();
+    expect(adapter.createDetailView).not.toHaveBeenCalled();
+  });
+
+  it("still detaches the detail view when placement changes but no item is selected", () => {
+    const { view, adapter, terminalPanel } = setupView("preview");
+    terminalPanel.getActiveItemId.mockReturnValue(null);
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.detailViewPlacement": "split" },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    // Detach runs unconditionally so the preview view's vault modify
+    // listener is released even when no item is currently selected.
+    expect(adapter.detachDetailView).toHaveBeenCalledTimes(1);
+    expect(adapter.createDetailView).not.toHaveBeenCalled();
+  });
+});

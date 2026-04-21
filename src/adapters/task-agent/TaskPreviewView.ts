@@ -5,16 +5,20 @@ import { findNavigateTargetLeaf } from "../../core/workspace/findNavigateTargetL
 
 /**
  * Read-only preview of a task file rendered inline inside the Work Terminal
- * panel. Implements the `preview` detail-view placement from #480.
+ * panel. Implements the `preview` detail-view placement from #480 (as
+ * reworked in #487).
  *
- * The preview lives as an overlay `div` layered on top of the terminal
- * wrapper element. When active it fully covers the tab content - the
- * terminal is still mounted underneath but is hidden from view. Clicking
- * "Open in editor" opens the file in a workspace leaf via the same
- * target-leaf resolution the `navigate` placement uses, but leaves the
- * preview overlay in place. The preview is only dismissed when the user
- * changes the detail-view placement setting away from `preview`, which is
- * handled by `TaskDetailView` calling `detach()`.
+ * The preview mounts into a host element owned by `TerminalPanelView` that
+ * sits next to the terminal wrapper. The Preview pseudo-tab in the tab bar
+ * toggles which of the two is visible at a time: selecting the preview tab
+ * shows the preview host and hides the terminal wrapper; selecting any
+ * other tab hides the preview and restores the terminal wrapper. This
+ * mirrors the embedded-placement host pattern introduced in #483 so users
+ * can still reach their terminal tabs while the preview is available.
+ *
+ * Clicking "Open in editor" opens the file in a workspace leaf via the
+ * same target-leaf resolution the `navigate` placement uses, but leaves
+ * the preview tab in place - it is a hand-off, not a dismissal.
  *
  * Rendering uses `MarkdownRenderer.render` (public Obsidian API). A vault
  * `modify` listener re-renders the preview when the currently-displayed
