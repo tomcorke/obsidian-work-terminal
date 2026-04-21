@@ -10,6 +10,9 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 - Added a `Preview in Work Terminal panel` detail-view placement that renders the task file's markdown read-only as an overlay inside the Work Terminal panel, with an **Open in editor** button and automatic re-render on vault modify. Uses public Obsidian APIs (MarkdownRenderer) only. (#480)
 - The **Manage profiles** link in the Launch Profile dialog now opens the Agent Profile Manager directly instead of scrolling to the settings tab, saving a click and avoiding unrelated General settings. Link text shortened from "Manage profiles in settings". (#485)
 
+### Fixes
+- Fixed the `Preview` detail-view placement covering the entire terminal panel with an overlay, making Shell and agent tabs inaccessible while the preview was showing. The preview now renders as a "Preview" pseudo-tab in the tab bar next to Shell and agent tabs; selecting the Preview tab shows the preview and hides the terminal wrapper, while selecting any other tab flips back. Also honours the placement's `Auto-close on selection change` toggle, mirroring the Embedded placement. (#487)
+
 ## [0.4.1] - 2026-04-20
 
 ### Improvements
