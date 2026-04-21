@@ -185,6 +185,69 @@ describe("TaskPreviewView", () => {
       expect(openFile).toHaveBeenCalledWith(file);
     });
   });
+
+  describe("ensureOverlay on host change tears down the previous component and listener", () => {
+    it("unloads the prior renderComponent and unregisters the vault modify listener when switching hosts", async () => {
+      const hostA = document.createElement("div");
+      const hostB = document.createElement("div");
+      document.body.appendChild(hostA);
+      document.body.appendChild(hostB);
+
+      const file = makeFile("Tasks/task.md");
+      const app = makeFakeApp({ "Tasks/task.md": file });
+
+      const view = new TaskPreviewView(app as unknown as Parameters<typeof TaskPreviewView>[0]);
+      await view.show(makeItem(), hostA);
+
+      // After the first show, one component should have been created and
+      // loaded, and exactly one modify listener registered.
+      expect(componentInstances.length).toBe(1);
+      const firstComponent = componentInstances[0];
+      expect(firstComponent.loaded).toBe(true);
+      expect(app.vault.on).toHaveBeenCalledTimes(1);
+      const firstRef = app.vault.on.mock.results[0].value;
+
+      // Simulate a host change: the Work Terminal view was closed and
+      // reopened, so the overlay is still mounted on hostA but a new host
+      // is passed in.
+      await view.show(makeItem(), hostB);
+
+      // The previous component must have been unloaded.
+      expect(firstComponent.unload).toHaveBeenCalled();
+      expect(firstComponent.loaded).toBe(false);
+
+      // The previous vault modify listener must have been unregistered.
+      expect(app.vault.offref).toHaveBeenCalledWith(firstRef);
+
+      // Overlay should now live under hostB and not hostA.
+      expect(hostA.querySelector(".wt-preview-overlay")).toBeNull();
+      expect(hostB.querySelector(".wt-preview-overlay")).not.toBeNull();
+
+      // A new modify listener should have been registered for the new overlay.
+      expect(app.vault.on).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("detach", () => {
+    it("removes the overlay, unloads the component, and unregisters the modify listener", async () => {
+      const hostEl = document.createElement("div");
+      document.body.appendChild(hostEl);
+      const file = makeFile("Tasks/task.md");
+      const app = makeFakeApp({ "Tasks/task.md": file });
+
+      const view = new TaskPreviewView(app as unknown as Parameters<typeof TaskPreviewView>[0]);
+      await view.show(makeItem(), hostEl);
+
+      const component = componentInstances[0];
+      const ref = app.vault.on.mock.results[0].value;
+
+      view.detach();
+
+      expect(hostEl.querySelector(".wt-preview-overlay")).toBeNull();
+      expect(component.unload).toHaveBeenCalled();
+      expect(app.vault.offref).toHaveBeenCalledWith(ref);
+    });
+  });
 });
 
 // Silence the unused-import lint for Component - we reference it via the mock.

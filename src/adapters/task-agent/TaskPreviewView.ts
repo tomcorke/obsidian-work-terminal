@@ -86,13 +86,14 @@ export class TaskPreviewView {
 
   private ensureOverlay(hostEl: HTMLElement): void {
     // If the overlay was attached to a different host (e.g. the user closed
-    // and reopened the Work Terminal view so the DOM was rebuilt) recreate
-    // it against the new host.
+    // and reopened the Work Terminal view so the DOM was rebuilt) fully tear
+    // down the previous overlay before recreating it. `detach()` removes the
+    // DOM, unloads the render component (releasing any rendered embed
+    // children), and unregisters the vault `modify` listener - without this
+    // we would leak rendered components and leave a listener running with
+    // nothing mounted.
     if (this.overlayEl && this.overlayEl.parentElement !== hostEl) {
-      this.overlayEl.remove();
-      this.overlayEl = null;
-      this.contentEl = null;
-      this.openInEditorBtn = null;
+      this.detach();
     }
     if (this.overlayEl) return;
 
