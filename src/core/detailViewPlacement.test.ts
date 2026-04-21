@@ -111,4 +111,11 @@ describe("resolveDetailViewOptions", () => {
     });
     expect(options).toEqual(DETAIL_VIEW_DEFAULTS);
   });
+
+  it("resolves the preview placement (issue #480)", () => {
+    const options = resolveDetailViewOptions({
+      "core.detailViewPlacement": "preview",
+    });
+    expect(options.placement).toBe("preview");
+  });
 });
