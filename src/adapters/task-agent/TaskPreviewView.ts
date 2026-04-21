@@ -1,7 +1,7 @@
 import { Component, MarkdownRenderer, TFile, type App, type EventRef } from "obsidian";
 import type { WorkItem } from "../../core/interfaces";
 import { VIEW_TYPE } from "../../framework/PluginBase";
-import { findNavigateTargetLeaf } from "./findNavigateTargetLeaf";
+import { findNavigateTargetLeaf } from "../../core/workspace/findNavigateTargetLeaf";
 
 /**
  * Read-only preview of a task file rendered inline inside the Work Terminal
