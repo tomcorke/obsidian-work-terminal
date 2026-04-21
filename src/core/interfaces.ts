@@ -281,8 +281,18 @@ export interface AdapterBundle {
    * Open a detail view for the selected item. The adapter manages its own
    * Obsidian workspace leaf via `app.workspace.createLeafBySplit(ownerLeaf)`.
    * If undefined, the plugin renders a 2-column layout without a detail panel.
+   *
+   * `embeddedHost`, when supplied, is a DOM element owned by the framework
+   * into which the adapter can mount an embedded detail view (used by the
+   * experimental "embedded" placement). Adapters are free to ignore it when
+   * the current placement does not embed.
    */
-  createDetailView?(item: WorkItem, app: App, ownerLeaf: WorkspaceLeaf): void;
+  createDetailView?(
+    item: WorkItem,
+    app: App,
+    ownerLeaf: WorkspaceLeaf,
+    embeddedHost?: HTMLElement | null,
+  ): void;
   /** Detach the detail view leaf on close/reload. */
   detachDetailView?(): void;
   /** Update detail view tracking when an item file is renamed. */
@@ -367,7 +377,12 @@ export abstract class BaseAdapter implements AdapterBundle {
     // no-op by default
   }
 
-  createDetailView?(_item: WorkItem, _app: App, _ownerLeaf: WorkspaceLeaf): void {
+  createDetailView?(
+    _item: WorkItem,
+    _app: App,
+    _ownerLeaf: WorkspaceLeaf,
+    _embeddedHost?: HTMLElement | null,
+  ): void {
     return undefined;
   }
 

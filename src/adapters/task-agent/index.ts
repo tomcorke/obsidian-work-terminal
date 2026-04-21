@@ -16,6 +16,7 @@ import { TaskMover } from "./TaskMover";
 import { TaskCard } from "./TaskCard";
 import { TaskPromptBuilder } from "./TaskPromptBuilder";
 import { TaskDetailView } from "./TaskDetailView";
+import { EmbeddedDetailView } from "./EmbeddedDetailView";
 import { resolveDetailViewOptions } from "../../core/detailViewPlacement";
 import {
   handleItemCreated,
@@ -36,6 +37,7 @@ export class TaskAgentAdapter extends BaseAdapter {
   private _app: App | null = null;
   private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
+  private embeddedDetailView: EmbeddedDetailView | null = null;
   private _cardRenderer: TaskCard | null = null;
   private _stateResolver: StateResolver | null = null;
   private _resolverStrategy: StateStrategy | null = null;
@@ -128,7 +130,12 @@ export class TaskAgentAdapter extends BaseAdapter {
     return new TaskPromptBuilder();
   }
 
-  createDetailView(item: WorkItem, app: App, ownerLeaf: WorkspaceLeaf): void {
+  createDetailView(
+    item: WorkItem,
+    app: App,
+    ownerLeaf: WorkspaceLeaf,
+    embeddedHost?: HTMLElement | null,
+  ): void {
     this._app = app;
     const options = resolveDetailViewOptions(this._settings);
     // "Disabled" placement means: do not instantiate a detail view at all.
@@ -137,6 +144,37 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (options.placement === "disabled") {
       return;
     }
+
+    // Embedded placement (experimental): tear down any leaf-based detail view
+    // and mount into the framework-provided host instead.
+    if (options.placement === "embedded") {
+      if (this.detailView) {
+        this.detailView.detach();
+        this.detailView = null;
+      }
+      if (!embeddedHost) {
+        // No host available (e.g. adapter invoked outside of MainView).
+        // Fall back to a no-op rather than crashing - the framework should
+        // always supply a host when placement is embedded.
+        console.warn(
+          "[work-terminal] Embedded detail placement selected but no host element was supplied",
+        );
+        return;
+      }
+      if (!this.embeddedDetailView) {
+        this.embeddedDetailView = new EmbeddedDetailView(app);
+      }
+      void this.embeddedDetailView.show(item.path, embeddedHost);
+      return;
+    }
+
+    // Any non-embedded placement must drop any live embedded view so its
+    // hidden leaf is released before we open a leaf-based detail view.
+    if (this.embeddedDetailView) {
+      this.embeddedDetailView.detach();
+      this.embeddedDetailView = null;
+    }
+
     if (!this.detailView) {
       this.detailView = new TaskDetailView(app);
     }
@@ -145,12 +183,17 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   rekeyDetailPath(oldPath: string, newPath: string): void {
     this.detailView?.rekeyPath(oldPath, newPath);
+    this.embeddedDetailView?.rekeyPath(oldPath, newPath);
   }
 
   detachDetailView(): void {
     if (this.detailView) {
       this.detailView.detach();
       this.detailView = null;
+    }
+    if (this.embeddedDetailView) {
+      this.embeddedDetailView.detach();
+      this.embeddedDetailView = null;
     }
   }
 

@@ -116,6 +116,12 @@ export class TerminalPanelView {
   private titleEl: HTMLElement;
   private tabBarEl: HTMLElement;
   private terminalWrapperEl: HTMLElement;
+  // Slot for the experimental "embedded" detail view placement. Lazily
+  // created on first use so non-embedded users pay zero DOM cost.
+  private embeddedDetailHostEl: HTMLElement | null = null;
+  // Tracks whether the pseudo-"Detail" tab is currently selected. When true
+  // the terminal wrapper is hidden and the embedded detail host is visible.
+  private embeddedDetailActive = false;
 
   // Active items reference (for tab context menu "Move to Item")
   private allItems: WorkItem[] = [];
@@ -200,6 +206,64 @@ export class TerminalPanelView {
   }
 
   // ---------------------------------------------------------------------------
+  // Embedded detail host (experimental - see issue #479)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Return true when the current settings select the experimental
+   * "embedded" detail placement. Drives conditional tab-bar rendering.
+   */
+  private isEmbeddedPlacementActive(): boolean {
+    return this.settings["core.detailViewPlacement"] === "embedded";
+  }
+
+  /**
+   * Lazily create and return the host element for the embedded detail view.
+   * Adapters mount a reparented MarkdownView into this slot. The host sits
+   * next to the terminal wrapper and is hidden until activated.
+   */
+  getEmbeddedDetailHost(): HTMLElement {
+    if (!this.embeddedDetailHostEl) {
+      this.embeddedDetailHostEl = this.panelEl.createDiv({ cls: "wt-embedded-detail-host" });
+      // Start hidden - activateEmbeddedDetail() flips it on.
+      this.embeddedDetailHostEl.style.display = "none";
+      // Insert before the terminal wrapper so embedded + terminal occupy the
+      // same DOM slot; show one at a time based on activation state.
+      this.panelEl.insertBefore(this.embeddedDetailHostEl, this.terminalWrapperEl);
+    }
+    return this.embeddedDetailHostEl;
+  }
+
+  /**
+   * Show the embedded detail host and hide the terminal wrapper. Safe to call
+   * when no host exists yet (it becomes a no-op).
+   */
+  activateEmbeddedDetail(): void {
+    if (!this.embeddedDetailHostEl) return;
+    this.embeddedDetailActive = true;
+    this.embeddedDetailHostEl.style.display = "";
+    this.terminalWrapperEl.style.display = "none";
+    this.renderTabBar();
+  }
+
+  /**
+   * Hide the embedded detail host and restore the terminal wrapper. Used when
+   * the user switches back to a terminal tab or when placement changes.
+   */
+  deactivateEmbeddedDetail(): void {
+    this.embeddedDetailActive = false;
+    if (this.embeddedDetailHostEl) {
+      this.embeddedDetailHostEl.style.display = "none";
+    }
+    this.terminalWrapperEl.style.display = "";
+  }
+
+  /** True when the pseudo "Detail" tab is currently showing. */
+  isEmbeddedDetailActive(): boolean {
+    return this.embeddedDetailActive;
+  }
+
+  // ---------------------------------------------------------------------------
   // Tab bar rendering
   // ---------------------------------------------------------------------------
 
@@ -213,6 +277,20 @@ export class TerminalPanelView {
     });
 
     const activeItemId = this.tabManager.getActiveItemId();
+
+    // Render the experimental "Detail" pseudo-tab when the embedded placement
+    // is selected and an item is active. This tab toggles visibility of the
+    // embedded detail host vs the terminal wrapper.
+    if (activeItemId && this.isEmbeddedPlacementActive()) {
+      const detailTabEl = tabsContainer.createDiv({ cls: "wt-tab wt-tab-detail" });
+      if (this.embeddedDetailActive) detailTabEl.addClass("wt-tab-active");
+      detailTabEl.setAttribute("data-wt-detail-tab", "true");
+      detailTabEl.createSpan({ cls: "wt-tab-label", text: "Detail" });
+      detailTabEl.addEventListener("click", () => {
+        this.activateEmbeddedDetail();
+      });
+    }
+
     if (activeItemId) {
       const tabs = this.tabManager.getTabs(activeItemId);
       const activeIdx = this.tabManager.getActiveTabIndex();
@@ -220,7 +298,9 @@ export class TerminalPanelView {
       for (let i = 0; i < tabs.length; i++) {
         const tab = tabs[i];
         const tabEl = tabsContainer.createDiv({ cls: "wt-tab" });
-        if (i === activeIdx) tabEl.addClass("wt-tab-active");
+        // Terminal tabs are "active" only when the embedded detail tab is not
+        // currently showing. Otherwise the highlight moves to the Detail tab.
+        if (i === activeIdx && !this.embeddedDetailActive) tabEl.addClass("wt-tab-active");
         if (tab.isAgentTab) {
           const state = tab.agentState;
           if (state !== "inactive") tabEl.addClass(`wt-tab-agent-${state}`);
@@ -241,7 +321,10 @@ export class TerminalPanelView {
         // Click to switch (delayed to allow double-click cancellation)
         tabEl.addEventListener("click", (event) => {
           if (this.isRenameActive()) return;
-          if (i === activeIdx) return;
+          // If we're showing the embedded detail view, any terminal-tab click
+          // should exit embedded mode even when the click lands on what was
+          // previously the active terminal tab.
+          if (i === activeIdx && !this.embeddedDetailActive) return;
           if ((event as MouseEvent).detail > 1) return;
           if (this.tabClickTimer !== null) {
             clearTimeout(this.tabClickTimer);
@@ -249,6 +332,7 @@ export class TerminalPanelView {
           }
           this.tabClickTimer = setTimeout(() => {
             this.tabClickTimer = null;
+            this.deactivateEmbeddedDetail();
             this.tabManager.switchToTab(i);
             this.renderTabBar();
           }, 250);
