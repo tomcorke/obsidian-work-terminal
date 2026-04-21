@@ -802,13 +802,13 @@ button.wt-spawn-claude-ctx:hover svg {
   margin-bottom: 16px;
 }
 
-.wt-custom-spawn-settings-link {
+.wt-custom-spawn-manage-profiles-link {
   color: var(--text-accent);
   cursor: pointer;
   text-decoration: none;
 }
 
-.wt-custom-spawn-settings-link:hover {
+.wt-custom-spawn-manage-profiles-link:hover {
   text-decoration: underline;
 }
 

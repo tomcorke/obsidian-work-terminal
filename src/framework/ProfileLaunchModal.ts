@@ -52,7 +52,7 @@ export class ProfileLaunchModal extends Modal {
       helpEl.appendChild(document.createTextNode(" "));
       const link = helpEl.createEl("a", {
         text: "Manage profiles",
-        cls: "wt-custom-spawn-settings-link",
+        cls: "wt-custom-spawn-manage-profiles-link",
         attr: { href: "#" },
       });
       link.addEventListener("click", (e) => {

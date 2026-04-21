@@ -358,7 +358,7 @@ describe("ProfileLaunchModal manage profiles link", () => {
   it("shows manage profiles link when onManageProfiles callback is provided", () => {
     const modal = createModalWithCallback([makeProfile()], vi.fn());
     const el = (modal as any).contentEl as HTMLElement;
-    const link = el.querySelector(".wt-custom-spawn-settings-link");
+    const link = el.querySelector(".wt-custom-spawn-manage-profiles-link");
     expect(link).not.toBeNull();
     expect(link?.textContent).toBe("Manage profiles");
   });
@@ -366,7 +366,7 @@ describe("ProfileLaunchModal manage profiles link", () => {
   it("does not show manage profiles link when no onManageProfiles callback", () => {
     const modal = createModalWithCallback([makeProfile()]);
     const el = (modal as any).contentEl as HTMLElement;
-    const link = el.querySelector(".wt-custom-spawn-settings-link");
+    const link = el.querySelector(".wt-custom-spawn-manage-profiles-link");
     expect(link).toBeNull();
   });
 
@@ -375,7 +375,7 @@ describe("ProfileLaunchModal manage profiles link", () => {
     const modal = createModalWithCallback([makeProfile()], onManageProfiles);
     const closeSpy = vi.spyOn(modal, "close");
     const el = (modal as any).contentEl as HTMLElement;
-    const link = el.querySelector(".wt-custom-spawn-settings-link") as HTMLElement;
+    const link = el.querySelector(".wt-custom-spawn-manage-profiles-link") as HTMLElement;
 
     link.click();
 
