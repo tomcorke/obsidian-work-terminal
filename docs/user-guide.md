@@ -226,13 +226,16 @@ Because the detail panel is a standard Obsidian markdown view, all Obsidian feat
 
 The way the detail file is opened is configurable under **Settings > Detail view**. By default, selecting a task opens its file in a vertical split next to the Work Terminal view and applies a readable line-width override - this matches the behaviour shipped in earlier versions, so users who never open the settings see no change.
 
-The **Placement** dropdown offers five strategies:
+The **Placement** dropdown offers six strategies:
 
 - **Split (default)** - create a new split beside the Work Terminal view and apply the min-width override so the editor does not squish. Best when Work Terminal sits in its own tab group.
 - **Tab in active group** - open the task file as a new tab in the currently active tab group, with no splitting and no width override. Best when Work Terminal lives in a tab group alongside other files and you want the detail view to behave like any other tab.
 - **Navigate active leaf** - open the task file in the most recent editor leaf that is not the Work Terminal view, falling back to a new tab if no suitable leaf exists. Does not replace the Work Terminal view itself. No new tabs or splits are created when a suitable editor leaf is already open.
 - **Preview in Work Terminal panel** - render the task file's markdown read-only as an overlay inside the Work Terminal panel itself, layered above the terminal tabs. Provides an **Open in editor** button that opens the file in a workspace leaf using the same target-leaf resolution as the Navigate placement. The preview re-renders automatically when the file is modified in another leaf, so edits you make elsewhere show up immediately. Best for small screens or single-pane layouts where keeping the terminal visible while glancing at the task description matters more than editing in place. There is intentionally no way to edit the file from the preview - use **Open in editor** for that.
+- **Embedded in terminal panel (experimental)** - render the detail view inside the terminal panel itself as a "Detail" pseudo-tab alongside shell and agent tabs. Useful on small screens or when you never want the detail view to leave the Work Terminal tab. See the callout below for trade-offs.
 - **Disabled** - do nothing on selection. Useful if you prefer to open files manually via the file explorer, quick switcher, or Obsidian's hover preview, or if you only need the terminal side of Work Terminal.
+
+**Experimental: Embedded placement.** The embedded mode works by creating a hidden Obsidian workspace leaf, then reparenting its MarkdownView content element into a slot inside the Work Terminal's terminal panel. This gives you the full MarkdownView - live preview, frontmatter editor, backlinks - without opening a separate leaf, but it relies on internal Obsidian APIs that may change between versions. Selecting a task auto-focuses the Detail pseudo-tab; clicking any terminal or agent tab switches back to the shell view. If you hit rendering or focus issues, switch to Split or Tab placement.
 
 Additional options shape the behaviour:
 
