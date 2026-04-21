@@ -389,13 +389,16 @@ export class MainView extends ItemView {
         this.terminalPanel?.setActiveItem(item?.id ?? null);
         this.terminalPanel?.setTitle(item);
         if (item && typeof this.adapter.createDetailView === "function") {
-          // Supply an embedded host only when the user has opted into the
-          // experimental "embedded" placement. The adapter falls back to
-          // leaf-based placements otherwise.
+          // Supply a framework host that matches the current placement so
+          // the adapter can mount into the right slot. Embedded and preview
+          // each own their own sibling slot next to the terminal wrapper;
+          // placement-based visibility is toggled via the pseudo-tabs.
           const placement = this.settings?.["core.detailViewPlacement"];
           const embeddedHost =
             placement === "embedded" ? (this.terminalPanel?.getEmbeddedDetailHost() ?? null) : null;
-          this.adapter.createDetailView(item, this.app, this.leaf, embeddedHost);
+          const previewHost =
+            placement === "preview" ? (this.terminalPanel?.getPreviewDetailHost() ?? null) : null;
+          this.adapter.createDetailView(item, this.app, this.leaf, embeddedHost, previewHost);
           if (placement === "embedded" && embeddedHost) {
             // Auto-focus the Detail pseudo-tab whenever a new item is
             // selected under embedded placement. Users can still click a
@@ -405,6 +408,16 @@ export class MainView extends ItemView {
             // Placement changed away from embedded: make sure we are not
             // still showing a stale embedded host.
             this.terminalPanel?.deactivateEmbeddedDetail();
+          }
+          if (placement === "preview" && previewHost) {
+            // Auto-focus the Preview pseudo-tab whenever a new item is
+            // selected under preview placement. Users can still click a
+            // terminal tab to flip back to the shell view.
+            this.terminalPanel?.activatePreviewDetail();
+          } else {
+            // Placement changed away from preview: make sure we are not
+            // still showing a stale preview host.
+            this.terminalPanel?.deactivatePreviewDetail();
           }
         }
         if (item) {

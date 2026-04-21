@@ -40,6 +40,7 @@ export class TaskDetailView {
     item: WorkItem,
     ownerLeaf: WorkspaceLeaf,
     options: DetailViewOptions = DETAIL_VIEW_DEFAULTS,
+    previewHost?: HTMLElement | null,
   ): Promise<void> {
     // Any non-split placement must clear the split width override so stale
     // inline flex styles from a previous split don't persist after the user
@@ -65,10 +66,20 @@ export class TaskDetailView {
 
     if (options.placement === "preview") {
       // Tear down any leaf we own from a previous split/tab placement so it
-      // doesn't linger in the workspace while the overlay is showing.
+      // doesn't linger in the workspace while the preview tab is showing.
       this.detachLeaf();
+      // Auto-close: when the selection moves to a different item with
+      // autoClose enabled, detach the preview so show() remounts fresh for
+      // the new item. Mirrors the leaf/embedded auto-close pattern.
+      if (options.autoClose && this.lastItemId && this.lastItemId !== item.id && this.previewView) {
+        this.previewView.detach();
+        this.previewView = null;
+      }
       this.lastItemId = item.id;
-      const hostEl = this.resolvePreviewHost(ownerLeaf);
+      // Prefer the framework-supplied host (the sibling preview slot owned
+      // by TerminalPanelView). Fall back to the legacy wrapper query when
+      // the framework does not supply one - keeps older callers working.
+      const hostEl = previewHost ?? this.resolvePreviewHost(ownerLeaf);
       if (!hostEl) return;
       if (!this.previewView) {
         this.previewView = new TaskPreviewView(this.app);
