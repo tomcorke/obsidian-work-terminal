@@ -8,11 +8,7 @@ import { Menu, Notice, TFile, setIcon } from "obsidian";
 import type { Plugin } from "obsidian";
 import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 import { findNavigateTargetLeaf } from "../core/workspace/findNavigateTargetLeaf";
-
-// Matches the VIEW_TYPE exported from framework/PluginBase. Inlined here to
-// avoid pulling the Obsidian Plugin base class into modules (like the test
-// environment) that mock obsidian without a Plugin export.
-const WORK_TERMINAL_VIEW_TYPE = "work-terminal-view";
+import { VIEW_TYPE } from "./viewType";
 import { TabManager } from "../core/terminal/TabManager";
 import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
@@ -1088,7 +1084,7 @@ export class TerminalPanelView {
       new Notice(`Task file not found: ${item.path}`);
       return;
     }
-    let targetLeaf = findNavigateTargetLeaf(app, WORK_TERMINAL_VIEW_TYPE);
+    let targetLeaf = findNavigateTargetLeaf(app, VIEW_TYPE);
     if (!targetLeaf) {
       targetLeaf = app.workspace.getLeaf("tab");
     }
