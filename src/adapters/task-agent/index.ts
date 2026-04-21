@@ -202,7 +202,9 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   rekeyDetailPath(oldPath: string, newPath: string): void {
     this.detailView?.rekeyPath(oldPath, newPath);
-    this.embeddedDetailView?.rekeyPath(oldPath, newPath);
+    // EmbeddedDetailView does not need to track paths: the hidden leaf
+    // follows the TFile reference through renames automatically, and
+    // `show()` reads the current path from the caller each time.
   }
 
   detachDetailView(): void {

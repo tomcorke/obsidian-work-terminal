@@ -143,7 +143,7 @@ describe("EmbeddedDetailView", () => {
     expect(host.children.length).toBe(0);
   });
 
-  it("tracks path rename so rekey updates internal state", async () => {
+  it("handles show() on a new path after rename without tracking internal path state", async () => {
     const contentEl = document.createElement("div");
     document.body.appendChild(document.createElement("div")).appendChild(contentEl);
     const { app } = makeApp({ contentEl });
@@ -151,11 +151,8 @@ describe("EmbeddedDetailView", () => {
     const host = document.createElement("div");
     await view.show("old.md", host);
 
-    // Should not throw and should be a no-op for observable state
-    view.rekeyPath("old.md", "new.md");
-    view.rekeyPath("unrelated.md", "other.md");
-
-    // Subsequent show with new path still works
+    // A subsequent show() on the new path reuses the leaf and keeps the
+    // content mounted in the same host - no explicit rekey required.
     await view.show("new.md", host);
     expect(contentEl.parentElement).toBe(host);
   });

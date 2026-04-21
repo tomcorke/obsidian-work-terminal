@@ -25,7 +25,6 @@ export class EmbeddedDetailView {
   private reparentedEl: HTMLElement | null = null;
   private host: HTMLElement | null = null;
   private originalParent: HTMLElement | null = null;
-  private currentPath: string | null = null;
 
   constructor(private app: App) {}
 
@@ -58,7 +57,6 @@ export class EmbeddedDetailView {
     }
 
     await this.leaf.openFile(file);
-    this.currentPath = path;
 
     const view = this.leaf.view as unknown as { contentEl?: HTMLElement } | null;
     const contentEl = view?.contentEl;
@@ -72,16 +70,6 @@ export class EmbeddedDetailView {
       this.reparentedEl = contentEl;
       this.host = host;
       host.addClass("wt-embedded-detail-active");
-    }
-  }
-
-  /**
-   * Update tracking for a renamed file so a subsequent `show()` on the new
-   * path does not flash-close the view when the same file was in-place.
-   */
-  rekeyPath(oldPath: string, newPath: string): void {
-    if (this.currentPath === oldPath) {
-      this.currentPath = newPath;
     }
   }
 
@@ -114,6 +102,5 @@ export class EmbeddedDetailView {
     this.reparentedEl = null;
     this.originalParent = null;
     this.host = null;
-    this.currentPath = null;
   }
 }

@@ -7,7 +7,6 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 const embeddedShowMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const embeddedDetachMock = vi.hoisted(() => vi.fn());
-const embeddedRekeyMock = vi.hoisted(() => vi.fn());
 let embeddedInstanceCount = 0;
 
 vi.mock("./EmbeddedDetailView", () => ({
@@ -17,7 +16,6 @@ vi.mock("./EmbeddedDetailView", () => ({
     }
     show = embeddedShowMock;
     detach = embeddedDetachMock;
-    rekeyPath = embeddedRekeyMock;
   },
 }));
 
@@ -89,7 +87,6 @@ describe("TaskAgentAdapter embedded auto-close (issue #479)", () => {
   beforeEach(() => {
     embeddedShowMock.mockClear();
     embeddedDetachMock.mockClear();
-    embeddedRekeyMock.mockClear();
     embeddedInstanceCount = 0;
 
     adapter = new TaskAgentAdapter();
