@@ -1051,11 +1051,24 @@ button.wt-spawn-claude-ctx:hover svg {
   overflow: auto;
   position: relative;
   min-height: 0;
+  width: 100%;
 }
 
 .wt-embedded-detail-host.wt-embedded-detail-active {
   display: flex;
   flex-direction: column;
+}
+
+/* The reparented MarkdownView contentEl (typically .view-content) loses its
+   ancestor flex context when moved out of its original workspace leaf, so
+   without this it collapses to its intrinsic width - leaving the right side
+   of the host unused and showing whatever sits behind it (see issue #490).
+   Force direct children to fill the host so the detail view always covers
+   the full tab content area. */
+.wt-embedded-detail-host > * {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
 }
 
 /* The "Detail" pseudo-tab inherits .wt-tab styling; nudge it visually so users
