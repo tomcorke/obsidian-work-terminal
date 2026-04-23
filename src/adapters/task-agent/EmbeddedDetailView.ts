@@ -8,9 +8,9 @@
  * requiring a dedicated workspace leaf.
  *
  * This relies on two undocumented / internal Obsidian behaviours:
- *   1. `workspace.getLeaf("window")` returns a leaf whose root element is
- *      detached from the workspace split. We keep the leaf alive but move
- *      its content element into our own host.
+ *   1. A hidden off-screen workspace split hosts a leaf whose content
+ *      element we reparent into our own host. The split is never added
+ *      to the visible workspace layout.
  *   2. MarkdownView renders into `leaf.view.contentEl`. Reparenting that
  *      element preserves its internal editor state because CodeMirror is
  *      content-agnostic about its mount location.
@@ -25,6 +25,10 @@ export class EmbeddedDetailView {
   private reparentedEl: HTMLElement | null = null;
   private host: HTMLElement | null = null;
   private originalParent: HTMLElement | null = null;
+  // Off-screen container for the hidden workspace split that hosts our
+  // leaf. Kept alive for the lifetime of the view so Obsidian doesn't
+  // garbage-collect the split or its children.
+  private hiddenContainer: HTMLElement | null = null;
 
   constructor(private app: App) {}
 
@@ -43,16 +47,38 @@ export class EmbeddedDetailView {
     }
 
     if (!this.leaf) {
-      // "window" leaves are created detached from the workspace split which
-      // lets us reparent their content element without Obsidian fighting us
-      // for layout. We never actually pop it out into a window - we reparent
-      // immediately.
-      const createLeaf = (
-        this.app.workspace as unknown as {
-          getLeaf: (how: "window" | "tab" | "split" | boolean) => WorkspaceLeaf;
-        }
-      ).getLeaf;
-      this.leaf = createLeaf.call(this.app.workspace, "window");
+      // Create a leaf inside a hidden off-screen workspace split. This
+      // avoids getLeaf("window") which spawns a visible pop-out
+      // Electron BrowserWindow that lingers after reparenting.
+      const ws = this.app.workspace as any;
+      if (typeof ws.createLeafInParent !== "function") {
+        console.warn(
+          "[work-terminal] EmbeddedDetailView: workspace.createLeafInParent not available",
+        );
+        return;
+      }
+      // Build a hidden container that Obsidian's layout won't touch.
+      this.hiddenContainer = document.createElement("div");
+      this.hiddenContainer.style.cssText =
+        "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none;";
+      document.body.appendChild(this.hiddenContainer);
+
+      // Create a root-level split inside the hidden container. The
+      // WorkspaceSplit constructor is on the workspace module; fall back
+      // to duplicating the rootSplit's constructor if available.
+      const SplitCtor = ws.rootSplit?.constructor;
+      if (!SplitCtor) {
+        console.warn(
+          "[work-terminal] EmbeddedDetailView: cannot resolve WorkspaceSplit constructor",
+        );
+        this.hiddenContainer.remove();
+        this.hiddenContainer = null;
+        return;
+      }
+      const hiddenSplit = new SplitCtor(ws, "vertical");
+      this.hiddenContainer.appendChild(hiddenSplit.containerEl);
+
+      this.leaf = ws.createLeafInParent(hiddenSplit, 0);
       if (!this.leaf) return;
     }
 
@@ -97,6 +123,10 @@ export class EmbeddedDetailView {
       } catch (err) {
         console.warn("[work-terminal] EmbeddedDetailView: leaf detach failed", err);
       }
+    }
+    if (this.hiddenContainer) {
+      this.hiddenContainer.remove();
+      this.hiddenContainer = null;
     }
     this.leaf = null;
     this.reparentedEl = null;

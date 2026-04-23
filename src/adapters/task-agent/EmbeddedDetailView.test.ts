@@ -26,13 +26,13 @@ beforeAll(() => {
 
 /**
  * Fabricate a minimal Obsidian App/Workspace/Leaf shape for EmbeddedDetailView.
- * The class reaches into `workspace.getLeaf("window")`, the leaf's `openFile`,
- * `view.contentEl`, and `leaf.detach` only.
+ * The class uses `workspace.createLeafInParent` with a hidden off-screen
+ * WorkspaceSplit, then `leaf.openFile` / `leaf.view.contentEl` / `leaf.detach`.
  */
 function makeApp(opts: { fileExists?: boolean; contentEl?: HTMLElement | null } = {}): {
   app: App;
   leaf: { openFile: ReturnType<typeof vi.fn>; detach: ReturnType<typeof vi.fn>; view: any };
-  getLeaf: ReturnType<typeof vi.fn>;
+  createLeafInParent: ReturnType<typeof vi.fn>;
 } {
   const contentEl = opts.contentEl === undefined ? document.createElement("div") : opts.contentEl;
   if (contentEl) {
@@ -45,17 +45,22 @@ function makeApp(opts: { fileExists?: boolean; contentEl?: HTMLElement | null } 
     detach: vi.fn(),
     view: contentEl ? { contentEl } : null,
   };
-  const getLeaf = vi.fn().mockReturnValue(leaf);
+  const createLeafInParent = vi.fn().mockReturnValue(leaf);
+  // Minimal WorkspaceSplit constructor mock - creates a containerEl
+  function FakeSplit() {
+    (this as any).containerEl = document.createElement("div");
+  }
   const app = {
     vault: {
       getAbstractFileByPath: (p: string) =>
         opts.fileExists === false ? null : ({ path: p } as unknown),
     },
     workspace: {
-      getLeaf,
+      createLeafInParent,
+      rootSplit: { constructor: FakeSplit },
     },
   } as unknown as App;
-  return { app, leaf, getLeaf };
+  return { app, leaf, createLeafInParent };
 }
 
 describe("EmbeddedDetailView", () => {
@@ -64,11 +69,11 @@ describe("EmbeddedDetailView", () => {
   });
 
   it("does nothing when the file does not exist", async () => {
-    const { app, getLeaf } = makeApp({ fileExists: false });
+    const { app, createLeafInParent } = makeApp({ fileExists: false });
     const view = new EmbeddedDetailView(app);
     const host = document.createElement("div");
     await view.show("missing.md", host);
-    expect(getLeaf).not.toHaveBeenCalled();
+    expect(createLeafInParent).not.toHaveBeenCalled();
     expect(host.children.length).toBe(0);
   });
 
@@ -77,14 +82,14 @@ describe("EmbeddedDetailView", () => {
     contentEl.className = "markdown-source-view";
     document.body.appendChild(document.createElement("div")).appendChild(contentEl);
 
-    const { app, leaf, getLeaf } = makeApp({ contentEl });
+    const { app, leaf, createLeafInParent } = makeApp({ contentEl });
     const view = new EmbeddedDetailView(app);
     const host = document.createElement("div");
     document.body.appendChild(host);
 
     await view.show("task.md", host);
 
-    expect(getLeaf).toHaveBeenCalledWith("window");
+    expect(createLeafInParent).toHaveBeenCalled();
     expect(leaf.openFile).toHaveBeenCalled();
     expect(contentEl.parentElement).toBe(host);
     expect(host.classList.contains("wt-embedded-detail-active")).toBe(true);
@@ -93,14 +98,14 @@ describe("EmbeddedDetailView", () => {
   it("reuses the existing leaf on subsequent shows and does not re-create one", async () => {
     const contentEl = document.createElement("div");
     document.body.appendChild(document.createElement("div")).appendChild(contentEl);
-    const { app, leaf, getLeaf } = makeApp({ contentEl });
+    const { app, leaf, createLeafInParent } = makeApp({ contentEl });
     const view = new EmbeddedDetailView(app);
     const host = document.createElement("div");
 
     await view.show("a.md", host);
     await view.show("b.md", host);
 
-    expect(getLeaf).toHaveBeenCalledTimes(1);
+    expect(createLeafInParent).toHaveBeenCalledTimes(1);
     expect(leaf.openFile).toHaveBeenCalledTimes(2);
     expect(contentEl.parentElement).toBe(host);
   });

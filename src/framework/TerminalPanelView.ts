@@ -287,7 +287,14 @@ export class TerminalPanelView {
     if (this.embeddedDetailHostEl) {
       this.embeddedDetailHostEl.style.display = "none";
     }
-    this.terminalWrapperEl.style.display = "";
+    // Only restore the terminal wrapper if the preview detail is not
+    // currently active. Without this guard, deactivating embedded while
+    // preview is active (or vice-versa in deactivatePreviewDetail) would
+    // make the terminal wrapper visible alongside the active detail host,
+    // causing the detail view to fill only half the panel height.
+    if (!this.previewDetailActive) {
+      this.terminalWrapperEl.style.display = "";
+    }
     this.renderTabBar();
   }
 
@@ -351,13 +358,31 @@ export class TerminalPanelView {
     if (this.previewDetailHostEl) {
       this.previewDetailHostEl.style.display = "none";
     }
-    this.terminalWrapperEl.style.display = "";
+    // Only restore the terminal wrapper if the embedded detail is not
+    // currently active. See symmetrical guard in deactivateEmbeddedDetail.
+    if (!this.embeddedDetailActive) {
+      this.terminalWrapperEl.style.display = "";
+    }
     this.renderTabBar();
   }
 
   /** True when the pseudo "Preview" tab is currently showing. */
   isPreviewDetailActive(): boolean {
     return this.previewDetailActive;
+  }
+
+  /**
+   * Switch away from any active detail pseudo-tab (embedded or preview)
+   * back to the terminal wrapper. Called when spawning a new terminal tab
+   * so the user sees the newly-created session immediately.
+   */
+  private exitDetailView(): void {
+    if (this.embeddedDetailActive) {
+      this.deactivateEmbeddedDetail();
+    }
+    if (this.previewDetailActive) {
+      this.deactivatePreviewDetail();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -927,6 +952,7 @@ export class TerminalPanelView {
       }
       const commandArgs = expandedArgs ? parseExtraArgs(expandedArgs) : [];
       const expandedCwd = expandTilde(cwd);
+      this.exitDetailView();
       const tab = this.tabManager.createTab(
         command,
         expandedCwd,
@@ -1032,6 +1058,7 @@ export class TerminalPanelView {
   }
 
   private async spawnShell(): Promise<void> {
+    this.exitDetailView();
     const fresh = await this.loadFreshSettings();
     const shell = this.getStringSetting(
       fresh,
@@ -1527,6 +1554,7 @@ export class TerminalPanelView {
     /** Create tab for a specific item instead of the active item. */
     targetItemId?: string;
   }): Promise<TerminalTab | null> {
+    this.exitDetailView();
     const launchConfig = options.launchConfigOverrides ?? getLaunchConfig(options.agentType);
     const { withContext } = sessionTypeToAgentType(options.sessionType);
 
