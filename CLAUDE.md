@@ -9,55 +9,75 @@ Three-layer design. Each layer has clear responsibilities and boundaries:
 ```
 src/
   core/           # Terminal infrastructure + agent integrations
-    utils.ts      # expandTilde, stripAnsi, electronRequire, slugify
-    interfaces.ts # All extension point interfaces + BaseAdapter
-    terminal/     # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager
-    agents/       # AgentLauncher, AgentStateDetector
-    claude/       # HeadlessClaude
-    session/      # SessionStore (window-global), types
+    utils.ts              # expandTilde, stripAnsi, electronRequire, slugify
+    interfaces.ts         # All extension point interfaces + BaseAdapter
+    cardFlags.ts          # Card indicator rule parsing and serialisation
+    detailViewPlacement.ts # Detail view placement enum and option resolution
+    frontmatter.ts        # Frontmatter field helpers
+    PinStore.ts           # Pinned-task persistence (UUID set)
+    PluginDataStore.ts    # Typed read/write for plugin data.json
+    terminal/             # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager, PythonCheck
+    agents/               # AgentLauncher, AgentStateDetector, AgentProfile, AgentProfileManager
+    claude/               # HeadlessClaude
+    resolvers/            # FolderStateResolver, FrontmatterStateResolver, CompositeStateResolver
+    session/              # SessionStore (window-global), types
+    workspace/            # findNavigateTargetLeaf (detail view target resolution)
 
   framework/      # Obsidian plugin scaffolding - delegates to adapters
-    PluginBase.ts          # Abstract Plugin subclass, view/command/settings registration
-    MainView.ts            # 2-panel ItemView (list | terminals), vault events, rename detection
-    ListPanel.ts           # Column-based kanban, drag-drop, filtering, badges, state indicators
-    TerminalPanelView.ts   # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation
-    PromptBox.ts           # Item creation UI with column selector
-    SettingsTab.ts         # Core + adapter namespaced settings
-    DangerConfirm.ts       # Modal confirmation for destructive actions
+    PluginBase.ts              # Abstract Plugin subclass, view/command/settings registration
+    MainView.ts                # 2-panel ItemView (list | terminals), vault events, rename detection
+    ListPanel.ts               # Column-based kanban, drag-drop, filtering, badges, state indicators
+    TerminalPanelView.ts       # Tab bar, Shell/Claude/Claude(ctx) spawn, state aggregation
+    PromptBox.ts               # Item creation UI with column selector
+    SettingsTab.ts             # 5-section settings UI (General, Board, Terminal, Detail, Agents)
+    DangerConfirm.ts           # Modal confirmation for destructive actions
+    ActivityTracker.ts         # Activity-view recency tracking and section assignment
+    AgentContextPrompt.ts      # $placeholder expansion for agent context prompts
+    AgentProfileManagerModal.ts # Profile list/edit modal
+    ProfileLaunchModal.ts      # Profile selection from "..." tab bar button
+    EnrichmentSettingsDialog.ts # Background enrichment sub-dialog
+    TerminalSettingsDialog.ts  # Shell and CWD sub-dialog
+    GuidedTour.ts              # First-run walkthrough
 
   adapters/
     task-agent/   # Task-agent adapter (reference implementation)
-      index.ts             # AdapterBundle assembly extending BaseAdapter
-      types.ts             # TaskFile, TaskState, KanbanColumn, STATE_FOLDER_MAP
-      TaskAgentConfig.ts   # PluginConfig: columns, creationColumns, settings, itemName
-      TaskParser.ts        # MetadataCache parsing, abandoned filtering, goal normalisation
-      TaskMover.ts         # Regex frontmatter updates, write-then-move, activity log
-      TaskCard.ts          # Source/score/goal/blocker badges, compound context menu
-      TaskFileTemplate.ts  # UUID + YAML frontmatter + slug filename generation
-      TaskPromptBuilder.ts # Title/state/path + conditional deadline/blocker
-      TaskDetailView.ts    # MarkdownView via createLeafBySplit, flex sizing
-      BackgroundEnrich.ts  # File creation + headless Claude enrichment
+      index.ts               # AdapterBundle assembly extending BaseAdapter
+      types.ts               # TaskFile, TaskState, KanbanColumn, STATE_FOLDER_MAP
+      TaskAgentConfig.ts     # PluginConfig: columns, creationColumns, settings, itemName
+      TaskParser.ts          # MetadataCache parsing, abandoned filtering, goal normalisation
+      TaskMover.ts           # Regex frontmatter updates, write-then-move, activity log
+      TaskCard.ts            # Source/score/goal/blocker badges, compound context menu
+      TaskFileTemplate.ts    # UUID + YAML frontmatter + slug filename generation
+      TaskPromptBuilder.ts   # Title/state/path + conditional deadline/blocker
+      TaskDetailView.ts      # MarkdownView via createLeafBySplit, flex sizing
+      TaskPreviewView.ts     # Read-only markdown preview pseudo-tab
+      EmbeddedDetailView.ts  # Reparented MarkdownView pseudo-tab (experimental)
+      BackgroundEnrich.ts    # File creation + headless agent enrichment
+      EnrichmentLogger.ts    # Failure diagnostic logs with retention/pruning
+      SetIconModal.ts        # Custom icon input modal
+      stateResolverFactory.ts # Factory for folder/frontmatter/composite resolvers
 
   main.ts         # Entry point: hardcoded import of task-agent adapter
 ```
 
 ### Extension model
 
-The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, item creation, session label transform). The framework handles everything else: terminals, Claude integration, hot-reload session stash, drag-drop, state detection, keyboard capture.
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, preview view, embedded view, item creation, session label transform, icon modal, enrichment logging). The framework handles everything else: terminals, agent integration, hot-reload session stash, drag-drop, state detection, keyboard capture, activity tracking, pinning, and card flag rules.
 
 To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`.
 
 ### Key design decisions
 
 - **Agent integration owned by framework, not adapter** - AgentLauncher and AgentStateDetector are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
-- **UUID-based keying** - Custom order and selection use frontmatter UUIDs, not file paths. Survives renames without re-keying.
-- **2-panel ItemView + workspace leaf detail** - The detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`, not a custom CSS column. Gives live preview, frontmatter editing, backlinks for free.
+- **UUID-based keying** - Sessions, custom order, pinned state, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
+- **2-panel ItemView + flexible detail placement** - The default detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`. Alternative placements (tab, navigate, preview pseudo-tab, embedded pseudo-tab) are available.
+- **State resolution is pluggable** - Three strategies (folder, frontmatter, composite) via `core/resolvers/`. Custom states create dynamic columns automatically.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
 
 ## Development workflow
 
 - **Build**: `pnpm run build` (production) or `pnpm run dev` (watch mode with CDP hot-reload)
-- **Test**: `pnpm exec vitest run` (104 tests covering utils, state detection, session types, parser, mover, template, prompt builder, automation helpers)
+- **Test**: `pnpm exec vitest run` (960+ tests covering core logic, parsers, movers, state detection, session types, prompt builders, framework components, and automation helpers)
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - **Hot reload**: Requires Obsidian with `open -a Obsidian --args --remote-debugging-port=9222`
