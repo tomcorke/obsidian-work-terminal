@@ -65,7 +65,7 @@ If `work-terminal` already exists in `.obsidian/plugins`, remove that directory 
 
 ## Process spawning & security
 
-This plugin spawns external processes to provide terminal and AI agent functionality. All commands are user-configured and resolved against `$PATH`. Arguments are passed as arrays via `child_process.spawn()` (no shell interpretation). The plugin makes zero outbound network requests. Vault files are only modified through the Obsidian API, never via direct filesystem writes.
+This plugin spawns external processes to provide terminal and AI agent functionality. All commands are user-configured and resolved against `$PATH` (augmented with login shell and version-manager paths). Arguments are passed as arrays via `child_process.spawn()` (no shell interpretation, with one exception: Cmd+clicking a file path in terminal output runs `code --goto` via `exec()` to open the file in VS Code). The plugin makes zero outbound network requests. Vault files are modified through the Obsidian API (`app.vault.*` and `app.vault.adapter.*`), not raw `fs.*` writes.
 
 For a complete, source-verified inventory of every process spawned, every file read or written, and all security properties, see **[Process Spawning & Filesystem Disclosure](docs/process-spawning.md)**.
 

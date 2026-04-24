@@ -109,10 +109,13 @@ Your adapter inherits all of this without writing any terminal code:
 
 Override these in your adapter for extra functionality:
 
-- `createDetailView(item, app, ownerLeaf)` - Open a detail panel (e.g. MarkdownView) when an item is selected
-- `createPreviewView(item, app, containerEl)` - Render a read-only preview as a pseudo-tab in the terminal panel
-- `createEmbeddedView(item, app, containerEl)` - Reparent a full MarkdownView into a pseudo-tab (experimental)
+- `createDetailView(item, app, ownerLeaf, embeddedHost?, previewHost?)` - Open a detail panel when an item is selected. The `embeddedHost` and `previewHost` params receive DOM elements for the embedded and preview placements respectively
 - `detachDetailView()` - Clean up the detail panel on close/reload
-- `onItemCreated(path, settings)` - Run post-creation logic (e.g. background AI enrichment)
+- `rekeyDetailPath(oldPath, newPath)` - Update detail view tracking when an item file is renamed
+- `onItemCreated(title, settings)` - Create the file and run post-creation logic (e.g. background enrichment). Returns `{ id, columnId, enrichmentDone? }`
+- `onSplitItem(sourceItem, columnId, settings)` - Split an existing item into a new linked task
 - `transformSessionLabel(oldLabel, detectedLabel)` - Transform detected agent session labels
-- `createStateResolver(strategy, app, basePath, columns)` - Return a state resolver for the configured strategy
+- `onSettingsChanged(settings)` - React to plugin settings changes (e.g. update card flag rules)
+- `getRetryEnrichPrompt(item)` - Prepare a retry enrichment prompt for a failed enrichment
+- `onDelete(item)` - Called before deletion; return false to prevent the default `vault.trash()` behaviour
+- `getStyles()` - Return adapter-specific CSS to inject into the document

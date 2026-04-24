@@ -69,7 +69,7 @@ src/
 
 ## Extension model
 
-The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, preview view, embedded view, item creation, session label transform, icon modal, enrichment logging). The framework handles everything else: terminals, agent integration, hot-reload session stash, drag-drop, state detection, keyboard capture, activity tracking, pinning, and card flag rules.
+The adapter provides 5 required implementations (parser, mover, card renderer, prompt builder, config) plus optional hooks (detail view, detach, rekey, item creation, split item, session label transform, settings change, retry enrichment, delete, custom styles). The framework handles everything else: terminals, agent integration, hot-reload session stash, drag-drop, state detection, keyboard capture, activity tracking, pinning, and card flag rules.
 
 To create a custom adapter: extend `BaseAdapter`, implement the abstract methods, change the import in `main.ts`. See [Creating an Adapter](creating-an-adapter.md) for a full walkthrough.
 

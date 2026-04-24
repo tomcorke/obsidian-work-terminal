@@ -80,7 +80,9 @@ All vault operations use Obsidian's `app.vault.*` API, never direct `fs.*` write
 | UUID backfill into task frontmatter | `src/adapters/task-agent/TaskParser.ts` | `app.vault.read()`, `app.vault.modify()` |
 | Task file metadata reading | `src/adapters/task-agent/TaskParser.ts` | `app.metadataCache.getFileCache()` |
 | Detail view opening | `src/adapters/task-agent/TaskDetailView.ts` | `app.vault.getAbstractFileByPath()` |
-| Icon frontmatter update | `src/adapters/task-agent/SetIconModal.ts` | `app.vault.read()`, `app.vault.modify()` |
+| Icon frontmatter update | `src/adapters/task-agent/index.ts` | `app.vault.read()`, `app.vault.modify()` |
+| Activity timestamp (`last-active`) write | `src/framework/MainView.ts` | `app.vault.read()`, `app.vault.modify()` |
+| Task file deletion | `src/framework/ListPanel.ts` | `app.vault.trash()` |
 
 ### Plugin data (Obsidian plugin API)
 
@@ -111,9 +113,9 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 
 ## Security properties
 
-- **All external commands are user-configured** - Shell, Claude, Copilot, and Strands commands are set in plugin settings, not hardcoded. The plugin resolves them against `$PATH` via `resolveCommandInfo()` and validates they exist before spawning. (`src/core/agents/AgentLauncher.ts`)
+- **All external commands are user-configured** - Shell, Claude, Copilot, and Strands commands are set in plugin settings, not hardcoded. The plugin resolves them via `resolveCommandInfo()`, which searches an augmented PATH that includes `$PATH`, the user's login shell PATH (via `$SHELL -lc 'echo $PATH'`), and nvm/fnm version-manager directories as a fallback. It validates commands exist before spawning. (`src/core/agents/AgentLauncher.ts`)
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
 - **Zero outbound network requests from the plugin itself** - The plugin makes no network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
-- **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()`, never direct `fs.*` writes to vault files.
+- **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()` / `app.vault.trash()`, never direct `fs.*` writes to vault files. Enrichment logs use the lower-level `app.vault.adapter.write()` but this is still within the Obsidian API surface.
 - **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
 - **Plugin data via Obsidian API** - Settings use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.
