@@ -1,9 +1,70 @@
 import esbuild from "esbuild";
 import http from "http";
 import crypto from "crypto";
+import { execSync } from "child_process";
 
 const isProduction = process.argv.includes("--production");
 const isWatch = process.argv.includes("--watch");
+
+/**
+ * Resolve the running plugin's version for build-time injection.
+ *
+ * - Tagged HEAD commits use the tag name + tag date (ISO8601).
+ * - Otherwise use the short commit SHA + commit date (ISO8601).
+ *
+ * Returns null-ish defaults when git isn't available (e.g. tarball
+ * install) so the build still succeeds.
+ */
+function resolveBuildVersion() {
+  const run = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+
+  let version = "dev";
+  let isTagged = false;
+  let timestamp = "";
+
+  try {
+    // `--exact-match` makes this only succeed when HEAD itself is the
+    // tagged commit. If HEAD is N commits past a tag we want the SHA,
+    // not the tag name.
+    const tag = run("git describe --tags --exact-match HEAD");
+    if (tag) {
+      version = tag;
+      isTagged = true;
+      try {
+        // Tag date (author date of the tagged commit / tag object).
+        // `creatordate` on the refs/tags/<tag> ref gives the annotated
+        // tag's own date when present, falling back to the committer
+        // date for lightweight tags.
+        timestamp = run(
+          `git for-each-ref --format='%(creatordate:iso-strict)' refs/tags/${tag}`,
+        ).replace(/^'|'$/g, "");
+      } catch {
+        // Fallback to commit date if tag ref lookup fails.
+        timestamp = run("git log -1 --format=%cI HEAD");
+      }
+    }
+  } catch {
+    // Not on a tagged commit - fall through to SHA.
+  }
+
+  if (!isTagged) {
+    try {
+      version = run("git rev-parse --short HEAD");
+      timestamp = run("git log -1 --format=%cI HEAD");
+    } catch {
+      // Outside a git checkout: keep defaults.
+    }
+  }
+
+  return { version, isTagged, timestamp };
+}
+
+const buildVersion = resolveBuildVersion();
+console.log(
+  `[esbuild] Plugin version: ${buildVersion.version}` +
+    (buildVersion.isTagged ? " (tagged)" : " (commit)") +
+    (buildVersion.timestamp ? ` @ ${buildVersion.timestamp}` : ""),
+);
 
 /**
  * Trigger the plugin's hot-reload command via CDP (Chrome DevTools Protocol).
@@ -120,6 +181,11 @@ const ctx = await esbuild.context({
   minify: isProduction,
   sourcemap: isProduction ? false : "inline",
   treeShaking: true,
+  define: {
+    __WT_VERSION__: JSON.stringify(buildVersion.version),
+    __WT_IS_TAGGED__: JSON.stringify(buildVersion.isTagged),
+    __WT_VERSION_TIMESTAMP__: JSON.stringify(buildVersion.timestamp),
+  },
   plugins: [hotReloadPlugin],
 });
 
