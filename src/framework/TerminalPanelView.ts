@@ -282,7 +282,7 @@ export class TerminalPanelView {
    * Always re-renders the tab bar so the Detail pseudo-tab loses its
    * highlight and terminal tab highlights refresh to reflect the active tab.
    */
-  deactivateEmbeddedDetail(): void {
+  deactivateEmbeddedDetail(opts: { skipRender?: boolean } = {}): void {
     this.embeddedDetailActive = false;
     if (this.embeddedDetailHostEl) {
       this.embeddedDetailHostEl.style.display = "none";
@@ -295,7 +295,7 @@ export class TerminalPanelView {
     if (!this.previewDetailActive) {
       this.terminalWrapperEl.style.display = "";
     }
-    this.renderTabBar();
+    if (!opts.skipRender) this.renderTabBar();
   }
 
   /** True when the pseudo "Detail" tab is currently showing. */
@@ -353,7 +353,7 @@ export class TerminalPanelView {
    * Always re-renders the tab bar so the Preview pseudo-tab loses its
    * highlight and terminal tab highlights refresh.
    */
-  deactivatePreviewDetail(): void {
+  deactivatePreviewDetail(opts: { skipRender?: boolean } = {}): void {
     this.previewDetailActive = false;
     if (this.previewDetailHostEl) {
       this.previewDetailHostEl.style.display = "none";
@@ -363,7 +363,7 @@ export class TerminalPanelView {
     if (!this.embeddedDetailActive) {
       this.terminalWrapperEl.style.display = "";
     }
-    this.renderTabBar();
+    if (!opts.skipRender) this.renderTabBar();
   }
 
   /** True when the pseudo "Preview" tab is currently showing. */
@@ -377,12 +377,16 @@ export class TerminalPanelView {
    * so the user sees the newly-created session immediately.
    */
   private exitDetailView(): void {
+    const wasActive = this.embeddedDetailActive || this.previewDetailActive;
     if (this.embeddedDetailActive) {
-      this.deactivateEmbeddedDetail();
+      this.deactivateEmbeddedDetail({ skipRender: true });
     }
     if (this.previewDetailActive) {
-      this.deactivatePreviewDetail();
+      this.deactivatePreviewDetail({ skipRender: true });
     }
+    // Re-render once after both deactivations so we don't trigger up to
+    // two renderTabBar() calls (and the associated DOM work / flicker).
+    if (wasActive) this.renderTabBar();
   }
 
   // ---------------------------------------------------------------------------
