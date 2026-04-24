@@ -83,9 +83,7 @@ export class EmbeddedDetailView {
         // Leaf creation failed - tear down the hidden container we
         // already attached so we don't leak DOM nodes (or the created
         // split) across repeated show() calls.
-        console.warn(
-          "[work-terminal] EmbeddedDetailView: createLeafInParent returned no leaf",
-        );
+        console.warn("[work-terminal] EmbeddedDetailView: createLeafInParent returned no leaf");
         try {
           hiddenSplit.containerEl?.remove?.();
         } catch {
