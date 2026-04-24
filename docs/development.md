@@ -347,4 +347,4 @@ Follow [Release Process](release-process.md) for:
 - **Node builtins**: Use `window.require` for `child_process`, `fs`, `path`, `os` in Electron. Externalized in esbuild.
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Option+B/F/D, Shift+Enter, Option+Backspace, Cmd+Left/Right. xterm keeps Meta behavior by default, while Option+digit printable combos are preserved for layout-specific characters.
-- **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Checks last 6 visual lines. Handles narrow terminal wrapping via joined-tail fallback.
+- **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Reads last 30 buffer lines and pattern-matches the tail for waiting/active detection. Handles narrow terminal wrapping via joined-tail fallback.

@@ -211,7 +211,7 @@ Right-click any task card to open the context menu with these options:
 - **Copy Context Prompt** - copies the generated context prompt for this task
 - **Set Icon...** - opens a modal to set a custom icon for this task (shown when icons are enabled)
 - **Clear Icon** - removes the custom icon from this task (shown when the task has a custom icon and icons are enabled)
-- **Delete Task** - permanently deletes the task file (shown in red as a destructive action)
+- **Delete Task** - moves the task file to the system trash (shown in red as a destructive action)
 
 ### Detail panel
 
@@ -325,6 +325,8 @@ Shell sessions:
 
 The terminal panel is resizable - drag the divider between the kanban board and the terminal area to adjust the split.
 
+**File-path links**: Terminal output containing file paths (e.g. stack traces, compiler errors) is automatically detected and made clickable. Cmd+click a file path to open it in VS Code at the referenced line and column (`code --goto`). If VS Code is not available, the file opens with the system default handler instead.
+
 ### Agent sessions
 
 Work Terminal integrates with AI coding agents. The built-in session types are:
@@ -359,7 +361,7 @@ Work Terminal monitors agent sessions and displays their current state:
 - **Waiting** (amber/yellow) - the agent is waiting for user input
 - **Idle** (grey) - the session is idle with no recent activity
 
-State detection works by reading the xterm buffer (not stdout), which makes it immune to status line redraws. It checks the last 6 visual lines of the terminal and handles narrow terminal wrapping via a joined-tail fallback.
+State detection works by reading the xterm buffer (not stdout), which makes it immune to status line redraws. It reads the last 30 lines from the buffer and applies pattern matching against the tail for waiting/active detection. Narrow terminal wrapping is handled via a joined-tail fallback.
 
 The state indicator appears both on the tab and on the task card, giving you visibility into agent activity even when viewing a different tab.
 
@@ -417,7 +419,7 @@ The per-profile **Context prompt** field is the place to configure additional co
 
 For example, an argument string like `--file $absoluteFilePath --task $title` would expand to something like `--file /Users/me/vault/Tasks/active/my-task.md --task My Task`.
 
-**Login shell wrapping**: Each profile has an optional **Login shell wrap** toggle. When enabled, the agent command is launched through a login shell (`$SHELL -lc ...`), which ensures shell startup files (`~/.zshrc`, `~/.bash_profile`, etc.) are sourced before the command runs. This is important when your agent binary is managed by a version manager like nvm or fnm - without login shell wrapping, the agent command may not be found because the version manager's PATH entries are not loaded. The toggle defaults to on for new profiles.
+**Login shell wrapping**: Each profile has an optional **Login shell wrap** toggle. When enabled, the agent command is launched through a login shell (`$SHELL -lc ...`), which ensures shell startup files (`~/.zshrc`, `~/.bash_profile`, etc.) are sourced before the command runs. This is important when your agent binary is managed by a version manager like nvm or fnm - without login shell wrapping, the agent command may not be found because the version manager's PATH entries are not loaded. The toggle defaults to off for new profiles.
 
 **Import/Export**: Profiles can be exported as JSON for sharing or backup, and imported from JSON to quickly set up a new installation.
 

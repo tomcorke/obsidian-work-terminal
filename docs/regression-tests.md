@@ -172,7 +172,7 @@
 | UD-02 | StringDecoder for UTF-8 | Verify rename detection handles multi-byte chars split across chunks | StringDecoder used to handle split UTF-8 characters. Pattern checked on both complete lines AND incomplete buffer. | | |
 | UD-03 | Multi-line question detection | Claude asks a numbered question | State detector finds numbered options preceded by `?` within 5 lines. Reports "waiting". | | |
 | UD-04 | State aggregation priority | Task with multiple tabs in different states | Aggregation: waiting > active > idle > inactive. Short-circuits on first "waiting". | | |
-| UD-05 | Last 6 lines only for active detection | Claude outputs `*` + ellipsis in response body (not at bottom) | Only last 6 screen lines checked for active indicators. Mid-response content doesn't false-positive. | | |
+| UD-05 | Tail lines only for active detection | Claude outputs `*` + ellipsis in response body (not at bottom) | Only tail screen lines checked for active indicators. Mid-response content doesn't false-positive. | | |
 | UD-06 | MetadataCache "changed" fallback | Create a new task file programmatically | MetadataCache "changed" event used as fallback for vault "create" (frontmatter not parsed when create fires). | | |
 | UD-07 | Delete event session check | Delete a task file without terminal sessions | Delete event only buffers rename if task has terminal sessions (avoids polluting pending renames map). | | |
 | UD-08 | UUID captured on delete | Delete a task file (part of rename) | UUID captured from metadata cache immediately on delete (cache is about to be cleared). | | |
