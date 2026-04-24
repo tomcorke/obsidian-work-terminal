@@ -412,9 +412,13 @@ async function clickFirstShellTab(host, port, timeoutMs) {
  * Select the first visible task card in the list. Detail-view placements
  * that mount a pseudo-tab (embedded/preview) require a selected item for
  * the tab to appear.
+ *
+ * ListPanel renders each card as a `.wt-card-wrapper` element with a
+ * `data-item-id` attribute; the TaskCard root inside is `.wt-card`. There
+ * is no `.wt-task-card` class in the current UI, so we target the wrapper.
  */
 async function selectFirstTaskCard(host, port, timeoutMs) {
-  const selector = '.wt-task-card';
+  const selector = '.wt-card-wrapper';
   const exists = await cdpEval(host, port,
     `!!document.querySelector(${JSON.stringify(selector)})`, timeoutMs);
   if (!exists) throw new Error("No task card found to select");
@@ -669,7 +673,7 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
         // Get visible card count before filtering (visibility-aware)
         const beforeCount = await cdpEval(host, port, `
           (() => {
-            const cards = document.querySelectorAll('.wt-task-card');
+            const cards = document.querySelectorAll('.wt-card-wrapper');
             return Array.from(cards).filter(el => getComputedStyle(el).display !== 'none').length;
           })()
         `, timeoutMs);
@@ -684,7 +688,7 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
             const input = document.querySelector('.wt-filter-input');
             const visibleSections = Array.from(document.querySelectorAll('.wt-section'))
               .filter(s => getComputedStyle(s).display !== 'none');
-            const cards = document.querySelectorAll('.wt-task-card');
+            const cards = document.querySelectorAll('.wt-card-wrapper');
             const visibleCards = Array.from(cards).filter(el => getComputedStyle(el).display !== 'none');
             return {
               filterValue: input ? input.value : null,
@@ -717,7 +721,7 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
         // Verify abandoned task is NOT visible in the kanban board
         const hasAbandoned = await cdpEval(host, port, `
           (() => {
-            const cards = document.querySelectorAll('.wt-task-card');
+            const cards = document.querySelectorAll('.wt-card-wrapper');
             for (const card of cards) {
               if (card.textContent.includes('Abandoned smoke task')) return true;
             }
