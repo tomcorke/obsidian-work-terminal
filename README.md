@@ -4,32 +4,39 @@ Obsidian plugin that turns your vault into a work item board with per-item tabbe
 
 ## Screenshots
 
-<!-- Screenshots captured from isolated test vault with sample data -->
+<!-- Screenshots captured from isolated test vault with sample data.
+     Click any image to view full resolution. -->
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/main-view.png" alt="Main layout with file explorer, kanban board, Claude session with typed input, and task detail panel" width="100%"><br><sub>Kanban board with tabbed terminals and detail view</sub></td>
-<td width="50%"><img src="docs/screenshots/agent-session.png" alt="Copilot CLI session running in a terminal tab with typed prompt" width="100%"><br><sub>GitHub Copilot session with activity detection</sub></td>
+<td width="50%"><a href="docs/screenshots/main-view.png"><img src="docs/screenshots/main-view.png" alt="Main layout with kanban board, terminal tabs, task icons, and detail panel" width="100%"></a><br><sub>Kanban board with tabbed terminals and detail view</sub></td>
+<td width="50%"><a href="docs/screenshots/agent-session.png"><img src="docs/screenshots/agent-session.png" alt="Agent CLI session running in a terminal tab with state detection" width="100%"></a><br><sub>Agent session with activity state detection</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/task-creation.png" alt="Task creation prompt box with text input and column selector" height="300px" align="center"><br><sub>Task creation with column selector</sub></td>
-<td width="50%"><img src="docs/screenshots/settings.png" alt="Plugin settings showing agent commands, binary validation, and resume hooks" width="100%"><br><sub>Plugin settings and agent configuration</sub></td>
+<td width="50%"><a href="docs/screenshots/compact-mode.png"><img src="docs/screenshots/compact-mode.png" alt="Kanban board in compact display mode with single-line cards and indicator dots" width="100%"></a><br><sub>Compact card mode with indicator dots</sub></td>
+<td width="50%"><a href="docs/screenshots/settings-general.png"><img src="docs/screenshots/settings-general.png" alt="Plugin settings organised into sections with sub-dialogs" width="100%"></a><br><sub>Settings organised into sections with sub-dialogs</sub></td>
 </tr>
 </table>
 
+See the **[User Guide](docs/user-guide.md)** for more screenshots covering every feature.
+
 ## Features
 
-- **Kanban board** with collapsible sections, drag-drop reordering, and custom sort order
-- **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom sessions (including GitHub Copilot CLI)
-- **Agent integration** - Claude/Copilot command resolution, agent state detection (active/waiting/idle), session rename detection, headless spawning
-- **Session persistence** - hot-reload preserves live terminals; disk persistence enables session resume after restart
+- **Kanban board** with collapsible sections, drag-drop reordering, custom sort order, and dynamic columns for custom states
+- **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom agent profiles (Copilot, Strands, or any CLI)
+- **Agent integration** - reusable profiles with the Profile Manager, agent state detection (active/waiting/idle), background enrichment with retry and failure logging
+- **Multiple view modes** - standard kanban columns, compact single-line cards with indicator dots, comfortable density, or activity view grouped by recency
+- **Task card customisation** - custom icons (Lucide or emoji), card indicator rules for visual flags, pinned tasks section, configurable badges
+- **Detail view placements** - split, tab, navigate, read-only preview tab, embedded editor tab (experimental), or disabled
+- **Session persistence** - hot-reload preserves live terminals with full PTY state
 - **First-run guided tour** - focused walkthrough for task creation, session launch, tab management, and key settings
-- **Detail panel** - native Obsidian MarkdownView via workspace leaf splitting
 - **Adapter architecture** - swap the work item system without touching terminal code
 
 ## Installation
 
-Use Node.js 20.19.0 or newer (`node -v` to check), then run these commands from the directory where you want to keep the plugin source:
+**Requirements**: Node.js 20.19.0+ and Python 3 (for PTY-backed terminal tabs).
+
+Run these commands from the directory where you want to keep the plugin source:
 
 ```bash
 git clone https://github.com/tomcorke/obsidian-work-terminal.git
@@ -51,9 +58,10 @@ If `work-terminal` already exists in `.obsidian/plugins`, remove that directory 
 ## Quick start
 
 1. Enable the plugin in Obsidian's Community plugins settings
-2. Open the Work Terminal view from the command palette ("Work Terminal: Open View")
-3. Create a work item using the prompt box at the top of the kanban board
-4. Click "+ Shell" to open a terminal tab, or "Claude" / "Claude (ctx)" for an AI agent session
+2. Open the Work Terminal view from the command palette ("Work Terminal: Open View") or click the terminal icon in the ribbon
+3. A guided tour walks you through the key features on first open - follow along or dismiss it
+4. Create a work item using the prompt box at the top of the kanban board
+5. Click "+ Shell" to open a terminal tab, or "Claude" / "Claude (ctx)" for an AI agent session
 
 ## Process spawning & security
 

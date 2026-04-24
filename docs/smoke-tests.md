@@ -14,7 +14,7 @@ The isolated Obsidian instance tooling (`scripts/obsidian-isolated-instance.js`)
 
 These checks run on every PR via `.github/workflows/ci.yml`:
 
-- **Unit tests** (`pnpm exec vitest run`) - 960+ tests covering core logic, parsers, movers, state detection, session types, prompt builders, and framework components
+- **Unit tests** (`pnpm exec vitest run`) - 1290+ tests covering core logic, parsers, movers, state detection, session types, prompt builders, and framework components
 - **Lint** (`pnpm run lint`) - ESLint on `src/`
 - **Format check** (`pnpm run format:check`) - Prettier verification
 - **Build** (`pnpm run build`) - esbuild production bundle (catches type errors, missing imports, bundle failures)

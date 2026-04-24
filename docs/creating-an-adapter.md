@@ -81,22 +81,38 @@ const adapter = new MyAdapter();
 Your adapter inherits all of this without writing any terminal code:
 
 - Shell + Claude + Claude-with-context terminal tabs per item
-- Session persistence (hot-reload stash preserves PTY state across plugin reloads)
-- Agent state detection (active/waiting/idle) with card indicators
-- Agent session rename detection with adapter hook
+- Reusable agent profiles (Claude, Copilot, Strands, custom) with the Profile Manager
+- Profile launch modal ("..." button in tab bar) for selecting and launching profiles
+- Session hot-reload stash (preserves PTY state across plugin reloads)
+- Agent state detection (active/waiting/idle) with card and tab indicators
 - Keyboard capture (Option+Arrow, Option+B/F/D, Shift+Enter, Option+digit printable chars preserved, other Option shortcuts keep terminal Meta behavior)
 - xterm.js rendering with PTY wrapper, resize protocol, scroll-to-bottom
-- Drag-drop reordering (within-section and cross-section)
+- Drag-drop reordering (within-section and cross-section, including cross-column moves)
 - Collapsible kanban sections with custom sort order
-- Settings UI (your adapter settings appear alongside core settings)
+- Pinned items section at the top of the board
+- Activity view mode (group by recency instead of state columns)
+- Card display modes (standard, compact with indicator dots, comfortable)
+- Task card icons (custom per-item or automatic by source/state)
+- Card indicator rules (custom visual flags based on frontmatter field values)
+- Dynamic columns (custom states beyond the built-in set, auto-created and auto-cleaned)
+- Detail view with six placement strategies (split, tab, navigate, preview, embedded, disabled)
+- Text and active-session filtering
+- Settings UI organised into five sections (your adapter settings appear alongside core settings)
+- Background enrichment pipeline with configurable prompts, profiles, timeouts, failure logging, and retry
+- Split Task flow (create a linked sub-item and launch an agent session)
+- First-run guided tour
 - Delete-create rename detection for shell `mv` operations
 - Hot-reload via command palette or CDP
+- Debug API (`window.__workTerminalDebug`) for CDP automation
 
 ## Optional hooks
 
 Override these in your adapter for extra functionality:
 
 - `createDetailView(item, app, ownerLeaf)` - Open a detail panel (e.g. MarkdownView) when an item is selected
+- `createPreviewView(item, app, containerEl)` - Render a read-only preview as a pseudo-tab in the terminal panel
+- `createEmbeddedView(item, app, containerEl)` - Reparent a full MarkdownView into a pseudo-tab (experimental)
 - `detachDetailView()` - Clean up the detail panel on close/reload
 - `onItemCreated(path, settings)` - Run post-creation logic (e.g. background AI enrichment)
 - `transformSessionLabel(oldLabel, detectedLabel)` - Transform detected agent session labels
+- `createStateResolver(strategy, app, basePath, columns)` - Return a state resolver for the configured strategy
