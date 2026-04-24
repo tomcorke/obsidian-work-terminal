@@ -79,7 +79,22 @@ export class EmbeddedDetailView {
       this.hiddenContainer.appendChild(hiddenSplit.containerEl);
 
       this.leaf = ws.createLeafInParent(hiddenSplit, 0);
-      if (!this.leaf) return;
+      if (!this.leaf) {
+        // Leaf creation failed - tear down the hidden container we
+        // already attached so we don't leak DOM nodes (or the created
+        // split) across repeated show() calls.
+        console.warn(
+          "[work-terminal] EmbeddedDetailView: createLeafInParent returned no leaf",
+        );
+        try {
+          hiddenSplit.containerEl?.remove?.();
+        } catch {
+          // Best-effort cleanup; ignore if the split has no removable element.
+        }
+        this.hiddenContainer.remove();
+        this.hiddenContainer = null;
+        return;
+      }
     }
 
     await this.leaf.openFile(file);
