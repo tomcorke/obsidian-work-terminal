@@ -18,6 +18,7 @@ import { ListPanel } from "./ListPanel";
 import { TerminalPanelView } from "./TerminalPanelView";
 import { PromptBox } from "./PromptBox";
 import { loadAllSettings, SETTINGS_CHANGED_EVENT } from "./SettingsTab";
+import { formatVersionForTabTitle } from "./version";
 import { SessionStore } from "../core/session/SessionStore";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { PinStore } from "../core/PinStore";
@@ -81,7 +82,13 @@ export class MainView extends ItemView {
   private readonly _handleSettingsChanged = (event: Event) => {
     const prevCreationColumnIds = this.adapter.config.creationColumns;
     const prevPlacement = this.settings["core.detailViewPlacement"];
+    const prevShowVersion = this.settings["core.showVersionInTabTitle"];
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    // Re-render the tab header if the version-in-tab-title toggle changed.
+    // Obsidian re-reads `getDisplayText()` during `leaf.updateHeader()`.
+    if (prevShowVersion !== this.settings["core.showVersionInTabTitle"]) {
+      (this.leaf as unknown as { updateHeader?: () => void }).updateHeader?.();
+    }
     // Notify adapter so it can update internal state (e.g. card flag rules, column order)
     this.adapter.onSettingsChanged?.(this.settings);
     // Keep ListPanel's cached settings in sync so card display mode etc. take effect
@@ -155,7 +162,13 @@ export class MainView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "Work Terminal";
+    // Version suffix is gated behind `core.showVersionInTabTitle` (default
+    // true). `this.settings` may be empty before `initPanels()` has run -
+    // Obsidian calls getDisplayText() during view registration, well before
+    // onOpen(). Treat an absent setting as "enabled" so the first paint
+    // matches the default-on behaviour.
+    const showVersion = this.settings["core.showVersionInTabTitle"] !== false;
+    return "Work Terminal" + formatVersionForTabTitle(showVersion);
   }
 
   getIcon(): string {
