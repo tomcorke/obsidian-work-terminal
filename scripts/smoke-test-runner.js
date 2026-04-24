@@ -12,7 +12,7 @@
  *
  * Introduced in #343 (Tier 1 smoke tests). Layout invariants, parameterised
  * detail-placement coverage, the generic sanity sweep, and screenshot
- * capture were added in #491 / PR TBD.
+ * capture were added for issue #491.
  */
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
