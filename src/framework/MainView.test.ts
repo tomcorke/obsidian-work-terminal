@@ -42,6 +42,10 @@ vi.mock("./PluginBase", () => ({
   VIEW_TYPE: "work-terminal-view",
 }));
 
+vi.mock("./version", () => ({
+  formatVersionForTabTitle: (enabled: boolean) => (enabled ? " (test-version)" : ""),
+}));
+
 const { sessionStoreIsReloadMock } = vi.hoisted(() => ({
   sessionStoreIsReloadMock: vi.fn(() => false),
 }));
@@ -802,5 +806,129 @@ describe("MainView detail placement remount on settings change", () => {
     // listener is released even when no item is currently selected.
     expect(adapter.detachDetailView).toHaveBeenCalledTimes(1);
     expect(adapter.createDetailView).not.toHaveBeenCalled();
+  });
+});
+
+describe("MainView getDisplayText version suffix", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  it("includes the version suffix when core.showVersionInTabTitle is true", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    (view as any).settings = { "core.showVersionInTabTitle": true };
+    expect(view.getDisplayText()).toBe("Work Terminal (test-version)");
+  });
+
+  it("omits the version suffix when core.showVersionInTabTitle is false", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    (view as any).settings = { "core.showVersionInTabTitle": false };
+    expect(view.getDisplayText()).toBe("Work Terminal");
+  });
+
+  it("defaults to including the suffix when the setting is absent", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    // Settings object exists but the key is absent - default should be enabled
+    (view as any).settings = {};
+    expect(view.getDisplayText()).toBe("Work Terminal (test-version)");
+  });
+
+  it("defaults to including the suffix when the setting is explicitly undefined", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    (view as any).settings = { "core.showVersionInTabTitle": undefined };
+    expect(view.getDisplayText()).toBe("Work Terminal (test-version)");
+  });
+});
+
+describe("MainView settings-driven tab title refresh", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  function setupView(initialShowVersion: boolean | undefined, leafOverrides: any = {}) {
+    const updateHeader = vi.fn();
+    const leaf = { updateHeader, ...leafOverrides };
+    const view = new MainView(leaf as any, {} as any, {} as any);
+    const adapter = {
+      config: { creationColumns: [] },
+      onSettingsChanged: vi.fn(),
+    };
+    (view as any).adapter = adapter;
+    (view as any).listPanel = { updateSettings: vi.fn() };
+    (view as any).promptBox = { updateCreationColumns: vi.fn() };
+    (view as any).settings =
+      initialShowVersion === undefined ? {} : { "core.showVersionInTabTitle": initialShowVersion };
+    vi.spyOn(view as any, "scheduleRefresh").mockImplementation(() => {});
+    return { view, updateHeader, leaf };
+  }
+
+  it("calls leaf.updateHeader when core.showVersionInTabTitle toggles from true to false", () => {
+    const { view, updateHeader } = setupView(true);
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.showVersionInTabTitle": false },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(updateHeader).toHaveBeenCalledTimes(1);
+    // getDisplayText should now reflect the new value
+    expect(view.getDisplayText()).toBe("Work Terminal");
+  });
+
+  it("calls leaf.updateHeader when core.showVersionInTabTitle toggles from false to true", () => {
+    const { view, updateHeader } = setupView(false);
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.showVersionInTabTitle": true },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(updateHeader).toHaveBeenCalledTimes(1);
+    expect(view.getDisplayText()).toBe("Work Terminal (test-version)");
+  });
+
+  it("does not call leaf.updateHeader when core.showVersionInTabTitle is unchanged", () => {
+    const { view, updateHeader } = setupView(true);
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.showVersionInTabTitle": true, "core.other": "changed" },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(updateHeader).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when the leaf does not expose updateHeader", () => {
+    const { view } = setupView(true, { updateHeader: undefined });
+    // Remove updateHeader entirely to simulate an older Obsidian leaf shape
+    delete ((view as any).leaf as any).updateHeader;
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "core.showVersionInTabTitle": false },
+    });
+    expect(() => (view as any)._handleSettingsChanged(event)).not.toThrow();
+    expect(view.getDisplayText()).toBe("Work Terminal");
   });
 });

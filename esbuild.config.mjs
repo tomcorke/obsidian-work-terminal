@@ -1,9 +1,78 @@
 import esbuild from "esbuild";
 import http from "http";
 import crypto from "crypto";
+import { execFileSync } from "child_process";
 
 const isProduction = process.argv.includes("--production");
 const isWatch = process.argv.includes("--watch");
+
+/**
+ * Resolve the running plugin's version for build-time injection.
+ *
+ * - Tagged HEAD commits use the tag name + tag date (ISO8601).
+ * - Otherwise use the short commit SHA + commit date (ISO8601).
+ *
+ * Returns null-ish defaults when git isn't available (e.g. tarball
+ * install) so the build still succeeds.
+ */
+function resolveBuildVersion() {
+  // Invoke git with an argument array rather than a shell command string.
+  // `execFileSync` with `shell: false` (the default) does not involve a
+  // shell, so tag/ref names that contain shell metacharacters cannot
+  // inject additional commands into the build.
+  const git = (args) =>
+    execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+
+  let version = "dev";
+  let isTagged = false;
+  let timestamp = "";
+
+  try {
+    // `--exact-match` makes this only succeed when HEAD itself is the
+    // tagged commit. If HEAD is N commits past a tag we want the SHA,
+    // not the tag name.
+    const tag = git(["describe", "--tags", "--exact-match", "HEAD"]);
+    if (tag) {
+      version = tag;
+      isTagged = true;
+      try {
+        // Tag date (author date of the tagged commit / tag object).
+        // `creatordate` on the refs/tags/<tag> ref gives the annotated
+        // tag's own date when present, falling back to the committer
+        // date for lightweight tags. Pass the ref as a separate arg so
+        // the tag name is never interpolated into a shell string.
+        timestamp = git([
+          "for-each-ref",
+          "--format=%(creatordate:iso-strict)",
+          `refs/tags/${tag}`,
+        ]);
+      } catch {
+        // Fallback to commit date if tag ref lookup fails.
+        timestamp = git(["log", "-1", "--format=%cI", "HEAD"]);
+      }
+    }
+  } catch {
+    // Not on a tagged commit - fall through to SHA.
+  }
+
+  if (!isTagged) {
+    try {
+      version = git(["rev-parse", "--short", "HEAD"]);
+      timestamp = git(["log", "-1", "--format=%cI", "HEAD"]);
+    } catch {
+      // Outside a git checkout: keep defaults.
+    }
+  }
+
+  return { version, isTagged, timestamp };
+}
+
+const buildVersion = resolveBuildVersion();
+console.log(
+  `[esbuild] Plugin version: ${buildVersion.version}` +
+    (buildVersion.isTagged ? " (tagged)" : " (commit)") +
+    (buildVersion.timestamp ? ` @ ${buildVersion.timestamp}` : ""),
+);
 
 /**
  * Trigger the plugin's hot-reload command via CDP (Chrome DevTools Protocol).
@@ -120,6 +189,11 @@ const ctx = await esbuild.context({
   minify: isProduction,
   sourcemap: isProduction ? false : "inline",
   treeShaking: true,
+  define: {
+    __WT_VERSION__: JSON.stringify(buildVersion.version),
+    __WT_IS_TAGGED__: JSON.stringify(buildVersion.isTagged),
+    __WT_VERSION_TIMESTAMP__: JSON.stringify(buildVersion.timestamp),
+  },
   plugins: [hotReloadPlugin],
 });
 

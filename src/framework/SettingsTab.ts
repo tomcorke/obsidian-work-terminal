@@ -76,6 +76,7 @@ import { parseCardFlagRulesJson, serializeCardFlagRules } from "../core/cardFlag
 import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
 import { resolveDetailViewOptions } from "../core/detailViewPlacement";
+import { formatVersionForSettings } from "./version";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -96,6 +97,7 @@ interface CoreSettings {
   "core.detailViewWidthOverride": boolean;
   "core.detailViewAutoClose": boolean;
   "core.detailViewSplitDirection": DetailViewSplitDirection;
+  "core.showVersionInTabTitle": boolean;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -126,6 +128,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.detailViewWidthOverride": true,
   "core.detailViewAutoClose": false,
   "core.detailViewSplitDirection": "vertical",
+  "core.showVersionInTabTitle": true,
 };
 
 /**
@@ -237,6 +240,16 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   private renderGeneralSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "General" });
 
+    // Running plugin version - resolved at build time. Displayed at the top
+    // of General so it's the first thing users see when filing a bug report.
+    // Uses a plain div (not `new Setting`) to keep it read-only and compact.
+    const versionEl = containerEl.createDiv({ cls: "wt-settings-version" });
+    versionEl.setAttribute("data-wt-setting-key", "core.version");
+    versionEl.style.cssText =
+      "margin: 0.25em 0 1em; color: var(--text-muted); font-size: var(--font-ui-smaller);";
+    versionEl.createSpan({ text: "Running version: " });
+    versionEl.createEl("code", { text: formatVersionForSettings() });
+
     // Task base path + state strategy are adapter-level but conceptually
     // "where are my tasks stored and how is state computed" - users reach for
     // them during initial setup and rarely after, so they go near the top of
@@ -277,6 +290,17 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
 
     // Jira integration - rarely changed after setup.
     this.addAdapterSettingByKey(containerEl, settings, "jiraBaseUrl");
+
+    // Tab title version display - default ON. Grouped with other display
+    // toggles rather than session/lifecycle ones because it's purely a
+    // visual preference for the plugin's own tab header.
+    this.addCoreToggle(
+      containerEl,
+      settings,
+      "core.showVersionInTabTitle",
+      "Show version in tab title",
+      "Append the running plugin version (or short commit SHA for untagged builds) to the Work Terminal tab title. Helps quickly confirm which build is running when reporting issues.",
+    );
 
     // Session/lifecycle toggles.
     this.addCoreToggle(
