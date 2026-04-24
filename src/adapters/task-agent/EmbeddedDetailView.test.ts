@@ -26,13 +26,13 @@ beforeAll(() => {
 
 /**
  * Fabricate a minimal Obsidian App/Workspace/Leaf shape for EmbeddedDetailView.
- * The class reaches into `workspace.getLeaf("window")`, the leaf's `openFile`,
- * `view.contentEl`, and `leaf.detach` only.
+ * The class uses `workspace.createLeafInParent` with a hidden off-screen
+ * WorkspaceSplit, then `leaf.openFile` / `leaf.view.contentEl` / `leaf.detach`.
  */
 function makeApp(opts: { fileExists?: boolean; contentEl?: HTMLElement | null } = {}): {
   app: App;
   leaf: { openFile: ReturnType<typeof vi.fn>; detach: ReturnType<typeof vi.fn>; view: any };
-  getLeaf: ReturnType<typeof vi.fn>;
+  createLeafInParent: ReturnType<typeof vi.fn>;
 } {
   const contentEl = opts.contentEl === undefined ? document.createElement("div") : opts.contentEl;
   if (contentEl) {
@@ -45,17 +45,22 @@ function makeApp(opts: { fileExists?: boolean; contentEl?: HTMLElement | null } 
     detach: vi.fn(),
     view: contentEl ? { contentEl } : null,
   };
-  const getLeaf = vi.fn().mockReturnValue(leaf);
+  const createLeafInParent = vi.fn().mockReturnValue(leaf);
+  // Minimal WorkspaceSplit constructor mock - creates a containerEl
+  function FakeSplit() {
+    (this as any).containerEl = document.createElement("div");
+  }
   const app = {
     vault: {
       getAbstractFileByPath: (p: string) =>
         opts.fileExists === false ? null : ({ path: p } as unknown),
     },
     workspace: {
-      getLeaf,
+      createLeafInParent,
+      rootSplit: { constructor: FakeSplit },
     },
   } as unknown as App;
-  return { app, leaf, getLeaf };
+  return { app, leaf, createLeafInParent };
 }
 
 describe("EmbeddedDetailView", () => {
@@ -64,11 +69,11 @@ describe("EmbeddedDetailView", () => {
   });
 
   it("does nothing when the file does not exist", async () => {
-    const { app, getLeaf } = makeApp({ fileExists: false });
+    const { app, createLeafInParent } = makeApp({ fileExists: false });
     const view = new EmbeddedDetailView(app);
     const host = document.createElement("div");
     await view.show("missing.md", host);
-    expect(getLeaf).not.toHaveBeenCalled();
+    expect(createLeafInParent).not.toHaveBeenCalled();
     expect(host.children.length).toBe(0);
   });
 
@@ -77,14 +82,14 @@ describe("EmbeddedDetailView", () => {
     contentEl.className = "markdown-source-view";
     document.body.appendChild(document.createElement("div")).appendChild(contentEl);
 
-    const { app, leaf, getLeaf } = makeApp({ contentEl });
+    const { app, leaf, createLeafInParent } = makeApp({ contentEl });
     const view = new EmbeddedDetailView(app);
     const host = document.createElement("div");
     document.body.appendChild(host);
 
     await view.show("task.md", host);
 
-    expect(getLeaf).toHaveBeenCalledWith("window");
+    expect(createLeafInParent).toHaveBeenCalled();
     expect(leaf.openFile).toHaveBeenCalled();
     expect(contentEl.parentElement).toBe(host);
     expect(host.classList.contains("wt-embedded-detail-active")).toBe(true);
@@ -93,14 +98,14 @@ describe("EmbeddedDetailView", () => {
   it("reuses the existing leaf on subsequent shows and does not re-create one", async () => {
     const contentEl = document.createElement("div");
     document.body.appendChild(document.createElement("div")).appendChild(contentEl);
-    const { app, leaf, getLeaf } = makeApp({ contentEl });
+    const { app, leaf, createLeafInParent } = makeApp({ contentEl });
     const view = new EmbeddedDetailView(app);
     const host = document.createElement("div");
 
     await view.show("a.md", host);
     await view.show("b.md", host);
 
-    expect(getLeaf).toHaveBeenCalledTimes(1);
+    expect(createLeafInParent).toHaveBeenCalledTimes(1);
     expect(leaf.openFile).toHaveBeenCalledTimes(2);
     expect(contentEl.parentElement).toBe(host);
   });
@@ -141,6 +146,84 @@ describe("EmbeddedDetailView", () => {
     expect(contentEl.parentElement).toBe(originalParent);
     expect(host.classList.contains("wt-embedded-detail-active")).toBe(false);
     expect(host.children.length).toBe(0);
+  });
+
+  it("attaches a hidden off-screen container to document.body on show() and removes it on detach()", async () => {
+    const contentEl = document.createElement("div");
+    const { app } = makeApp({ contentEl });
+    const view = new EmbeddedDetailView(app);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+
+    const bodyChildrenBefore = document.body.children.length;
+
+    await view.show("a.md", host);
+
+    // After show(), a new hidden container should be attached directly to
+    // document.body (positioned off-screen so it never renders for the user).
+    expect(document.body.children.length).toBe(bodyChildrenBefore + 1);
+    const hiddenContainer = Array.from(document.body.children).find(
+      (el) => el !== host && (el as HTMLElement).style.position === "fixed",
+    ) as HTMLElement | undefined;
+    expect(hiddenContainer).toBeDefined();
+    expect(hiddenContainer!.style.left).toBe("-9999px");
+
+    view.detach();
+
+    // After detach(), the hidden container should be gone from document.body.
+    expect(document.body.contains(hiddenContainer!)).toBe(false);
+    expect(document.body.children.length).toBe(bodyChildrenBefore);
+  });
+
+  it("does not accumulate hidden containers across repeated show() calls", async () => {
+    const contentEl = document.createElement("div");
+    const { app } = makeApp({ contentEl });
+    const view = new EmbeddedDetailView(app);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+
+    const countHiddenContainers = () =>
+      Array.from(document.body.children).filter(
+        (el) => el !== host && (el as HTMLElement).style.position === "fixed",
+      ).length;
+
+    await view.show("a.md", host);
+    expect(countHiddenContainers()).toBe(1);
+
+    await view.show("b.md", host);
+    await view.show("c.md", host);
+    await view.show("d.md", host);
+
+    // Repeated shows on the same host must reuse the existing leaf and
+    // hidden container - they must not accumulate.
+    expect(countHiddenContainers()).toBe(1);
+  });
+
+  it("cleans up the hidden container when createLeafInParent returns falsy", async () => {
+    const contentEl = document.createElement("div");
+    const { app, createLeafInParent } = makeApp({ contentEl });
+    // Simulate the Obsidian internal API returning no leaf.
+    createLeafInParent.mockReturnValueOnce(null);
+
+    const view = new EmbeddedDetailView(app);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const bodyChildrenBefore = document.body.children.length;
+
+    await view.show("a.md", host);
+
+    expect(createLeafInParent).toHaveBeenCalled();
+    // No leak: hidden container and split should have been torn down.
+    expect(document.body.children.length).toBe(bodyChildrenBefore);
+    expect(host.children.length).toBe(0);
+
+    // A second show() should be able to retry cleanly (not throw, no
+    // accumulated container from the failed attempt).
+    await view.show("a.md", host);
+    const hiddenCount = Array.from(document.body.children).filter(
+      (el) => el !== host && (el as HTMLElement).style.position === "fixed",
+    ).length;
+    expect(hiddenCount).toBe(1);
   });
 
   it("handles show() on a new path after rename without tracking internal path state", async () => {

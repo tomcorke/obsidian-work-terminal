@@ -8,6 +8,9 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ### Fixes
 - **Embedded detail tab** now fills the full panel width. The reparented MarkdownView `contentEl` was losing its ancestor flex context when moved out of its original workspace leaf, leaving the right side of the host unused and letting hidden terminal content bleed through visually. Direct children of the embedded detail host are now forced to `width: 100%` and `flex: 1 1 auto`. (#490)
+- **Embedded detail tab now fills full panel height.** `deactivatePreviewDetail()` was unconditionally restoring the terminal wrapper's `display` style immediately after `activateEmbeddedDetail()` hid it, causing both containers to share the space 50/50. Deactivation now guards against restoring the terminal wrapper when the other detail mode is active. (#493)
+- **Embedded detail no longer spawns a pop-out window.** `getLeaf("window")` was creating a visible Electron BrowserWindow that lingered after the content element was reparented. Replaced with a hidden off-screen workspace split that hosts the leaf without any visible window artifact. (#493)
+- **Spawning a session from the Detail tab now switches to the new tab.** Clicking a spawn button (Shell, Claude, etc.) while the Detail or Preview pseudo-tab was active left the detail view showing instead of switching to the newly created terminal tab. (#493)
 
 ## [0.5.0] - 2026-04-21
 
