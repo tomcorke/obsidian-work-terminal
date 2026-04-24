@@ -41,6 +41,7 @@ const { buildSanityCheckCdpExpression } = require("./lib/layoutAssertions");
 const REPO_ROOT = path.resolve(__dirname, "..");
 const SMOKE_VAULT_DIR = path.join(REPO_ROOT, ".claude", "testing", "smoke-tests");
 const MANAGED_VAULT_DIR = path.join(REPO_ROOT, ".claude", "testing", "obsidian-vault");
+const SCREENSHOT_DIR = path.join(REPO_ROOT, "output", "smoke-screenshots");
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const WATCHER_SETTLE_MS = 3000;
@@ -437,6 +438,117 @@ async function runSanitySweep(host, port, timeoutMs, context) {
     const more = violations.length > 5 ? ` (and ${violations.length - 5} more)` : "";
     throw new Error(`Sanity sweep after ${context}: ${violations.length} violation(s): ${summary}${more}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Screenshot capture
+// ---------------------------------------------------------------------------
+
+/**
+ * Capture a PNG screenshot of the selector (or the whole page, when selector
+ * is null) into the given path under SCREENSHOT_DIR. Uses the existing
+ * `runCdpCommand` screenshot support. Silently returns null if the selector
+ * is missing - callers treat missing screenshots as informational.
+ */
+async function captureScreenshot(host, port, timeoutMs, relativePath, selector) {
+  const outputPath = path.join(SCREENSHOT_DIR, relativePath);
+  try {
+    if (selector) {
+      const exists = await cdpEval(host, port,
+        `!!document.querySelector(${JSON.stringify(selector)})`, timeoutMs);
+      if (!exists) {
+        console.log(`  skip  screenshot ${relativePath} (selector not present: ${selector})`);
+        return null;
+      }
+    }
+    const result = await runCdpCommand({
+      command: "screenshot",
+      host,
+      port,
+      timeoutMs,
+      outputPath,
+      selector: selector || undefined,
+      selectorPadding: 4,
+    });
+    console.log(`  shot  ${relativePath} (${selector || "full page"})`);
+    return result.outputPath;
+  } catch (err) {
+    console.log(`  skip  screenshot ${relativePath}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Capture a fixed set of reference screenshots at the end of the smoke run.
+ * No comparison is performed; the developer reviews the captures visually
+ * as part of PR review. Baseline maintenance is intentionally avoided - see
+ * docs/regression-tests.md for the rationale.
+ *
+ * Covered views:
+ *   - 01-main-layout: 2-panel split (left list, right terminals)
+ *   - 02-detail-split: detail view after selecting a task (split placement)
+ *   - 03-inactive-tab: shell tab active, Detail pseudo-tab inactive
+ *                      (embedded placement)
+ *   - 04-detail-embedded: Detail pseudo-tab active (embedded placement)
+ *   - 05-detail-preview: Preview pseudo-tab active (preview placement)
+ */
+async function captureReferenceScreenshots(host, port, timeoutMs) {
+  console.log("\n--- Capturing reference screenshots ---\n");
+  await fsp.mkdir(SCREENSHOT_DIR, { recursive: true });
+
+  // Main 2-panel layout - split placement.
+  await setDetailPlacement(host, port, "split", timeoutMs);
+  await sleep(400);
+  await captureScreenshot(host, port, timeoutMs, "01-main-layout.png", ".wt-main-view");
+
+  // Detail view opened beside the terminal panel (split placement creates a
+  // separate workspace leaf, so capture the full workspace).
+  await selectFirstTaskCard(host, port, timeoutMs);
+  await sleep(600);
+  await captureScreenshot(host, port, timeoutMs, "02-detail-split.png", ".workspace");
+
+  // Switch to embedded placement and capture shell-tab-active + detail-
+  // active states.
+  await setDetailPlacement(host, port, "embedded", timeoutMs);
+  await selectFirstTaskCard(host, port, timeoutMs);
+  await sleep(500);
+  // Clicking the shell tab takes us to the "inactive detail" state.
+  await clickFirstShellTab(host, port, timeoutMs);
+  await captureScreenshot(host, port, timeoutMs, "03-inactive-detail-tab.png", ".wt-right-panel");
+  // Now click the Detail pseudo-tab back on.
+  await clickDetailPseudoTab(host, port, timeoutMs);
+  await sleep(400);
+  await captureScreenshot(host, port, timeoutMs, "04-detail-embedded.png", ".wt-right-panel");
+
+  // Preview placement.
+  await setDetailPlacement(host, port, "preview", timeoutMs);
+  await selectFirstTaskCard(host, port, timeoutMs);
+  await sleep(400);
+  await clickDetailPseudoTab(host, port, timeoutMs);
+  await sleep(300);
+  await captureScreenshot(host, port, timeoutMs, "05-detail-preview.png", ".wt-right-panel");
+
+  // Capture the settings General section. The settings UI opens via a
+  // command, so drive it through the command palette ID.
+  await cdpEval(host, port, `
+    (async () => {
+      const app = globalThis.app;
+      if (!app) return false;
+      // Open settings modal and select the Work Terminal tab.
+      app.setting.open();
+      app.setting.openTabById('work-terminal');
+      return true;
+    })()
+  `, timeoutMs).catch(() => null);
+  await sleep(600);
+  await captureScreenshot(host, port, timeoutMs, "06-settings-general.png", ".modal-container");
+  await cdpEval(host, port, `(() => { try { globalThis.app.setting.close(); } catch { } return true; })()`, timeoutMs).catch(() => null);
+
+  // Restore the default split placement before the runner exits so the
+  // persisted settings in the managed vault stay in a known state.
+  await setDetailPlacement(host, port, "split", timeoutMs);
+
+  console.log(`\nScreenshots written to ${path.relative(REPO_ROOT, SCREENSHOT_DIR)}/`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1049,6 +1161,15 @@ async function main() {
         console.log(`  FAIL  ${test.id}: ${test.description} (${formatDuration(duration)})`);
         console.log(`        Error: ${err.message}`);
       }
+    }
+
+    // Capture reference screenshots after all tests have run. Failures here
+    // are logged but do not fail the run - screenshots are review aids, not
+    // assertions.
+    try {
+      await captureReferenceScreenshots(host, port, args.timeoutMs);
+    } catch (err) {
+      console.log(`  warn  screenshot capture failed: ${err.message}`);
     }
 
   } catch (err) {
