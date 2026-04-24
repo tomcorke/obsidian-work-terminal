@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 import http from "http";
 import crypto from "crypto";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 const isProduction = process.argv.includes("--production");
 const isWatch = process.argv.includes("--watch");
@@ -16,7 +16,12 @@ const isWatch = process.argv.includes("--watch");
  * install) so the build still succeeds.
  */
 function resolveBuildVersion() {
-  const run = (cmd) => execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  // Invoke git with an argument array rather than a shell command string.
+  // `execFileSync` with `shell: false` (the default) does not involve a
+  // shell, so tag/ref names that contain shell metacharacters cannot
+  // inject additional commands into the build.
+  const git = (args) =>
+    execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 
   let version = "dev";
   let isTagged = false;
@@ -26,7 +31,7 @@ function resolveBuildVersion() {
     // `--exact-match` makes this only succeed when HEAD itself is the
     // tagged commit. If HEAD is N commits past a tag we want the SHA,
     // not the tag name.
-    const tag = run("git describe --tags --exact-match HEAD");
+    const tag = git(["describe", "--tags", "--exact-match", "HEAD"]);
     if (tag) {
       version = tag;
       isTagged = true;
@@ -34,13 +39,16 @@ function resolveBuildVersion() {
         // Tag date (author date of the tagged commit / tag object).
         // `creatordate` on the refs/tags/<tag> ref gives the annotated
         // tag's own date when present, falling back to the committer
-        // date for lightweight tags.
-        timestamp = run(
-          `git for-each-ref --format='%(creatordate:iso-strict)' refs/tags/${tag}`,
-        ).replace(/^'|'$/g, "");
+        // date for lightweight tags. Pass the ref as a separate arg so
+        // the tag name is never interpolated into a shell string.
+        timestamp = git([
+          "for-each-ref",
+          "--format=%(creatordate:iso-strict)",
+          `refs/tags/${tag}`,
+        ]);
       } catch {
         // Fallback to commit date if tag ref lookup fails.
-        timestamp = run("git log -1 --format=%cI HEAD");
+        timestamp = git(["log", "-1", "--format=%cI", "HEAD"]);
       }
     }
   } catch {
@@ -49,8 +57,8 @@ function resolveBuildVersion() {
 
   if (!isTagged) {
     try {
-      version = run("git rev-parse --short HEAD");
-      timestamp = run("git log -1 --format=%cI HEAD");
+      version = git(["rev-parse", "--short", "HEAD"]);
+      timestamp = git(["log", "-1", "--format=%cI", "HEAD"]);
     } catch {
       // Outside a git checkout: keep defaults.
     }
