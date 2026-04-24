@@ -1,7 +1,7 @@
 {
   "id": "work-terminal",
   "name": "Work Terminal",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "minAppVersion": "1.0.0",
   "description": "Split-view work item board with per-item tabbed terminals",
   "author": "Tom Corke",

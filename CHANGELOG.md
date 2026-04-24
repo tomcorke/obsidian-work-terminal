@@ -6,14 +6,19 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-24
+
 ### Improvements
-- **Running plugin version is now visible in the UI.** The top of the settings General section shows the current tag (e.g. `0.5.0 (released ...)`) or short commit SHA (e.g. `c072614 (committed ...)`) with the release/commit timestamp, and the Work Terminal tab title is suffixed with the tag or SHA (e.g. `Work Terminal (0.5.0)`). A new **Show version in tab title** toggle under General (default on) controls the tab-title suffix. Version metadata is injected at build time via esbuild `define` from `git describe`. (#496)
+- **Running plugin version is now visible in the UI.** The top of the settings General section shows the current tag (e.g. `0.5.1 (released ...)`) or short commit SHA (e.g. `c072614 (committed ...)`) with the release/commit timestamp, and the Work Terminal tab title is suffixed with the tag or SHA (e.g. `Work Terminal (0.5.1)`). A new **Show version in tab title** toggle under General (default on) controls the tab-title suffix. Version metadata is injected at build time via esbuild `define` from `git describe`. (#496)
 
 ### Fixes
 - **Embedded detail tab** now fills the full panel width. The reparented MarkdownView `contentEl` was losing its ancestor flex context when moved out of its original workspace leaf, leaving the right side of the host unused and letting hidden terminal content bleed through visually. Direct children of the embedded detail host are now forced to `width: 100%` and `flex: 1 1 auto`. (#490)
 - **Embedded detail tab now fills full panel height.** `deactivatePreviewDetail()` was unconditionally restoring the terminal wrapper's `display` style immediately after `activateEmbeddedDetail()` hid it, causing both containers to share the space 50/50. Deactivation now guards against restoring the terminal wrapper when the other detail mode is active. (#493)
 - **Embedded detail no longer spawns a pop-out window.** `getLeaf("window")` was creating a visible Electron BrowserWindow that lingered after the content element was reparented. Replaced with a hidden off-screen workspace split that hosts the leaf without any visible window artifact. (#493)
 - **Spawning a session from the Detail tab now switches to the new tab.** Clicking a spawn button (Shell, Claude, etc.) while the Detail or Preview pseudo-tab was active left the detail view showing instead of switching to the newly created terminal tab. (#493)
+
+### Full changelog
+- Compare with 0.5.0: https://github.com/tomcorke/obsidian-work-terminal/compare/0.5.0...0.5.1
 
 ## [0.5.0] - 2026-04-21
 
