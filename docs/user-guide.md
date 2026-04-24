@@ -52,6 +52,12 @@ Work Terminal provides a two-panel layout inside Obsidian: a kanban board on the
 
 The plugin reads task files from your vault (markdown files with YAML frontmatter) and displays them as cards in columns based on their state. Clicking a card opens a detail panel; the terminal panel provides per-task shells and AI agent sessions.
 
+You can open the Work Terminal view in three ways:
+
+- **Command palette**: "Work Terminal: Open View"
+- **Ribbon icon**: Click the terminal icon in the left ribbon bar
+- **Hotkey**: Assign a custom hotkey in Obsidian's Hotkeys settings
+
 ---
 
 ## Core workflow
@@ -363,7 +369,7 @@ The state indicator appears both on the tab and on the task card, giving you vis
 
 Open the plugin settings via Obsidian's Settings dialog, then select **Work Terminal** under Community Plugins.
 
-![Settings tab showing agent profiles, core settings, and adapter configuration](screenshots/settings-tab.png)
+![Settings page showing the five top-level sections](screenshots/settings-general.png)
 
 ### Settings layout at a glance
 
@@ -410,6 +416,8 @@ The per-profile **Context prompt** field is the place to configure additional co
 | `$workTerminalPrompt` | The fully assembled context prompt (only meaningful in arguments, not in the context template itself) |
 
 For example, an argument string like `--file $absoluteFilePath --task $title` would expand to something like `--file /Users/me/vault/Tasks/active/my-task.md --task My Task`.
+
+**Login shell wrapping**: Each profile has an optional **Login shell wrap** toggle. When enabled, the agent command is launched through a login shell (`$SHELL -lc ...`), which ensures shell startup files (`~/.zshrc`, `~/.bash_profile`, etc.) are sourced before the command runs. This is important when your agent binary is managed by a version manager like nvm or fnm - without login shell wrapping, the agent command may not be found because the version manager's PATH entries are not loaded. The toggle defaults to on for new profiles.
 
 **Import/Export**: Profiles can be exported as JSON for sharing or backup, and imported from JSON to quickly set up a new installation.
 
@@ -605,6 +613,18 @@ When you first open Work Terminal, a guided tour walks you through the key featu
 - Important settings
 
 The tour highlights each feature area with a tooltip and explanation. You can dismiss the tour at any point, and reset it from Settings > **Reset guided tour** to run it again.
+
+### Commands
+
+Work Terminal registers three commands in the Obsidian command palette:
+
+| Command | Description |
+|---------|-------------|
+| **Open Work Terminal** | Opens the Work Terminal view (or focuses it if already open) |
+| **Reload Plugin (preserve terminals)** | Hot-reloads the plugin without destroying terminal sessions |
+| **Copy Session Diagnostics** | Copies session metadata to the clipboard for debugging or bug reports |
+
+These can be triggered from the command palette (Cmd/Ctrl+P) or assigned custom hotkeys in Obsidian's Hotkeys settings.
 
 ### Debug API
 
