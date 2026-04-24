@@ -279,12 +279,29 @@ async function setDetailPlacement(host, port, placement, timeoutMs) {
     (async () => {
       const plugin = globalThis.app?.plugins?.plugins?.['work-terminal'];
       if (!plugin) throw new Error("work-terminal plugin not loaded");
+
+      // 1. Persist the placement override to plugin data.
       const data = (await plugin.loadData()) || {};
       if (!data.settings) data.settings = {};
       data.settings['core.detailViewPlacement'] = ${JSON.stringify(placement)};
       await plugin.saveData(data);
-      // Fire the settings-changed event the same way the settings tab does.
-      window.dispatchEvent(new CustomEvent('work-terminal:settings-changed', { detail: data.settings }));
+
+      // 2. Build a *fully merged* settings snapshot to dispatch. MainView's
+      //    settings-changed handler replaces this.settings with event.detail
+      //    wholesale (see MainView._handleSettingsChanged), so dispatching
+      //    just { 'core.detailViewPlacement': X } would wipe every other
+      //    setting - core defaults, adapter defaults, and user overrides.
+      //    Mirror the merge in SettingsTab.loadAllSettings: start from the
+      //    active MainView's cached snapshot (already merged at view init),
+      //    then override with the key we just changed.
+      const view = globalThis.app?.workspace
+        ?.getLeavesOfType('work-terminal-view')?.[0]?.view;
+      const merged = view && view.settings
+        ? { ...view.settings }
+        : { ...data.settings };
+      merged['core.detailViewPlacement'] = ${JSON.stringify(placement)};
+
+      window.dispatchEvent(new CustomEvent('work-terminal:settings-changed', { detail: merged }));
       return true;
     })()
   `, timeoutMs);
