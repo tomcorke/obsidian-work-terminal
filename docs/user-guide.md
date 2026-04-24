@@ -34,6 +34,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Dynamic columns](#dynamic-columns)
   - [Terminal settings](#terminal-settings)
   - [Background enrichment](#background-enrichment)
+  - [Running version display](#running-version-display)
   - [Core settings](#core-settings)
 - [Advanced features](#advanced-features)
   - [Pinning tasks](#pinning-tasks)
@@ -379,7 +380,7 @@ The settings page is organised into five top-level sections. Use this map to jum
 
 | Section | What lives here |
 |---------|-----------------|
-| **General** | Task base path, state resolution strategy, view mode (kanban/activity), recent activity threshold, card display mode (standard/comfortable/compact), card indicator toggles, task card icons, automatic icon mode, Jira base URL, keep sessions alive, enrichment failure logs, expose debug API, reset guided tour. |
+| **General** | Running plugin version display, task base path, state resolution strategy, view mode (kanban/activity), recent activity threshold, card display mode (standard/comfortable/compact), card indicator toggles, task card icons, automatic icon mode, Jira base URL, show version in tab title, keep sessions alive, enrichment failure logs, expose debug API, reset guided tour. |
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
 | **Detail view** | Placement dropdown (split / tab / navigate / preview / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
@@ -539,6 +540,15 @@ Each log records:
 
 **Sensitive content warning**: log files include the full enrichment prompt and the raw agent output. If your prompt template or task content references sensitive data (API keys, internal URLs, personal notes) those values will also appear in the log. Treat the `logs/` directory as you would any other local debug dump, and share logs only with people you are comfortable reading that content.
 
+### Running version display
+
+The plugin displays its currently running version in two places so you can confirm which build is active (useful when reporting issues or verifying an update took effect):
+
+- **Top of the settings page** - a "Running version: ..." line at the top of the **General** section. On a tagged release build it shows the tag name and release date (e.g. `0.5.0 (released 24 Apr 2026, 12:47)`). On a dev build between tags, it shows the short commit SHA and commit date (e.g. `c072614 (committed 24 Apr 2026, 12:47)`).
+- **Work Terminal tab title** - the tag or short SHA is appended to the tab title in parentheses, e.g. `Work Terminal (0.5.0)`. This display is controlled by the **Show version in tab title** toggle in **General** (default on). Only the version/SHA appears here, not the timestamp, to keep the tab label compact.
+
+The version is baked in at build time by esbuild from `git describe` output and the tag or commit timestamp. Rebuilding with `pnpm run build` picks up the current commit.
+
 ### Core settings
 
 The **General** section covers board-wide preferences and utility toggles. The most commonly-used items:
@@ -554,6 +564,7 @@ The **General** section covers board-wide preferences and utility toggles. The m
 | **Task card icons** | Whether icons are shown on task cards at all. See [Task card icons](#task-card-icons). |
 | **Automatic icon mode** | Which automatic icon scheme to apply when a task has no custom icon (none, source-based, state-based). |
 | **Jira base URL** | Browse URL prefix used to turn Jira keys like `AUTH-2847` into clickable external links. |
+| **Show version in tab title** | When enabled (default), the running plugin version (tag name or short commit SHA) is appended to the Work Terminal tab title, e.g. "Work Terminal (0.5.0)". See [Running version display](#running-version-display). |
 | **Keep sessions alive** | When enabled, closing the Work Terminal tab stashes sessions to memory instead of killing them. Reopening restores sessions with full PTY state. |
 | **Enrichment failure logs** | When enabled, each failed background enrichment writes a diagnostic log file to `<configDir>/plugins/work-terminal/logs/` (usually `.obsidian/plugins/work-terminal/logs/`). See [Enrichment failure logs](#enrichment-failure-logs). |
 | **Expose debug API** | Publishes `window.__workTerminalDebug` for CDP inspection (see [Debug API](#debug-api)). |
