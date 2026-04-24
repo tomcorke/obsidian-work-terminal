@@ -2,13 +2,17 @@
  * Tier 1 CDP-based smoke test runner for obsidian-work-terminal.
  *
  * Launches an isolated Obsidian instance, seeds test data via the filesystem,
- * runs 10 CDP-based test assertions, reports pass/fail, and cleans up.
+ * runs CDP-based test assertions (Tier 1 smoke tests + layout invariants +
+ * generic sanity sweep), captures reference screenshots, reports pass/fail,
+ * and cleans up.
  *
  * Usage:
  *   pnpm run test:smoke
  *   node scripts/smoke-test-runner.js [--no-hide] [--timeout 30000]
  *
- * Part of #343
+ * Introduced in #343 (Tier 1 smoke tests). Layout invariants, parameterised
+ * detail-placement coverage, the generic sanity sweep, and screenshot
+ * capture were added in #491 / PR TBD.
  */
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
@@ -28,6 +32,7 @@ const {
   verifyObsidianVault,
   waitForDebugger,
 } = require("./lib/obsidianAutomation");
+const { buildSanityCheckCdpExpression } = require("./lib/layoutAssertions");
 
 // ---------------------------------------------------------------------------
 // Config
@@ -251,6 +256,186 @@ async function cdpType(host, port, selector, text, timeoutMs) {
     await client.send("Input.insertText", { text });
   } finally {
     client.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Layout invariant helpers (LI-01, LI-02, LI-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Persist a detail view placement change via the plugin data API and fire the
+ * settings-changed event so the MainView re-mounts the detail view at the new
+ * placement without requiring a plugin reload. Returns once the switch has
+ * had a chance to settle.
+ *
+ * `placement` must be one of: "split" | "embedded" | "preview" | "tab" |
+ * "navigate" | "disabled". The test runner currently exercises split,
+ * embedded, and preview (see LI-01..03 and the parameterised variants).
+ */
+async function setDetailPlacement(host, port, placement, timeoutMs) {
+  await cdpEval(host, port, `
+    (async () => {
+      const plugin = globalThis.app?.plugins?.plugins?.['work-terminal'];
+      if (!plugin) throw new Error("work-terminal plugin not loaded");
+      const data = (await plugin.loadData()) || {};
+      if (!data.settings) data.settings = {};
+      data.settings['core.detailViewPlacement'] = ${JSON.stringify(placement)};
+      await plugin.saveData(data);
+      // Fire the settings-changed event the same way the settings tab does.
+      window.dispatchEvent(new CustomEvent('work-terminal:settings-changed', { detail: data.settings }));
+      return true;
+    })()
+  `, timeoutMs);
+  // Settle time for remountDetailViewForCurrentSelection + render.
+  await sleep(500);
+}
+
+/**
+ * Assert that the active tab's visible content fills the available terminal
+ * area (LI-01). Tolerance of 2px handles sub-pixel rounding and scrollbar
+ * gutters. In split placement, the terminal wrapper hosts whichever shell/
+ * agent tab is active; in embedded/preview placement, the detail host
+ * occupies the same slot when its pseudo-tab is active.
+ */
+async function assertActiveContentFillsContainer(host, port, timeoutMs) {
+  const info = await cdpEval(host, port, `
+    (() => {
+      // Prefer whichever slot is currently visible: embedded host, preview
+      // host, or the terminal wrapper. Only one is display:"" at a time.
+      const slots = [
+        document.querySelector('.wt-embedded-detail-host'),
+        document.querySelector('.wt-preview-detail-host'),
+        document.querySelector('.wt-terminal-wrapper'),
+      ].filter((el) => el && getComputedStyle(el).display !== 'none');
+      if (slots.length === 0) return { ok: false, reason: 'no-visible-slot' };
+      // The active slot is the last one inserted before the wrapper that is
+      // visible; if multiple are visible (shouldn't happen post-fix) take
+      // whichever is not the terminal wrapper to be strict.
+      const wrapper = document.querySelector('.wt-terminal-wrapper');
+      const active = slots.find((s) => s !== wrapper) || wrapper;
+      const parent = active.parentElement;
+      if (!parent) return { ok: false, reason: 'no-parent' };
+      return {
+        ok: true,
+        slotClass: active.className,
+        slotWidth: active.offsetWidth,
+        slotHeight: active.offsetHeight,
+        parentWidth: parent.offsetWidth,
+        parentClientWidth: parent.clientWidth,
+        parentHeight: parent.offsetHeight,
+      };
+    })()
+  `, timeoutMs);
+  if (!info.ok) {
+    throw new Error("LI-01: no visible content slot found: " + (info.reason || "unknown"));
+  }
+  const tolerance = 2;
+  // Compare against the inner width of the parent (clientWidth) because the
+  // tab bar + title consume vertical space but not horizontal. The bug in
+  // #490 manifested as the terminal wrapper being ~50% of its parent width.
+  const widthRatio = info.slotWidth / Math.max(1, info.parentClientWidth);
+  if (info.slotWidth + tolerance < info.parentClientWidth) {
+    throw new Error(
+      "LI-01: active content does not fill container width: " +
+      "slot=" + info.slotWidth + "px, parent=" + info.parentClientWidth + "px, " +
+      "ratio=" + widthRatio.toFixed(2) + " (class=" + info.slotClass + ")",
+    );
+  }
+}
+
+/**
+ * Assert that inactive tab panels are actually hidden (LI-02). When the
+ * Detail pseudo-tab is active (embedded/preview), the terminal wrapper must
+ * be display:none. When a terminal tab is active, the detail host (if it
+ * exists) must be display:none. Prevents the "bleed through" class of bug
+ * where an inactive panel is still laid out.
+ */
+async function assertInactiveTabsHidden(host, port, timeoutMs) {
+  const info = await cdpEval(host, port, `
+    (() => {
+      const wrapper = document.querySelector('.wt-terminal-wrapper');
+      const embeddedHost = document.querySelector('.wt-embedded-detail-host');
+      const previewHost = document.querySelector('.wt-preview-detail-host');
+      const visible = (el) => el && getComputedStyle(el).display !== 'none';
+      return {
+        wrapperVisible: visible(wrapper),
+        embeddedHostVisible: visible(embeddedHost),
+        previewHostVisible: visible(previewHost),
+        embeddedHostExists: !!embeddedHost,
+        previewHostExists: !!previewHost,
+      };
+    })()
+  `, timeoutMs);
+  const visibleCount = [info.wrapperVisible, info.embeddedHostVisible, info.previewHostVisible].filter(Boolean).length;
+  if (visibleCount !== 1) {
+    throw new Error(
+      "LI-02: expected exactly one visible content slot, got " + visibleCount +
+      " (wrapper=" + info.wrapperVisible + ", embedded=" + info.embeddedHostVisible +
+      ", preview=" + info.previewHostVisible + ")",
+    );
+  }
+}
+
+/**
+ * Click the Detail or Preview pseudo-tab inside the Work Terminal panel.
+ * No-op if the pseudo-tab is not rendered (e.g. split placement). Returns
+ * true when a click was dispatched.
+ */
+async function clickDetailPseudoTab(host, port, timeoutMs) {
+  const selector = '.wt-tab-detail, .wt-tab-preview';
+  const exists = await cdpEval(host, port,
+    `!!document.querySelector(${JSON.stringify(selector)})`, timeoutMs);
+  if (!exists) return false;
+  await cdpClick(host, port, selector, timeoutMs);
+  await sleep(300);
+  return true;
+}
+
+/**
+ * Click the first terminal shell/agent tab (skipping the Detail/Preview
+ * pseudo-tabs) to restore the terminal view. Returns true when a click
+ * was dispatched.
+ */
+async function clickFirstShellTab(host, port, timeoutMs) {
+  const selector = '.wt-tab:not(.wt-tab-detail):not(.wt-tab-preview)';
+  const exists = await cdpEval(host, port,
+    `!!document.querySelector(${JSON.stringify(selector)})`, timeoutMs);
+  if (!exists) return false;
+  await cdpClick(host, port, selector, timeoutMs);
+  await sleep(300);
+  return true;
+}
+
+/**
+ * Select the first visible task card in the list. Detail-view placements
+ * that mount a pseudo-tab (embedded/preview) require a selected item for
+ * the tab to appear.
+ */
+async function selectFirstTaskCard(host, port, timeoutMs) {
+  const selector = '.wt-task-card';
+  const exists = await cdpEval(host, port,
+    `!!document.querySelector(${JSON.stringify(selector)})`, timeoutMs);
+  if (!exists) throw new Error("No task card found to select");
+  await cdpClick(host, port, selector, timeoutMs);
+  await sleep(500);
+}
+
+/**
+ * Run the generic sanity checks (zero-size visible, overflow clipping,
+ * out-of-bounds positioning) via CDP and throw if any violations are found.
+ * Intended to run after every smoke test scenario so regressions in both
+ * existing and brand-new features are flagged without per-feature upkeep.
+ */
+async function runSanitySweep(host, port, timeoutMs, context) {
+  const expr = buildSanityCheckCdpExpression();
+  const violations = await cdpEval(host, port, expr, timeoutMs);
+  if (Array.isArray(violations) && violations.length > 0) {
+    const summary = violations.slice(0, 5).map((v) =>
+      `${v.type} on ${v.selector}: ${JSON.stringify(v.details)}`,
+    ).join("; ");
+    const more = violations.length > 5 ? ` (and ${violations.length - 5} more)` : "";
+    throw new Error(`Sanity sweep after ${context}: ${violations.length} violation(s): ${summary}${more}`);
   }
 }
 
@@ -562,6 +747,129 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
         if (panels.rightWidth < 100) throw new Error(`Right panel too narrow: ${panels.rightWidth}px`);
       },
     },
+    // -----------------------------------------------------------------------
+    // LI-01: Active tab content fills its container (split placement).
+    // Would have caught #490 directly - the original bug was the terminal
+    // wrapper rendering at ~50% of its parent width.
+    // -----------------------------------------------------------------------
+    {
+      id: "LI-01-split",
+      description: "Active content fills container (split placement)",
+      run: async () => {
+        await setDetailPlacement(host, port, "split", timeoutMs);
+        await selectFirstTaskCard(host, port, timeoutMs);
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+      },
+    },
+    // -----------------------------------------------------------------------
+    // LI-02: Inactive tab panels are hidden. Ensures exactly one content
+    // slot is visible in the terminal panel at any time.
+    // -----------------------------------------------------------------------
+    {
+      id: "LI-02-split",
+      description: "Inactive tabs hidden (split placement)",
+      run: async () => {
+        // Split placement should not mount the embedded/preview hosts.
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+      },
+    },
+    // -----------------------------------------------------------------------
+    // LI-03: Tab switch round-trip.
+    //
+    // Split placement has no Detail/Preview pseudo-tab inside the panel
+    // (detail is a separate workspace leaf), so the "round trip" we can
+    // validate here is selecting a task (which focuses the shell tab),
+    // then reasserting LI-01/LI-02. The embedded/preview variants below
+    // exercise the full Shell -> Detail -> Shell switch.
+    // -----------------------------------------------------------------------
+    {
+      id: "LI-03-split",
+      description: "Tab switch round-trip (split placement)",
+      run: async () => {
+        await clickFirstShellTab(host, port, timeoutMs);
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+      },
+    },
+    // -----------------------------------------------------------------------
+    // LI-01..03 for the embedded placement. When an item is selected, the
+    // detail pseudo-tab auto-activates and the embedded host replaces the
+    // terminal wrapper.
+    // -----------------------------------------------------------------------
+    {
+      id: "LI-01-embedded",
+      description: "Active content fills container (embedded placement)",
+      run: async () => {
+        await setDetailPlacement(host, port, "embedded", timeoutMs);
+        await selectFirstTaskCard(host, port, timeoutMs);
+        await sleep(400);
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+      },
+    },
+    {
+      id: "LI-02-embedded",
+      description: "Inactive tabs hidden (embedded placement)",
+      run: async () => {
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+      },
+    },
+    {
+      id: "LI-03-embedded",
+      description: "Tab switch round-trip (embedded placement)",
+      run: async () => {
+        // Currently on Detail pseudo-tab. Click the shell tab, assert
+        // invariants, click Detail again, assert again.
+        const shellClicked = await clickFirstShellTab(host, port, timeoutMs);
+        if (!shellClicked) throw new Error("No shell tab to click for round-trip");
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+        const detailClicked = await clickDetailPseudoTab(host, port, timeoutMs);
+        if (!detailClicked) throw new Error("No Detail pseudo-tab to click for round-trip");
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+      },
+    },
+    // -----------------------------------------------------------------------
+    // LI-01..03 for the preview placement. The Preview pseudo-tab mounts
+    // a read-only MarkdownRenderer inside .wt-preview-detail-host.
+    // -----------------------------------------------------------------------
+    {
+      id: "LI-01-preview",
+      description: "Active content fills container (preview placement)",
+      run: async () => {
+        await setDetailPlacement(host, port, "preview", timeoutMs);
+        await selectFirstTaskCard(host, port, timeoutMs);
+        await sleep(400);
+        // Under preview placement, the Preview pseudo-tab is rendered but
+        // not auto-activated on selection (unlike embedded). Click it.
+        await clickDetailPseudoTab(host, port, timeoutMs);
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+      },
+    },
+    {
+      id: "LI-02-preview",
+      description: "Inactive tabs hidden (preview placement)",
+      run: async () => {
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+      },
+    },
+    {
+      id: "LI-03-preview",
+      description: "Tab switch round-trip (preview placement)",
+      run: async () => {
+        const shellClicked = await clickFirstShellTab(host, port, timeoutMs);
+        if (!shellClicked) throw new Error("No shell tab to click for round-trip");
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+        const previewClicked = await clickDetailPseudoTab(host, port, timeoutMs);
+        if (!previewClicked) throw new Error("No Preview pseudo-tab to click for round-trip");
+        await assertActiveContentFillsContainer(host, port, timeoutMs);
+        await assertInactiveTabsHidden(host, port, timeoutMs);
+        // Restore split placement so the sanity sweep and subsequent runs
+        // see the default state.
+        await setDetailPlacement(host, port, "split", timeoutMs);
+      },
+    },
   ];
 }
 
@@ -721,6 +1029,11 @@ async function main() {
       const startTime = Date.now();
       try {
         await test.run();
+        // Run the generic sanity sweep after every successful test so
+        // regressions in shared layout, clipping, and positioning are caught
+        // even when no per-feature assertion exists yet. A sanity violation
+        // fails the test it ran after.
+        await runSanitySweep(host, port, args.timeoutMs, test.id);
         const duration = Date.now() - startTime;
         results.push({ id: test.id, description: test.description, passed: true, duration });
         console.log(`  PASS  ${test.id}: ${test.description} (${formatDuration(duration)})`);
