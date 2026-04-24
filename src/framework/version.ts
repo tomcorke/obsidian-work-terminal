@@ -28,8 +28,7 @@ declare const __WT_VERSION_TIMESTAMP__: string;
  * - On a tagged build: the tag name (e.g. "0.5.0").
  * - Otherwise: the short commit SHA (e.g. "c072614").
  */
-export const WT_VERSION: string =
-  typeof __WT_VERSION__ !== "undefined" ? __WT_VERSION__ : "dev";
+export const WT_VERSION: string = typeof __WT_VERSION__ !== "undefined" ? __WT_VERSION__ : "dev";
 
 /** True when the running build is an exact tagged commit. */
 export const WT_IS_TAGGED: boolean =
@@ -93,10 +92,7 @@ export function formatVersionForSettings(
  * Returns "" when `enabled` is false so `"Work Terminal" + suffix` is
  * correct with or without the toggle.
  */
-export function formatVersionForTabTitle(
-  enabled: boolean,
-  version: string = WT_VERSION,
-): string {
+export function formatVersionForTabTitle(enabled: boolean, version: string = WT_VERSION): string {
   if (!enabled) return "";
   if (!version) return "";
   return ` (${version})`;
