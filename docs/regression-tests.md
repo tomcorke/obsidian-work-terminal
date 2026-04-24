@@ -161,7 +161,67 @@
 | TO-11 | Claude session rename detection | Start a Claude session that renames itself | Output stream monitored for "Session renamed to:" pattern. ANSI stripped (3-stage). StringDecoder handles UTF-8 chunks. Tab label updates. | | |
 | TO-12 | Session rename: adapter hook | Claude renames session | `adapter.transformSessionLabel(oldLabel, detectedLabel)` called if provided. Adapter can transform the label. | | |
 
-## 7. Undocumented Implementation Details
+## 7. Layout Invariants and Generic Sanity Assertions
+
+Automated. Run via `pnpm run test:smoke` (Tier 1 smoke runner). These IDs live
+alongside the regression tests above - an `LI-` prefix (Layout Invariants) is
+used instead of extending the `LD-` range because `LD-03/04/05` are already
+taken for manual detail-panel checks.
+
+### 7a. Layout invariants (LI-01..03 per detail placement)
+
+Each check runs against three detail-view placements: `split`, `embedded`, and
+`preview`. That coverage closes open question #3 from #491 and ensures
+regressions are caught across the full matrix of detail presentations, not
+just the default.
+
+| ID | Description | Automation |
+|----|-------------|------------|
+| LI-01-split | Active content fills container (split placement) | Selects first task card, then asserts the visible content slot (`.wt-terminal-wrapper`) fills its parent `clientWidth` within 2px. Would have caught #490 directly. |
+| LI-02-split | Inactive tabs hidden (split placement) | Asserts exactly one of `.wt-terminal-wrapper`, `.wt-embedded-detail-host`, `.wt-preview-detail-host` is `display: "" ` and the others are `display: none` (or not mounted). |
+| LI-03-split | Tab switch round-trip (split placement) | Clicks the first shell tab, reasserts LI-01 + LI-02. Split has no in-panel Detail pseudo-tab so the round-trip is abbreviated compared to the embedded/preview variants. |
+| LI-01-embedded | Active content fills container (embedded placement) | Switches placement to `embedded`, selects a task (auto-activates the Detail pseudo-tab), reasserts LI-01 against `.wt-embedded-detail-host`. |
+| LI-02-embedded | Inactive tabs hidden (embedded placement) | Same as LI-02-split but in embedded placement. |
+| LI-03-embedded | Tab switch round-trip (embedded placement) | Detail -> Shell -> Detail. Reasserts LI-01 + LI-02 at each step. Catches single-direction mount/show bugs. |
+| LI-01-preview | Active content fills container (preview placement) | Switches placement to `preview`, selects a task, clicks the Preview pseudo-tab, reasserts LI-01 against `.wt-preview-detail-host`. |
+| LI-02-preview | Inactive tabs hidden (preview placement) | Same as LI-02-embedded but for preview. |
+| LI-03-preview | Tab switch round-trip (preview placement) | Shell -> Preview round-trip. Reasserts LI-01 + LI-02 at each step. Restores split placement on exit. |
+
+### 7b. Generic sanity assertions (run after every test group)
+
+A single reusable helper (`scripts/lib/layoutAssertions.js`) runs after every
+Tier 1 test. Any violation fails the test it ran after. No per-feature upkeep;
+the checks only need updating if the invariants themselves change.
+
+| Type | What it flags |
+|------|---------------|
+| `zero-size-visible` | Any `.wt-*` element that is visible (not `display: none`, not `visibility: hidden`, has `offsetParent`) yet renders at 0 width or 0 height. Catches components that should render but have a CSS contract bug. |
+| `clipped-overflow` | Any `.wt-*` element with `overflow: hidden` (or `clip`) whose `scrollHeight` exceeds `clientHeight` by more than 2px (or similarly for the X axis). Catches silent content clipping. |
+| `out-of-bounds` | Any absolutely- or fixed-positioned `.wt-*` element whose bounding rect is fully outside the bounding rect of its nearest positioned ancestor. Catches "content rendered off-screen relative to its stacking context" bugs. |
+
+The tolerances (`zeroSizeThreshold: 0`, `clippedOverflowTolerance: 2`,
+`outOfBoundsTolerance: 1`) are intentionally forgiving; false positives from
+sub-pixel rounding or scrollbar gutters would erode trust in the smoke runner
+faster than missed regressions.
+
+### 7c. Reference screenshots (no comparison)
+
+After all tests complete, the smoke runner captures PNGs of six reference
+views to `output/smoke-screenshots/`:
+
+1. `01-main-layout.png` - 2-panel split layout with the terminal panel visible
+2. `02-detail-split.png` - detail view opened via split placement (whole workspace)
+3. `03-inactive-detail-tab.png` - embedded placement, shell tab active
+4. `04-detail-embedded.png` - embedded placement, Detail pseudo-tab active
+5. `05-detail-preview.png` - preview placement, Preview pseudo-tab active
+6. `06-settings-general.png` - Settings modal, Work Terminal tab
+
+No baselines, no diffing. The developer reviews the screenshots visually as
+part of PR review. This deliberately avoids the maintenance burden of pixel
+diff while still catching "this clearly looks wrong" for features that have
+no layout-invariant contract yet.
+
+## 8. Undocumented Implementation Details
 
 ### Preconditions
 - Deep inspection via console/CDP. Some tests require code reading + runtime verification.
@@ -211,8 +271,9 @@
 | 4. Task List | 32 | | | | |
 | 5. Layout & Detail | 12 | | | | |
 | 6. Task Operations | 12 | | | | |
-| 7. Undocumented Details | 30 | | | | |
-| **Total** | **121** | | | | |
+| 7. Layout Invariants and Sanity (automated) | 9 | | | | |
+| 8. Undocumented Details | 30 | | | | |
+| **Total** | **130** | | | | |
 
 ## Issues Found
 

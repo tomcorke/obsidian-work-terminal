@@ -95,8 +95,36 @@ CDP_PORT=<port> node cdp.js screenshot output/test.png
 pnpm run obsidian:test:stop -- --vault .claude/testing/smoke
 ```
 
+## Layout invariants, sanity sweep, and reference screenshots
+
+On top of the Tier 1 tests above, the runner also exercises:
+
+- **Layout invariants** (`LI-01` ... `LI-03`) across three detail-view
+  placements (`split`, `embedded`, `preview`). These check that the active
+  content slot fills its container, inactive slots are `display: none`, and
+  tab round-trips hold the invariants at each step. See
+  [regression-tests.md section 7a](regression-tests.md#7a-layout-invariants-li-0103-per-detail-placement).
+- **Generic sanity assertions** run after every test group: zero-size
+  visible `.wt-*` elements, `overflow: hidden` boxes whose `scrollHeight`
+  materially exceeds `clientHeight`, and absolutely-positioned `.wt-*`
+  elements rendered entirely outside their positioned ancestor. A single
+  violation fails the test that ran before it. Implemented in
+  `scripts/lib/layoutAssertions.js` with unit tests. See
+  [regression-tests.md section 7b](regression-tests.md#7b-generic-sanity-assertions-run-after-every-test-group).
+- **Reference screenshots** (no comparison, no baselines) of six key views
+  saved to `output/smoke-screenshots/` at the end of each run. Developer
+  reviews visually. See
+  [regression-tests.md section 7c](regression-tests.md#7c-reference-screenshots-no-comparison).
+
+Rationale for this split (versus full pixel-diff regression): pixel-diff
+tooling incurs a high baseline maintenance cost and false-positive rate on
+Electron rendering. Layout invariants catch the specific class of bug #490
+represented without any baseline tax; sanity assertions catch a broad
+class of "shipped broken" bugs; no-compare screenshots cover the long tail
+that neither can assert. See [issue #491](https://github.com/tomcorke/obsidian-work-terminal/issues/491)
+for the full reasoning.
+
 ## Next steps
 
-1. **Screenshot regression** - capture baseline screenshots of key views, compare on subsequent runs using pixel diff.
-2. **Integration test harness** - isolated vault + mock Claude CLI for testing agent launch/state detection flows without a real Claude binary.
-3. **Tier 2 tests** - add timing/animation observation tests for double-rAF rendering, hot-reload survival, and state indicators.
+1. **Integration test harness** - isolated vault + mock Claude CLI for testing agent launch/state detection flows without a real Claude binary.
+2. **Tier 2 tests** - add timing/animation observation tests for double-rAF rendering, hot-reload survival, and state indicators.
