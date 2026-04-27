@@ -1,11 +1,11 @@
 /**
  * ActivityTracker - maintains in-memory last-activity timestamps for work items
- * and periodically flushes them to frontmatter for persistence across restarts.
+ * and periodically flushes them through a persistence callback.
  *
  * Design:
  * - In-memory timestamps are accurate to the second for precise ordering
- * - Frontmatter writes are throttled to at most once per minute per item
- * - On load, reads `last-active` from frontmatter as the initial timestamp
+ * - Persistence writes are throttled to at most once per minute per item
+ * - On load, persisted timestamps can seed the tracker state
  * - Grouping into recency buckets is handled by the framework (ListPanel)
  */
 
@@ -76,7 +76,7 @@ export function classifyActivity(
 }
 
 /**
- * Minimum interval (ms) between frontmatter writes for a single item.
+ * Minimum interval (ms) between persisted writes for a single item.
  * The issue spec requires at most once per minute.
  */
 const FLUSH_THROTTLE_MS = 60_000;
@@ -86,7 +86,7 @@ const FLUSH_THROTTLE_MS = 60_000;
  *
  * Responsibilities:
  * - Maintain in-memory timestamps (accurate to the second)
- * - Throttle frontmatter flushes (at most once per minute per item)
+ * - Throttle persistence flushes (at most once per minute per item)
  * - Provide the current bucket for each item
  * - Provide a custom order within buckets based on manual ordering
  */
@@ -94,23 +94,23 @@ export class ActivityTracker {
   /** In-memory timestamps (ms since epoch). Updated on every activity event. */
   private timestamps: Map<string, number> = new Map();
 
-  /** Last time we flushed each item's timestamp to frontmatter. */
+  /** Last time we flushed each item's timestamp to the persistence layer. */
   private lastFlushTime: Map<string, number> = new Map();
 
   /** Pending flush timers per item (for debounced write). */
   private flushTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
-  /** Callback to write last-active to frontmatter. */
+  /** Callback to persist last-active outside the in-memory tracker. */
   private onFlush: ((itemId: string, isoTimestamp: string) => Promise<void>) | null = null;
 
-  /** Set the flush callback (called by MainView when the adapter is ready). */
+  /** Set the flush callback (called by MainView when persistence is ready). */
   setFlushCallback(callback: (itemId: string, isoTimestamp: string) => Promise<void>): void {
     this.onFlush = callback;
   }
 
   /**
    * Record activity for an item. Updates the in-memory timestamp immediately
-   * and schedules a throttled frontmatter flush.
+   * and schedules a throttled persistence flush.
    */
   recordActivity(itemId: string): void {
     const now = Date.now();
@@ -119,10 +119,10 @@ export class ActivityTracker {
   }
 
   /**
-   * Seed a timestamp from frontmatter (used when parsing items on load).
+   * Seed a timestamp from persisted storage.
    * Only updates if no in-memory timestamp exists yet (in-memory is more accurate).
    */
-  seedFromFrontmatter(itemId: string, isoTimestamp: string | undefined): void {
+  seedTimestamp(itemId: string, isoTimestamp: string | undefined): void {
     if (this.timestamps.has(itemId)) return;
     if (!isoTimestamp) return;
 

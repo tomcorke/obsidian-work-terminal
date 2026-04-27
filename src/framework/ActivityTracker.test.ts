@@ -167,9 +167,9 @@ describe("ActivityTracker", () => {
     });
   });
 
-  describe("seedFromFrontmatter", () => {
+  describe("seedTimestamp", () => {
     it("sets the timestamp from an ISO string", () => {
-      tracker.seedFromFrontmatter("item-1", "2026-04-16T08:00:00Z");
+      tracker.seedTimestamp("item-1", "2026-04-16T08:00:00Z");
       expect(tracker.getTimestamp("item-1")).toBe(new Date("2026-04-16T08:00:00Z").getTime());
     });
 
@@ -178,22 +178,22 @@ describe("ActivityTracker", () => {
       tracker.recordActivity("item-1");
       const inMemory = tracker.getTimestamp("item-1");
 
-      tracker.seedFromFrontmatter("item-1", "2026-04-16T08:00:00Z");
+      tracker.seedTimestamp("item-1", "2026-04-16T08:00:00Z");
       expect(tracker.getTimestamp("item-1")).toBe(inMemory);
     });
 
     it("ignores undefined values", () => {
-      tracker.seedFromFrontmatter("item-1", undefined);
+      tracker.seedTimestamp("item-1", undefined);
       expect(tracker.getTimestamp("item-1")).toBeUndefined();
     });
 
     it("ignores empty strings", () => {
-      tracker.seedFromFrontmatter("item-1", "");
+      tracker.seedTimestamp("item-1", "");
       expect(tracker.getTimestamp("item-1")).toBeUndefined();
     });
 
     it("ignores invalid date strings", () => {
-      tracker.seedFromFrontmatter("item-1", "not-a-date");
+      tracker.seedTimestamp("item-1", "not-a-date");
       expect(tracker.getTimestamp("item-1")).toBeUndefined();
     });
   });

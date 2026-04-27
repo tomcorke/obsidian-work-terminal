@@ -285,8 +285,8 @@ In activity mode, the kanban board is replaced with four recency sections:
 
 - Any tab creation, agent session launch, or agent state change refreshes the activity timestamp for the associated task
 - Timestamps are maintained in memory for accurate within-session ordering
-- A `last-active` field is written to task frontmatter (at most once per minute) so timestamps survive plugin/Obsidian restarts
-- On load, the plugin reads `last-active` from frontmatter to seed the initial ordering
+- Per-task activity timestamps are stored in plugin data (`.obsidian/plugins/work-terminal/data.json`) so ordering survives plugin/Obsidian restarts
+- On load, the plugin seeds ordering from plugin data first; older `last-active` frontmatter values are still accepted as a legacy fallback
 
 **Configurable threshold**: The "Recent" section threshold can be adjusted in **Settings > General > Recent activity threshold**:
 

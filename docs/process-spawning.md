@@ -81,7 +81,6 @@ All vault operations use Obsidian's `app.vault.*` API, never direct `fs.*` write
 | Task file metadata reading | `src/adapters/task-agent/TaskParser.ts` | `app.metadataCache.getFileCache()` |
 | Detail view opening | `src/adapters/task-agent/TaskDetailView.ts` | `app.vault.getAbstractFileByPath()` |
 | Icon frontmatter update | `src/adapters/task-agent/index.ts` | `app.vault.read()`, `app.vault.modify()` |
-| Activity timestamp (`last-active`) write | `src/framework/MainView.ts` | `app.vault.read()`, `app.vault.modify()` |
 | Task file deletion | `src/framework/ListPanel.ts` | `app.vault.trash()` |
 
 ### Plugin data (Obsidian plugin API)
@@ -91,8 +90,9 @@ Uses `plugin.loadData()` / `plugin.saveData()`, stored in `.obsidian/plugins/wor
 - Settings (core + adapter)
 - Guided tour completion state
 - Custom session defaults
+- Activity timestamps for the activity view (`lastActiveById`)
 
-Source: `src/core/PluginDataStore.ts`, `src/framework/GuidedTour.ts`, `src/framework/TerminalPanelView.ts`, `src/framework/MainView.ts`
+Source: `src/core/PluginDataStore.ts`, `src/core/LastActiveStore.ts`, `src/framework/GuidedTour.ts`, `src/framework/TerminalPanelView.ts`, `src/framework/MainView.ts`
 
 ### Plugin directory (Obsidian vault adapter)
 

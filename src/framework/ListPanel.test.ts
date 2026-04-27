@@ -1175,7 +1175,7 @@ describe("ListPanel", () => {
     return {
       getBucket: (itemId: string) => bucketMap[itemId] || "older",
       recordActivity: vi.fn(),
-      seedFromFrontmatter: vi.fn(),
+      seedTimestamp: vi.fn(),
       getTimestamp: vi.fn(),
       rekey: vi.fn(),
       dispose: vi.fn(),
