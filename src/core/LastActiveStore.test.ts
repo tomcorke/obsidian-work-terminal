@@ -42,6 +42,7 @@ describe("LastActiveStore", () => {
         good: "2026-04-27T12:00:00Z",
         bad: 123,
         empty: "",
+        invalid: "not-a-date",
       },
     });
     const store = new LastActiveStore(plugin);
@@ -51,6 +52,7 @@ describe("LastActiveStore", () => {
     expect(store.get("good")).toBe("2026-04-27T12:00:00Z");
     expect(store.get("bad")).toBeUndefined();
     expect(store.get("empty")).toBeUndefined();
+    expect(store.get("invalid")).toBeUndefined();
   });
 
   it("debounces multiple updates into one save", async () => {

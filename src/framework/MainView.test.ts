@@ -500,7 +500,7 @@ describe("MainView activity timestamp seeding", () => {
     expect(lastActiveStore.pruneMissingPathIds).toHaveBeenCalledWith(["uuid-123"]);
   });
 
-  it("falls back to legacy frontmatter when plugin data has no timestamp", async () => {
+  it("falls back to legacy frontmatter when plugin data is missing or invalid", async () => {
     const view = new MainView({} as any, {} as any, {} as any);
     const item = makeItem({
       id: "uuid-123",
@@ -510,7 +510,7 @@ describe("MainView activity timestamp seeding", () => {
       seedTimestamp: vi.fn(),
     };
     const lastActiveStore = {
-      get: vi.fn(() => undefined),
+      get: vi.fn(() => "not-a-date"),
       pruneMissingPathIds: vi.fn(),
     };
     const listPanel = {

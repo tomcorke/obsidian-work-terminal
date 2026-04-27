@@ -3,7 +3,7 @@ import { mergeAndSavePluginData } from "./PluginDataStore";
 
 const LAST_ACTIVE_FLUSH_DEBOUNCE_MS = 1_000;
 
-function sanitiseLastActiveMap(raw: unknown): Record<string, string> {
+function sanitizeLastActiveMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return {};
   }
@@ -14,7 +14,8 @@ function sanitiseLastActiveMap(raw: unknown): Record<string, string> {
         typeof itemId === "string" &&
         !!itemId &&
         typeof isoTimestamp === "string" &&
-        !!isoTimestamp,
+        !!isoTimestamp &&
+        !Number.isNaN(Date.parse(isoTimestamp)),
     ),
   );
 }
@@ -37,7 +38,7 @@ export class LastActiveStore {
   async load(): Promise<void> {
     if (this.loaded) return;
     const data = (await this.plugin.loadData()) || {};
-    this.timestampsById = sanitiseLastActiveMap(data.lastActiveById);
+    this.timestampsById = sanitizeLastActiveMap(data.lastActiveById);
     this.loaded = true;
   }
 
@@ -100,7 +101,7 @@ export class LastActiveStore {
 
     try {
       await mergeAndSavePluginData(this.plugin, (data) => {
-        const lastActiveById = sanitiseLastActiveMap(data.lastActiveById);
+        const lastActiveById = sanitizeLastActiveMap(data.lastActiveById);
         for (const itemId of dirtyIds) {
           const isoTimestamp = this.timestampsById[itemId];
           if (isoTimestamp) {
@@ -138,7 +139,9 @@ export class LastActiveStore {
     }
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
-      void this.flushNow();
+      void this.flushNow().catch((err) => {
+        console.error("[work-terminal] Failed to flush last-active store:", err);
+      });
     }, LAST_ACTIVE_FLUSH_DEBOUNCE_MS);
   }
 }

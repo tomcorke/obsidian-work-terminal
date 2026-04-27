@@ -718,7 +718,7 @@ export class MainView extends ItemView {
   private seedActivityTimestamps(items: WorkItem[]): void {
     for (const item of items) {
       const persisted = this.lastActiveStore.get(item.id);
-      if (persisted) {
+      if (persisted && !Number.isNaN(Date.parse(persisted))) {
         this.activityTracker.seedTimestamp(item.id, persisted);
         continue;
       }
