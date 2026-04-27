@@ -112,15 +112,18 @@ describe("MainView selection ID backfill", () => {
       setActiveItem: vi.fn(),
       setTitle: vi.fn(),
     };
+    const lastActiveStore = { rekey: vi.fn() };
 
     (view as any).parser = parser;
     (view as any).listPanel = listPanel;
     (view as any).terminalPanel = terminalPanel;
+    (view as any).lastActiveStore = lastActiveStore;
 
     await (view as any).ensureSelectedItemHasDurableId(item);
 
     expect(parser.backfillItemId).toHaveBeenCalledWith(item);
     expect(terminalPanel.rekeyItem).toHaveBeenCalledWith(item.id, updatedItem.id);
+    expect(lastActiveStore.rekey).toHaveBeenCalledWith(item.id, updatedItem.id);
     expect(listPanel.rekeyCustomOrder).toHaveBeenCalledWith(item.id, updatedItem.id);
     expect(mergeAndSavePluginData).toHaveBeenCalledTimes(1);
     expect(mergeAndSavePluginData).toHaveBeenCalledWith(expect.anything(), expect.any(Function));
@@ -151,14 +154,17 @@ describe("MainView selection ID backfill", () => {
       setActiveItem: vi.fn(),
       setTitle: vi.fn(),
     };
+    const lastActiveStore = { rekey: vi.fn() };
 
     (view as any).parser = parser;
     (view as any).listPanel = listPanel;
     (view as any).terminalPanel = terminalPanel;
+    (view as any).lastActiveStore = lastActiveStore;
 
     await (view as any).ensureSelectedItemHasDurableId(item);
 
     expect(terminalPanel.rekeyItem).toHaveBeenCalledWith(item.id, updatedItem.id);
+    expect(lastActiveStore.rekey).toHaveBeenCalledWith(item.id, updatedItem.id);
     expect(listPanel.rekeyCustomOrder).toHaveBeenCalledWith(item.id, updatedItem.id);
     expect(mergeAndSavePluginData).not.toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalled();
@@ -433,7 +439,7 @@ describe("MainView stash-on-close (keepSessionsAlive)", () => {
   });
 });
 
-describe("MainView writeLastActive", () => {
+describe("MainView activity timestamp seeding", () => {
   let dom: JSDOM;
 
   beforeEach(() => {
@@ -451,68 +457,88 @@ describe("MainView writeLastActive", () => {
     dom.window.close();
   });
 
-  function makeWriteView() {
+  it("prefers plugin-data timestamps over legacy frontmatter fallback", async () => {
     const view = new MainView({} as any, {} as any, {} as any);
-    const file = new TFile();
-    const modifyFn = vi.fn().mockResolvedValue(undefined);
-    (view as any).allItems = [makeItem({ id: "item-1", path: "tasks/test.md" })];
-    (view as any).app = {
-      vault: {
-        getAbstractFileByPath: vi.fn(() => file),
-        read: vi.fn(),
-        modify: modifyFn,
-      },
+    const item = makeItem({
+      id: "uuid-123",
+      metadata: { lastActive: "2026-04-15T08:00:00Z" },
+    });
+    const activityTracker = {
+      seedTimestamp: vi.fn(),
     };
-    return { view, file, modifyFn, readFn: (view as any).app.vault.read };
-  }
+    const lastActiveStore = {
+      get: vi.fn((itemId: string) => (itemId === "uuid-123" ? "2026-04-16T10:00:00Z" : undefined)),
+      pruneMissingPathIds: vi.fn(),
+    };
+    const listPanel = {
+      render: vi.fn(),
+      setPinnedCustomStates: vi.fn(),
+    };
+    const parser = {
+      loadAll: vi.fn(async () => [item]),
+      groupByColumn: vi.fn(() => ({ active: [item] })),
+    };
+    const terminalPanel = {
+      setItems: vi.fn(),
+    };
 
-  it("does not create a blank line when frontmatter body is empty", async () => {
-    const { view, modifyFn, readFn } = makeWriteView();
-    readFn.mockResolvedValue("---\n---\nBody content");
+    (view as any).activityTracker = activityTracker;
+    (view as any).lastActiveStore = lastActiveStore;
+    (view as any).listPanel = listPanel;
+    (view as any).parser = parser;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).settings = { "adapter.pinnedCustomStates": "[]" };
+    (view as any).adapter = {
+      config: { columns: [{ id: "active", label: "Active", folderName: "active" }] },
+    };
+    (view as any).pluginRef = { loadData: vi.fn(async () => ({ customOrder: {} })) };
 
-    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
+    await (view as any).refreshList();
 
-    expect(modifyFn).toHaveBeenCalledTimes(1);
-    const written = modifyFn.mock.calls[0][1] as string;
-    // Should not have a blank line between opening --- and last-active
-    expect(written).toBe("---\nlast-active: 2026-04-16T10:00:00Z\n---\nBody content");
+    expect(activityTracker.seedTimestamp).toHaveBeenCalledWith("uuid-123", "2026-04-16T10:00:00Z");
+    expect(activityTracker.seedTimestamp).toHaveBeenCalledTimes(1);
+    expect(lastActiveStore.pruneMissingPathIds).toHaveBeenCalledWith(["uuid-123"]);
   });
 
-  it("preserves existing frontmatter fields when inserting last-active", async () => {
-    const { view, modifyFn, readFn } = makeWriteView();
-    readFn.mockResolvedValue("---\nid: uuid-123\nstate: active\n---\nBody");
+  it("falls back to legacy frontmatter when plugin data is missing or invalid", async () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const item = makeItem({
+      id: "uuid-123",
+      metadata: { lastActive: "2026-04-15T08:00:00Z" },
+    });
+    const activityTracker = {
+      seedTimestamp: vi.fn(),
+    };
+    const lastActiveStore = {
+      get: vi.fn(() => "not-a-date"),
+      pruneMissingPathIds: vi.fn(),
+    };
+    const listPanel = {
+      render: vi.fn(),
+      setPinnedCustomStates: vi.fn(),
+    };
+    const parser = {
+      loadAll: vi.fn(async () => [item]),
+      groupByColumn: vi.fn(() => ({ active: [item] })),
+    };
+    const terminalPanel = {
+      setItems: vi.fn(),
+    };
 
-    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
+    (view as any).activityTracker = activityTracker;
+    (view as any).lastActiveStore = lastActiveStore;
+    (view as any).listPanel = listPanel;
+    (view as any).parser = parser;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).settings = { "adapter.pinnedCustomStates": "[]" };
+    (view as any).adapter = {
+      config: { columns: [{ id: "active", label: "Active", folderName: "active" }] },
+    };
+    (view as any).pluginRef = { loadData: vi.fn(async () => ({ customOrder: {} })) };
 
-    const written = modifyFn.mock.calls[0][1] as string;
-    expect(written).toBe(
-      "---\nid: uuid-123\nstate: active\nlast-active: 2026-04-16T10:00:00Z\n---\nBody",
-    );
-  });
+    await (view as any).refreshList();
 
-  it("updates existing last-active field", async () => {
-    const { view, modifyFn, readFn } = makeWriteView();
-    readFn.mockResolvedValue("---\nid: uuid-123\nlast-active: 2026-04-15T08:00:00Z\n---\nBody");
-
-    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
-
-    const written = modifyFn.mock.calls[0][1] as string;
-    expect(written).toBe("---\nid: uuid-123\nlast-active: 2026-04-16T10:00:00Z\n---\nBody");
-  });
-
-  it("does not match last-active in markdown body outside frontmatter", async () => {
-    const { view, modifyFn, readFn } = makeWriteView();
-    readFn.mockResolvedValue(
-      "---\nid: uuid-123\n---\nSome content\nlast-active: 2026-01-01T00:00:00Z\nMore content",
-    );
-
-    await (view as any).writeLastActive("item-1", "2026-04-16T10:00:00Z");
-
-    const written = modifyFn.mock.calls[0][1] as string;
-    // Should insert into frontmatter and leave body unchanged
-    expect(written).toBe(
-      "---\nid: uuid-123\nlast-active: 2026-04-16T10:00:00Z\n---\nSome content\nlast-active: 2026-01-01T00:00:00Z\nMore content",
-    );
+    expect(activityTracker.seedTimestamp).toHaveBeenCalledWith("uuid-123", "2026-04-15T08:00:00Z");
   });
 });
 
