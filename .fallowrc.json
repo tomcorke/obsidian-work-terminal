@@ -1,0 +1,25 @@
+{
+  "entry": ["src/main.ts", "cdp.js"],
+  "dynamicallyLoaded": ["styles.css"],
+  "ignorePatterns": ["docs/**", ".claude/**"],
+  "ignoreExports": [
+    {
+      "file": "src/__mocks__/**",
+      "exports": ["*"]
+    }
+  ],
+  "usedClassMembers": [
+    {
+      "extends": "Modal",
+      "members": ["onOpen", "onClose"]
+    },
+    {
+      "extends": "ItemView",
+      "members": ["getViewType", "getDisplayText", "getIcon", "onOpen", "onClose", "onPaneMenu"]
+    },
+    {
+      "extends": "Plugin",
+      "members": ["onload", "onunload"]
+    }
+  ]
+}
