@@ -7,12 +7,29 @@
 ```bash
 pnpm run build          # production build
 pnpm run dev            # watch mode with CDP hot-reload
-pnpm exec vitest run         # run tests
+pnpm exec vitest run    # run tests
 ```
 
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
 - When packaging or distributing the plugin, keep `pty-wrapper.py` in the plugin directory alongside `main.js`, `manifest.json`, and `styles.css`.
+
+## Running Fallow
+
+Use Fallow for dead code, duplication, and complexity scans:
+
+```bash
+npx fallow --quiet
+npx fallow --summary
+npx fallow dead-code --format json
+```
+
+The repo's `.fallowrc.json` suppresses known project-specific false positives so the report stays actionable:
+
+- `src/main.ts` and `cdp.js` are treated as manual entry points
+- `styles.css` is treated as a runtime-loaded asset
+- Obsidian lifecycle overrides like `Modal.onOpen()`, `Modal.onClose()`, `ItemView.getViewType()`, `ItemView.getIcon()`, `ItemView.getDisplayText()`, `ItemView.onOpen()`, `ItemView.onClose()`, `Plugin.onload()`, and `Plugin.onunload()` are treated as framework-used members
+- `src/__mocks__/**` exports are ignored because Vitest consumes them indirectly
 
 ## Hot reload
 
