@@ -1,11 +1,19 @@
 /**
- * splitTaskProfile - profile and cwd resolution helpers for action-driven
- * Claude launches (Split Task, Retry Enrichment).
+ * splitTaskProfile - profile resolution helpers for action-driven Claude
+ * launches (Split Task, Retry Enrichment).
  *
  * Issue #448 routes these actions through the agent-profile pipeline so they
  * inherit the user's configured command, args, and cwd. Resolution chains
  * are intentionally small and data-only so they can be unit-tested without
  * spinning up TerminalPanelView.
+ *
+ * Cwd resolution for these launches delegates to
+ * `AgentProfileManager.resolveCwd` so Split Task and Retry Enrichment follow
+ * the same chain as every other profile-driven launch
+ * (profile.defaultCwd -> core.defaultTerminalCwd -> "~"). See issue #504 for
+ * the history - an earlier iteration inserted the task file's parent folder
+ * ahead of `core.defaultTerminalCwd`, which silently ignored the user's
+ * configured working directory.
  *
  * ## Fallback chains
  *
@@ -24,12 +32,6 @@
  *     -> default-claude
  *     -> first Claude profile
  *     -> null
- *
- * Cwd (for both actions):
- *   1. Profile's own defaultCwd (if non-empty)
- *   2. Parent directory of the resolved task file (absolute path)
- *   3. core.defaultTerminalCwd
- *   4. "~"
  */
 import type { AgentProfile } from "../core/agents/AgentProfile";
 
@@ -133,50 +135,4 @@ function resolveProfileWithFallbacks(
   // Last resort: any Claude profile at all.
   const anyClaude = availableProfiles.find(isClaudeProfile);
   return anyClaude ?? null;
-}
-
-/**
- * Resolve the cwd for a Split Task / Retry Enrichment launch.
- *
- * Order:
- *   1. Profile's own `defaultCwd` (if non-empty) - lets power users pin a
- *      specific cwd per profile (e.g. a repo root).
- *   2. Parent directory of the task file when provided. Launching in the
- *      task's folder makes file references in the prompt relative to the
- *      task itself.
- *   3. `core.defaultTerminalCwd` - matches legacy behaviour.
- *   4. Literal "~" as an absolute-last fallback.
- *
- * `taskAbsPath` should be absolute; we only use its parent directory and
- * do NOT call expandTilde - that is the spawn layer's job.
- */
-export function resolveSplitTaskCwd(
-  profile: AgentProfile | null,
-  taskAbsPath: string | null,
-  settings: Record<string, unknown>,
-): string {
-  if (profile?.defaultCwd && profile.defaultCwd.trim()) {
-    return profile.defaultCwd.trim();
-  }
-  if (taskAbsPath) {
-    const parent = parentDirectory(taskAbsPath);
-    if (parent) return parent;
-  }
-  const coreCwd = settings["core.defaultTerminalCwd"];
-  if (typeof coreCwd === "string" && coreCwd.trim()) return coreCwd;
-  return "~";
-}
-
-/**
- * Return the parent directory portion of an absolute path, or null if the
- * path has no usable separator. Handles both POSIX (`/`) and Windows/UNC
- * (`\`) separators so it behaves correctly regardless of how the vault
- * adapter reports its base path. Uses a simple string split so this stays
- * dependency-free and trivially unit-testable.
- */
-function parentDirectory(absPath: string): string | null {
-  const trimmed = absPath.replace(/[\\/]+$/, "");
-  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-  if (idx <= 0) return null;
-  return trimmed.slice(0, idx);
 }

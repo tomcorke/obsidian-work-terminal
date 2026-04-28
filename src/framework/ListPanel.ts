@@ -20,11 +20,7 @@ import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import { DangerConfirm } from "./DangerConfirm";
 import { electronRequire, slugify, titleCase } from "../core/utils";
-import {
-  resolveRetryEnrichmentProfile,
-  resolveSplitTaskCwd,
-  resolveSplitTaskProfile,
-} from "./splitTaskProfile";
+import { resolveRetryEnrichmentProfile, resolveSplitTaskProfile } from "./splitTaskProfile";
 import {
   type ActivityTracker,
   type ViewMode,
@@ -789,7 +785,7 @@ export class ListPanel {
       // the user's Claude profile settings (command, args, cwd, login shell wrap).
       // resolveOverride returns null when no profile manager is wired, in which
       // case spawnClaudeWithPrompt falls back to the pre-448 non-profile path.
-      const override = this.resolveSplitLaunchOverride(newFullPath);
+      const override = this.resolveSplitLaunchOverride();
       this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope", override ?? undefined);
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
@@ -814,10 +810,8 @@ export class ListPanel {
         // Retry-enrichment launches now follow the configured enrichment
         // profile (see splitTaskProfile.resolveRetryEnrichmentProfile for
         // the fallback chain) so they match what background enrichment
-        // would have used. Use path.resolve via resolveWorkItemAbsPath so
-        // the cwd is computed correctly on any platform.
-        const taskFullPath = this.resolveWorkItemAbsPath(item.path);
-        const override = this.resolveRetryLaunchOverride(taskFullPath);
+        // would have used.
+        const override = this.resolveRetryLaunchOverride();
         this.terminalPanel.spawnClaudeWithPrompt(prompt, "Enrich", override ?? undefined);
       } catch (err) {
         console.error("[work-terminal] retryEnrichment failed:", err);
@@ -830,24 +824,31 @@ export class ListPanel {
    * Resolve the profile + cwd override used when launching a Claude session
    * for Split Task. Returns null when no profile manager is wired so callers
    * fall back to the legacy non-profile path.
+   *
+   * Cwd resolution delegates to `AgentProfileManager.resolveCwd` so this path
+   * uses the same chain as every other profile-driven launch
+   * (profile.defaultCwd -> core.defaultTerminalCwd -> "~"). See issue #504
+   * for why the task file's parent directory is deliberately NOT considered.
    */
-  private resolveSplitLaunchOverride(
-    taskAbsPath: string | null,
-  ): { profile: AgentProfile; cwdOverride: string } | null {
+  private resolveSplitLaunchOverride(): {
+    profile: AgentProfile;
+    cwdOverride: string;
+  } | null {
     if (!this.profileManager) return null;
     const profile = resolveSplitTaskProfile(this.settings, this.profileManager.getProfiles());
     if (!profile) return null;
-    const cwdOverride = resolveSplitTaskCwd(profile, taskAbsPath, this.settings);
+    const cwdOverride = this.profileManager.resolveCwd(profile, this.settings);
     return { profile, cwdOverride };
   }
 
-  private resolveRetryLaunchOverride(
-    taskAbsPath: string | null,
-  ): { profile: AgentProfile; cwdOverride: string } | null {
+  private resolveRetryLaunchOverride(): {
+    profile: AgentProfile;
+    cwdOverride: string;
+  } | null {
     if (!this.profileManager) return null;
     const profile = resolveRetryEnrichmentProfile(this.settings, this.profileManager.getProfiles());
     if (!profile) return null;
-    const cwdOverride = resolveSplitTaskCwd(profile, taskAbsPath, this.settings);
+    const cwdOverride = this.profileManager.resolveCwd(profile, this.settings);
     return { profile, cwdOverride };
   }
 

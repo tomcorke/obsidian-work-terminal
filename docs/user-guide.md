@@ -596,7 +596,7 @@ Split a complex task into smaller pieces using the **Split Task** context menu o
 
 The split task includes metadata linking it to the parent task, making it easy to trace the relationship.
 
-The Claude session launched by Split Task runs through the same agent-profile pipeline as the **Claude (ctx)** tab bar button. This means the session inherits your configured command, arguments, login-shell wrapping, and any custom profile flags (e.g. `--dangerously-skip-permissions`, `--allowedTools`, `--model`). The working directory defaults to the **parent folder of the new task file**, so relative paths mentioned in the split scope prompt resolve against the task's own location. To override the profile for Split Task specifically, see [Agent actions settings](#agent-actions-settings).
+The Claude session launched by Split Task runs through the same agent-profile pipeline as the **Claude (ctx)** tab bar button. This means the session inherits your configured command, arguments, login-shell wrapping, working directory, and any custom profile flags (e.g. `--dangerously-skip-permissions`, `--allowedTools`, `--model`). The working directory resolves as `profile.defaultCwd` (if set) -> the global **Default terminal CWD** (Settings > Terminal) -> `~`, the same chain every other profile-driven launch uses. Both file paths in the split scope prompt are passed as absolute paths, so the session does not need to start in the task folder to resolve them. To override the profile for Split Task specifically, see [Agent actions settings](#agent-actions-settings).
 
 ### Retry enrichment
 

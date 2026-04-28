@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentProfile } from "../core/agents/AgentProfile";
-import {
-  resolveRetryEnrichmentProfile,
-  resolveSplitTaskCwd,
-  resolveSplitTaskProfile,
-} from "./splitTaskProfile";
+import { resolveRetryEnrichmentProfile, resolveSplitTaskProfile } from "./splitTaskProfile";
 
 function makeProfile(overrides: Partial<AgentProfile> & { id: string }): AgentProfile {
   return {
@@ -127,58 +123,7 @@ describe("resolveRetryEnrichmentProfile", () => {
   });
 });
 
-describe("resolveSplitTaskCwd", () => {
-  it("uses the profile defaultCwd when set", () => {
-    const cwd = resolveSplitTaskCwd(custom, "/vault/tasks/todo/foo.md", {
-      "core.defaultTerminalCwd": "~/work",
-    });
-    expect(cwd).toBe("/repos/app");
-  });
-
-  it("falls back to the task file parent directory when profile cwd is empty", () => {
-    const cwd = resolveSplitTaskCwd(claude, "/vault/tasks/todo/foo.md", {});
-    expect(cwd).toBe("/vault/tasks/todo");
-  });
-
-  it("uses core.defaultTerminalCwd when no task path is provided", () => {
-    const cwd = resolveSplitTaskCwd(claude, null, {
-      "core.defaultTerminalCwd": "~/work",
-    });
-    expect(cwd).toBe("~/work");
-  });
-
-  it('returns "~" when nothing else is available', () => {
-    const cwd = resolveSplitTaskCwd(null, null, {});
-    expect(cwd).toBe("~");
-  });
-
-  it("treats a profile with whitespace-only cwd as unset", () => {
-    const whitespaceProfile = makeProfile({ id: "ws", defaultCwd: "   " });
-    const cwd = resolveSplitTaskCwd(whitespaceProfile, "/vault/tasks/active/bar.md", {});
-    expect(cwd).toBe("/vault/tasks/active");
-  });
-
-  it("handles a single-segment absolute path by falling through to core cwd", () => {
-    const cwd = resolveSplitTaskCwd(null, "/toplevel.md", {
-      "core.defaultTerminalCwd": "~/work",
-    });
-    expect(cwd).toBe("~/work");
-  });
-
-  it("extracts the parent from a Windows-style path using backslashes", () => {
-    const cwd = resolveSplitTaskCwd(claude, "C:\\vault\\tasks\\todo\\foo.md", {});
-    expect(cwd).toBe("C:\\vault\\tasks\\todo");
-  });
-
-  it("extracts the parent from a UNC path", () => {
-    const cwd = resolveSplitTaskCwd(claude, "\\\\server\\share\\tasks\\foo.md", {});
-    expect(cwd).toBe("\\\\server\\share\\tasks");
-  });
-
-  it("strips trailing separators before splitting (POSIX and Windows)", () => {
-    const posix = resolveSplitTaskCwd(claude, "/vault/tasks/todo/foo.md///", {});
-    expect(posix).toBe("/vault/tasks/todo");
-    const windows = resolveSplitTaskCwd(claude, "C:\\vault\\tasks\\todo\\foo.md\\\\", {});
-    expect(windows).toBe("C:\\vault\\tasks\\todo");
-  });
-});
+// resolveSplitTaskCwd was removed in the fix for issue #504; Split Task /
+// Retry Enrichment now delegate cwd resolution to
+// AgentProfileManager.resolveCwd, which is covered by
+// src/core/agents/AgentProfileManager.test.ts.

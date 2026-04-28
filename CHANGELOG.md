@@ -6,6 +6,9 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+### Fixes
+- **Split Task and Retry Enrichment now respect the configured Default terminal CWD.** These actions previously launched Claude in the parent folder of the task file (inside the vault), silently overriding the user's `core.defaultTerminalCwd` setting and any global working-directory configuration. Cwd resolution now delegates to the same path every other profile-driven launch uses (`profile.defaultCwd` -> `core.defaultTerminalCwd` -> `~`). The split-scope prompt already contains absolute paths for both task files, so Claude can resolve them from any cwd. (#504)
+
 ## [0.5.2] - 2026-04-27
 
 ### Fixes
