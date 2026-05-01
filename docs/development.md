@@ -251,6 +251,46 @@ pnpm run obsidian:test:init
 - Prefer `CDP_PORT=<port> node cdp.js screenshot` for verification over visual
   inspection of the hidden window
 
+### UI changes require smoke assertions
+
+Any PR that introduces a new user-visible UI element (new panel, modal, tab,
+embedded view, overlay, or other visual surface) **must** add a corresponding
+assertion to `scripts/smoke-test-runner.js` covering that surface. The existing
+generic sanity sweep will catch zero-size / clipping / out-of-bounds bugs
+automatically, but surfaces with their own invariants (active slot fills
+container, inactive slots hidden, placement round-trip works, etc.) need a
+bespoke assertion.
+
+Rationale: without this rule, smoke tests only ever cover features that
+existed when the tests were written. New features that ship broken from the
+start (not just regressions in existing features) have no automated floor.
+See the revised-scope discussion in #491 for more.
+
+If an assertion is impractical to add (e.g. the feature requires live agent
+output and cannot be triggered synthetically), call it out explicitly in the
+PR description so reviewers can weigh the tradeoff.
+
+### Pre-merge checklist
+
+Run this locally before merging any PR that touches layout, CSS, the terminal
+panel, the detail view, the list panel, or any `.wt-*` selector:
+
+- [ ] `pnpm exec vitest run` passes
+- [ ] `pnpm run build` passes
+- [ ] `pnpm run format:check` passes (or `pnpm run format` has been run)
+- [ ] `pnpm run lint` passes
+- [ ] `pnpm run test:smoke` passes (Tier 1 + layout invariants + sanity sweep)
+- [ ] `output/smoke-screenshots/` captures have been visually reviewed for
+  obvious layout regressions (zero-size panels, clipped content, split that
+  is not 50/50, etc.)
+- [ ] Any new user-visible UI has at least one smoke assertion or a documented
+  exemption in the PR description
+
+The smoke test run is local-only (Obsidian is not headless-safe in CI). It
+takes ~45s. "Run it when you remember" is not enough for UI-touching
+changes; the screenshot review is cheap and is the only thing catching "new
+feature shipped broken" today.
+
 ### Issue replication and fix verification workflow
 
 When investigating or fixing bugs, use isolated Obsidian instances to replicate and

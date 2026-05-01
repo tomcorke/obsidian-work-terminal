@@ -720,8 +720,9 @@ function readNextFrame(buffer) {
 }
 
 class CDPClient {
-  constructor(socket) {
+  constructor(socket, timeoutMs = DEFAULT_TIMEOUT_MS) {
     this.socket = socket;
+    this.timeoutMs = timeoutMs;
     this.buffer = Buffer.alloc(0);
     this.pending = new Map();
     this.nextId = 1;
@@ -766,7 +767,7 @@ class CDPClient {
       });
 
       request.on("upgrade", (_response, socket) => {
-        resolve(new CDPClient(socket));
+        resolve(new CDPClient(socket, timeoutMs));
       });
       request.setTimeout(timeoutMs, () => {
         request.destroy(new Error(`Timed out opening CDP websocket on ${host}:${port}`));
@@ -812,6 +813,7 @@ class CDPClient {
         continue;
       }
       this.pending.delete(message.id);
+      clearTimeout(pending.timer);
 
       if (message.error) {
         pending.reject(new Error(message.error.message || "CDP command failed"));
@@ -823,6 +825,7 @@ class CDPClient {
 
   rejectAll(error) {
     for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pending.clear();
@@ -835,7 +838,11 @@ class CDPClient {
     this.socket.write(encodeClientFrame(payload));
 
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`Timed out waiting for CDP response: ${method}`));
+      }, this.timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
     });
   }
 
@@ -883,8 +890,7 @@ function elementRectExpression(selector) {
       if (!element) {
         throw new Error("Selector not found: " + selector);
       }
-      element.scrollIntoView({ block: "center", inline: "center" });
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      element.scrollIntoView({ block: "center", inline: "nearest" });
       const rect = element.getBoundingClientRect();
       return {
         x: rect.left + rect.width / 2,
