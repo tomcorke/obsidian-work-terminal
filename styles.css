@@ -2220,7 +2220,8 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-compact .wt-card-wrapper {
   --wt-card-padding-x: 6px;
   --wt-card-padding-y: 2px;
-  margin: 1px 0;
+  margin-top: 1px;
+  margin-bottom: 1px;
   border-radius: 3px;
 }
 
@@ -2367,7 +2368,8 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-comfortable .wt-card-wrapper {
   --wt-card-padding-x: 8px;
   --wt-card-padding-y: 4px;
-  margin: 2px 0;
+  margin-top: 2px;
+  margin-bottom: 2px;
   border-radius: 4px;
 }
 
