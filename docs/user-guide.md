@@ -386,7 +386,7 @@ The settings page is organised into five top-level sections. Use this map to jum
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
 | **Detail view** | Placement dropdown (split / tab / navigate / preview / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
-| **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for task enrichment, and **Configure agent actions...** for Split Task profile binding. |
+| **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for task enrichment, and **Configure agent actions...** for task-scoping profile binding. |
 
 Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Task enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.
 
@@ -595,7 +595,7 @@ Pinned state is persisted across sessions using the task's UUID, so it survives 
 
 ### Parent tasks and sub-tasks
 
-Use **Create Sub-task...** from a task card's context menu to break a task into a focused child task without losing the relationship to the parent. The flow asks what area the child should focus on, creates a new task file in the same state column, and writes explicit frontmatter such as:
+Use **Create Sub-task...** from a task card's context menu to break a task into a focused child task without losing the relationship to the parent. The flow asks what area the child should focus on, creates a new task file in the same state column, launches a visible scoping session for the new child, and writes explicit frontmatter such as:
 
 ```yaml
 sub-task: true
@@ -606,9 +606,9 @@ parent:
   link: "[[TASK-parent|Parent task title]]"
 ```
 
-Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
+Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the parent is pinned, a newly created sub-task is pinned immediately as well so it appears in the same visible group, nested directly underneath. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
 
-New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and the focus area as the initial goal. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. Agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
+New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and the focus area as the initial goal. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. The scoping session launched after creation uses the same agent-profile binding as Split Task, and agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
 
 ### Task splitting
 
@@ -630,9 +630,9 @@ The retry session also runs through a resolvable agent profile. By default it fo
 
 ### Agent actions settings
 
-Profile binding for the **Split Task** adapter-driven action lives behind the **Configure agent actions...** button under **Settings > Agents**. The dialog exposes one dropdown:
+Profile binding for the task-scoping adapter actions lives behind the **Configure agent actions...** button under **Settings > Agents**. The dialog exposes one dropdown:
 
-- **Split task profile** - which agent profile to launch for Split Task. Default: the built-in Claude (ctx) profile.
+- **Split task profile** - which agent profile to launch for both **Split Task** and **Create Sub-task...**. Default: the built-in Claude (ctx) profile.
 
 The dropdown lists configured Claude-family agent profiles only. Select **Default (see description)** to restore the fallback chain described above. Changes persist immediately; no save button is required.
 
