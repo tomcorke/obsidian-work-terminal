@@ -254,6 +254,18 @@ export interface WorkItemPromptBuilder {
   describePromptFormat?(): string;
 }
 
+export interface ItemCreationResult {
+  id: string;
+  columnId: string;
+  /** Vault-relative path for the newly-created item, when available. */
+  path?: string;
+  /** Display title for the newly-created item, when available. */
+  title?: string;
+  enrichmentDone?: Promise<void>;
+  /** Prompt to launch in a visible session instead of headless background enrichment. */
+  foregroundEnrichment?: { prompt: string; label?: string };
+}
+
 /**
  * The adapter bundle is the single extension point for adapters.
  * Implement all required factory methods; optional methods have defaults
@@ -313,7 +325,7 @@ export interface AdapterBundle {
   onItemCreated?(
     title: string,
     settings: Record<string, unknown>,
-  ): Promise<{ id: string; columnId: string; enrichmentDone?: Promise<void> } | void>;
+  ): Promise<ItemCreationResult | void>;
   /**
    * Split an existing item: create a new task file with a related reference
    * to the source item. Returns the vault path and UUID of the new file.
@@ -417,7 +429,7 @@ export abstract class BaseAdapter implements AdapterBundle {
   async onItemCreated(
     _title: string,
     _settings: Record<string, unknown>,
-  ): Promise<{ id: string; columnId: string; enrichmentDone?: Promise<void> } | void> {
+  ): Promise<ItemCreationResult | void> {
     // no-op by default
   }
 

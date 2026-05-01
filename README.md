@@ -24,7 +24,7 @@ See the **[User Guide](docs/user-guide.md)** for more screenshots covering every
 
 - **Kanban board** with collapsible sections, drag-drop reordering, custom sort order, and dynamic columns for custom states
 - **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom agent profiles (Copilot, Strands, or any CLI)
-- **Agent integration** - reusable profiles with the Profile Manager, agent state detection (active/waiting/idle), background enrichment with retry and failure logging
+- **Agent integration** - reusable profiles with the Profile Manager, agent state detection (active/waiting/idle), background or foreground task enrichment with retry and failure logging
 - **Multiple view modes** - standard kanban columns, compact single-line cards with indicator dots, comfortable density, or activity view grouped by recency
 - **Task card customisation** - custom icons (Lucide or emoji), card indicator rules for visual flags, pinned tasks section, configurable badges
 - **Detail view placements** - split, tab, navigate, read-only preview tab, embedded editor tab (experimental), or disabled

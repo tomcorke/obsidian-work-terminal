@@ -1103,6 +1103,7 @@ export class TerminalPanelView {
       profile: AgentProfile;
       cwdOverride?: string;
     },
+    targetItem?: WorkItem,
   ): Promise<void> {
     if (!profileOverride) {
       await this.spawnAgentSession({
@@ -1110,6 +1111,7 @@ export class TerminalPanelView {
         sessionType: "claude-with-context",
         prompt,
         label: label || "Claude (ctx)",
+        targetItemId: targetItem?.id,
       });
       return;
     }
@@ -1117,6 +1119,7 @@ export class TerminalPanelView {
     await this.spawnFromResolvedProfile(profileOverride.profile, prompt, {
       label,
       cwdOverride: profileOverride.cwdOverride,
+      targetItem,
     });
   }
 
@@ -1132,6 +1135,7 @@ export class TerminalPanelView {
     options: {
       label?: string;
       cwdOverride?: string;
+      targetItem?: WorkItem;
     },
   ): Promise<void> {
     if (!this.profileManager) {
@@ -1141,6 +1145,7 @@ export class TerminalPanelView {
         sessionType: "claude-with-context",
         prompt,
         label: options.label || "Claude (ctx)",
+        targetItemId: options.targetItem?.id,
       });
       return;
     }
@@ -1157,7 +1162,7 @@ export class TerminalPanelView {
     const label = options.label || profile.button.label || profile.name;
 
     // Expand $sessionId lazily (TabManager resolves it) and $workTerminalPrompt now.
-    const item = this.getActiveItem();
+    const item = options.targetItem ?? this.getActiveItem();
     let expandedArgs = extraArgs;
     if (item && expandedArgs) {
       const absPath = this.resolveWorkItemPath(item.path);
@@ -1167,7 +1172,7 @@ export class TerminalPanelView {
     const resolvedConfig = this.resolveLaunchConfig(profile.agentType, profile);
     const launchConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
 
-    await this.spawnAgentSession({
+    const tab = await this.spawnAgentSession({
       agentType: profile.agentType,
       sessionType,
       command,
@@ -1179,28 +1184,27 @@ export class TerminalPanelView {
       freshSettings: fresh,
       launchConfigOverrides,
       loginShellWrap: profile.loginShellWrap,
+      targetItemId: options.targetItem?.id,
     });
 
-    // Apply profile metadata to the newly created tab so it styles / rekeys
-    // identically to button-launched profile sessions.
-    const activeItemId = this.tabManager.getActiveItemId();
-    if (activeItemId) {
-      const tabs = this.tabManager.getTabs(activeItemId);
-      const lastTab = tabs[tabs.length - 1];
-      if (lastTab) {
-        lastTab.profileId = profile.id;
-        if (profile.button.color) lastTab.profileColor = profile.button.color;
-        lastTab.activityPatterns =
-          resolvedConfig.activityPatterns ??
-          (profile.agentType === "custom"
-            ? { activeLinePatterns: [], activeJoinedPatterns: [] }
-            : undefined);
-        if (profile.loginShellWrap) {
-          lastTab.loginShellWrap = true;
-        }
-        this.renderTabBar();
-      }
+    if (!tab) {
+      return;
     }
+
+    // Apply profile metadata to the newly created tab so it styles / rekeys
+    // identically to button-launched profile sessions. Do not fall back to an
+    // existing tab when spawnAgentSession failed to create one.
+    tab.profileId = profile.id;
+    if (profile.button.color) tab.profileColor = profile.button.color;
+    tab.activityPatterns =
+      resolvedConfig.activityPatterns ??
+      (profile.agentType === "custom"
+        ? { activeLinePatterns: [], activeJoinedPatterns: [] }
+        : undefined);
+    if (profile.loginShellWrap) {
+      tab.loginShellWrap = true;
+    }
+    this.renderTabBar();
   }
 
   // ---------------------------------------------------------------------------
@@ -1567,7 +1571,9 @@ export class TerminalPanelView {
     // auto-building a context prompt (e.g. when suppressAdapterPrompt is set).
     let prompt = options.prompt;
     if (withContext && prompt === undefined) {
-      const item = this.getActiveItem();
+      const item = options.targetItemId
+        ? this.allItems.find((candidate) => candidate.id === options.targetItemId) || null
+        : this.getActiveItem();
       if (!item) {
         new Notice(
           `Select a ${this.adapter.config.itemName} first to launch ${launchConfig.cliDisplayName} with context`,
@@ -1613,10 +1619,25 @@ export class TerminalPanelView {
 
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     const cmdForArgs = options.loginShellWrap ? agentCmd.trim() : resolved;
-    const tab = this.tabManager.createTab(resolved, cwd, label, options.sessionType, undefined, [
-      cmdForArgs,
-      ...args,
-    ]);
+    const commandArgs = [cmdForArgs, ...args];
+    const tab = options.targetItemId
+      ? this.tabManager.createTabForItem(
+          options.targetItemId,
+          resolved,
+          cwd,
+          label,
+          options.sessionType,
+          undefined,
+          commandArgs,
+        )
+      : this.tabManager.createTab(
+          resolved,
+          cwd,
+          label,
+          options.sessionType,
+          undefined,
+          commandArgs,
+        );
     if (tab) {
       if (options.loginShellWrap) {
         tab.loginShellWrap = true;

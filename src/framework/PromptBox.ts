@@ -5,7 +5,7 @@
  */
 import type { Plugin } from "obsidian";
 import { getProfileLaunchConfig, type AgentProfile } from "../core/agents/AgentProfile";
-import type { AdapterBundle } from "../core/interfaces";
+import type { AdapterBundle, ItemCreationResult } from "../core/interfaces";
 
 export class PromptBox {
   private containerEl: HTMLElement;
@@ -16,12 +16,7 @@ export class PromptBox {
   private settings: Record<string, any>;
   private onPlaceholderAdd: (path: string) => void;
   private onPlaceholderResolve: (path: string, success: boolean) => void;
-  private onNewItemCreated: (
-    id: string,
-    columnId: string,
-    placeholderPath: string,
-    enrichmentDone?: Promise<void>,
-  ) => void;
+  private onNewItemCreated: (result: ItemCreationResult, placeholderPath: string) => void;
   private expanded = false;
 
   constructor(
@@ -31,12 +26,7 @@ export class PromptBox {
     settings: Record<string, any>,
     onPlaceholderAdd: (path: string) => void,
     onPlaceholderResolve: (path: string, success: boolean) => void,
-    onNewItemCreated: (
-      id: string,
-      columnId: string,
-      placeholderPath: string,
-      enrichmentDone?: Promise<void>,
-    ) => void,
+    onNewItemCreated: (result: ItemCreationResult, placeholderPath: string) => void,
   ) {
     this.adapter = adapter;
     this.plugin = plugin;
@@ -175,7 +165,7 @@ export class PromptBox {
         }
         const result = await this.adapter.onItemCreated(title, enrichmentSettings);
         if (result && result.id) {
-          this.onNewItemCreated(result.id, result.columnId, placeholderPath, result.enrichmentDone);
+          this.onNewItemCreated(result, placeholderPath);
           hasCardMapping = true;
         }
       }

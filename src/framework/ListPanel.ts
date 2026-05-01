@@ -705,9 +705,17 @@ export class ListPanel {
     this.onSelect(item);
   }
 
-  selectById(id: string): void {
-    const item = this.items.find((i) => i.id === id);
-    if (item) this.selectItem(item);
+  selectById(id: string, fallbackItem?: WorkItem): void {
+    const item = this.items.find((i) => i.id === id) ?? fallbackItem;
+    if (!item) return;
+
+    this.selectedId = id;
+    this.listEl.querySelectorAll(".wt-card-selected").forEach((el) => {
+      el.removeClass("wt-card-selected");
+    });
+    const cardEl = this.listEl.querySelector(`[data-item-id="${id}"]`);
+    if (cardEl) cardEl.addClass("wt-card-selected");
+    this.onSelect(item);
   }
 
   // ---------------------------------------------------------------------------

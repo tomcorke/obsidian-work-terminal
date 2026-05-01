@@ -11,6 +11,7 @@ import {
 } from "./TaskFileTemplate";
 import type { SplitSource, EnrichmentMeta } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
+import type { ItemCreationResult } from "../../core/interfaces";
 import {
   STATE_FOLDER_MAP,
   type KanbanColumn,
@@ -125,10 +126,16 @@ function detectSilentFailure(stdout: string): string | null {
   return match ? match[0] : null;
 }
 
-export interface ItemCreatedResult {
-  id: string;
-  columnId: string;
+export interface ItemCreatedResult extends ItemCreationResult {
+  path: string;
+  title: string;
   enrichmentDone: Promise<void>;
+}
+
+export type EnrichmentLaunchMode = "background" | "foreground";
+
+export function resolveEnrichmentLaunchMode(settings: Record<string, any>): EnrichmentLaunchMode {
+  return settings["adapter.enrichmentMode"] === "foreground" ? "foreground" : "background";
 }
 
 /**
@@ -181,6 +188,7 @@ export async function handleItemCreated(
   const claudeExtraArgs = profileOverride?.args ?? (settings["core.claudeExtraArgs"] || "");
 
   const enrichmentEnabled = settings["adapter.enrichmentEnabled"] !== false;
+  const enrichmentMode = resolveEnrichmentLaunchMode(settings);
 
   const id = crypto.randomUUID();
   const filename = generatePendingFilename();
@@ -225,7 +233,21 @@ export async function handleItemCreated(
 
   // Skip enrichment if explicitly disabled
   if (!enrichmentEnabled) {
-    return { id, columnId, enrichmentDone: Promise.resolve() };
+    return { id, columnId, path: filePath, title, enrichmentDone: Promise.resolve() };
+  }
+
+  if (enrichmentMode === "foreground") {
+    return {
+      id,
+      columnId,
+      path: filePath,
+      title,
+      enrichmentDone: Promise.resolve(),
+      foregroundEnrichment: {
+        prompt: enrichPrompt!,
+        label: "Enrich",
+      },
+    };
   }
 
   // Use the generic headless agent when a profile override specifies non-Claude
@@ -406,7 +428,7 @@ export async function handleItemCreated(
     },
   );
 
-  return { id, columnId, enrichmentDone };
+  return { id, columnId, path: filePath, title, enrichmentDone };
 }
 
 export interface SubTaskParentSource {

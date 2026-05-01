@@ -503,6 +503,40 @@ describe("BackgroundEnrich", () => {
       expect(app.vault.modify).not.toHaveBeenCalled();
     });
 
+    it("returns a foreground enrichment prompt without spawning headless enrichment", async () => {
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Foreground enrich", {
+        ...defaultSettings,
+        "adapter.enrichmentMode": "foreground",
+      });
+      await result.enrichmentDone;
+
+      expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+      expect(spawnHeadlessAgentMock).not.toHaveBeenCalled();
+      expect(result.path).toMatch(/^2 - Areas\/Tasks\/todo\/TASK-\d{8}-\d{4}-pending-/);
+      expect(result.title).toBe("Foreground enrich");
+      expect(result.foregroundEnrichment).toEqual({
+        prompt: expect.stringContaining("/vault/2 - Areas/Tasks/todo/"),
+        label: "Enrich",
+      });
+      expect(app.createdFiles[0].content).toContain("enrichment:");
+    });
+
+    it("uses a custom enrichment prompt for foreground enrichment", async () => {
+      const app = makeItemCreatedApp({ fileExistsAfterEnrich: true });
+
+      const result = await handleItemCreated(app, "Foreground custom", {
+        ...defaultSettings,
+        "adapter.enrichmentMode": "foreground",
+        "adapter.enrichmentPrompt": "Review $filePath and $absoluteFilePath",
+      });
+
+      expect(result.foregroundEnrichment?.prompt).toContain("Review 2 - Areas/Tasks/todo/");
+      expect(result.foregroundEnrichment?.prompt).toContain("/vault/2 - Areas/Tasks/todo/");
+      expect(spawnHeadlessClaudeMock).not.toHaveBeenCalled();
+    });
+
     it("uses custom enrichment prompt when adapter.enrichmentPrompt is set", async () => {
       spawnHeadlessClaudeMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
       const app = makeItemCreatedApp({ fileExistsAfterEnrich: false });

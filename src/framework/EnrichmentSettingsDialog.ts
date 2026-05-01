@@ -1,7 +1,7 @@
 /**
- * EnrichmentSettingsDialog - dedicated modal housing the background-enrichment
- * settings group. Extracted from the main SettingsTab so the growing surface
- * (toggle, prompt, retry prompt, agent profile, timeout, plus default-prompt
+ * EnrichmentSettingsDialog - dedicated modal housing automatic task enrichment
+ * settings. Extracted from the main SettingsTab so the growing surface
+ * (toggle, launch mode, prompt, retry prompt, agent profile, timeout, plus default-prompt
  * previews) has room to breathe without cluttering the top-level settings page.
  *
  * Settings are persisted through the same `plugin.saveSettings` path as the
@@ -59,11 +59,12 @@ export class EnrichmentSettingsDialog extends Modal {
     contentEl.empty();
     contentEl.addClass("wt-enrichment-dialog");
 
-    contentEl.createEl("h3", { text: "Background enrichment" });
+    contentEl.createEl("h3", { text: "Task enrichment" });
     contentEl.createEl("p", {
       text:
-        "Configure how newly created tasks are enriched by a headless agent. " +
-        "Leave the prompt fields blank to use the built-in defaults shown below each field.",
+        "Configure how newly created tasks are enriched. Use background mode for a headless agent, " +
+        "or foreground mode to launch a visible session in the new task. Leave the prompt fields " +
+        "blank to use the built-in defaults shown below each field.",
       cls: "wt-enrichment-dialog__help",
     });
 
@@ -81,10 +82,11 @@ export class EnrichmentSettingsDialog extends Modal {
     const settings: Record<string, unknown> = data.settings || {};
 
     this.renderEnabledToggle(containerEl, settings);
+    this.renderModeDropdown(containerEl, settings);
     this.renderPromptField(
       containerEl,
       "Enrichment prompt",
-      "Prompt sent to the headless agent for background enrichment. Use " +
+      "Prompt sent to the enrichment agent. Use " +
         "$filePath (vault-relative path) or $absoluteFilePath (absolute " +
         "filesystem path) as placeholders for the task file path.",
       "adapter.enrichmentPrompt",
@@ -173,8 +175,8 @@ export class EnrichmentSettingsDialog extends Modal {
   private renderEnabledToggle(containerEl: HTMLElement, settings: Record<string, unknown>): void {
     const value = settings["adapter.enrichmentEnabled"] !== false;
     new Setting(containerEl)
-      .setName("Enable background enrichment")
-      .setDesc("Automatically enrich new tasks in the background using a headless agent session.")
+      .setName("Enable enrichment")
+      .setDesc("Automatically enrich new tasks using the selected launch mode.")
       .addToggle((toggle) =>
         toggle.setValue(value).onChange(async (newValue) => {
           await this.saveSettings((s) => {
@@ -182,6 +184,27 @@ export class EnrichmentSettingsDialog extends Modal {
           });
         }),
       );
+  }
+
+  private renderModeDropdown(containerEl: HTMLElement, settings: Record<string, unknown>): void {
+    const value = (settings["adapter.enrichmentMode"] as string) || "background";
+    new Setting(containerEl)
+      .setName("Enrichment launch mode")
+      .setDesc(
+        "Background runs a headless agent as before. Foreground creates the task, selects it, " +
+          "then launches a visible session and sends the enrichment prompt there.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("background", "Background (headless)");
+        dropdown.addOption("foreground", "Foreground (visible session)");
+        dropdown
+          .setValue(value === "foreground" ? "foreground" : "background")
+          .onChange(async (newValue) => {
+            await this.saveSettings((s) => {
+              s["adapter.enrichmentMode"] = newValue === "foreground" ? "foreground" : "background";
+            });
+          });
+      });
   }
 
   /**
@@ -231,7 +254,7 @@ export class EnrichmentSettingsDialog extends Modal {
     new Setting(containerEl)
       .setName("Enrichment agent profile")
       .setDesc(
-        "Agent profile to use for background enrichment. The profile's command, " +
+        "Agent profile to use for automatic enrichment. The profile's command, " +
           "arguments, and working directory are used. Select 'Default' to use the " +
           "core Claude command settings.",
       )
@@ -287,7 +310,7 @@ export class EnrichmentSettingsDialog extends Modal {
       .setName("Enrichment timeout (seconds)")
       .setDesc(
         "Maximum time in seconds for background enrichment before it is killed. " +
-          "Leave empty for default (300s / 5 min).",
+          "Foreground sessions are not killed by this timeout. Leave empty for default (300s / 5 min).",
       )
       .addText((text) => {
         text.inputEl.placeholder = "300";

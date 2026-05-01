@@ -174,6 +174,7 @@ function createListPanel(
   const onSessionFilterChange = options.onSessionFilterChange ?? vi.fn();
   const settings = options.settings ?? {};
 
+  const onSelect = vi.fn();
   const panel = new ListPanel(
     parentEl,
     adapter as any,
@@ -182,7 +183,7 @@ function createListPanel(
     plugin as any,
     terminalPanel as any,
     settings,
-    vi.fn(),
+    onSelect,
     onCustomOrderChange,
     onSessionFilterChange,
   );
@@ -193,6 +194,7 @@ function createListPanel(
     mover,
     onCustomOrderChange,
     onSessionFilterChange,
+    onSelect,
     plugin,
     terminalPanel,
   };
@@ -596,6 +598,22 @@ describe("ListPanel", () => {
         el.getAttribute("data-item-id"),
       ),
     ).toEqual(["task-1"]);
+  });
+
+  it("can preselect an item before its card is rendered", () => {
+    const { panel, onSelect } = createListPanel();
+    const item = makeItem("new-task", "New task");
+
+    panel.selectById(item.id, item);
+
+    expect((panel as any).selectedId).toBe(item.id);
+    expect(onSelect).toHaveBeenCalledWith(item);
+
+    panel.render({ todo: [item] }, { todo: [] });
+
+    expect(
+      document.querySelector(`[data-item-id="${item.id}"]`)?.classList.contains("wt-card-selected"),
+    ).toBe(true);
   });
 
   it("rekeys stored order and ID-keyed UI state when a task gets a durable ID", () => {
