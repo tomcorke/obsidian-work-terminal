@@ -6,17 +6,27 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-01
+
+### Highlights
+- Added first-class parent and sub-task support, including nested task rendering, parent-aware context variables, and a dedicated Create Sub-task flow.
+- New tasks can now be enriched in the foreground so you can watch and interact with the agent session as it runs.
+- Create Sub-task now stays reliable across pinned parents, Activity view, and metadata-cache lag, so new children keep the right nesting and scope handoff from the start.
+
 ### Improvements
 - **Added first-class parent/sub-task support for task files.** Task cards now offer **Create Sub-task...**, child files get explicit readable `sub-task`/`parent` frontmatter, useful parent metadata is inherited at creation time, sub-tasks render indented under their parent when they appear in the same section, and agent profile templates can reference parent context with `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath`. (#508)
 - **New tasks can now be enriched in the foreground.** The enrichment settings dialog has a new launch-mode option: keep the existing headless background enrichment, or create the task, select it, and launch a visible enrichment session in that new task so the user can watch and interact with the agent. (#511)
-
-### Developer tooling
-- **Smoke test runner now covers layout invariants, generic sanity checks, and reference screenshots.** `pnpm run test:smoke` runs three layout invariants (active slot fills container, inactive slots hidden, tab round-trip holds the invariants) across all three detail-view placements (`split`, `embedded`, `preview`) and a generic sanity sweep after every test group (no zero-size visible `.wt-*` elements, no silently clipped overflow, no absolutely-positioned elements outside their positioned ancestor). A fixed set of six reference screenshots is written to `output/smoke-screenshots/` with no comparison - developers review visually. `docs/development.md` adds a pre-merge checklist plus an explicit "new UI requires a smoke assertion" rule. (#491)
 
 ### Fixes
 - **Create Sub-task now starts a scoped session and stays grouped with pinned parents.** The action now launches the same profile-driven scoping workflow used by Split Task, tightens the focus dialog layout, and automatically pins new child tasks under pinned parents so they appear nested in the same visible group immediately after creation. (#515)
 - **Create Sub-task now uses the task's real state from Activity view.** Activity recency buckets such as `recent` are no longer written as task state/tag metadata, and dynamic/custom states no longer silently fall back to the `todo` folder when a safer folder can be resolved. (#508)
 - **Split Task and Retry Enrichment now respect the configured Default terminal CWD.** These actions previously launched Claude in the parent folder of the task file (inside the vault), silently overriding the user's `core.defaultTerminalCwd` setting and any global working-directory configuration. Cwd resolution now delegates to the same path every other profile-driven launch uses (`profile.defaultCwd` -> `core.defaultTerminalCwd` -> `~`). The split-scope prompt already contains absolute paths for both task files, so Claude can resolve them from any cwd. (#504)
+- **The Active sessions filter layout is aligned correctly again.** Board controls no longer look offset when the active-session filter is shown. (#512)
+- **Moving a task to Done now waits until the move completes before closing related sessions.** This avoids premature teardown while the task transition is still in flight. (#513)
+- **Create Sub-task follow-up handling now preserves nesting while metadata catches up.** Placeholder child initialization, scope handoff, and transient metadata registration now stay consistent during the metadata-cache lag window. (#516, #518)
+
+### Full changelog
+- Compare with 0.5.2: https://github.com/tomcorke/obsidian-work-terminal/compare/0.5.2...0.6.0
 
 ## [0.5.2] - 2026-04-27
 
