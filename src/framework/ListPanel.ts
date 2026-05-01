@@ -944,7 +944,12 @@ export class ListPanel {
         },
       };
 
-      await this.mirrorPinnedParent(parentItem, newItem);
+      try {
+        await this.mirrorPinnedParent(parentItem, newItem);
+      } catch (err) {
+        console.error("[work-terminal] Failed to mirror pinned parent for sub-task:", err);
+        new Notice("Sub-task created, but pin mirroring failed. See console for details.");
+      }
 
       this.groups[effectiveColumnId] = [...(this.groups[effectiveColumnId] || []), newItem];
       this.items.push(newItem);
@@ -953,8 +958,7 @@ export class ListPanel {
       new Notice(`Created sub-task: ${result.title}`);
 
       const prompt = this.buildSubTaskScopePrompt(parentItem, newItem, focus);
-      const override = this.resolveTaskScopingLaunchOverride();
-      this.terminalPanel.spawnClaudeWithPrompt(prompt, "Sub-task scope", override ?? undefined);
+      this.launchTaskScopingSession(prompt, "Sub-task scope");
     } catch (err) {
       console.error("[work-terminal] createSubTask failed:", err);
       new Notice("Failed to create sub-task. See console for details.");
@@ -1011,8 +1015,7 @@ export class ListPanel {
       // the user's Claude profile settings (command, args, cwd, login shell wrap).
       // resolveOverride returns null when no profile manager is wired, in which
       // case spawnClaudeWithPrompt falls back to the pre-448 non-profile path.
-      const override = this.resolveTaskScopingLaunchOverride();
-      this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope", override ?? undefined);
+      this.launchTaskScopingSession(prompt, "Split scope");
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
     }
@@ -1071,13 +1074,19 @@ export class ListPanel {
     const parentIndex = pinnedIds.indexOf(parentItem.id);
     const nextOrder =
       parentIndex >= 0
-        ? [
-            ...pinnedIds.slice(0, parentIndex + 1),
-            newItem.id,
-            ...pinnedIds.slice(parentIndex + 1),
-          ]
+        ? [...pinnedIds.slice(0, parentIndex + 1), newItem.id, ...pinnedIds.slice(parentIndex + 1)]
         : [...pinnedIds, newItem.id];
     await this.pinStore.reorder(nextOrder);
+  }
+
+  private launchTaskScopingSession(prompt: string, label: string): void {
+    const override = this.resolveTaskScopingLaunchOverride();
+    void this.terminalPanel
+      .spawnClaudeWithPrompt(prompt, label, override ?? undefined)
+      .catch((err) => {
+        console.error(`[work-terminal] ${label} launch failed:`, err);
+        new Notice("Failed to start scoping session. See console for details.");
+      });
   }
 
   /**

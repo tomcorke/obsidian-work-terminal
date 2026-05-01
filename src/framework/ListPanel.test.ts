@@ -3,6 +3,8 @@ import { JSDOM } from "jsdom";
 import { ListPanel } from "./ListPanel";
 import type { WorkItem } from "../core/interfaces";
 
+const { noticeMock } = vi.hoisted(() => ({ noticeMock: vi.fn() }));
+
 vi.mock("obsidian", () => ({
   Menu: class {
     addSeparator() {}
@@ -19,7 +21,9 @@ vi.mock("obsidian", () => ({
     showAtMouseEvent() {}
   },
   Notice: class {
-    constructor(_message: string) {}
+    constructor(message: string) {
+      noticeMock(message);
+    }
   },
   Modal: class {},
 }));
@@ -248,6 +252,7 @@ describe("ListPanel", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    noticeMock.mockReset();
     dom.window.close();
   });
 
@@ -367,6 +372,46 @@ describe("ListPanel", () => {
       '[data-column="__pinned__"] [data-item-id="child"]',
     ) as HTMLElement;
     expect(childEl.classList.contains("wt-card-subtask")).toBe(true);
+  });
+
+  it("still renders a new sub-task when pin mirroring fails", async () => {
+    const onCreateSubTask = vi.fn().mockResolvedValue({
+      id: "child",
+      path: "Tasks/todo/child.md",
+      title: "Child focus",
+    });
+    const { panel } = createListPanel({ onCreateSubTask });
+    const pinStore = createMockPinStore(["parent"]);
+    pinStore.reorder.mockRejectedValueOnce(new Error("write failed"));
+    panel.setPinStore(pinStore as any);
+
+    const parent = makeItem("parent", "Parent");
+    panel.render({ todo: [parent] }, { todo: ["parent"] });
+
+    await (panel as any).createSubTask(parent, "__pinned__", "Child focus");
+
+    expect(document.querySelector('[data-item-id="child"]')).not.toBeNull();
+    expect(noticeMock).toHaveBeenCalledWith(
+      "Sub-task created, but pin mirroring failed. See console for details.",
+    );
+    expect(noticeMock).toHaveBeenCalledWith("Created sub-task: Child focus");
+  });
+
+  it("shows a notice when sub-task scoping session launch fails", async () => {
+    const onCreateSubTask = vi.fn().mockResolvedValue({
+      id: "child",
+      path: "Tasks/todo/child.md",
+      title: "Child focus",
+    });
+    const { panel, terminalPanel } = createListPanel({ onCreateSubTask });
+    terminalPanel.spawnClaudeWithPrompt.mockRejectedValueOnce(new Error("spawn failed"));
+
+    await (panel as any).createSubTask(makeItem("parent", "Parent"), "todo", "Child focus");
+    await Promise.resolve();
+
+    expect(noticeMock).toHaveBeenCalledWith(
+      "Failed to start scoping session. See console for details.",
+    );
   });
 
   it("keeps success animation pending until the new card renders", () => {
