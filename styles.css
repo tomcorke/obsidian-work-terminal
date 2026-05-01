@@ -182,6 +182,35 @@
   opacity: 0.4;
 }
 
+.modal.wt-subtask-modal {
+  width: min(620px, calc(100vw - 64px));
+}
+
+.wt-subtask-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wt-subtask-modal-copy {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.wt-subtask-focus-input {
+  width: 100%;
+  min-height: 112px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.wt-subtask-modal-actions {
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
 .wt-card-subtask {
   margin-left: calc(var(--wt-subtask-depth, 1) * 16px);
 }

@@ -3,7 +3,7 @@
  * drag-drop reordering, filtering, selection, session badges, and
  * agent state indicators.
  */
-import { Menu, Modal, Notice, Setting } from "obsidian";
+import { Menu, Modal, Notice } from "obsidian";
 import type { App, Plugin, TFile } from "obsidian";
 import type {
   AdapterBundle,
@@ -45,16 +45,20 @@ class SubTaskFocusModal extends Modal {
   }
 
   onOpen(): void {
+    this.modalEl.addClass("wt-subtask-modal");
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h2", { text: "Create sub-task" });
-    contentEl.createEl("p", {
+
+    const bodyEl = contentEl.createDiv({ cls: "wt-subtask-modal-content" });
+    bodyEl.createEl("h2", { text: "Create sub-task" });
+    bodyEl.createEl("p", {
+      cls: "wt-subtask-modal-copy",
       text: `What area of “${this.parentTitle}” should this sub-task focus on?`,
     });
 
-    const input = contentEl.createEl("textarea", {
+    const input = bodyEl.createEl("textarea", {
       cls: "wt-subtask-focus-input",
-      attr: { rows: "4", placeholder: "Describe the focused area or outcome..." },
+      attr: { rows: "5", placeholder: "Describe the focused area or outcome..." },
     });
     input.addEventListener("input", () => {
       this.value = input.value;
@@ -66,20 +70,26 @@ class SubTaskFocusModal extends Modal {
       }
     });
 
-    new Setting(contentEl)
-      .addButton((button) =>
-        button.setButtonText("Cancel").onClick(() => {
-          this.close();
-        }),
-      )
-      .addButton((button) =>
-        button
-          .setButtonText("Create sub-task")
-          .setCta()
-          .onClick(() => this.submit()),
-      );
+    const actionsEl = bodyEl.createDiv({
+      cls: "modal-button-container wt-subtask-modal-actions",
+    });
+    const cancelButton = actionsEl.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+
+    const createButton = actionsEl.createEl("button", {
+      cls: "mod-cta",
+      text: "Create sub-task",
+    });
+    createButton.addEventListener("click", () => this.submit());
 
     input.focus();
+  }
+
+  onClose(): void {
+    this.modalEl.removeClass("wt-subtask-modal");
+    this.contentEl.empty();
   }
 
   private submit(): void {
@@ -933,11 +943,18 @@ export class ListPanel {
           isSubTask: true,
         },
       };
+
+      await this.mirrorPinnedParent(parentItem, newItem);
+
       this.groups[effectiveColumnId] = [...(this.groups[effectiveColumnId] || []), newItem];
       this.items.push(newItem);
       this.render(this.groups, this.customOrder);
       this.selectItem(newItem);
       new Notice(`Created sub-task: ${result.title}`);
+
+      const prompt = this.buildSubTaskScopePrompt(parentItem, newItem, focus);
+      const override = this.resolveTaskScopingLaunchOverride();
+      this.terminalPanel.spawnClaudeWithPrompt(prompt, "Sub-task scope", override ?? undefined);
     } catch (err) {
       console.error("[work-terminal] createSubTask failed:", err);
       new Notice("Failed to create sub-task. See console for details.");
@@ -994,7 +1011,7 @@ export class ListPanel {
       // the user's Claude profile settings (command, args, cwd, login shell wrap).
       // resolveOverride returns null when no profile manager is wired, in which
       // case spawnClaudeWithPrompt falls back to the pre-448 non-profile path.
-      const override = this.resolveSplitLaunchOverride();
+      const override = this.resolveTaskScopingLaunchOverride();
       this.terminalPanel.spawnClaudeWithPrompt(prompt, "Split scope", override ?? undefined);
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
@@ -1029,17 +1046,51 @@ export class ListPanel {
     })();
   }
 
+  private buildSubTaskScopePrompt(parentItem: WorkItem, newItem: WorkItem, focus: string): string {
+    const parentFullPath = this.resolveWorkItemAbsPath(parentItem.path) ?? parentItem.path;
+    const newFullPath = this.resolveWorkItemAbsPath(newItem.path) ?? newItem.path;
+
+    return (
+      `Read the parent task file at ${parentFullPath} and the new sub-task file at ${newFullPath}. ` +
+      `The user created the sub-task to focus on: ${focus}. ` +
+      `Use that focus as the initial scope for the new task. ` +
+      `Ask concise follow-up questions only if needed. ` +
+      `Then update the new task file in place: refine the title if helpful, ` +
+      `add a brief description with relevant context from the parent task, ` +
+      `keep the goal aligned to the requested focus, and log the scope in the activity log. ` +
+      `If you change the title, rename the file to match the convention ` +
+      `TASK-YYYYMMDD-HHMM-slugified-title.md while preserving the existing date prefix.`
+    );
+  }
+
+  private async mirrorPinnedParent(parentItem: WorkItem, newItem: WorkItem): Promise<void> {
+    if (!this.pinStore?.isPinned(parentItem.id)) return;
+
+    await this.pinStore.pin(newItem.id);
+    const pinnedIds = this.pinStore.getPinnedIds().filter((id) => id !== newItem.id);
+    const parentIndex = pinnedIds.indexOf(parentItem.id);
+    const nextOrder =
+      parentIndex >= 0
+        ? [
+            ...pinnedIds.slice(0, parentIndex + 1),
+            newItem.id,
+            ...pinnedIds.slice(parentIndex + 1),
+          ]
+        : [...pinnedIds, newItem.id];
+    await this.pinStore.reorder(nextOrder);
+  }
+
   /**
    * Resolve the profile + cwd override used when launching a Claude session
-   * for Split Task. Returns null when no profile manager is wired so callers
-   * fall back to the legacy non-profile path.
+   * for task-scoping actions. Returns null when no profile manager is wired
+   * so callers fall back to the legacy non-profile path.
    *
    * Cwd resolution delegates to `AgentProfileManager.resolveCwd` so this path
    * uses the same chain as every other profile-driven launch
    * (profile.defaultCwd -> core.defaultTerminalCwd -> "~"). See issue #504
    * for why the task file's parent directory is deliberately NOT considered.
    */
-  private resolveSplitLaunchOverride(): {
+  private resolveTaskScopingLaunchOverride(): {
     profile: AgentProfile;
     cwdOverride: string;
   } | null {

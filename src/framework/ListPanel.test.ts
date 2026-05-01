@@ -158,6 +158,7 @@ function createListPanel(
     getPersistedSessions: vi.fn(() => []),
     getIdleSince: vi.fn(() => null),
     resumeSession: vi.fn(),
+    spawnClaudeWithPrompt: vi.fn(),
     clearResumeSessionsForItem: vi.fn().mockResolvedValue(undefined),
   };
 
@@ -316,6 +317,56 @@ describe("ListPanel", () => {
       "active",
       expect.any(Object),
     );
+  });
+
+  it("launches a scoping session after creating a sub-task", async () => {
+    const onCreateSubTask = vi.fn().mockResolvedValue({
+      id: "child",
+      path: "Tasks/todo/child.md",
+      title: "Child focus",
+    });
+    const { panel, terminalPanel } = createListPanel({ onCreateSubTask });
+    const parent = makeItem("parent", "Parent");
+
+    await (panel as any).createSubTask(parent, "todo", "Child focus");
+
+    expect(terminalPanel.spawnClaudeWithPrompt).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Read the parent task file at /vault/Tasks/parent.md and the new sub-task file at /vault/Tasks/todo/child.md.",
+      ),
+      "Sub-task scope",
+      undefined,
+    );
+    expect(terminalPanel.spawnClaudeWithPrompt.mock.calls[0][0]).toContain(
+      "The user created the sub-task to focus on: Child focus.",
+    );
+  });
+
+  it("pins a new sub-task directly under a pinned parent", async () => {
+    const onCreateSubTask = vi.fn().mockResolvedValue({
+      id: "child",
+      path: "Tasks/todo/child.md",
+      title: "Child focus",
+    });
+    const { panel } = createListPanel({ onCreateSubTask });
+    const pinStore = createMockPinStore(["parent"]);
+    panel.setPinStore(pinStore as any);
+
+    const parent = makeItem("parent", "Parent");
+    panel.render({ todo: [parent] }, { todo: ["parent"] });
+
+    await (panel as any).createSubTask(parent, "__pinned__", "Child focus");
+
+    expect(pinStore.pin).toHaveBeenCalledWith("child");
+    expect(pinStore.reorder).toHaveBeenCalledWith(["parent", "child"]);
+    const pinnedCards = Array.from(
+      document.querySelectorAll('[data-column="__pinned__"] [data-item-id]'),
+    );
+    expect(pinnedCards.map((el) => el.getAttribute("data-item-id"))).toEqual(["parent", "child"]);
+    const childEl = document.querySelector(
+      '[data-column="__pinned__"] [data-item-id="child"]',
+    ) as HTMLElement;
+    expect(childEl.classList.contains("wt-card-subtask")).toBe(true);
   });
 
   it("keeps success animation pending until the new card renders", () => {
