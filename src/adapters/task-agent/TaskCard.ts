@@ -437,6 +437,13 @@ export class TaskCard implements CardRenderer {
       callback: () => ctx.onSplitTask(item),
     });
 
+    if (ctx.onCreateSubTask) {
+      (items as any[]).push({
+        title: "Create Sub-task...",
+        callback: () => ctx.onCreateSubTask?.(item),
+      });
+    }
+
     (items as any[]).push({ separator: true });
 
     // Move to other columns

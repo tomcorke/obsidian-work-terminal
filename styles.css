@@ -179,6 +179,29 @@
   opacity: 0.4;
 }
 
+.wt-card-subtask {
+  margin-left: calc(var(--wt-subtask-depth, 1) * 16px);
+  border-left-color: var(--background-modifier-border);
+}
+
+.wt-card-subtask::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--wt-subtask-depth, 1) * 16px + 6px);
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--background-modifier-border);
+  opacity: 0.8;
+}
+
+.wt-card-subtask-orphaned {
+  margin-left: 0;
+}
+
+.wt-card-subtask-orphaned::before {
+  display: none;
+}
+
 /* Card title row */
 .wt-card-title-row {
   position: relative;

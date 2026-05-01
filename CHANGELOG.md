@@ -6,6 +6,9 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+### Improvements
+- **Added first-class parent/sub-task support for task files.** Task cards now offer **Create Sub-task...**, child files get explicit readable `sub-task`/`parent` frontmatter, useful parent metadata is inherited at creation time, sub-tasks render indented under their parent when they appear in the same section, and agent profile templates can reference parent context with `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath`. (#508)
+
 ### Fixes
 - **Split Task and Retry Enrichment now respect the configured Default terminal CWD.** These actions previously launched Claude in the parent folder of the task file (inside the vault), silently overriding the user's `core.defaultTerminalCwd` setting and any global working-directory configuration. Cwd resolution now delegates to the same path every other profile-driven launch uses (`profile.defaultCwd` -> `core.defaultTerminalCwd` -> `~`). The split-scope prompt already contains absolute paths for both task files, so Claude can resolve them from any cwd. (#504)
 

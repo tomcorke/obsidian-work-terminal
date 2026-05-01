@@ -206,6 +206,8 @@ export interface CardActionContext {
   onInsertAfter(existingId: string, newItem: WorkItem): void;
   /** Split this item: create a new task with a related reference, then spawn Claude (ctx) to scope it. */
   onSplitTask(sourceItem: WorkItem): void;
+  /** Create a child task linked to this item as its parent. */
+  onCreateSubTask?(parentItem: WorkItem): void;
   /** Delete this item (moves to trash). */
   onDelete(): void;
   /** Close all terminal sessions for this item. */
@@ -322,6 +324,17 @@ export interface AdapterBundle {
     settings: Record<string, unknown>,
   ): Promise<{ path: string; id: string } | null>;
   /**
+   * Create a child task linked to an existing parent item. The returned item
+   * remains a normal work item and is rendered nested by the framework when
+   * its parent appears in the same section.
+   */
+  onCreateSubTask?(
+    parentItem: WorkItem,
+    focus: string,
+    columnId: string,
+    settings: Record<string, unknown>,
+  ): Promise<{ path: string; id: string; title: string } | null>;
+  /**
    * Transform a detected agent session rename label before applying it.
    * Called when Claude outputs "Session renamed to: <name>".
    * Return the label to use (default: return detectedLabel unchanged).
@@ -413,6 +426,15 @@ export abstract class BaseAdapter implements AdapterBundle {
     _columnId: string,
     _settings: Record<string, unknown>,
   ): Promise<{ path: string; id: string } | null> {
+    return null;
+  }
+
+  async onCreateSubTask(
+    _parentItem: WorkItem,
+    _focus: string,
+    _columnId: string,
+    _settings: Record<string, unknown>,
+  ): Promise<{ path: string; id: string; title: string } | null> {
     return null;
   }
 

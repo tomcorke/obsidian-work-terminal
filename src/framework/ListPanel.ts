@@ -3,8 +3,8 @@
  * drag-drop reordering, filtering, selection, session badges, and
  * agent state indicators.
  */
-import { Menu, Notice } from "obsidian";
-import type { Plugin, TFile } from "obsidian";
+import { Menu, Modal, Notice, Setting } from "obsidian";
+import type { App, Plugin, TFile } from "obsidian";
 import type {
   AdapterBundle,
   WorkItem,
@@ -32,6 +32,66 @@ import {
 
 /** Virtual column ID for the pinned section. Not a real adapter column. */
 const PINNED_COLUMN_ID = "__pinned__";
+
+class SubTaskFocusModal extends Modal {
+  private value = "";
+
+  constructor(
+    app: App,
+    private parentTitle: string,
+    private onSubmit: (focus: string) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Create sub-task" });
+    contentEl.createEl("p", {
+      text: `What area of “${this.parentTitle}” should this sub-task focus on?`,
+    });
+
+    const input = contentEl.createEl("textarea", {
+      cls: "wt-subtask-focus-input",
+      attr: { rows: "4", placeholder: "Describe the focused area or outcome..." },
+    });
+    input.addEventListener("input", () => {
+      this.value = input.value;
+    });
+    input.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        this.submit();
+      }
+    });
+
+    new Setting(contentEl)
+      .addButton((button) =>
+        button.setButtonText("Cancel").onClick(() => {
+          this.close();
+        }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Create sub-task")
+          .setCta()
+          .onClick(() => this.submit()),
+      );
+
+    input.focus();
+  }
+
+  private submit(): void {
+    const focus = this.value.trim();
+    if (!focus) {
+      new Notice("Enter a focus area for the sub-task");
+      return;
+    }
+    this.close();
+    this.onSubmit(focus);
+  }
+}
 
 export class ListPanel {
   private containerEl: HTMLElement;
@@ -419,15 +479,25 @@ export class ListPanel {
 
     const displayMode = this.getDisplayMode();
 
-    for (const item of items) {
+    const renderedItems = this.orderItemsForNestedRendering(items);
+
+    for (const { item, depth } of renderedItems) {
       // For pinned items, use the pinned column as the visual column
       // but track the real column for move operations
       const effectiveColumn = isPinnedSection ? PINNED_COLUMN_ID : columnId;
       const ctx = this.buildCardActionContext(item, effectiveColumn);
       const cardEl = this.cardRenderer.render(item, ctx, displayMode);
       cardEl.addClass("wt-card-wrapper");
+      if (depth > 0) {
+        cardEl.addClass("wt-card-subtask");
+        cardEl.style.setProperty("--wt-subtask-depth", String(Math.min(depth, 4)));
+      }
       cardEl.setAttribute("data-item-id", item.id);
       cardEl.setAttribute("draggable", "true");
+      const parentId = this.getParentId(item);
+      if (parentId) {
+        cardEl.setAttribute("data-parent-id", parentId);
+      }
 
       // State badge for pinned items - shows the real column/state
       if (isPinnedSection) {
@@ -516,6 +586,60 @@ export class ListPanel {
     }
   }
 
+  private orderItemsForNestedRendering(
+    items: WorkItem[],
+  ): Array<{ item: WorkItem; depth: number }> {
+    const itemIds = new Set(items.map((item) => item.id));
+    const childrenByParent = new Map<string, WorkItem[]>();
+    const roots: WorkItem[] = [];
+
+    for (const item of items) {
+      const parentId = this.getParentId(item);
+      if (parentId && itemIds.has(parentId) && parentId !== item.id) {
+        const children = childrenByParent.get(parentId) || [];
+        children.push(item);
+        childrenByParent.set(parentId, children);
+      } else {
+        roots.push(item);
+      }
+    }
+
+    const ordered: Array<{ item: WorkItem; depth: number }> = [];
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+
+    const append = (item: WorkItem, depth: number) => {
+      if (visited.has(item.id)) return;
+      if (visiting.has(item.id)) {
+        ordered.push({ item, depth: 0 });
+        visited.add(item.id);
+        return;
+      }
+
+      visiting.add(item.id);
+      ordered.push({ item, depth });
+      visited.add(item.id);
+      for (const child of childrenByParent.get(item.id) || []) {
+        append(child, depth + 1);
+      }
+      visiting.delete(item.id);
+    };
+
+    for (const root of roots) {
+      append(root, 0);
+    }
+    for (const item of items) {
+      append(item, 0);
+    }
+
+    return ordered;
+  }
+
+  private getParentId(item: WorkItem): string {
+    const parent = (item.metadata as Record<string, any> | undefined)?.parent;
+    return typeof parent?.id === "string" ? parent.id : "";
+  }
+
   private sortItems(items: WorkItem[], columnId: string): WorkItem[] {
     const order = this.customOrder[columnId] || [];
     if (order.length === 0) return [...items];
@@ -550,6 +674,9 @@ export class ListPanel {
       },
       onSplitTask: (sourceItem: WorkItem) => {
         this.splitTask(sourceItem, currentColumn);
+      },
+      onCreateSubTask: (parentItem: WorkItem) => {
+        this.promptCreateSubTask(parentItem, currentColumn);
       },
       onDelete: () => this.deleteItem(item),
       onCloseSessions: () => this.terminalPanel.closeAllSessions(item.id),
@@ -731,6 +858,72 @@ export class ListPanel {
       console.log(`[work-terminal] Split task created: "${newItem.title}" after ${existingId}`);
     } catch (err) {
       console.error("[work-terminal] Split task creation failed:", err);
+    }
+  }
+
+  private promptCreateSubTask(parentItem: WorkItem, columnId: string): void {
+    new SubTaskFocusModal(this.app, parentItem.title, (focus) => {
+      void this.createSubTask(parentItem, columnId, focus);
+    }).open();
+  }
+
+  private async createSubTask(
+    parentItem: WorkItem,
+    columnId: string,
+    focus: string,
+  ): Promise<void> {
+    const effectiveColumnId = columnId === PINNED_COLUMN_ID ? parentItem.state : columnId;
+    if (!this.adapter.onCreateSubTask) {
+      console.warn("[work-terminal] createSubTask: adapter has no onCreateSubTask");
+      return;
+    }
+
+    try {
+      const result = await this.adapter.onCreateSubTask(
+        parentItem,
+        focus,
+        effectiveColumnId,
+        this.settings,
+      );
+      if (!result) return;
+
+      const existingOrder = this.customOrder[effectiveColumnId] || [];
+      const baseOrder =
+        existingOrder.length > 0
+          ? existingOrder
+          : this.sortItems(this.groups[effectiveColumnId] || [], effectiveColumnId).map(
+              (item) => item.id,
+            );
+      const withoutChild = baseOrder.filter((id) => id !== result.id);
+      const parentIndex = withoutChild.indexOf(parentItem.id);
+      if (parentIndex >= 0) {
+        withoutChild.splice(parentIndex + 1, 0, result.id);
+        this.customOrder[effectiveColumnId] = withoutChild;
+        this.onCustomOrderChange(this.customOrder);
+      }
+
+      const newItem: WorkItem = {
+        id: result.id,
+        path: result.path,
+        title: result.title,
+        state: effectiveColumnId,
+        metadata: {
+          parent: {
+            id: parentItem.id,
+            title: parentItem.title,
+            path: parentItem.path,
+          },
+          isSubTask: true,
+        },
+      };
+      this.groups[effectiveColumnId] = [...(this.groups[effectiveColumnId] || []), newItem];
+      this.items.push(newItem);
+      this.render(this.groups, this.customOrder);
+      this.selectItem(newItem);
+      new Notice(`Created sub-task: ${result.title}`);
+    } catch (err) {
+      console.error("[work-terminal] createSubTask failed:", err);
+      new Notice("Failed to create sub-task. See console for details.");
     }
   }
 
@@ -1128,14 +1321,32 @@ export class ListPanel {
       const cards = section.querySelectorAll(".wt-card-wrapper");
       let visibleCount = 0;
 
+      const matches = new Map<Element, boolean>();
       for (const card of Array.from(cards)) {
         const textMatch =
           !this.filterTerm || (card.textContent?.toLowerCase() || "").includes(this.filterTerm);
         const sessionMatch =
           !sessionItemIds || sessionItemIds.has(card.getAttribute("data-item-id") || "");
-        const match = textMatch && sessionMatch;
-        (card as HTMLElement).style.display = match ? "" : "none";
-        if (match) visibleCount++;
+        matches.set(card, textMatch && sessionMatch);
+      }
+
+      for (const card of Array.from(cards)) {
+        const match = matches.get(card) ?? false;
+        const cardEl = card as HTMLElement;
+        cardEl.style.display = match ? "" : "none";
+        cardEl.removeClass("wt-card-subtask-orphaned");
+        if (match) {
+          const parentId = card.getAttribute("data-parent-id");
+          const parentCard = parentId
+            ? Array.from(cards).find(
+                (candidate) => candidate.getAttribute("data-item-id") === parentId,
+              )
+            : null;
+          if (parentId && (!parentCard || matches.get(parentCard) === false)) {
+            cardEl.addClass("wt-card-subtask-orphaned");
+          }
+          visibleCount++;
+        }
       }
 
       // Hide section if all cards filtered out

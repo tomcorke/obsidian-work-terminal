@@ -38,6 +38,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Core settings](#core-settings)
 - [Advanced features](#advanced-features)
   - [Pinning tasks](#pinning-tasks)
+  - [Parent tasks and sub-tasks](#parent-tasks-and-sub-tasks)
   - [Task splitting](#task-splitting)
   - [Guided tour](#guided-tour)
   - [Debug API](#debug-api)
@@ -205,6 +206,7 @@ Right-click any task card to open the context menu with these options:
 - **Move to Top** - moves the card to the top of its current column
 - **Retry Enrichment** - re-runs background enrichment (shown only when enrichment previously failed)
 - **Split Task** - creates a new task linked to this one and opens a Claude session to scope it
+- **Create Sub-task...** - prompts for a focused area, then creates a normal child task with explicit parent frontmatter
 - **Move to [column]** - moves the task to a different column (Priority, Active, To Do, Done, or any dynamic columns)
 - **Done & Close Sessions** - moves to Done and closes all terminal sessions for this task
 - **Copy Name** - copies the task title to clipboard
@@ -414,6 +416,10 @@ The per-profile **Context prompt** field is the place to configure additional co
 | `$state` | Work item state (e.g. "priority", "active") |
 | `$filePath` | Vault-relative file path |
 | `$absoluteFilePath` | Fully resolved absolute filesystem path (useful for agents that need to read files directly) |
+| `$parentTitle` | Parent task title for sub-tasks, otherwise empty |
+| `$parentId` | Parent task UUID for sub-tasks, otherwise empty |
+| `$parentFilePath` | Parent task vault-relative file path for sub-tasks, otherwise empty |
+| `$parentAbsoluteFilePath` | Parent task absolute filesystem path when resolvable, otherwise the parent vault-relative path or empty |
 | `$id` | Work item UUID |
 | `$sessionId` | Agent session ID (assigned at launch) |
 | `$workTerminalPrompt` | The fully assembled context prompt (only meaningful in arguments, not in the context template itself) |
@@ -586,15 +592,32 @@ In **standard mode**, pinned cards show a state label badge (e.g. "Active", "To 
 
 Pinned state is persisted across sessions using the task's UUID, so it survives file renames and moves.
 
+### Parent tasks and sub-tasks
+
+Use **Create Sub-task...** from a task card's context menu to break a task into a focused child task without losing the relationship to the parent. The flow asks what area the child should focus on, creates a new task file in the same state column, and writes explicit frontmatter such as:
+
+```yaml
+sub-task: true
+parent:
+  id: parent-task-uuid
+  title: Parent task title
+  path: 2 - Areas/Tasks/active/TASK-parent.md
+  link: "[[TASK-parent|Parent task title]]"
+```
+
+Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
+
+New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and the focus area as the initial goal. Agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
+
 ### Task splitting
 
 Split a complex task into smaller pieces using the **Split Task** context menu option. This:
 
 1. Creates a new task file with a reference back to the original task
 2. Places the new task in the specified column
-3. Launches a Claude session scoped to the new sub-task
+3. Launches a Claude session scoped to the new split task
 
-The split task includes metadata linking it to the parent task, making it easy to trace the relationship.
+Split Task remains available for agent-assisted scoping. For a direct parent/child relationship that creates the child immediately from a user-provided focus area, use **Create Sub-task...** instead.
 
 The Claude session launched by Split Task runs through the same agent-profile pipeline as the **Claude (ctx)** tab bar button. This means the session inherits your configured command, arguments, login-shell wrapping, working directory, and any custom profile flags (e.g. `--dangerously-skip-permissions`, `--allowedTools`, `--model`). The working directory resolves as `profile.defaultCwd` (if set) -> the global **Default terminal CWD** (Settings > Terminal) -> `~`, the same chain every other profile-driven launch uses. Both file paths in the split scope prompt are passed as absolute paths, so the session does not need to start in the task folder to resolve them. To override the profile for Split Task specifically, see [Agent actions settings](#agent-actions-settings).
 
