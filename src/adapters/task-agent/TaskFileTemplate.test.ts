@@ -149,6 +149,15 @@ describe("generateTaskContent", () => {
     expect(content).toContain("Requested scope: Investigate API");
   });
 
+  it("normalizes multiline activity log entries onto one bullet", () => {
+    const content = generateTaskContent("Test", "todo", undefined, "test-id", undefined, {
+      activityLogEntries: ["Requested scope:\n  Investigate API\n now"],
+    });
+
+    expect(content).toContain("Requested scope: Investigate API now");
+    expect(content).not.toContain("Requested scope:\n");
+  });
+
   it("includes enrichment block when enrichment metadata is provided", () => {
     const content = generateTaskContent("Test", "todo", undefined, "test-id", {
       profile: "pi",

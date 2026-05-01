@@ -24,6 +24,13 @@ export interface EnrichmentMeta {
   cwd: string;
 }
 
+function normaliseActivityLogEntry(entry: string): string {
+  return entry
+    .trim()
+    .replace(/\s*\r?\n\s*/g, " ")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
 export function generateTaskContent(
   title: string,
   state: string,
@@ -83,7 +90,10 @@ export function generateTaskContent(
     goal.length > 0 ? `\n${goal.map((entry) => `  - ${yamlQuoteValue(entry)}`).join("\n")}` : " []";
   const activityLog = [
     `- **${dateStr}** - Task created${activitySuffix}`,
-    ...(options.activityLogEntries || []).map((entry) => `- **${dateStr}** - ${entry}`),
+    ...(options.activityLogEntries || [])
+      .map((entry) => normaliseActivityLogEntry(entry))
+      .filter((entry) => entry.length > 0)
+      .map((entry) => `- **${dateStr}** - ${entry}`),
   ].join("\n");
 
   const enrichmentSection = enrichment

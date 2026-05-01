@@ -515,7 +515,7 @@ export async function handleSubTaskCreated(
     title,
     tags: inheritedTags,
     source: parent.source ?? {
-      type: "other",
+      type: "prompt",
       id: "",
       url: "",
       captured: "",

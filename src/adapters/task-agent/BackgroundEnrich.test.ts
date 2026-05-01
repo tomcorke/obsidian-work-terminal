@@ -1128,6 +1128,7 @@ describe("BackgroundEnrich", () => {
         path: "2 - Areas/Tasks/todo/parent.md",
         link: "[[parent|Parent task]]",
       });
+      expect(result.task.source.type).toBe("prompt");
       expect(result.task.isSubTask).toBe(true);
     });
   });
