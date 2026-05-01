@@ -4,10 +4,20 @@ import {
   spawnHeadlessAgent,
   DEFAULT_TIMEOUT_MS,
 } from "../../core/claude/HeadlessClaude";
-import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
+import {
+  generateTaskContent,
+  generatePendingFilename,
+  generateTaskFilename,
+} from "./TaskFileTemplate";
 import type { SplitSource, EnrichmentMeta } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
-import { STATE_FOLDER_MAP, type KanbanColumn } from "./types";
+import {
+  STATE_FOLDER_MAP,
+  type KanbanColumn,
+  type TaskParent,
+  type TaskPriority,
+  type TaskSource,
+} from "./types";
 import { writeEnrichmentLog, type EnrichmentLogParams } from "./EnrichmentLogger";
 
 /**
@@ -399,6 +409,16 @@ export async function handleItemCreated(
   return { id, columnId, enrichmentDone };
 }
 
+export interface SubTaskParentSource {
+  id: string;
+  title: string;
+  path: string;
+  filename: string;
+  source?: TaskSource;
+  priority?: TaskPriority;
+  tags?: string[];
+}
+
 export async function handleSplitTaskCreated(
   app: App,
   title: string,
@@ -422,6 +442,82 @@ export async function handleSplitTaskCreated(
   console.log(`[work-terminal] Split task created: ${filePath} (from ${splitFrom.filename})`);
 
   return { path: filePath, id };
+}
+
+export async function handleSubTaskCreated(
+  app: App,
+  parent: SubTaskParentSource,
+  focus: string,
+  columnId: KanbanColumn,
+  basePath: string,
+): Promise<{ path: string; id: string; title: string }> {
+  const id = crypto.randomUUID();
+  const title = focus.trim();
+  const folderName = STATE_FOLDER_MAP[columnId] || "todo";
+  const folderPath = `${basePath}/${folderName}`;
+  const filePath = await resolveAvailableTaskPath(app, folderPath, title);
+  const parentTitle = parent.title.trim() || parent.filename.replace(/\.md$/, "");
+  const parentLinkTitle = parentTitle.replace(/]/g, "");
+  const parentReference: TaskParent = {
+    id: parent.id,
+    title: parentTitle,
+    path: parent.path,
+    link: `[[${parent.filename.replace(/\.md$/, "")}|${parentLinkTitle}]]`,
+  };
+
+  const inheritedTags = Array.from(
+    new Set([
+      "task",
+      `task/${columnId}`,
+      "sub-task",
+      ...(parent.tags || []).filter(
+        (tag) => tag !== "task" && !tag.startsWith("task/") && tag !== "sub-task",
+      ),
+    ]),
+  );
+
+  const inheritedPriority: Partial<TaskPriority> = parent.priority
+    ? {
+        deadline: parent.priority.deadline,
+        impact: parent.priority.impact,
+        "has-blocker": parent.priority["has-blocker"],
+        "blocker-context": parent.priority["blocker-context"],
+      }
+    : {};
+
+  const content = generateTaskContent(title, columnId, undefined, id, undefined, {
+    parent: parentReference,
+    tags: inheritedTags,
+    source: parent.source,
+    priority: inheritedPriority,
+    goal: [focus.trim()],
+  });
+
+  const folder = app.vault.getAbstractFileByPath(folderPath);
+  if (!folder) {
+    await app.vault.createFolder(folderPath);
+  }
+
+  await app.vault.create(filePath, content);
+  console.log(`[work-terminal] Sub-task created: ${filePath} (parent ${parent.path})`);
+
+  return { path: filePath, id, title };
+}
+
+async function resolveAvailableTaskPath(
+  app: App,
+  folderPath: string,
+  title: string,
+): Promise<string> {
+  const filename = generateTaskFilename(title);
+  const initialPath = `${folderPath}/${filename}`;
+  if (!(await app.vault.adapter.exists(initialPath))) {
+    return initialPath;
+  }
+
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const uniqueFilename = filename.replace(/\.md$/, `-${suffix}.md`);
+  return `${folderPath}/${uniqueFilename}`;
 }
 
 const INGESTION_FAILED_NOTE =

@@ -78,6 +78,43 @@ describe("expandProfilePlaceholders", () => {
     expect(result).toBe("--task Fix prompt sync --ctx full context here --id task-123");
   });
 
+  it("expands parent placeholders for sub-tasks", () => {
+    const child: WorkItem = {
+      ...item,
+      metadata: {
+        parent: {
+          id: "parent-123",
+          title: "Parent task",
+          path: "2 - Areas/Tasks/active/parent.md",
+        },
+      },
+    };
+
+    const result = expandProfilePlaceholders(
+      "$parentTitle|$parentId|$parentFilePath|$parentAbsoluteFilePath",
+      child,
+      "sess-abc",
+      undefined,
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+
+    expect(result).toBe(
+      "Parent task|parent-123|2 - Areas/Tasks/active/parent.md|/vault/2 - Areas/Tasks/active/parent.md",
+    );
+  });
+
+  it("expands parent placeholders to empty strings for top-level tasks", () => {
+    const result = expandProfilePlaceholders(
+      "$parentTitle|$parentId|$parentFilePath|$parentAbsoluteFilePath",
+      item,
+      "sess-abc",
+      undefined,
+      "/vault/2 - Areas/Tasks/priority/task.md",
+    );
+
+    expect(result).toBe("|||");
+  });
+
   it("returns template unchanged when no placeholders present", () => {
     const result = expandProfilePlaceholders("--verbose --model opus", item, "sess-abc");
     expect(result).toBe("--verbose --model opus");

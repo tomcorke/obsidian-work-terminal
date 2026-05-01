@@ -153,6 +153,35 @@ describe("TaskParser", () => {
       expect(item!.title).toBe("my-task");
     });
 
+    it("parses parent frontmatter and marks sub-tasks", () => {
+      const parent = makeFile("2 - Areas/Tasks/active/parent.md");
+      const child = makeFile("2 - Areas/Tasks/active/child.md");
+      const app = mockApp([parent, child], {
+        [parent.path]: makeFrontmatter({ id: "parent-uuid", title: "Resolved Parent" }),
+        [child.path]: makeFrontmatter({
+          id: "child-uuid",
+          title: "Child Task",
+          "sub-task": true,
+          parent: {
+            id: "parent-uuid",
+            title: "Stored Parent",
+            path: "old/path.md",
+            link: "[[parent|Stored Parent]]",
+          },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(child as unknown as TFile);
+
+      expect((item!.metadata as any).isSubTask).toBe(true);
+      expect((item!.metadata as any).parent).toEqual({
+        id: "parent-uuid",
+        title: "Stored Parent",
+        path: parent.path,
+        link: "[[parent|Stored Parent]]",
+      });
+    });
+
     it("uses file.path as the ID when frontmatter id is missing", () => {
       const file = makeFile("2 - Areas/Tasks/active/task-without-id.md");
       const app = mockApp([file], {

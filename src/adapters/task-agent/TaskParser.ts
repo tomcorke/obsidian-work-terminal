@@ -3,6 +3,7 @@ import type { WorkItem, WorkItemParser, StateResolver } from "../../core/interfa
 import { extractYamlFrontmatterString } from "../../core/frontmatter";
 import {
   type TaskFile,
+  type TaskParent,
   type TaskPriority,
   type TaskSource,
   type TaskState,
@@ -58,6 +59,8 @@ export class TaskParser implements WorkItemParser {
     const priority = this.resolvePriority(fm);
     const tags = this.normaliseTags(fm.tags);
     const goal: string[] = Array.isArray(fm.goal) ? fm.goal : fm.goal ? [fm.goal] : [];
+    const parent = this.resolveParent(fm);
+    const isSubTask = fm["sub-task"] === true || fm.subtask === true || !!parent;
 
     const bgIngestion = fm["background-ingestion"];
     const backgroundIngestion =
@@ -74,6 +77,8 @@ export class TaskParser implements WorkItemParser {
       priority,
       agentActionable: fm["agent-actionable"] ?? false,
       goal,
+      parent,
+      isSubTask,
       color: fm.color || undefined,
       icon: typeof fm.icon === "string" && fm.icon.trim() ? fm.icon.trim() : undefined,
       backgroundIngestion,
@@ -118,6 +123,92 @@ export class TaskParser implements WorkItemParser {
       return [rawTags.trim()];
     }
     return [];
+  }
+
+  private resolveParent(fm: Record<string, any>): TaskParent | undefined {
+    const parentRaw = fm.parent;
+    const flatPath = typeof fm["parent.path"] === "string" ? fm["parent.path"].trim() : "";
+    const flatId = typeof fm["parent.id"] === "string" ? fm["parent.id"].trim() : "";
+    const flatTitle = typeof fm["parent.title"] === "string" ? fm["parent.title"].trim() : "";
+    const flatLink = typeof fm["parent.link"] === "string" ? fm["parent.link"].trim() : "";
+
+    let id = flatId;
+    let title = flatTitle;
+    let path = flatPath;
+    let link = flatLink;
+
+    if (typeof parentRaw === "string") {
+      link = link || parentRaw.trim();
+      title = title || this.extractLinkTitle(parentRaw);
+      path = path || this.extractLinkPath(parentRaw);
+    } else if (parentRaw && typeof parentRaw === "object") {
+      const parent = parentRaw as Record<string, unknown>;
+      id = id || (typeof parent.id === "string" ? parent.id.trim() : "");
+      title = title || (typeof parent.title === "string" ? parent.title.trim() : "");
+      path = path || (typeof parent.path === "string" ? parent.path.trim() : "");
+      link = link || (typeof parent.link === "string" ? parent.link.trim() : "");
+      if (!link && typeof parent.file === "string") {
+        link = parent.file.trim();
+      }
+      if (!path && typeof parent.file === "string") {
+        path = this.extractLinkPath(parent.file);
+      }
+      if (!title && typeof parent.file === "string") {
+        title = this.extractLinkTitle(parent.file);
+      }
+    }
+
+    const resolved = id ? this.findParentById(id) : null;
+    if (resolved) {
+      path = resolved.path;
+      title = title || resolved.title;
+    }
+
+    if (!id && !title && !path && !link) return undefined;
+    if (!link) link = path ? this.buildWikiLink(path, title) : title;
+    if (!title) title = this.extractLinkTitle(link) || this.basenameWithoutExtension(path);
+    if (!path) path = this.extractLinkPath(link);
+
+    return { id, title, path, link };
+  }
+
+  private findParentById(id: string): { path: string; title: string } | null {
+    const normalizedBase = `${this.basePath}/`;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!file.path.startsWith(normalizedBase)) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (cache?.frontmatter?.id !== id) continue;
+      return {
+        path: file.path,
+        title:
+          typeof cache.frontmatter.title === "string" && cache.frontmatter.title.trim()
+            ? cache.frontmatter.title.trim()
+            : file.basename,
+      };
+    }
+    return null;
+  }
+
+  private extractLinkTitle(value: string): string {
+    const match = value.match(/^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/);
+    if (!match) return "";
+    return (match[2] || this.basenameWithoutExtension(match[1]) || match[1]).trim();
+  }
+
+  private extractLinkPath(value: string): string {
+    const match = value.match(/^\[\[([^\]|]+)(?:\|[^\]]+)?\]\]$/);
+    return match ? match[1].trim() : "";
+  }
+
+  private buildWikiLink(path: string, title: string): string {
+    const basename = this.basenameWithoutExtension(path);
+    if (!basename) return path;
+    return title && title !== basename ? `[[${basename}|${title}]]` : `[[${basename}]]`;
+  }
+
+  private basenameWithoutExtension(path: string): string {
+    const filename = path.split("/").pop() || path;
+    return filename.replace(/\.md$/, "");
   }
 
   private resolvePriority(fm: Record<string, any>): TaskPriority {
@@ -363,6 +454,8 @@ export class TaskParser implements WorkItemParser {
         priority: task.priority,
         agentActionable: task.agentActionable,
         goal: task.goal,
+        parent: task.parent,
+        isSubTask: task.isSubTask,
         color: task.color,
         icon: task.icon,
         backgroundIngestion: task.backgroundIngestion,

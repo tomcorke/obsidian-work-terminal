@@ -13,6 +13,13 @@ export interface TaskPriority {
   "blocker-context": string;
 }
 
+export interface TaskParent {
+  id: string;
+  title: string;
+  path: string;
+  link: string;
+}
+
 export type TaskState = "priority" | "todo" | "active" | "done" | "abandoned";
 
 /** Known kanban column IDs. Dynamic columns use arbitrary string IDs. */
@@ -30,6 +37,8 @@ export interface TaskFile {
   priority: TaskPriority;
   agentActionable: boolean;
   goal: string[];
+  parent?: TaskParent;
+  isSubTask?: boolean;
   color?: string;
   /** Custom icon - Lucide icon name or emoji string. */
   icon?: string;

@@ -6,6 +6,17 @@ export class TaskPromptBuilder implements WorkItemPromptBuilder {
     const priority = meta.priority || {};
 
     let prompt = `Task: ${item.title}\nState: ${item.state}\nFile: ${fullPath}`;
+    const parent = meta.parent;
+    if (parent && typeof parent === "object") {
+      const parentTitle = typeof parent.title === "string" ? parent.title : "";
+      const parentPath = typeof parent.path === "string" ? parent.path : "";
+      if (parentTitle) {
+        prompt += `\nParent: ${parentTitle}`;
+      }
+      if (parentPath) {
+        prompt += `\nParent file: ${parentPath}`;
+      }
+    }
 
     if (priority.deadline) {
       prompt += `\nDeadline: ${priority.deadline}`;
@@ -22,6 +33,6 @@ export class TaskPromptBuilder implements WorkItemPromptBuilder {
     // This string is a non-editable descriptor shown in the profile UI, not a
     // user-editable template. It is cosmetic only; `buildPrompt` is the
     // single source of truth for the actual adapter prompt contents.
-    return "Task: $title\nState: $state\nFile: $filePath\nDeadline: $deadline (if set)\nBlocker: $blocker (if set)";
+    return "Task: $title\nState: $state\nFile: $filePath\nParent: $parentTitle (for sub-tasks)\nParent file: $parentFilePath (for sub-tasks)\nDeadline: $deadline (if set)\nBlocker: $blocker (if set)";
   }
 }
