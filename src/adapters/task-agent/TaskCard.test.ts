@@ -103,6 +103,77 @@ describe("TaskCard", () => {
     });
   });
 
+  it("waits for move-to-done before closing sessions", async () => {
+    const item = makeItem();
+    const calls: string[] = [];
+    let resolveMove!: (value: boolean) => void;
+    const movePromise = new Promise<boolean>((resolve) => {
+      resolveMove = resolve;
+    });
+    const ctx = makeContext({
+      onMoveToColumn: vi.fn(() => {
+        calls.push("move");
+        return movePromise;
+      }),
+      onCloseSessions: vi.fn(() => {
+        calls.push("close");
+      }),
+    });
+    const card = new TaskCard();
+
+    const menuItems = card.getContextMenuItems(item, ctx);
+    const doneAndCloseItem = menuItems.find(
+      (menuItem) => (menuItem as any).title === "Done & Close Sessions",
+    ) as { callback: () => Promise<void> } | undefined;
+
+    expect(doneAndCloseItem).toBeDefined();
+
+    const callbackPromise = doneAndCloseItem!.callback();
+
+    expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
+    expect(ctx.onCloseSessions).not.toHaveBeenCalled();
+
+    resolveMove(true);
+    await callbackPromise;
+
+    expect(calls).toEqual(["move", "close"]);
+    expect(ctx.onCloseSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close sessions when move-to-done fails", async () => {
+    const item = makeItem();
+    const ctx = makeContext({
+      onMoveToColumn: vi.fn().mockResolvedValue(false),
+    });
+    const card = new TaskCard();
+
+    const menuItems = card.getContextMenuItems(item, ctx);
+    const doneAndCloseItem = menuItems.find(
+      (menuItem) => (menuItem as any).title === "Done & Close Sessions",
+    ) as { callback: () => Promise<void> } | undefined;
+
+    await doneAndCloseItem?.callback();
+
+    expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
+    expect(ctx.onCloseSessions).not.toHaveBeenCalled();
+  });
+
+  it("still closes sessions for synchronous move callbacks", async () => {
+    const item = makeItem();
+    const ctx = makeContext();
+    const card = new TaskCard();
+
+    const menuItems = card.getContextMenuItems(item, ctx);
+    const doneAndCloseItem = menuItems.find(
+      (menuItem) => (menuItem as any).title === "Done & Close Sessions",
+    ) as { callback: () => Promise<void> } | undefined;
+
+    await doneAndCloseItem?.callback();
+
+    expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
+    expect(ctx.onCloseSessions).toHaveBeenCalledTimes(1);
+  });
+
   it("copies the exact context prompt from the framework callback", async () => {
     const item = makeItem();
     const ctx = makeContext();

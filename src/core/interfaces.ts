@@ -200,8 +200,8 @@ export interface CardActionContext {
   onSelect(): void;
   /** Move this item to the top of its current section. */
   onMoveToTop(): void;
-  /** Move this item to a different column (triggers WorkItemMover). */
-  onMoveToColumn(columnId: string): void;
+  /** Move this item to a different column (triggers WorkItemMover). Returns false when the move fails. */
+  onMoveToColumn(columnId: string): void | Promise<boolean>;
   /** Insert a new item immediately after an existing one in custom order. */
   onInsertAfter(existingId: string, newItem: WorkItem): void;
   /** Split this item: create a new task with a related reference, then spawn Claude (ctx) to scope it. */
