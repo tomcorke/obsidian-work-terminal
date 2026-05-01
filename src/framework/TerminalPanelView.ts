@@ -1172,7 +1172,7 @@ export class TerminalPanelView {
     const resolvedConfig = this.resolveLaunchConfig(profile.agentType, profile);
     const launchConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
 
-    await this.spawnAgentSession({
+    const tab = await this.spawnAgentSession({
       agentType: profile.agentType,
       sessionType,
       command,
@@ -1187,26 +1187,24 @@ export class TerminalPanelView {
       targetItemId: options.targetItem?.id,
     });
 
-    // Apply profile metadata to the newly created tab so it styles / rekeys
-    // identically to button-launched profile sessions.
-    const sessionItemId = options.targetItem?.id ?? this.tabManager.getActiveItemId();
-    if (sessionItemId) {
-      const tabs = this.tabManager.getTabs(sessionItemId);
-      const lastTab = tabs[tabs.length - 1];
-      if (lastTab) {
-        lastTab.profileId = profile.id;
-        if (profile.button.color) lastTab.profileColor = profile.button.color;
-        lastTab.activityPatterns =
-          resolvedConfig.activityPatterns ??
-          (profile.agentType === "custom"
-            ? { activeLinePatterns: [], activeJoinedPatterns: [] }
-            : undefined);
-        if (profile.loginShellWrap) {
-          lastTab.loginShellWrap = true;
-        }
-        this.renderTabBar();
-      }
+    if (!tab) {
+      return;
     }
+
+    // Apply profile metadata to the newly created tab so it styles / rekeys
+    // identically to button-launched profile sessions. Do not fall back to an
+    // existing tab when spawnAgentSession failed to create one.
+    tab.profileId = profile.id;
+    if (profile.button.color) tab.profileColor = profile.button.color;
+    tab.activityPatterns =
+      resolvedConfig.activityPatterns ??
+      (profile.agentType === "custom"
+        ? { activeLinePatterns: [], activeJoinedPatterns: [] }
+        : undefined);
+    if (profile.loginShellWrap) {
+      tab.loginShellWrap = true;
+    }
+    this.renderTabBar();
   }
 
   // ---------------------------------------------------------------------------
@@ -1573,7 +1571,9 @@ export class TerminalPanelView {
     // auto-building a context prompt (e.g. when suppressAdapterPrompt is set).
     let prompt = options.prompt;
     if (withContext && prompt === undefined) {
-      const item = this.getActiveItem();
+      const item = options.targetItemId
+        ? this.allItems.find((candidate) => candidate.id === options.targetItemId) || null
+        : this.getActiveItem();
       if (!item) {
         new Notice(
           `Select a ${this.adapter.config.itemName} first to launch ${launchConfig.cliDisplayName} with context`,

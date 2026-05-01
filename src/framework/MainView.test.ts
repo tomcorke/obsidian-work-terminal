@@ -19,6 +19,9 @@ vi.mock("obsidian", () => ({
   },
   TFile: class {},
   WorkspaceLeaf: class {},
+  Notice: class {
+    constructor(_message: string) {}
+  },
 }));
 
 vi.mock("./ListPanel", () => ({
@@ -71,6 +74,90 @@ function makeItem(overrides: Partial<WorkItem> = {}): WorkItem {
     ...overrides,
   };
 }
+
+describe("MainView foreground enrichment", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+    document.body.innerHTML = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  it("preselects the foreground-created task in the list panel", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const spawnPromise = Promise.resolve();
+    const terminalPanel = {
+      setItems: vi.fn(),
+      setActiveItem: vi.fn(),
+      setTitle: vi.fn(),
+      spawnClaudeWithPrompt: vi.fn(() => spawnPromise),
+    };
+    const listPanel = {
+      selectById: vi.fn(),
+    };
+
+    (view as any).adapter = { config: { itemName: "task" } };
+    (view as any).settings = {};
+    (view as any).allItems = [
+      { id: "old", path: "Tasks/old.md", title: "Old", state: "todo", metadata: {} },
+    ];
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).listPanel = listPanel;
+
+    (view as any).launchForegroundEnrichment({
+      id: "new-task",
+      columnId: "todo",
+      path: "Tasks/new.md",
+      title: "New task",
+      foregroundEnrichment: { prompt: "Prompt", label: "Enrich" },
+    });
+
+    const expectedItem = {
+      id: "new-task",
+      path: "Tasks/new.md",
+      title: "New task",
+      state: "todo",
+      metadata: {},
+    };
+    expect(terminalPanel.setItems).toHaveBeenCalledWith([expectedItem, (view as any).allItems[1]]);
+    expect(listPanel.selectById).toHaveBeenCalledWith("new-task", expectedItem);
+    expect(terminalPanel.spawnClaudeWithPrompt).toHaveBeenCalledWith(
+      "Prompt",
+      "Enrich",
+      undefined,
+      expectedItem,
+    );
+  });
+
+  it("does not throw if the terminal panel is unavailable during foreground launch", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    (view as any).adapter = { config: { itemName: "task" } };
+    (view as any).settings = {};
+    (view as any).allItems = [];
+    (view as any).terminalPanel = null;
+    (view as any).listPanel = null;
+
+    expect(() =>
+      (view as any).launchForegroundEnrichment({
+        id: "new-task",
+        columnId: "todo",
+        path: "Tasks/new.md",
+        title: "New task",
+        foregroundEnrichment: { prompt: "Prompt", label: "Enrich" },
+      }),
+    ).not.toThrow();
+  });
+});
 
 describe("MainView selection ID backfill", () => {
   let dom: JSDOM;

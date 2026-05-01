@@ -549,18 +549,18 @@ export class MainView extends ItemView {
     this.terminalPanel?.setItems(this.allItems);
     this.terminalPanel?.setActiveItem(item.id);
     this.terminalPanel?.setTitle(item);
+    this.listPanel?.selectById(item.id, item);
 
-    void this.terminalPanel
-      ?.spawnClaudeWithPrompt(
-        foreground.prompt,
-        foreground.label || "Enrich",
-        this.resolveForegroundEnrichmentLaunchOverride() ?? undefined,
-        item,
-      )
-      .catch((err) => {
-        console.error("[work-terminal] foreground enrichment launch failed:", err);
-        new Notice("Failed to start foreground enrichment session. See console for details.");
-      });
+    const launchPromise = this.terminalPanel?.spawnClaudeWithPrompt(
+      foreground.prompt,
+      foreground.label || "Enrich",
+      this.resolveForegroundEnrichmentLaunchOverride() ?? undefined,
+      item,
+    );
+    void launchPromise?.catch((err) => {
+      console.error("[work-terminal] foreground enrichment launch failed:", err);
+      new Notice("Failed to start foreground enrichment session. See console for details.");
+    });
   }
 
   private resolveForegroundEnrichmentLaunchOverride(): {

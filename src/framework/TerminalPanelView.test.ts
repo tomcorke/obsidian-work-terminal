@@ -22,6 +22,7 @@ const mockState = vi.hoisted(() => ({
   notices: [] as string[],
   clipboardWriteText: vi.fn(),
   latestCreateTabArgs: null as unknown[] | null,
+  nextCreatedTab: null as any,
   tabManagerCalls: [] as string[],
   openExternal: vi.fn(),
   latestTabManager: null as {
@@ -182,13 +183,17 @@ vi.mock("../core/terminal/TabManager", () => ({
     createTab(...args: unknown[]) {
       mockState.latestCreateTabArgs = args;
       mockState.tabManagerCalls.push("createTab");
-      return {} as any;
+      const tab = mockState.nextCreatedTab ?? ({} as any);
+      mockState.nextCreatedTab = null;
+      return tab;
     }
 
     createTabForItem(...args: unknown[]) {
       mockState.latestCreateTabArgs = args;
       mockState.tabManagerCalls.push("createTabForItem");
-      return {} as any;
+      const tab = mockState.nextCreatedTab ?? ({} as any);
+      mockState.nextCreatedTab = null;
+      return tab;
     }
 
     setActiveItem(itemId: string | null) {
@@ -426,6 +431,7 @@ describe("TerminalPanelView", () => {
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
+    mockState.nextCreatedTab = null;
     mockState.tabManagerCalls = [];
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
@@ -874,6 +880,50 @@ describe("TerminalPanelView", () => {
       undefined,
       ["/bin/echo", "Foreground prompt"],
     ]);
+  });
+
+  it("builds context prompts from the target item when targetItemId is provided", async () => {
+    mockState.activeItemId = "task-active";
+    const promptBuilder = {
+      buildPrompt: vi.fn((item: any) => `Prompt for ${item.title}`),
+    };
+    const { view } = createView(
+      {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      {},
+      promptBuilder,
+    );
+    view.setItems([
+      {
+        id: "task-active",
+        title: "Active Task",
+        state: "doing",
+        path: "Tasks/active.md",
+      } as any,
+      {
+        id: "task-target",
+        title: "Target Task",
+        state: "todo",
+        path: "Tasks/target.md",
+      } as any,
+    ]);
+    await flushAsync();
+
+    await (view as any).spawnAgentSession({
+      agentType: "claude",
+      sessionType: "claude-with-context",
+      targetItemId: "task-target",
+    });
+
+    expect(promptBuilder.buildPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-target" }),
+      "/vault/Tasks/target.md",
+    );
+    expect(mockState.tabManagerCalls).toContain("createTabForItem");
+    expect(mockState.latestCreateTabArgs?.[0]).toBe("task-target");
+    expect(mockState.latestCreateTabArgs?.[6]).toEqual(["/bin/echo", "Prompt for Target Task"]);
   });
 
   it("uses adapter prompt for Copilot-with-context sessions", async () => {
@@ -1480,6 +1530,7 @@ describe("embedded detail placement", () => {
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
+    mockState.nextCreatedTab = null;
     mockState.tabManagerCalls = [];
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
@@ -1661,6 +1712,7 @@ describe("preview detail placement", () => {
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
+    mockState.nextCreatedTab = null;
     mockState.tabManagerCalls = [];
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
@@ -1858,6 +1910,7 @@ describe("profile launch", () => {
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
+    mockState.nextCreatedTab = null;
     mockState.tabManagerCalls = [];
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
@@ -1887,6 +1940,76 @@ describe("profile launch", () => {
       ...overrides,
     };
   }
+
+  it("applies profile metadata only to the tab returned by spawnAgentSession", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: "claude", found: true, resolved: "/bin/echo" });
+    const createdTab: any = {};
+    const existingTab: any = { label: "Existing" };
+    mockState.nextCreatedTab = createdTab;
+    mockState.tabsByItem.set("task-target", [existingTab]);
+
+    const { view } = createView();
+    await flushAsync();
+    (view as any).profileManager = {
+      resolveCommand: () => "claude",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      getButtonProfiles: () => [],
+    };
+
+    await (view as any).spawnFromResolvedProfile(
+      makeProfile({ button: { enabled: true, label: "Claude", color: "#f00" } }),
+      "Prompt",
+      {
+        targetItem: {
+          id: "task-target",
+          title: "Target",
+          state: "todo",
+          path: "Tasks/target.md",
+          metadata: {},
+        },
+      },
+    );
+
+    expect(createdTab.profileId).toBe("profile-1");
+    expect(createdTab.profileColor).toBe("#f00");
+    expect(existingTab.profileId).toBeUndefined();
+    resolveStub.mockRestore();
+  });
+
+  it("does not apply profile metadata to an existing tab when spawning fails", async () => {
+    const resolveStub = vi
+      .spyOn(AgentLauncher, "resolveCommandInfo")
+      .mockReturnValue({ requested: "missing", found: false, resolved: "missing" });
+    const existingTab: any = { label: "Existing" };
+    mockState.tabsByItem.set("task-target", [existingTab]);
+
+    const { view } = createView();
+    await flushAsync();
+    (view as any).profileManager = {
+      resolveCommand: () => "missing",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "",
+      getButtonProfiles: () => [],
+    };
+
+    await (view as any).spawnFromResolvedProfile(makeProfile(), "Prompt", {
+      targetItem: {
+        id: "task-target",
+        title: "Target",
+        state: "todo",
+        path: "Tasks/target.md",
+        metadata: {},
+      },
+    });
+
+    expect(mockState.tabManagerCalls).not.toContain("createTabForItem");
+    expect(existingTab.profileId).toBeUndefined();
+    expect(existingTab.profileColor).toBeUndefined();
+    resolveStub.mockRestore();
+  });
 
   it("applies defaultCwd override in spawnFromProfileWithOverrides", async () => {
     const { view } = createView();
