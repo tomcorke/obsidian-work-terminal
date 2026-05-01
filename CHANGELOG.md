@@ -6,6 +6,14 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-01
+
+### Fixes
+- **Sub-task nesting is visible again in compact and comfortable card modes.** Compact and comfortable card CSS no longer resets the left margin applied by `.wt-card-subtask`, so child tasks once again render indented under their parent instead of appearing flush-left in those denser layouts. (#520)
+
+### Full changelog
+- Compare with 0.6.0: https://github.com/tomcorke/obsidian-work-terminal/compare/0.6.0...0.6.1
+
 ## [0.6.0] - 2026-05-01
 
 ### Highlights
