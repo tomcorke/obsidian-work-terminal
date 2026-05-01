@@ -138,6 +138,7 @@ const CORE_DEFAULTS: CoreSettings = {
  */
 const ENRICHMENT_DIALOG_KEYS = new Set([
   "enrichmentEnabled",
+  "enrichmentMode",
   "enrichmentPrompt",
   "retryEnrichmentPrompt",
   "enrichmentProfile",
@@ -448,18 +449,19 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           }),
       );
 
-    // Background enrichment dialog button (only if the adapter schema declares
+    // Enrichment dialog button (only if the adapter schema declares
     // enrichment fields).
     const schema = this.adapter.config.settingsSchema;
     const hasEnrichmentSchema = schema.some((field) => ENRICHMENT_DIALOG_KEYS.has(field.key));
     if (hasEnrichmentSchema) {
       new Setting(containerEl)
-        .setName("Background enrichment")
+        .setName("Task enrichment")
         .setDesc(
-          "Open a dialog to enable/disable background enrichment and customise " +
-            "the enrichment prompt, retry prompt, agent profile, and timeout. " +
-            "The built-in default prompts are displayed inside the dialog so you " +
-            "can read them before deciding whether to override.",
+          "Open a dialog to enable/disable automatic enrichment, choose background " +
+            "or foreground launch mode, and customise the enrichment prompt, retry " +
+            "prompt, agent profile, and timeout. The built-in default prompts are " +
+            "displayed inside the dialog so you can read them before deciding " +
+            "whether to override.",
         )
         .addButton((btn) =>
           btn

@@ -58,11 +58,23 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     },
     {
       key: "enrichmentEnabled",
-      name: "Enable background enrichment",
+      name: "Enable enrichment",
       description:
-        "Automatically enrich new tasks in the background using a headless agent session",
+        "Automatically enrich new tasks using the selected background or foreground launch mode",
       type: "toggle",
       default: true,
+    },
+    {
+      key: "enrichmentMode",
+      name: "Enrichment launch mode",
+      description:
+        "Choose whether new tasks are enriched by a headless background agent or by launching a visible session in the new task.",
+      type: "dropdown",
+      default: "background",
+      choices: {
+        background: "Background (headless)",
+        foreground: "Foreground (visible session)",
+      },
     },
     {
       key: "enrichmentPrompt",
@@ -84,7 +96,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       key: "enrichmentProfile",
       name: "Enrichment agent profile",
       description:
-        "Agent profile to use for background enrichment. The profile's command, arguments, and working directory will be used. Select 'Default' to use the core Claude command settings.",
+        "Agent profile to use for automatic enrichment. The profile's command, arguments, and working directory will be used. Select 'Default' to use the core Claude command settings.",
       type: "dropdown",
       default: "",
       choices: "profiles",
@@ -153,6 +165,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
     pinnedCustomStates: "[]",
     jiraBaseUrl: "",
     enrichmentEnabled: true,
+    enrichmentMode: "background",
     enrichmentPrompt: "",
     retryEnrichmentPrompt: "",
     enrichmentProfile: "",

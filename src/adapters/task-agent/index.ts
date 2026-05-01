@@ -24,6 +24,7 @@ import {
   handleSubTaskCreated,
   prepareRetryEnrichment,
   type EnrichmentProfileOverride,
+  type ItemCreatedResult,
 } from "./BackgroundEnrich";
 import type { KanbanColumn, AutoIconMode } from "./types";
 import { parseCustomCardFlags } from "./customCardFlags";
@@ -221,10 +222,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     this.embeddedLastItemId = null;
   }
 
-  async onItemCreated(
-    title: string,
-    settings: Record<string, any>,
-  ): Promise<{ id: string; columnId: string }> {
+  async onItemCreated(title: string, settings: Record<string, any>): Promise<ItemCreatedResult> {
     if (!this._app) {
       throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
     }

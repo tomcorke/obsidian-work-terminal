@@ -33,7 +33,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [State resolution strategies](#state-resolution-strategies)
   - [Dynamic columns](#dynamic-columns)
   - [Terminal settings](#terminal-settings)
-  - [Background enrichment](#background-enrichment)
+  - [Task enrichment](#task-enrichment)
   - [Running version display](#running-version-display)
   - [Core settings](#core-settings)
 - [Advanced features](#advanced-features)
@@ -79,7 +79,7 @@ When expanded, the prompt box shows a text input and a column selector:
 - Press **Enter** to create the task, or **Shift+Enter** to add a newline
 - Click **Create** as an alternative to pressing Enter
 
-The plugin creates a new markdown file in the appropriate vault folder with a UUID-based frontmatter structure. If background enrichment is enabled (see [Background enrichment](#background-enrichment)), a headless agent session runs automatically to flesh out the task content.
+The plugin creates a new markdown file in the appropriate vault folder with a UUID-based frontmatter structure. If enrichment is enabled (see [Task enrichment](#task-enrichment)), the plugin either runs the existing headless background enrichment or launches a visible foreground enrichment session in the new task, depending on your configured launch mode.
 
 ### Kanban board
 
@@ -386,9 +386,9 @@ The settings page is organised into five top-level sections. Use this map to jum
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
 | **Detail view** | Placement dropdown (split / tab / navigate / preview / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
-| **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for background enrichment, and **Configure agent actions...** for Split Task profile binding. |
+| **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for task enrichment, and **Configure agent actions...** for Split Task profile binding. |
 
-Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Background enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.
+Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Task enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.
 
 The layout reorganisation itself is cosmetic: existing settings were regrouped, not renamed, so most upgrades should not change behaviour just because the settings page looks different. One exception is that `core.additionalAgentContext` was removed as a breaking change. If you are looking for a setting that used to be on the main page and cannot find it, check the nearest dialog button.
 
@@ -500,25 +500,26 @@ Terminal-launch configuration lives in a dedicated dialog opened by the **Config
 
 Existing tabs keep whatever shell and CWD they were opened with - changing these settings only affects terminals opened after the change. The dialog persists changes as you type; close it with **Done** when finished.
 
-### Background enrichment
+### Task enrichment
 
-When enabled, new tasks created via the prompt box are automatically enriched by a headless agent session. The agent reads the task file and adds context, acceptance criteria, and other useful content.
+When enabled, new tasks created via the prompt box are automatically enriched by an agent. The agent reads the task file and adds context, acceptance criteria, and other useful content.
 
 All enrichment options live in a dedicated dialog opened by the **Configure enrichment...** button under **Settings > Agents**.
 
 The dialog contains:
 
-- **Enable background enrichment** - toggle on/off
+- **Enable enrichment** - toggle automatic enrichment on/off
+- **Enrichment launch mode** - choose **Background (headless)** to keep the existing automatic background process, or **Foreground (visible session)** to create the task, select it, launch an enrichment session in that task, and send the enrichment prompt there so you can watch and interact with the agent.
 - **Enrichment prompt** - custom prompt template sent to the agent. Use `$filePath` (vault-relative path, e.g. `2 - Areas/Tasks/todo/my-task.md`) or `$absoluteFilePath` (absolute filesystem path, e.g. `/Users/you/vault/2 - Areas/Tasks/todo/my-task.md`) as placeholders for the task file path. The built-in default uses `$absoluteFilePath` because the agent typically needs to `cd` into the folder and read the file directly. Leave blank to use the built-in default; the full default prompt is shown in a collapsible "View default prompt" block below the textarea so you can read it before deciding whether to override.
 - **Retry enrichment prompt** - separate prompt used when retrying via the context menu. Same placeholders and default-preview treatment as the enrichment prompt.
 - **Enrichment agent profile** - which agent profile to use (defaults to core Claude settings)
-- **Retry enrichment profile** - which agent profile to launch for the **Retry Enrichment** context-menu action. Lists Claude-family profiles only. Default: reuse the background enrichment profile above if it is set to a Claude-family profile; if the background enrichment profile is unset or is a non-Claude profile, it is ignored and Retry Enrichment falls back to the built-in Claude (ctx) profile.
-- **Enrichment timeout** - maximum time in seconds before the enrichment process is killed (default: 300s / 5 minutes)
+- **Retry enrichment profile** - which agent profile to launch for the **Retry Enrichment** context-menu action. Lists Claude-family profiles only. Default: reuse the enrichment profile above if it is set to a Claude-family profile; if the enrichment profile is unset or is a non-Claude profile, it is ignored and Retry Enrichment falls back to the built-in Claude (ctx) profile.
+- **Enrichment timeout** - maximum time in seconds before a background enrichment process is killed (default: 300s / 5 minutes). Foreground enrichment sessions are visible terminal sessions and are not killed by this timeout.
 - **Preview resolved prompt** - pick either prompt and click **Preview** to see the template with placeholders substituted using example paths (`$filePath` -> `2 - Areas/Tasks/todo/example.md`, `$absoluteFilePath` -> `/Users/you/vault/2 - Areas/Tasks/todo/example.md`). Useful for sanity-checking a customised prompt without creating a real task. The paths shown are illustrative; the actual paths used at launch time are derived from your real vault location and the created task file.
 
 Changes save as you type; there is no Save button. Close the dialog with **Done** when you are finished.
 
-Tasks being enriched show an "ingesting..." indicator on their card. If enrichment fails, a red "enrichment failed" badge appears, and the context menu offers a "Retry Enrichment" option.
+Tasks being enriched in background mode show an "ingesting..." indicator on their card. Foreground enrichment opens a normal visible agent session instead. If background enrichment fails, a red "enrichment failed" badge appears, and the context menu offers a "Retry Enrichment" option.
 
 #### Enrichment failure logs
 
@@ -625,7 +626,7 @@ The Claude session launched by Split Task runs through the same agent-profile pi
 
 When background enrichment for a newly created task fails, the card shows a warning and a **Retry Enrichment** context menu entry. Running it opens a Claude session that picks up where background enrichment left off.
 
-The retry session also runs through a resolvable agent profile. By default it follows the **background enrichment profile** (so the retry matches what automated enrichment would have used) when that profile is Claude-family; if the background enrichment profile is unset or is a non-Claude profile, it falls back to the built-in Claude (ctx) profile. You can override this to any Claude-family profile via the **Retry enrichment profile** dropdown in the [Background enrichment](#background-enrichment) **Configure enrichment...** dialog.
+The retry session also runs through a resolvable agent profile. By default it follows the **enrichment profile** (so the retry matches what automated enrichment would have used) when that profile is Claude-family; if the enrichment profile is unset or is a non-Claude profile, it falls back to the built-in Claude (ctx) profile. You can override this to any Claude-family profile via the **Retry enrichment profile** dropdown in the [Task enrichment](#task-enrichment) **Configure enrichment...** dialog.
 
 ### Agent actions settings
 
@@ -635,7 +636,7 @@ Profile binding for the **Split Task** adapter-driven action lives behind the **
 
 The dropdown lists configured Claude-family agent profiles only. Select **Default (see description)** to restore the fallback chain described above. Changes persist immediately; no save button is required.
 
-The **Retry Enrichment** profile binding lives in the [Background enrichment](#background-enrichment) dialog instead, so all enrichment-related settings (prompts, profile, retry profile, timeout) are configurable in one place.
+The **Retry Enrichment** profile binding lives in the [Task enrichment](#task-enrichment) dialog instead, so all enrichment-related settings (launch mode, prompts, profile, retry profile, timeout) are configurable in one place.
 
 The fallback chain ensures new users get sensible, profile-aware behaviour without touching the dialog, while power users can bind a dedicated profile (e.g. one with `--dangerously-skip-permissions` pre-configured) to any agent-driven action.
 
@@ -739,14 +740,15 @@ The `abandoned` state is a special terminal state - abandoned tasks are filtered
 
 ## Adapter settings reference
 
-These settings are specific to the task-agent adapter. Adapter-level fields now appear across the new top-level sections (see [Settings layout at a glance](#settings-layout-at-a-glance)) - mostly under **General** and **Board & Columns** - rather than in a single **Adapter** block. Background-enrichment fields are edited inside the **Configure enrichment...** dialog (opened from the **Agents** section) and are marked below.
+These settings are specific to the task-agent adapter. Adapter-level fields now appear across the new top-level sections (see [Settings layout at a glance](#settings-layout-at-a-glance)) - mostly under **General** and **Board & Columns** - rather than in a single **Adapter** block. Enrichment fields are edited inside the **Configure enrichment...** dialog (opened from the **Agents** section) and are marked below.
 
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Task base path | Vault path containing task folders | `2 - Areas/Tasks` |
 | State resolution strategy | How task state is determined (folder/frontmatter/composite) | `folder` |
 | Jira base URL | URL prefix for turning Jira keys into links (e.g. `https://your-org.atlassian.net/browse`) | (empty) |
-| Enable background enrichment | Auto-enrich new tasks via headless agent (edited via **Configure enrichment...**) | `true` |
+| Enable enrichment | Auto-enrich new tasks using the selected launch mode (edited via **Configure enrichment...**) | `true` |
+| Enrichment launch mode | Background headless enrichment or foreground visible-session enrichment (edited via **Configure enrichment...**) | `background` |
 | Enrichment prompt | Custom prompt template for enrichment (edited via **Configure enrichment...**) | (default) |
 | Retry enrichment prompt | Custom prompt for retry enrichment (edited via **Configure enrichment...**) | (default) |
 | Enrichment agent profile | Which profile to use for enrichment (edited via **Configure enrichment...**) | Default |

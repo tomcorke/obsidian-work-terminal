@@ -849,6 +849,33 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
+  it("can launch a prompt session for a specific target item", async () => {
+    const { view } = createView({
+      "core.claudeCommand": "/bin/echo",
+      "core.defaultTerminalCwd": "~/ctx",
+    });
+    await flushAsync();
+
+    await view.spawnClaudeWithPrompt("Foreground prompt", "Enrich", undefined, {
+      id: "task-new",
+      title: "New task",
+      state: "todo",
+      path: "Tasks/new.md",
+      metadata: {},
+    });
+
+    expect(mockState.tabManagerCalls).toContain("createTabForItem");
+    expect(mockState.latestCreateTabArgs).toEqual([
+      "task-new",
+      "/bin/echo",
+      expandTilde("~/ctx"),
+      "Enrich",
+      "claude-with-context",
+      undefined,
+      ["/bin/echo", "Foreground prompt"],
+    ]);
+  });
+
   it("uses adapter prompt for Copilot-with-context sessions", async () => {
     mockState.activeItemId = "task-1";
     const promptBuilder = {

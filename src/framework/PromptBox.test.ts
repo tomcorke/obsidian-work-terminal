@@ -280,11 +280,36 @@ describe("PromptBox", () => {
     await flushPromises();
 
     expect(onNewItemCreated).toHaveBeenCalledWith(
-      "task-123",
-      "todo",
+      {
+        id: "task-123",
+        columnId: "todo",
+        enrichmentDone,
+      },
       "__pending_77",
-      enrichmentDone,
     );
+    expect(onPlaceholderResolve).not.toHaveBeenCalled();
+  });
+
+  it("passes foreground enrichment launch details through the created-item callback", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(78);
+    const result = {
+      id: "task-foreground",
+      columnId: "active",
+      path: "2 - Areas/Tasks/active/TASK-pending.md",
+      title: "Watch enrichment",
+      enrichmentDone: Promise.resolve(),
+      foregroundEnrichment: { prompt: "Enrich this", label: "Enrich" },
+    };
+    const onItemCreated = vi.fn().mockResolvedValue(result);
+    const { inputEl, sendBtn, onNewItemCreated, onPlaceholderResolve } = createPromptBox({
+      adapter: makeAdapter(onItemCreated),
+    });
+
+    inputEl.value = "Watch enrichment";
+    sendBtn.click();
+    await flushPromises();
+
+    expect(onNewItemCreated).toHaveBeenCalledWith(result, "__pending_78");
     expect(onPlaceholderResolve).not.toHaveBeenCalled();
   });
 

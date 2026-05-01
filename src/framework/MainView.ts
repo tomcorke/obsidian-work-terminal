@@ -10,7 +10,7 @@
  * Handles vault events (create/delete/rename) with debounced refresh and
  * delete-create rename detection for shell mv operations.
  */
-import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type { Plugin, EventRef } from "obsidian";
 import type { AdapterBundle, WorkItem, WorkItemParser } from "../core/interfaces";
 import { VIEW_TYPE } from "./PluginBase";
@@ -27,6 +27,7 @@ import { extractYamlFrontmatterString } from "../core/frontmatter";
 import { titleCase } from "../core/utils";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import type { AgentProfile } from "../core/agents/AgentProfile";
 import { ActivityTracker } from "./ActivityTracker";
 
 interface PendingRename {
@@ -390,14 +391,18 @@ export class MainView extends ItemView {
         // Placeholder resolution callback
         this.listPanel?.resolvePlaceholder(path, success);
       },
-      (id: string, columnId: string, placeholderPath: string, enrichmentDone?: Promise<void>) => {
-        // New item created - prepend to top of column and track enrichment
-        this.listPanel?.prependToColumn(id, columnId, placeholderPath);
-        if (enrichmentDone) {
-          this.listPanel?.setIngesting(id);
-          enrichmentDone.then(
-            () => this.listPanel?.clearIngesting(id),
-            () => this.listPanel?.clearIngesting(id),
+      (result, placeholderPath: string) => {
+        // New item created - prepend to top of column and track enrichment.
+        this.listPanel?.prependToColumn(result.id, result.columnId, placeholderPath);
+        if (result.foregroundEnrichment) {
+          this.launchForegroundEnrichment(result);
+          return;
+        }
+        if (result.enrichmentDone) {
+          this.listPanel?.setIngesting(result.id);
+          result.enrichmentDone.then(
+            () => this.listPanel?.clearIngesting(result.id),
+            () => this.listPanel?.clearIngesting(result.id),
           );
         }
       },
@@ -515,6 +520,62 @@ export class MainView extends ItemView {
     // Inject profile manager so Split Task / Retry Enrichment can resolve
     // the configured agent profile (#448).
     this.listPanel.setProfileManager(this.profileManager);
+  }
+
+  private launchForegroundEnrichment(result: {
+    id: string;
+    columnId: string;
+    path?: string;
+    title?: string;
+    foregroundEnrichment?: { prompt: string; label?: string };
+  }): void {
+    const foreground = result.foregroundEnrichment;
+    if (!foreground) return;
+    if (!result.path) {
+      console.warn("[work-terminal] Foreground enrichment requested without a created item path");
+      new Notice("Task created, but foreground enrichment could not start: missing task path.");
+      return;
+    }
+
+    const item: WorkItem = {
+      id: result.id,
+      path: result.path,
+      title: result.title || this.adapter.config.itemName,
+      state: result.columnId,
+      metadata: {},
+    };
+
+    this.allItems = [item, ...this.allItems.filter((existing) => existing.id !== item.id)];
+    this.terminalPanel?.setItems(this.allItems);
+    this.terminalPanel?.setActiveItem(item.id);
+    this.terminalPanel?.setTitle(item);
+
+    void this.terminalPanel
+      ?.spawnClaudeWithPrompt(
+        foreground.prompt,
+        foreground.label || "Enrich",
+        this.resolveForegroundEnrichmentLaunchOverride() ?? undefined,
+        item,
+      )
+      .catch((err) => {
+        console.error("[work-terminal] foreground enrichment launch failed:", err);
+        new Notice("Failed to start foreground enrichment session. See console for details.");
+      });
+  }
+
+  private resolveForegroundEnrichmentLaunchOverride(): {
+    profile: AgentProfile;
+    cwdOverride: string;
+  } | null {
+    if (!this.profileManager) return null;
+    const profileId = this.settings["adapter.enrichmentProfile"];
+    if (typeof profileId !== "string" || !profileId.trim()) return null;
+    const profile = this.profileManager.getProfile(profileId.trim());
+    if (!profile) return null;
+    return {
+      profile,
+      cwdOverride: this.profileManager.resolveCwd(profile, this.settings),
+    };
   }
 
   // ---------------------------------------------------------------------------
