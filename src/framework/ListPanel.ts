@@ -1055,13 +1055,13 @@ export class ListPanel {
 
     return (
       `Read the parent task file at ${parentFullPath} and the new sub-task file at ${newFullPath}. ` +
-      `The user created the sub-task to focus on: ${focus}. ` +
-      `Use that focus as the initial scope for the new task. ` +
+      `The new file currently uses a temporary placeholder title and pending filename. ` +
+      `User provided this description of the intended scope for this sub-task: ${focus}. ` +
+      `Do not assume the current title is final. ` +
       `Ask concise follow-up questions only if needed. ` +
-      `Then update the new task file in place: refine the title if helpful, ` +
-      `add a brief description with relevant context from the parent task, ` +
-      `keep the goal aligned to the requested focus, and log the scope in the activity log. ` +
-      `If you change the title, rename the file to match the convention ` +
+      `Then update the new task file in place: set the final title, add a brief description with relevant context from the parent task, ` +
+      `set or refine the goal based on the requested scope, and log the scope in the activity log. ` +
+      `Rename the file to match the convention ` +
       `TASK-YYYYMMDD-HHMM-slugified-title.md while preserving the existing date prefix.`
     );
   }

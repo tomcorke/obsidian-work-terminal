@@ -40,6 +40,7 @@ export class TaskAgentAdapter extends BaseAdapter {
   private _settings: Record<string, unknown> = {};
   private detailView: TaskDetailView | null = null;
   private embeddedDetailView: EmbeddedDetailView | null = null;
+  private _parser: TaskParser | null = null;
   // Identifier of the last item we mounted into the embedded host. Used by
   // the auto-close behaviour to detach the hidden leaf when the selection
   // moves to a different item, mirroring `TaskDetailView.lastItemId`.
@@ -78,7 +79,8 @@ export class TaskAgentAdapter extends BaseAdapter {
     );
     const taskBasePath = (resolvedSettings["adapter.taskBasePath"] as string) || "2 - Areas/Tasks";
     const resolver = this.getStateResolver(taskBasePath, resolvedSettings);
-    return new TaskParser(app, basePath, resolvedSettings, resolver);
+    this._parser = new TaskParser(app, basePath, resolvedSettings, resolver);
+    return this._parser;
   }
 
   createMover(app: App, basePath: string, settings?: Record<string, unknown>): WorkItemMover {
@@ -266,7 +268,7 @@ export class TaskAgentAdapter extends BaseAdapter {
     const parentFilename = parentItem.path.split("/").pop() || parentItem.path;
     const meta = (parentItem.metadata || {}) as Record<string, any>;
 
-    return handleSubTaskCreated(
+    const result = await handleSubTaskCreated(
       this._app,
       {
         id: parentItem.id,
@@ -282,6 +284,8 @@ export class TaskAgentAdapter extends BaseAdapter {
       basePath,
       folderName,
     );
+    this._parser?.registerTransientTask(result.task);
+    return result;
   }
 
   async getRetryEnrichPrompt(item: WorkItem): Promise<string | null> {

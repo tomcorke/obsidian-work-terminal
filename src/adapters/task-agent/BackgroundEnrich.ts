@@ -4,17 +4,14 @@ import {
   spawnHeadlessAgent,
   DEFAULT_TIMEOUT_MS,
 } from "../../core/claude/HeadlessClaude";
-import {
-  generateTaskContent,
-  generatePendingFilename,
-  generateTaskFilename,
-} from "./TaskFileTemplate";
+import { generateTaskContent, generatePendingFilename } from "./TaskFileTemplate";
 import type { SplitSource, EnrichmentMeta } from "./TaskFileTemplate";
 import { expandTilde } from "../../core/utils";
 import type { ItemCreationResult } from "../../core/interfaces";
 import {
   STATE_FOLDER_MAP,
   type KanbanColumn,
+  type TaskFile,
   type TaskParent,
   type TaskPriority,
   type TaskSource,
@@ -473,12 +470,14 @@ export async function handleSubTaskCreated(
   columnId: string,
   basePath: string,
   resolvedFolderName?: string | null,
-): Promise<{ path: string; id: string; title: string }> {
+): Promise<{ path: string; id: string; title: string; task: TaskFile }> {
   const id = crypto.randomUUID();
-  const title = focus.trim();
+  const requestedScope = focus.trim();
   const folderPath = resolveSubTaskFolderPath(parent, columnId, basePath, resolvedFolderName);
-  const filePath = await resolveAvailableTaskPath(app, folderPath, title);
+  const filename = generatePendingFilename();
+  const filePath = `${folderPath}/${filename}`;
   const parentTitle = parent.title.trim() || parent.filename.replace(/\.md$/, "");
+  const title = `Sub-task from: ${parentTitle}`;
   const parentLinkTitle = parentTitle.replace(/]/g, "");
   const parentReference: TaskParent = {
     id: parent.id,
@@ -507,12 +506,42 @@ export async function handleSubTaskCreated(
       }
     : {};
 
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const task: TaskFile = {
+    id,
+    path: filePath,
+    filename,
+    state: columnId,
+    title,
+    tags: inheritedTags,
+    source: parent.source ?? {
+      type: "other",
+      id: "",
+      url: "",
+      captured: "",
+    },
+    priority: {
+      score: 0,
+      deadline: inheritedPriority.deadline ?? "",
+      impact: inheritedPriority.impact ?? "medium",
+      "has-blocker": inheritedPriority["has-blocker"] ?? false,
+      "blocker-context": inheritedPriority["blocker-context"] ?? "",
+    },
+    agentActionable: false,
+    goal: [],
+    parent: parentReference,
+    isSubTask: true,
+    created: now,
+    updated: now,
+    lastActive: "",
+  };
+
   const content = generateTaskContent(title, columnId, undefined, id, undefined, {
     parent: parentReference,
     tags: inheritedTags,
     source: parent.source,
     priority: inheritedPriority,
-    goal: [focus.trim()],
+    activityLogEntries: [`Requested scope: ${requestedScope}`],
   });
 
   const folder = app.vault.getAbstractFileByPath(folderPath);
@@ -523,7 +552,7 @@ export async function handleSubTaskCreated(
   await app.vault.create(filePath, content);
   console.log(`[work-terminal] Sub-task created: ${filePath} (parent ${parent.path})`);
 
-  return { path: filePath, id, title };
+  return { path: filePath, id, title, task };
 }
 
 function resolveSubTaskFolderPath(
@@ -541,22 +570,6 @@ function resolveSubTaskFolderPath(
     ? parent.path.substring(0, parent.path.lastIndexOf("/"))
     : "";
   return parentFolder || basePath;
-}
-
-async function resolveAvailableTaskPath(
-  app: App,
-  folderPath: string,
-  title: string,
-): Promise<string> {
-  const filename = generateTaskFilename(title);
-  const initialPath = `${folderPath}/${filename}`;
-  if (!(await app.vault.adapter.exists(initialPath))) {
-    return initialPath;
-  }
-
-  const suffix = crypto.randomUUID().slice(0, 8);
-  const uniqueFilename = filename.replace(/\.md$/, `-${suffix}.md`);
-  return `${folderPath}/${uniqueFilename}`;
 }
 
 const INGESTION_FAILED_NOTE =

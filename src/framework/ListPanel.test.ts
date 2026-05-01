@@ -343,7 +343,10 @@ describe("ListPanel", () => {
       undefined,
     );
     expect(terminalPanel.spawnClaudeWithPrompt.mock.calls[0][0]).toContain(
-      "The user created the sub-task to focus on: Child focus.",
+      "The new file currently uses a temporary placeholder title and pending filename.",
+    );
+    expect(terminalPanel.spawnClaudeWithPrompt.mock.calls[0][0]).toContain(
+      "User provided this description of the intended scope for this sub-task: Child focus.",
     );
   });
 

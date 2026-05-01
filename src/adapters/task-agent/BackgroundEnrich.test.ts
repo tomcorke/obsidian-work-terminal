@@ -1100,6 +1100,36 @@ describe("BackgroundEnrich", () => {
       expect(app.createdFiles[0].content).toContain("state: needs-review");
       expect(app.createdFiles[0].content).toContain("  - task/needs-review");
     });
+
+    it("creates sub-tasks with a placeholder title and pending filename", async () => {
+      const app = makeSubTaskApp(["2 - Areas/Tasks/todo"]);
+
+      const result = await handleSubTaskCreated(
+        app,
+        {
+          id: "parent-id",
+          title: "Parent task",
+          path: "2 - Areas/Tasks/todo/parent.md",
+          filename: "parent.md",
+        },
+        "Investigate API",
+        "todo",
+        "2 - Areas/Tasks",
+      );
+
+      expect(result.title).toBe("Sub-task from: Parent task");
+      expect(app.createdFiles[0].path).toMatch(/TASK-\d{8}-\d{4}-pending-[a-f0-9]{8}\.md$/);
+      expect(app.createdFiles[0].content).toContain('title: "Sub-task from: Parent task"');
+      expect(app.createdFiles[0].content).toContain("goal: []");
+      expect(app.createdFiles[0].content).toContain("Requested scope: Investigate API");
+      expect(result.task.parent).toEqual({
+        id: "parent-id",
+        title: "Parent task",
+        path: "2 - Areas/Tasks/todo/parent.md",
+        link: "[[parent|Parent task]]",
+      });
+      expect(result.task.isSubTask).toBe(true);
+    });
   });
 
   describe("findFileByUuid", () => {
