@@ -842,8 +842,7 @@ export class ListPanel {
     newItem: WorkItem,
     columnId: string,
   ): Promise<void> {
-    // For pinned items, resolve to the real column for file creation
-    const effectiveColumnId = columnId === PINNED_COLUMN_ID ? newItem.state : columnId;
+    const effectiveColumnId = this.resolveCreationColumnId(newItem, columnId);
     if (!this.adapter.onItemCreated) {
       console.warn("[work-terminal] insertAfter: adapter has no onItemCreated");
       return;
@@ -867,12 +866,22 @@ export class ListPanel {
     }).open();
   }
 
+  private isVirtualCreationColumn(columnId: string): boolean {
+    return (
+      columnId === PINNED_COLUMN_ID || (ACTIVITY_BUCKETS as readonly string[]).includes(columnId)
+    );
+  }
+
+  private resolveCreationColumnId(item: WorkItem, columnId: string): string {
+    return this.isVirtualCreationColumn(columnId) ? item.state : columnId;
+  }
+
   private async createSubTask(
     parentItem: WorkItem,
     columnId: string,
     focus: string,
   ): Promise<void> {
-    const effectiveColumnId = columnId === PINNED_COLUMN_ID ? parentItem.state : columnId;
+    const effectiveColumnId = this.resolveCreationColumnId(parentItem, columnId);
     if (!this.adapter.onCreateSubTask) {
       console.warn("[work-terminal] createSubTask: adapter has no onCreateSubTask");
       return;
@@ -928,8 +937,7 @@ export class ListPanel {
   }
 
   private async splitTask(sourceItem: WorkItem, columnId: string): Promise<void> {
-    // For pinned items, use the real state column for the split
-    const effectiveColumnId = columnId === PINNED_COLUMN_ID ? sourceItem.state : columnId;
+    const effectiveColumnId = this.resolveCreationColumnId(sourceItem, columnId);
     if (!this.adapter.onSplitItem) {
       console.warn("[work-terminal] splitTask: adapter has no onSplitItem");
       return;
@@ -1322,11 +1330,15 @@ export class ListPanel {
       let visibleCount = 0;
 
       const matches = new Map<Element, boolean>();
+      const cardByItemId = new Map<string, Element>();
       for (const card of Array.from(cards)) {
+        const itemId = card.getAttribute("data-item-id");
+        if (itemId) {
+          cardByItemId.set(itemId, card);
+        }
         const textMatch =
           !this.filterTerm || (card.textContent?.toLowerCase() || "").includes(this.filterTerm);
-        const sessionMatch =
-          !sessionItemIds || sessionItemIds.has(card.getAttribute("data-item-id") || "");
+        const sessionMatch = !sessionItemIds || (itemId ? sessionItemIds.has(itemId) : false);
         matches.set(card, textMatch && sessionMatch);
       }
 
@@ -1337,11 +1349,7 @@ export class ListPanel {
         cardEl.removeClass("wt-card-subtask-orphaned");
         if (match) {
           const parentId = card.getAttribute("data-parent-id");
-          const parentCard = parentId
-            ? Array.from(cards).find(
-                (candidate) => candidate.getAttribute("data-item-id") === parentId,
-              )
-            : null;
+          const parentCard = parentId ? cardByItemId.get(parentId) : null;
           if (parentId && (!parentCard || matches.get(parentCard) === false)) {
             cardEl.addClass("wt-card-subtask-orphaned");
           }

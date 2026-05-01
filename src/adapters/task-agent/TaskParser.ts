@@ -20,6 +20,7 @@ export class TaskParser implements WorkItemParser {
   private static loggedFallbackPaths = new Set<string>();
   private transientIdsByPath = new Map<string, string>();
   private backfillPromisesByPath = new Map<string, Promise<WorkItem | null>>();
+  private parentIndex: Map<string, { path: string; title: string }> | null = null;
   private stateResolver: StateResolver | null;
 
   constructor(
@@ -173,6 +174,13 @@ export class TaskParser implements WorkItemParser {
   }
 
   private findParentById(id: string): { path: string; title: string } | null {
+    if (this.parentIndex) {
+      return this.parentIndex.get(id) ?? null;
+    }
+    return this.scanParentById(id);
+  }
+
+  private scanParentById(id: string): { path: string; title: string } | null {
     const normalizedBase = `${this.basePath}/`;
     for (const file of this.app.vault.getMarkdownFiles()) {
       if (!file.path.startsWith(normalizedBase)) continue;
@@ -187,6 +195,26 @@ export class TaskParser implements WorkItemParser {
       };
     }
     return null;
+  }
+
+  private buildParentIndex(): Map<string, { path: string; title: string }> {
+    const index = new Map<string, { path: string; title: string }>();
+    const normalizedBase = `${this.basePath}/`;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!file.path.startsWith(normalizedBase)) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      const frontmatter = cache?.frontmatter;
+      const id = typeof frontmatter?.id === "string" ? frontmatter.id.trim() : "";
+      if (!id) continue;
+      index.set(id, {
+        path: file.path,
+        title:
+          typeof frontmatter?.title === "string" && frontmatter.title.trim()
+            ? frontmatter.title.trim()
+            : file.basename,
+      });
+    }
+    return index;
   }
 
   private extractLinkTitle(value: string): string {
@@ -469,20 +497,25 @@ export class TaskParser implements WorkItemParser {
   async loadAll(): Promise<WorkItem[]> {
     const items: WorkItem[] = [];
     const folders = ["priority", "todo", "active", "archive"];
+    this.parentIndex = this.buildParentIndex();
 
-    for (const folder of folders) {
-      const folderPath = `${this.basePath}/${folder}`;
-      const abstractFile = this.app.vault.getAbstractFileByPath(folderPath);
-      if (!abstractFile) continue;
+    try {
+      for (const folder of folders) {
+        const folderPath = `${this.basePath}/${folder}`;
+        const abstractFile = this.app.vault.getAbstractFileByPath(folderPath);
+        if (!abstractFile) continue;
 
-      const files = this.app.vault
-        .getMarkdownFiles()
-        .filter((f) => f.path.startsWith(folderPath + "/") && f.extension === "md");
+        const files = this.app.vault
+          .getMarkdownFiles()
+          .filter((f) => f.path.startsWith(folderPath + "/") && f.extension === "md");
 
-      for (const file of files) {
-        const item = this.parse(file);
-        if (item) items.push(item);
+        for (const file of files) {
+          const item = this.parse(file);
+          if (item) items.push(item);
+        }
       }
+    } finally {
+      this.parentIndex = null;
     }
 
     return items;

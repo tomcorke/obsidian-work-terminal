@@ -1,5 +1,5 @@
 import { slugify, yamlQuoteValue } from "../../core/utils";
-import type { KanbanColumn, TaskParent, TaskPriority, TaskSource } from "./types";
+import type { TaskParent, TaskPriority, TaskSource } from "./types";
 
 export interface SplitSource {
   filename: string;
@@ -25,7 +25,7 @@ export interface EnrichmentMeta {
 
 export function generateTaskContent(
   title: string,
-  state: KanbanColumn,
+  state: string,
   splitFrom?: SplitSource,
   existingId?: string,
   enrichment?: EnrichmentMeta,

@@ -263,6 +263,8 @@ export class TaskAgentAdapter extends BaseAdapter {
     if (!trimmedFocus) return null;
 
     const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
+    const stateResolver = this.getStateResolver(basePath, settings);
+    const folderName = stateResolver.getFolderForState?.(columnId) ?? null;
     const parentFilename = parentItem.path.split("/").pop() || parentItem.path;
     const meta = (parentItem.metadata || {}) as Record<string, any>;
 
@@ -278,8 +280,9 @@ export class TaskAgentAdapter extends BaseAdapter {
         tags: Array.isArray(meta.tags) ? meta.tags : [],
       },
       trimmedFocus,
-      columnId as KanbanColumn,
+      columnId,
       basePath,
+      folderName,
     );
   }
 

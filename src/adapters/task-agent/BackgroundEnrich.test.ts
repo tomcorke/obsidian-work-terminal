@@ -20,6 +20,7 @@ vi.mock("./EnrichmentLogger", () => ({
 
 import {
   handleItemCreated,
+  handleSubTaskCreated,
   insertIngestionFailedFlag,
   prepareRetryEnrichment,
   findFileByUuid,
@@ -986,6 +987,84 @@ describe("BackgroundEnrich", () => {
       await result.enrichmentDone;
 
       expect(writeEnrichmentLogMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("handleSubTaskCreated", () => {
+    function makeSubTaskApp(existingFolders: string[] = []) {
+      const existingPaths = new Set(existingFolders);
+      const createdFolders: string[] = [];
+      const createdFiles: Array<{ path: string; content: string }> = [];
+
+      return {
+        vault: {
+          adapter: {
+            exists: vi.fn().mockResolvedValue(false),
+          },
+          getAbstractFileByPath(path: string) {
+            return existingPaths.has(path) ? { path } : null;
+          },
+          async createFolder(path: string) {
+            existingPaths.add(path);
+            createdFolders.push(path);
+            return { path };
+          },
+          async create(path: string, content: string) {
+            existingPaths.add(path);
+            createdFiles.push({ path, content });
+            return { path, content };
+          },
+        },
+        createdFolders,
+        createdFiles,
+      } as any;
+    }
+
+    it("uses a resolved folder mapping for custom sub-task states", async () => {
+      const app = makeSubTaskApp();
+
+      await handleSubTaskCreated(
+        app,
+        {
+          id: "parent-id",
+          title: "Parent task",
+          path: "2 - Areas/Tasks/todo/parent.md",
+          filename: "parent.md",
+          tags: ["task", "task/todo", "jira/ABC-123"],
+        },
+        "Review contract",
+        "blocked",
+        "2 - Areas/Tasks",
+        "blocked-work",
+      );
+
+      expect(app.createdFolders).toEqual(["2 - Areas/Tasks/blocked-work"]);
+      expect(app.createdFiles[0].path).toContain("2 - Areas/Tasks/blocked-work/");
+      expect(app.createdFiles[0].content).toContain("state: blocked");
+      expect(app.createdFiles[0].content).toContain("  - task/blocked");
+      expect(app.createdFiles[0].content).toContain("  - jira/ABC-123");
+    });
+
+    it("falls back to the parent folder for dynamic states without a folder mapping", async () => {
+      const app = makeSubTaskApp(["2 - Areas/Tasks/custom-folder"]);
+
+      await handleSubTaskCreated(
+        app,
+        {
+          id: "parent-id",
+          title: "Parent task",
+          path: "2 - Areas/Tasks/custom-folder/parent.md",
+          filename: "parent.md",
+        },
+        "Investigate API",
+        "needs-review",
+        "2 - Areas/Tasks",
+      );
+
+      expect(app.createdFolders).toEqual([]);
+      expect(app.createdFiles[0].path).toContain("2 - Areas/Tasks/custom-folder/");
+      expect(app.createdFiles[0].content).toContain("state: needs-review");
+      expect(app.createdFiles[0].content).toContain("  - task/needs-review");
     });
   });
 

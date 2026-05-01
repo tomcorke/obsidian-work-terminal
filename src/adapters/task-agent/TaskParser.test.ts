@@ -754,6 +754,36 @@ describe("TaskParser", () => {
         state: "todo",
       });
     });
+
+    it("indexes parent IDs once per load instead of rescanning for each sub-task", async () => {
+      const parent = makeFile("2 - Areas/Tasks/active/parent.md");
+      const childA = makeFile("2 - Areas/Tasks/active/child-a.md");
+      const childB = makeFile("2 - Areas/Tasks/active/child-b.md");
+      const app = mockApp([parent, childA, childB], {
+        [parent.path]: makeFrontmatter({ id: "parent-uuid", title: "Resolved Parent" }),
+        [childA.path]: makeFrontmatter({
+          id: "child-a",
+          parent: { id: "parent-uuid", title: "Parent" },
+        }),
+        [childB.path]: makeFrontmatter({
+          id: "child-b",
+          parent: { id: "parent-uuid", title: "Parent" },
+        }),
+      });
+      const getMarkdownFiles = vi.spyOn(app.vault, "getMarkdownFiles");
+      const parser = new TaskParser(app, "", defaultSettings);
+
+      const items = await parser.loadAll();
+
+      expect(items).toHaveLength(3);
+      expect(getMarkdownFiles).toHaveBeenCalledTimes(5);
+      expect((items.find((item) => item.id === "child-a")!.metadata as any).parent.path).toBe(
+        parent.path,
+      );
+      expect((items.find((item) => item.id === "child-b")!.metadata as any).parent.path).toBe(
+        parent.path,
+      );
+    });
   });
 
   describe("backfillItemId", () => {

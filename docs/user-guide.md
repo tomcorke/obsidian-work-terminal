@@ -607,7 +607,7 @@ parent:
 
 Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
 
-New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and the focus area as the initial goal. Agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
+New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and the focus area as the initial goal. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. Agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
 
 ### Task splitting
 

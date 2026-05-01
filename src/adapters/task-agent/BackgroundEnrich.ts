@@ -448,13 +448,13 @@ export async function handleSubTaskCreated(
   app: App,
   parent: SubTaskParentSource,
   focus: string,
-  columnId: KanbanColumn,
+  columnId: string,
   basePath: string,
+  resolvedFolderName?: string | null,
 ): Promise<{ path: string; id: string; title: string }> {
   const id = crypto.randomUUID();
   const title = focus.trim();
-  const folderName = STATE_FOLDER_MAP[columnId] || "todo";
-  const folderPath = `${basePath}/${folderName}`;
+  const folderPath = resolveSubTaskFolderPath(parent, columnId, basePath, resolvedFolderName);
   const filePath = await resolveAvailableTaskPath(app, folderPath, title);
   const parentTitle = parent.title.trim() || parent.filename.replace(/\.md$/, "");
   const parentLinkTitle = parentTitle.replace(/]/g, "");
@@ -502,6 +502,23 @@ export async function handleSubTaskCreated(
   console.log(`[work-terminal] Sub-task created: ${filePath} (parent ${parent.path})`);
 
   return { path: filePath, id, title };
+}
+
+function resolveSubTaskFolderPath(
+  parent: SubTaskParentSource,
+  columnId: string,
+  basePath: string,
+  resolvedFolderName?: string | null,
+): string {
+  const folderName = resolvedFolderName || STATE_FOLDER_MAP[columnId as KanbanColumn];
+  if (folderName) {
+    return `${basePath}/${folderName}`;
+  }
+
+  const parentFolder = parent.path.includes("/")
+    ? parent.path.substring(0, parent.path.lastIndexOf("/"))
+    : "";
+  return parentFolder || basePath;
 }
 
 async function resolveAvailableTaskPath(

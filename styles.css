@@ -181,7 +181,6 @@
 
 .wt-card-subtask {
   margin-left: calc(var(--wt-subtask-depth, 1) * 16px);
-  border-left-color: var(--background-modifier-border);
 }
 
 .wt-card-subtask::before {

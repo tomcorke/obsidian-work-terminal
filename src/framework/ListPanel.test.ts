@@ -94,6 +94,7 @@ function createListPanel(
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
     onSessionFilterChange?: ReturnType<typeof vi.fn>;
+    onCreateSubTask?: ReturnType<typeof vi.fn>;
     cardClasses?: string[];
     includeMetaRow?: boolean;
     itemName?: string;
@@ -118,6 +119,7 @@ function createListPanel(
       columns,
       creationColumns,
     },
+    onCreateSubTask: options.onCreateSubTask,
   };
 
   const cardRenderer = {
@@ -285,6 +287,33 @@ describe("ListPanel", () => {
     expect(parentElCard.style.display).toBe("none");
     expect(childEl.style.display).toBe("");
     expect(childEl.classList.contains("wt-card-subtask-orphaned")).toBe(true);
+  });
+
+  it("creates sub-tasks from activity sections using the parent task state", async () => {
+    const onCreateSubTask = vi.fn().mockResolvedValue({
+      id: "child",
+      path: "Tasks/active/child.md",
+      title: "Child focus",
+    });
+    const { panel } = createListPanel({
+      columns: [
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "active", label: "Active", folderName: "active" },
+      ],
+      settings: { "core.viewMode": "activity" },
+      onCreateSubTask,
+    });
+    const parent = { ...makeItem("parent", "Parent"), state: "active" };
+
+    panel.render({ active: [parent] }, {});
+    await (panel as any).createSubTask(parent, "recent", "Child focus");
+
+    expect(onCreateSubTask).toHaveBeenCalledWith(
+      parent,
+      "Child focus",
+      "active",
+      expect.any(Object),
+    );
   });
 
   it("keeps success animation pending until the new card renders", () => {
