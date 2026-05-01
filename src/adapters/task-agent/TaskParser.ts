@@ -19,6 +19,7 @@ export class TaskParser implements WorkItemParser {
   basePath: string;
   private static loggedFallbackPaths = new Set<string>();
   private transientIdsByPath = new Map<string, string>();
+  private transientTasksByPath = new Map<string, TaskFile>();
   private backfillPromisesByPath = new Map<string, Promise<WorkItem | null>>();
   private parentIndex: Map<string, { path: string; title: string }> | null = null;
   private stateResolver: StateResolver | null;
@@ -50,6 +51,7 @@ export class TaskParser implements WorkItemParser {
       return this.createFallbackTaskFile(file, fallbackState, transientId);
     }
 
+    this.transientTasksByPath.delete(file.path);
     if (typeof fm.id === "string" && fm.id.trim()) {
       this.transientIdsByPath.delete(file.path);
     }
@@ -431,7 +433,9 @@ export class TaskParser implements WorkItemParser {
     state: string | null,
     transientId?: string,
   ): TaskFile | null {
-    if (!state) return null;
+    const transient = this.transientTasksByPath.get(file.path);
+    const effectiveState = state || transient?.state || null;
+    if (!effectiveState) return null;
 
     if (!TaskParser.loggedFallbackPaths.has(file.path)) {
       TaskParser.loggedFallbackPaths.add(file.path);
@@ -441,31 +445,35 @@ export class TaskParser implements WorkItemParser {
     }
 
     return {
-      id: transientId || file.path,
+      id: transientId || transient?.id || file.path,
       path: file.path,
       filename: file.name,
-      state,
-      title: file.basename,
-      tags: ["task", `task/${state}`],
-      source: {
+      state: effectiveState,
+      title: transient?.title || file.basename,
+      tags: transient?.tags || ["task", `task/${effectiveState}`],
+      source: transient?.source || {
         type: "other",
         id: "",
         url: "",
         captured: "",
       },
-      priority: {
+      priority: transient?.priority || {
         score: 0,
         deadline: "",
         impact: "medium",
         "has-blocker": false,
         "blocker-context": "",
       },
-      agentActionable: false,
-      goal: [],
-      color: undefined,
-      created: "",
-      updated: "",
-      lastActive: "",
+      agentActionable: transient?.agentActionable ?? false,
+      goal: transient?.goal || [],
+      parent: transient?.parent,
+      isSubTask: transient?.isSubTask,
+      color: transient?.color,
+      icon: transient?.icon,
+      backgroundIngestion: transient?.backgroundIngestion,
+      created: transient?.created || "",
+      updated: transient?.updated || "",
+      lastActive: transient?.lastActive || "",
     };
   }
 
@@ -564,6 +572,11 @@ export class TaskParser implements WorkItemParser {
 
   private normaliseBasePath(path: string): string {
     return path.replace(/\/+$/, "");
+  }
+
+  registerTransientTask(task: TaskFile): void {
+    this.transientIdsByPath.set(task.path, task.id);
+    this.transientTasksByPath.set(task.path, task);
   }
 
   async backfillItemId(item: WorkItem): Promise<WorkItem | null> {

@@ -12,6 +12,7 @@ export interface TaskContentOptions {
   source?: Partial<TaskSource>;
   priority?: Partial<TaskPriority>;
   goal?: string[];
+  activityLogEntries?: string[];
 }
 
 /** Enrichment metadata to embed in the task file frontmatter. */
@@ -21,6 +22,13 @@ export interface EnrichmentMeta {
   args: string;
   prompt: string;
   cwd: string;
+}
+
+function normaliseActivityLogEntry(entry: string): string {
+  return entry
+    .trim()
+    .replace(/\s*\r?\n\s*/g, " ")
+    .replace(/[ \t]{2,}/g, " ");
 }
 
 export function generateTaskContent(
@@ -80,6 +88,13 @@ export function generateTaskContent(
   const goal = options.goal ?? [];
   const goalSection =
     goal.length > 0 ? `\n${goal.map((entry) => `  - ${yamlQuoteValue(entry)}`).join("\n")}` : " []";
+  const activityLog = [
+    `- **${dateStr}** - Task created${activitySuffix}`,
+    ...(options.activityLogEntries || [])
+      .map((entry) => normaliseActivityLogEntry(entry))
+      .filter((entry) => entry.length > 0)
+      .map((entry) => `- **${dateStr}** - ${entry}`),
+  ].join("\n");
 
   const enrichmentSection = enrichment
     ? `enrichment:\n` +
@@ -116,7 +131,7 @@ updated: ${now}
 # ${title}
 
 ## Activity Log
-- **${dateStr}** - Task created${activitySuffix}
+${activityLog}
 `;
 }
 

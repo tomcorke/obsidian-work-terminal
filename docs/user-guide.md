@@ -206,7 +206,7 @@ Right-click any task card to open the context menu with these options:
 - **Move to Top** - moves the card to the top of its current column
 - **Retry Enrichment** - re-runs background enrichment (shown only when enrichment previously failed)
 - **Split Task** - creates a new task linked to this one and opens a Claude session to scope it
-- **Create Sub-task...** - prompts for a focused area, then creates a normal child task with explicit parent frontmatter
+- **Create Sub-task...** - prompts for a focused area, creates a placeholder child task with explicit parent frontmatter, then opens a Claude scoping session
 - **Move to [column]** - moves the task to a different column (Priority, Active, To Do, Done, or any dynamic columns)
 - **Done & Close Sessions** - moves to Done and closes all terminal sessions for this task
 - **Copy Name** - copies the task title to clipboard
@@ -595,7 +595,7 @@ Pinned state is persisted across sessions using the task's UUID, so it survives 
 
 ### Parent tasks and sub-tasks
 
-Use **Create Sub-task...** from a task card's context menu to break a task into a focused child task without losing the relationship to the parent. The flow asks what area the child should focus on, creates a new task file in the same state column, launches a visible scoping session for the new child, and writes explicit frontmatter such as:
+Use **Create Sub-task...** from a task card's context menu to break a task into a focused child task without losing the relationship to the parent. The flow asks what area the child should focus on, creates a new placeholder task file in the same state column, launches a visible scoping session for the new child, and writes explicit frontmatter such as:
 
 ```yaml
 sub-task: true
@@ -608,7 +608,7 @@ parent:
 
 Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the parent is pinned, a newly created sub-task is pinned immediately as well so it appears in the same visible group, nested directly underneath. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
 
-New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and the focus area as the initial goal. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. The scoping session launched after creation uses the same agent-profile binding as Split Task, and agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
+New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and explicit parent/sub-task frontmatter. The initial child title and filename are intentionally placeholders; the scoping session turns your requested focus into the final title, goal, and task content. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. The scoping session launched after creation uses the same agent-profile binding as Split Task, and agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
 
 ### Task splitting
 

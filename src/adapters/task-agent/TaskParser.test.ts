@@ -119,6 +119,53 @@ describe("TaskParser", () => {
       expect((item!.metadata as any).priority.score).toBe(0);
     });
 
+    it("uses registered transient task metadata while metadata cache is still empty", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], { [file.path]: null });
+      const parser = new TaskParser(app, "", defaultSettings);
+      parser.registerTransientTask({
+        id: "child-id",
+        path: file.path,
+        filename: file.name,
+        state: "active",
+        title: "Sub-task from: Parent",
+        tags: ["task", "task/active", "sub-task"],
+        source: { type: "prompt", id: "", url: "", captured: "" },
+        priority: {
+          score: 0,
+          deadline: "",
+          impact: "medium",
+          "has-blocker": false,
+          "blocker-context": "",
+        },
+        agentActionable: false,
+        goal: [],
+        parent: {
+          id: "parent-id",
+          title: "Parent",
+          path: "2 - Areas/Tasks/active/parent.md",
+          link: "[[parent|Parent]]",
+        },
+        isSubTask: true,
+        created: "2026-05-01T11:00:00Z",
+        updated: "2026-05-01T11:00:00Z",
+        lastActive: "",
+      });
+
+      const item = parser.parse(file as unknown as TFile);
+
+      expect(item).not.toBeNull();
+      expect(item!.id).toBe("child-id");
+      expect(item!.title).toBe("Sub-task from: Parent");
+      expect((item!.metadata as any).isSubTask).toBe(true);
+      expect((item!.metadata as any).parent).toEqual({
+        id: "parent-id",
+        title: "Parent",
+        path: "2 - Areas/Tasks/active/parent.md",
+        link: "[[parent|Parent]]",
+      });
+    });
+
     it("falls back to the folder state when frontmatter state is invalid", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {
