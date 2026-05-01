@@ -94,6 +94,7 @@ function createListPanel(
     mover?: { move: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
     onSessionFilterChange?: ReturnType<typeof vi.fn>;
+    onCreateSubTask?: ReturnType<typeof vi.fn>;
     cardClasses?: string[];
     includeMetaRow?: boolean;
     itemName?: string;
@@ -118,6 +119,7 @@ function createListPanel(
       columns,
       creationColumns,
     },
+    onCreateSubTask: options.onCreateSubTask,
   };
 
   const cardRenderer = {
@@ -244,6 +246,74 @@ describe("ListPanel", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     dom.window.close();
+  });
+
+  it("renders sub-tasks immediately after their parent with nested styling", () => {
+    const { panel } = createListPanel();
+    const parent = makeItem("parent", "Parent");
+    const child: WorkItem = {
+      ...makeItem("child", "Child"),
+      metadata: { parent: { id: "parent", title: "Parent", path: "Tasks/parent.md" } },
+    };
+    const sibling = makeItem("sibling", "Sibling");
+
+    panel.render({ todo: [child, sibling, parent] }, { todo: ["sibling", "parent", "child"] });
+
+    const ids = Array.from(document.querySelectorAll(".wt-card-wrapper")).map((el) =>
+      el.getAttribute("data-item-id"),
+    );
+    expect(ids).toEqual(["sibling", "parent", "child"]);
+    const childEl = document.querySelector('[data-item-id="child"]') as HTMLElement;
+    expect(childEl.classList.contains("wt-card-subtask")).toBe(true);
+    expect(childEl.style.getPropertyValue("--wt-subtask-depth")).toBe("1");
+  });
+
+  it("renders matching sub-tasks as top-level when their parent is filtered out", () => {
+    const { panel, parentEl } = createListPanel();
+    const parent = makeItem("parent", "Unrelated parent");
+    const child: WorkItem = {
+      ...makeItem("child", "Needle child"),
+      metadata: { parent: { id: "parent", title: "Unrelated parent", path: "Tasks/parent.md" } },
+    };
+
+    panel.render({ todo: [parent, child] }, { todo: ["parent", "child"] });
+    const input = parentEl.querySelector(".wt-filter-input") as HTMLInputElement;
+    input.value = "needle";
+    input.dispatchEvent(new window.Event("input"));
+    vi.advanceTimersByTime(100);
+
+    const parentElCard = document.querySelector('[data-item-id="parent"]') as HTMLElement;
+    const childEl = document.querySelector('[data-item-id="child"]') as HTMLElement;
+    expect(parentElCard.style.display).toBe("none");
+    expect(childEl.style.display).toBe("");
+    expect(childEl.classList.contains("wt-card-subtask-orphaned")).toBe(true);
+  });
+
+  it("creates sub-tasks from activity sections using the parent task state", async () => {
+    const onCreateSubTask = vi.fn().mockResolvedValue({
+      id: "child",
+      path: "Tasks/active/child.md",
+      title: "Child focus",
+    });
+    const { panel } = createListPanel({
+      columns: [
+        { id: "todo", label: "To Do", folderName: "todo" },
+        { id: "active", label: "Active", folderName: "active" },
+      ],
+      settings: { "core.viewMode": "activity" },
+      onCreateSubTask,
+    });
+    const parent = { ...makeItem("parent", "Parent"), state: "active" };
+
+    panel.render({ active: [parent] }, {});
+    await (panel as any).createSubTask(parent, "recent", "Child focus");
+
+    expect(onCreateSubTask).toHaveBeenCalledWith(
+      parent,
+      "Child focus",
+      "active",
+      expect.any(Object),
+    );
   });
 
   it("keeps success animation pending until the new card renders", () => {

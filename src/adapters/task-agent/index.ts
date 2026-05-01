@@ -21,6 +21,7 @@ import { resolveDetailViewOptions } from "../../core/detailViewPlacement";
 import {
   handleItemCreated,
   handleSplitTaskCreated,
+  handleSubTaskCreated,
   prepareRetryEnrichment,
   type EnrichmentProfileOverride,
 } from "./BackgroundEnrich";
@@ -247,6 +248,42 @@ export class TaskAgentAdapter extends BaseAdapter {
       filename: sourceFilename,
       title: sourceItem.title,
     });
+  }
+
+  async onCreateSubTask(
+    parentItem: WorkItem,
+    focus: string,
+    columnId: string,
+    settings: Record<string, any>,
+  ): Promise<{ path: string; id: string; title: string } | null> {
+    if (!this._app) {
+      throw new Error("TaskAgentAdapter: app not available (no view opened yet)");
+    }
+    const trimmedFocus = focus.trim();
+    if (!trimmedFocus) return null;
+
+    const basePath = settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
+    const stateResolver = this.getStateResolver(basePath, settings);
+    const folderName = stateResolver.getFolderForState?.(columnId) ?? null;
+    const parentFilename = parentItem.path.split("/").pop() || parentItem.path;
+    const meta = (parentItem.metadata || {}) as Record<string, any>;
+
+    return handleSubTaskCreated(
+      this._app,
+      {
+        id: parentItem.id,
+        title: parentItem.title,
+        path: parentItem.path,
+        filename: parentFilename,
+        source: meta.source,
+        priority: meta.priority,
+        tags: Array.isArray(meta.tags) ? meta.tags : [],
+      },
+      trimmedFocus,
+      columnId,
+      basePath,
+      folderName,
+    );
   }
 
   async getRetryEnrichPrompt(item: WorkItem): Promise<string | null> {

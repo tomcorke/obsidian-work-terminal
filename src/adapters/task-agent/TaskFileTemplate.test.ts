@@ -108,6 +108,37 @@ describe("generateTaskContent", () => {
     expect(content).not.toContain('related: []\n  - "[[TASK-20260327-1200-source-task]]"');
   });
 
+  it("writes explicit readable parent frontmatter for sub-tasks", () => {
+    const content = generateTaskContent("Auth tests", "todo", undefined, "child-id", undefined, {
+      parent: {
+        id: "parent-id",
+        title: "Parent Task",
+        path: "2 - Areas/Tasks/active/TASK-parent.md",
+        link: "[[TASK-parent|Parent Task]]",
+      },
+      tags: ["task", "task/todo", "sub-task", "jira/ABC-123"],
+      source: { type: "jira", id: "ABC-123", url: "https://jira/ABC-123", captured: "ABC-123" },
+      priority: {
+        deadline: "2026-06-01",
+        impact: "high",
+        "has-blocker": true,
+        "blocker-context": "Waiting",
+      },
+      goal: ["Auth tests"],
+    });
+
+    expect(content).toContain("sub-task: true");
+    expect(content).toContain("parent:\n  id: parent-id");
+    expect(content).toContain("  title: Parent Task");
+    expect(content).toContain("  path: 2 - Areas/Tasks/active/TASK-parent.md");
+    expect(content).toContain('  link: "[[TASK-parent|Parent Task]]"');
+    expect(content).toContain("  - sub-task");
+    expect(content).toContain("source:\n  type: jira");
+    expect(content).toContain("deadline: 2026-06-01");
+    expect(content).toContain("goal:\n  - Auth tests");
+    expect(content).toContain('related:\n  - "[[TASK-parent|Parent Task]]"');
+  });
+
   it("includes enrichment block when enrichment metadata is provided", () => {
     const content = generateTaskContent("Test", "todo", undefined, "test-id", {
       profile: "pi",

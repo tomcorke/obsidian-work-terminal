@@ -52,6 +52,33 @@ function resolveAbsoluteFilePath(item: WorkItem, absolutePath?: string): string 
   return item.path;
 }
 
+function getParentMetadata(item: WorkItem): Record<string, string> | null {
+  const parent = (item.metadata as Record<string, any> | undefined)?.parent;
+  if (!parent || typeof parent !== "object") return null;
+  return {
+    id: typeof parent.id === "string" ? parent.id : "",
+    title: typeof parent.title === "string" ? parent.title : "",
+    path: typeof parent.path === "string" ? parent.path : "",
+  };
+}
+
+function resolveParentAbsoluteFilePath(
+  item: WorkItem,
+  parentPath: string,
+  absolutePath?: string,
+): string {
+  if (!parentPath) return "";
+  if (!absolutePath || !isAbsolutePath(absolutePath)) return parentPath;
+
+  const normalizedAbsolute = absolutePath.replace(/\\/g, "/");
+  const normalizedItemPath = item.path.replace(/\\/g, "/");
+  if (!normalizedAbsolute.endsWith(normalizedItemPath)) return parentPath;
+
+  const base = absolutePath.slice(0, absolutePath.length - item.path.length).replace(/[\\/]$/, "");
+  const separator = absolutePath.includes("\\") ? "\\" : "/";
+  return `${base}${separator}${parentPath.replace(/[\\/]/g, separator)}`;
+}
+
 /**
  * Expand placeholder variables in a profile template string.
  *
@@ -59,6 +86,11 @@ function resolveAbsoluteFilePath(item: WorkItem, absolutePath?: string): string 
  * - $title             - Work item title
  * - $state             - Work item state (e.g. "priority", "active")
  * - $filePath          - Work item file path (vault-relative)
+ * - $parentTitle       - Parent task title for sub-tasks, otherwise ""
+ * - $parentId          - Parent task UUID for sub-tasks, otherwise ""
+ * - $parentFilePath    - Parent task file path (vault-relative) for sub-tasks, otherwise ""
+ * - $parentAbsoluteFilePath - Fully resolved absolute filesystem path to the parent task file
+ *                        when available, otherwise the vault-relative parent path or ""
  * - $absoluteFilePath  - Fully resolved absolute filesystem path to the work item file.
  *                        Falls back to the vault-relative `item.path` (with a console warning)
  *                        when no `absoluteFilePath` is supplied.
@@ -80,10 +112,19 @@ export function expandProfilePlaceholders(
 ): string {
   const needsAbsolute = /\$absoluteFilePath/.test(template);
   const absolute = needsAbsolute ? resolveAbsoluteFilePath(item, absoluteFilePath) : item.path;
+  const parent = getParentMetadata(item);
+  const parentPath = parent?.path ?? "";
+  const parentAbsolute = /\$parentAbsoluteFilePath/.test(template)
+    ? resolveParentAbsoluteFilePath(item, parentPath, absoluteFilePath)
+    : parentPath;
 
   return template
     .replace(/\$workTerminalPrompt/g, contextPrompt ?? "")
+    .replace(/\$parentAbsoluteFilePath/g, parentAbsolute)
     .replace(/\$absoluteFilePath/g, absolute)
+    .replace(/\$parentFilePath/g, parentPath)
+    .replace(/\$parentTitle/g, parent?.title ?? "")
+    .replace(/\$parentId/g, parent?.id ?? "")
     .replace(/\$title/g, item.title)
     .replace(/\$state/g, item.state)
     .replace(/\$filePath/g, item.path)

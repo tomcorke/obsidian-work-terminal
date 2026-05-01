@@ -88,6 +88,22 @@ describe("TaskPromptBuilder", () => {
     expect(prompt).toContain("Task: Fix: the 'auth' bug");
   });
 
+  it("includes parent context for sub-tasks", () => {
+    const item = makeItem(
+      {},
+      {
+        parent: {
+          id: "parent-id",
+          title: "Parent task",
+          path: "2 - Areas/Tasks/active/parent.md",
+        },
+      },
+    );
+    const prompt = builder.buildPrompt(item, "/path");
+    expect(prompt).toContain("Parent: Parent task");
+    expect(prompt).toContain("Parent file: 2 - Areas/Tasks/active/parent.md");
+  });
+
   it("handles missing metadata gracefully", () => {
     const item: WorkItem = {
       id: "test",
@@ -107,6 +123,8 @@ describe("TaskPromptBuilder", () => {
     expect(description).toContain("$title");
     expect(description).toContain("$state");
     expect(description).toContain("$filePath");
+    expect(description).toContain("$parentTitle");
+    expect(description).toContain("$parentFilePath");
     expect(description).toContain("$deadline");
     expect(description).toContain("$blocker");
     // Should not regress to older brace-style placeholders.

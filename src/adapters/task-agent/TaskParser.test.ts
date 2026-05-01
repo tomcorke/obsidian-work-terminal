@@ -153,6 +153,35 @@ describe("TaskParser", () => {
       expect(item!.title).toBe("my-task");
     });
 
+    it("parses parent frontmatter and marks sub-tasks", () => {
+      const parent = makeFile("2 - Areas/Tasks/active/parent.md");
+      const child = makeFile("2 - Areas/Tasks/active/child.md");
+      const app = mockApp([parent, child], {
+        [parent.path]: makeFrontmatter({ id: "parent-uuid", title: "Resolved Parent" }),
+        [child.path]: makeFrontmatter({
+          id: "child-uuid",
+          title: "Child Task",
+          "sub-task": true,
+          parent: {
+            id: "parent-uuid",
+            title: "Stored Parent",
+            path: "old/path.md",
+            link: "[[parent|Stored Parent]]",
+          },
+        }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(child as unknown as TFile);
+
+      expect((item!.metadata as any).isSubTask).toBe(true);
+      expect((item!.metadata as any).parent).toEqual({
+        id: "parent-uuid",
+        title: "Stored Parent",
+        path: parent.path,
+        link: "[[parent|Stored Parent]]",
+      });
+    });
+
     it("uses file.path as the ID when frontmatter id is missing", () => {
       const file = makeFile("2 - Areas/Tasks/active/task-without-id.md");
       const app = mockApp([file], {
@@ -724,6 +753,36 @@ describe("TaskParser", () => {
         title: "broken-task",
         state: "todo",
       });
+    });
+
+    it("indexes parent IDs once per load instead of rescanning for each sub-task", async () => {
+      const parent = makeFile("2 - Areas/Tasks/active/parent.md");
+      const childA = makeFile("2 - Areas/Tasks/active/child-a.md");
+      const childB = makeFile("2 - Areas/Tasks/active/child-b.md");
+      const app = mockApp([parent, childA, childB], {
+        [parent.path]: makeFrontmatter({ id: "parent-uuid", title: "Resolved Parent" }),
+        [childA.path]: makeFrontmatter({
+          id: "child-a",
+          parent: { id: "parent-uuid", title: "Parent" },
+        }),
+        [childB.path]: makeFrontmatter({
+          id: "child-b",
+          parent: { id: "parent-uuid", title: "Parent" },
+        }),
+      });
+      const getMarkdownFiles = vi.spyOn(app.vault, "getMarkdownFiles");
+      const parser = new TaskParser(app, "", defaultSettings);
+
+      const items = await parser.loadAll();
+
+      expect(items).toHaveLength(3);
+      expect(getMarkdownFiles).toHaveBeenCalledTimes(5);
+      expect((items.find((item) => item.id === "child-a")!.metadata as any).parent.path).toBe(
+        parent.path,
+      );
+      expect((items.find((item) => item.id === "child-b")!.metadata as any).parent.path).toBe(
+        parent.path,
+      );
     });
   });
 
