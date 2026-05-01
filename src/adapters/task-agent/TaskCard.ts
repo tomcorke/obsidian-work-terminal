@@ -450,8 +450,15 @@ export class TaskCard implements CardRenderer {
       if (col === "done") {
         (items as any[]).push({
           title: "Done & Close Sessions",
-          callback: () => {
-            ctx.onMoveToColumn("done");
+          callback: async () => {
+            let moved: boolean | void;
+            try {
+              moved = await ctx.onMoveToColumn("done");
+            } catch (err) {
+              console.error("[work-terminal] Failed to move task to done:", err);
+              return;
+            }
+            if (moved === false) return;
             try {
               ctx.onCloseSessions();
             } catch (err) {
