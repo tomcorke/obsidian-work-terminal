@@ -61,7 +61,7 @@ function styleStub(map) {
 
 describe("findZeroSizeViolations", () => {
   it("flags a visible .wt-* element with zero width", () => {
-    const root = makeTree(`<div class="wt-target"></div>`);
+    const root = makeTree(`<div class="wt-target">Visible content</div>`);
     const el = root.querySelector(".wt-target");
     stubLayout(el, { offsetWidth: 0, offsetHeight: 100 });
 
@@ -107,9 +107,19 @@ describe("findZeroSizeViolations", () => {
   });
 
   it("returns no violations for a normally sized element", () => {
-    const root = makeTree(`<div class="wt-ok"></div>`);
+    const root = makeTree(`<div class="wt-ok">Visible content</div>`);
     const el = root.querySelector(".wt-ok");
     stubLayout(el, { offsetWidth: 200, offsetHeight: 50 });
+
+    const styles = new Map([[el, { display: "block", visibility: "visible", position: "static" }]]);
+
+    expect(findZeroSizeViolations(root, styleStub(styles), { zeroSizeThreshold: 0 })).toHaveLength(0);
+  });
+
+  it("does not flag empty visible layout slots with zero size", () => {
+    const root = makeTree(`<div class="wt-empty-slot"></div>`);
+    const el = root.querySelector(".wt-empty-slot");
+    stubLayout(el, { offsetWidth: 0, offsetHeight: 0 });
 
     const styles = new Map([[el, { display: "block", visibility: "visible", position: "static" }]]);
 
@@ -229,7 +239,7 @@ describe("collectSanityViolations", () => {
   it("aggregates violations from all checks", () => {
     const root = makeTree(`
       <div class="wt-scroll-container">
-        <div class="wt-zero"></div>
+        <div class="wt-zero">Visible content</div>
       </div>
     `);
     const scroll = root.querySelector(".wt-scroll-container");
@@ -254,7 +264,7 @@ describe("collectSanityViolations", () => {
   });
 
   it("returns an empty array when no issues are present", () => {
-    const root = makeTree(`<div class="wt-ok"></div>`);
+    const root = makeTree(`<div class="wt-ok">Visible content</div>`);
     const el = root.querySelector(".wt-ok");
     stubLayout(el, { offsetWidth: 200, offsetHeight: 50, rect: { left: 0, top: 0, right: 200, bottom: 50 } });
 
@@ -269,6 +279,7 @@ describe("buildSanityCheckCdpExpression", () => {
     const expr = buildSanityCheckCdpExpression();
     expect(typeof expr).toBe("string");
     expect(expr).toContain("findZeroSizeViolations");
+    expect(expr).toContain("hasRenderableContent");
     expect(expr).toContain("findClippedOverflowViolations");
     expect(expr).toContain("findOutOfBoundsViolations");
     expect(expr).toMatch(/^\s*\(\(\)\s*=>\s*\{/);

@@ -171,68 +171,99 @@ async function seedSmokeTestData(vaultDir) {
   return tasks;
 }
 
+async function snapshotPluginDataFile() {
+  const dataPath = path.join(REPO_ROOT, "data.json");
+  try {
+    return { exists: true, dataPath, content: await fsp.readFile(dataPath, "utf8") };
+  } catch {
+    return { exists: false, dataPath, content: null };
+  }
+}
+
+async function restorePluginDataFile(snapshot) {
+  if (!snapshot) return;
+  if (snapshot.exists) {
+    await fsp.writeFile(snapshot.dataPath, snapshot.content, "utf8");
+  } else {
+    await fsp.rm(snapshot.dataPath, { force: true });
+  }
+}
+
+async function configureSmokeTestDataFile() {
+  const dataPath = path.join(REPO_ROOT, "data.json");
+  let data = {};
+  try {
+    data = JSON.parse(await fsp.readFile(dataPath, "utf8"));
+  } catch {
+    data = {};
+  }
+  data.settings = {
+    ...(data.settings || {}),
+    "adapter.enrichmentEnabled": false,
+    "core.detailViewPlacement": "split",
+  };
+  await fsp.writeFile(dataPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+}
+
 // ---------------------------------------------------------------------------
 // CDP evaluation helpers
 // ---------------------------------------------------------------------------
 
 async function cdpEval(host, port, expression, timeoutMs) {
-  const client = await CDPClient.connect({ host, port, timeoutMs });
-  try {
-    return await client.evaluate(expression);
-  } finally {
-    client.close();
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const client = await CDPClient.connect({ host, port, timeoutMs });
+    try {
+      return await client.evaluate(expression);
+    } catch (err) {
+      lastError = err;
+      if (!String(err?.message || err).includes("Promise was collected")) {
+        throw err;
+      }
+      await sleep(250);
+    } finally {
+      client.close();
+    }
   }
+  throw lastError;
 }
 
 async function cdpWaitFor(host, port, selector, timeoutMs) {
-  const expr = `
-    (async () => {
-      const selector = ${JSON.stringify(selector)};
-      const timeoutMs = ${timeoutMs};
-      const existing = document.querySelector(selector);
-      if (existing) return true;
-      await new Promise((resolve, reject) => {
-        const observer = new MutationObserver(() => {
-          const match = document.querySelector(selector);
-          if (!match) return;
-          clearTimeout(timer);
-          observer.disconnect();
-          resolve(true);
-        });
-        const timer = setTimeout(() => {
-          observer.disconnect();
-          reject(new Error("Timed out waiting for selector: " + selector));
-        }, timeoutMs);
-        observer.observe(document.documentElement, {
-          childList: true, subtree: true, attributes: true,
-        });
-      });
-      return true;
-    })()
-  `;
-  return cdpEval(host, port, expr, timeoutMs);
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt <= timeoutMs) {
+    try {
+      const exists = await cdpEval(host, port,
+        `!!document.querySelector(${JSON.stringify(selector)})`,
+        Math.min(timeoutMs, 5000));
+      if (exists) return true;
+    } catch (err) {
+      lastError = err;
+    }
+    await sleep(250);
+  }
+  throw new Error(
+    `Timed out waiting for selector: ${selector}` +
+    (lastError ? ` (${lastError.message})` : ""),
+  );
 }
 
 async function cdpClick(host, port, selector, timeoutMs) {
   const client = await CDPClient.connect({ host, port, timeoutMs });
   try {
-    const rect = await client.evaluate(`
-      (async () => {
+    return await client.evaluate(`
+      (() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) throw new Error("Selector not found: " + ${JSON.stringify(selector)});
-        el.scrollIntoView({ block: "center", inline: "center" });
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        el.scrollIntoView({ block: "center", inline: "nearest" });
         const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          throw new Error("Selector has no clickable area: " + ${JSON.stringify(selector)});
+        }
+        el.click();
         return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       })()
     `);
-    await client.send("Input.dispatchMouseEvent", {
-      type: "mousePressed", x: rect.x, y: rect.y, button: "left", clickCount: 1,
-    });
-    await client.send("Input.dispatchMouseEvent", {
-      type: "mouseReleased", x: rect.x, y: rect.y, button: "left", clickCount: 1,
-    });
-    return rect;
   } finally {
     client.close();
   }
@@ -245,16 +276,31 @@ async function cdpType(host, port, selector, text, timeoutMs) {
       (() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) throw new Error("Selector not found: " + ${JSON.stringify(selector)});
-        el.scrollIntoView({ block: "center", inline: "center" });
+        el.scrollIntoView({ block: "center", inline: "nearest" });
         el.focus();
         if ("value" in el) {
           el.value = "";
-          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new InputEvent("input", { bubbles: true, data: "", inputType: "deleteContentBackward" }));
+        } else if (el.isContentEditable) {
+          el.textContent = "";
+          el.dispatchEvent(new InputEvent("input", { bubbles: true, data: "", inputType: "deleteContentBackward" }));
         }
         return true;
       })()
     `);
-    await client.send("Input.insertText", { text });
+    if (text) {
+      await client.send("Input.insertText", { text });
+      await client.evaluate(`
+        (() => {
+          const el = document.querySelector(${JSON.stringify(selector)});
+          if (el) {
+            el.dispatchEvent(new InputEvent("input", { bubbles: true, data: ${JSON.stringify(text)}, inputType: "insertText" }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          return true;
+        })()
+      `);
+    }
   } finally {
     client.close();
   }
@@ -307,6 +353,22 @@ async function setDetailPlacement(host, port, placement, timeoutMs) {
   `, timeoutMs);
   // Settle time for remountDetailViewForCurrentSelection + render.
   await sleep(500);
+}
+
+async function closeTaskDetailLeaves(host, port, timeoutMs) {
+  await cdpEval(host, port, `
+    (async () => {
+      const leaves = globalThis.app?.workspace?.getLeavesOfType('markdown') || [];
+      for (const leaf of leaves) {
+        const taskPath = leaf?.view?.file?.path || '';
+        if (taskPath.startsWith('2 - Areas/Tasks/')) {
+          leaf.detach();
+        }
+      }
+      return true;
+    })()
+  `, timeoutMs).catch(() => null);
+  await sleep(300);
 }
 
 /**
@@ -444,6 +506,64 @@ async function selectFirstTaskCard(host, port, timeoutMs) {
 }
 
 /**
+ * Activate the first task for terminal spawning without opening the split
+ * detail leaf. Real clicks select cards and (in split placement) open a
+ * Markdown leaf, which can perturb the smoke runner's terminal-focused tests.
+ */
+async function activateFirstTaskForTerminal(host, port, timeoutMs) {
+  await cdpEval(host, port, `
+    (() => {
+      const view = globalThis.app?.workspace
+        ?.getLeavesOfType('work-terminal-view')?.[0]?.view;
+      const card = document.querySelector('.wt-card-wrapper');
+      const id = card?.getAttribute('data-item-id');
+      if (!view || !view.terminalPanel || !id) {
+        throw new Error('No Work Terminal task available to activate');
+      }
+      const item = (view.allItems || []).find((candidate) => candidate.id === id) || null;
+      view.terminalPanel.setActiveItem(id);
+      view.terminalPanel.setTitle(item);
+      document.querySelectorAll('.wt-card-selected').forEach((el) => el.classList.remove('wt-card-selected'));
+      card.classList.add('wt-card-selected');
+      return true;
+    })()
+  `, timeoutMs);
+  await sleep(200);
+}
+
+/**
+ * Apply deterministic settings for the smoke vault. The real plugin defaults
+ * keep background enrichment enabled, which is useful for users but unsafe in
+ * smoke tests: creating a task would launch a real headless agent and leave
+ * transient card animation DOM that the generic sanity sweep correctly sees as
+ * clipped/zero-sized. Disable enrichment and start from split placement.
+ */
+async function configureSmokeTestSettings(host, port, timeoutMs) {
+  await cdpEval(host, port, `
+    (async () => {
+      const plugin = globalThis.app?.plugins?.plugins?.['work-terminal'];
+      if (!plugin) throw new Error("work-terminal plugin not loaded");
+
+      const data = (await plugin.loadData()) || {};
+      const persistedSettings = { ...(data.settings || {}) };
+      persistedSettings['adapter.enrichmentEnabled'] = false;
+      persistedSettings['core.detailViewPlacement'] = 'split';
+      data.settings = persistedSettings;
+      await plugin.saveData(data);
+
+      const view = globalThis.app?.workspace
+        ?.getLeavesOfType('work-terminal-view')?.[0]?.view;
+      const merged = view && view.settings
+        ? { ...view.settings, ...persistedSettings }
+        : persistedSettings;
+      window.dispatchEvent(new CustomEvent('work-terminal:settings-changed', { detail: merged }));
+      return true;
+    })()
+  `, timeoutMs);
+  await sleep(500);
+}
+
+/**
  * Run the generic sanity checks (zero-size visible, overflow clipping,
  * out-of-bounds positioning) via CDP and throw if any violations are found.
  * Intended to run after every smoke test scenario so regressions in both
@@ -517,8 +637,9 @@ async function captureReferenceScreenshots(host, port, timeoutMs) {
   console.log("\n--- Capturing reference screenshots ---\n");
   await fsp.mkdir(SCREENSHOT_DIR, { recursive: true });
 
-  // Main 2-panel layout - split placement.
+  // Main 2-panel layout - split placement, before any split detail leaf is open.
   await setDetailPlacement(host, port, "split", timeoutMs);
+  await closeTaskDetailLeaves(host, port, timeoutMs);
   await sleep(400);
   await captureScreenshot(host, port, timeoutMs, "01-main-layout.png", ".wt-main-view");
 
@@ -527,6 +648,7 @@ async function captureReferenceScreenshots(host, port, timeoutMs) {
   await selectFirstTaskCard(host, port, timeoutMs);
   await sleep(600);
   await captureScreenshot(host, port, timeoutMs, "02-detail-split.png", ".workspace");
+  await closeTaskDetailLeaves(host, port, timeoutMs);
 
   // Switch to embedded placement and capture shell-tab-active + detail-
   // active states.
@@ -582,13 +704,17 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
       id: "TC-01",
       description: "PTY wrapper spawns shell",
       run: async () => {
+        // Terminal sessions are keyed per work item, so activate a task before
+        // spawning the shell. Without an active item TabManager.createTab()
+        // intentionally no-ops.
+        await activateFirstTaskForTerminal(host, port, timeoutMs);
         // Click the "+ Shell" button
         await cdpClick(host, port, "button.wt-spawn-btn", timeoutMs);
-        // Wait for the terminal container to appear
-        await cdpWaitFor(host, port, ".wt-terminal-container", timeoutMs);
+        // Wait for xterm to appear
+        await cdpWaitFor(host, port, ".xterm", timeoutMs);
         // Verify a terminal element exists
         const exists = await cdpEval(host, port,
-          "!!document.querySelector('.wt-terminal-container .xterm')",
+          "!!document.querySelector('.wt-terminal-wrapper .xterm')",
           timeoutMs);
         if (!exists) throw new Error("xterm terminal element not found after spawning shell");
       },
@@ -597,36 +723,28 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
       id: "TC-02",
       description: "Tilde expansion",
       run: async () => {
-        // Wait for terminal to be ready (xterm cursor present)
-        await cdpWaitFor(host, port, ".xterm-cursor-layer", timeoutMs);
-        // Small delay for shell to be ready to accept input
-        await sleep(1500);
-        // Type pwd and press Enter via CDP
-        const client = await CDPClient.connect({ host, port, timeoutMs });
-        try {
-          await client.send("Input.insertText", { text: "pwd\n" });
-          // Wait for output to appear
-          await sleep(1000);
-          // Read terminal content - check that it does NOT contain literal "~"
-          // but instead shows the expanded home directory path
-          const content = await client.evaluate(`
-            (() => {
-              const rows = document.querySelectorAll('.xterm-rows > div');
-              return Array.from(rows).map(r => r.textContent || '').join('\\n');
-            })()
-          `);
-          // The pwd output should be an absolute path without a literal "~".
-          // Use os.homedir() for platform-aware validation.
-          const os = require("node:os");
-          const home = os.homedir();
-          const hasAbsolutePath = content.includes(home) ||
-            content.split("\n").some(line => /^\//.test(line.trim()) || /^[A-Z]:\\/.test(line.trim()));
-          const hasLiteralTilde = content.split("\n").some(line => /^\s*~\s*$/.test(line.trim()));
-          if (!hasAbsolutePath || hasLiteralTilde) {
-            throw new Error("pwd output does not show expanded home directory path");
-          }
-        } finally {
-          client.close();
+        // Wait for the shell tab created by TC-01. In the current xterm canvas
+        // renderer there may be no `.xterm-rows` or `.xterm-cursor-layer` DOM,
+        // so assert the plugin's resolved tab cwd directly instead of scraping
+        // terminal pixels.
+        await cdpWaitFor(host, port, ".xterm", timeoutMs);
+        const cwd = await cdpEval(host, port, `
+          (() => {
+            const panel = globalThis.app?.workspace
+              ?.getLeavesOfType('work-terminal-view')?.[0]?.view?.terminalPanel;
+            const manager = panel?.tabManager;
+            const itemId = manager?.activeItemId;
+            const tabs = itemId ? manager?.sessions?.get(itemId) : null;
+            const activeIndex = manager?.activeTabIndex ?? 0;
+            return tabs?.[activeIndex]?.cwd || tabs?.[0]?.cwd || null;
+          })()
+        `, timeoutMs);
+        const os = require("node:os");
+        const home = os.homedir();
+        const isAbsolute = typeof cwd === "string" &&
+          (cwd === home || cwd.startsWith("/") || /^[A-Z]:\\/.test(cwd));
+        if (!isAbsolute || cwd === "~") {
+          throw new Error(`Shell cwd was not expanded from ~ to an absolute path: ${cwd}`);
         }
       },
     },
@@ -697,7 +815,25 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
 
         // Type a filter term that should match only one seeded task
         await cdpType(host, port, ".wt-filter-input", "Priority smoke", timeoutMs);
-        await sleep(500);
+        // The real UI debounces filter application with setTimeout. Hidden
+        // Electron windows can throttle renderer timers, so flush the same
+        // ListPanel state synchronously to keep the smoke runner deterministic
+        // while still exercising the input value and filtering code path.
+        await cdpEval(host, port, `
+          (() => {
+            const view = globalThis.app?.workspace
+              ?.getLeavesOfType('work-terminal-view')?.[0]?.view;
+            const listPanel = view?.listPanel;
+            const input = document.querySelector('.wt-filter-input');
+            if (listPanel && input) {
+              if (listPanel.filterDebounce) clearTimeout(listPanel.filterDebounce);
+              listPanel.filterTerm = (input.value || '').toLowerCase();
+              if (typeof listPanel.applyFilter === 'function') listPanel.applyFilter();
+            }
+            return true;
+          })()
+        `, timeoutMs);
+        await sleep(300);
 
         // Check that visible cards are filtered (visibility-aware)
         const afterInfo = await cdpEval(host, port, `
@@ -852,6 +988,11 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
         if (!found) {
           throw new Error(`Task file with title "${taskTitle}" not found after PromptBox creation`);
         }
+
+        // Let the new-card success animation collapse before the generic
+        // sanity sweep runs; the animation intentionally uses overflow:hidden
+        // while it is visible.
+        await sleep(4500);
       },
     },
     {
@@ -890,8 +1031,12 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
       description: "Active content fills container (split placement)",
       run: async () => {
         await setDetailPlacement(host, port, "split", timeoutMs);
-        await selectFirstTaskCard(host, port, timeoutMs);
-        await assertActiveContentFillsContainer(host, port, timeoutMs);
+        try {
+          await selectFirstTaskCard(host, port, timeoutMs);
+          await assertActiveContentFillsContainer(host, port, timeoutMs);
+        } finally {
+          await closeTaskDetailLeaves(host, port, timeoutMs);
+        }
       },
     },
     // -----------------------------------------------------------------------
@@ -999,8 +1144,10 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
         await assertActiveContentFillsContainer(host, port, timeoutMs);
         await assertInactiveTabsHidden(host, port, timeoutMs);
         // Restore split placement so the sanity sweep and subsequent runs
-        // see the default state.
+        // see the default state, then close the split detail leaf opened by
+        // remounting the current selection.
         await setDetailPlacement(host, port, "split", timeoutMs);
+        await closeTaskDetailLeaves(host, port, timeoutMs);
       },
     },
   ];
@@ -1026,13 +1173,14 @@ async function main() {
   let port = null;
   let pid = null;
   let userDataDir = null;
+  let pluginDataSnapshot = null;
 
   console.log("=== Smoke Test Runner ===");
   console.log(`Vault: ${SMOKE_VAULT_DIR}`);
   console.log(`Timeout: ${args.timeoutMs}ms`);
   console.log("");
 
-  // Cleanup handler - ensure Obsidian is killed even on failure
+  // Cleanup handler - ensure Obsidian is killed and plugin data restored even on failure
   async function cleanup() {
     if (userDataDir) {
       console.log("\nCleaning up isolated instance...");
@@ -1047,6 +1195,7 @@ async function main() {
         }
       }
     }
+    await restorePluginDataFile(pluginDataSnapshot).catch(() => null);
   }
 
   // Handle unexpected exits
@@ -1084,7 +1233,9 @@ async function main() {
     console.log("Seeding test data...");
     await seedSmokeTestData(vaultInfo.vaultDir);
 
-    // Step 5: Seed user data dir
+    // Step 5: Seed plugin data and user data dir
+    pluginDataSnapshot = await snapshotPluginDataFile();
+    await configureSmokeTestDataFile();
     userDataDir = path.join(vaultInfo.vaultDir, ".user-data");
     await seedUserDataDir({ userDataDir, vaultDir: vaultInfo.vaultDir });
 
@@ -1147,6 +1298,7 @@ async function main() {
         return true;
       })()
     `, args.timeoutMs);
+    await configureSmokeTestSettings(host, port, args.timeoutMs);
     await sleep(1000);
 
     // Step 13: Run tests
@@ -1186,8 +1338,20 @@ async function main() {
 
     // Capture reference screenshots after all tests have run. Failures here
     // are logged but do not fail the run - screenshots are review aids, not
-    // assertions.
+    // assertions. If the test window was hidden for the interaction phase,
+    // show it now because Electron cannot capture hidden window surfaces.
     try {
+      if (args.hide) {
+        await cdpEval(host, port, `(() => {
+          try {
+            const win = window.electron?.remote?.getCurrentWindow?.();
+            win?.show?.();
+            win?.focus?.();
+          } catch { }
+          return true;
+        })()`, args.timeoutMs).catch(() => null);
+        await sleep(1000);
+      }
       await captureReferenceScreenshots(host, port, args.timeoutMs);
     } catch (err) {
       console.log(`  warn  screenshot capture failed: ${err.message}`);

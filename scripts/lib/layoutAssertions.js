@@ -61,6 +61,22 @@ function isHiddenByStyle(el, getComputedStyle) {
 }
 
 /**
+ * Empty layout helpers are common in the Work Terminal DOM (for example an
+ * actions slot on a card with no actions, or a tab container before any tab is
+ * opened). They can legitimately have zero size while still being visible.
+ */
+function hasRenderableContent(el, getComputedStyle) {
+  if ((el.childNodes && Array.from(el.childNodes).some((node) =>
+    node.nodeType === 3 && (node.textContent || "").trim().length > 0
+  ))) return true;
+  for (const child of Array.from(el.children || [])) {
+    if (isHiddenByStyle(child, getComputedStyle)) continue;
+    if (hasRenderableContent(child, getComputedStyle)) return true;
+  }
+  return false;
+}
+
+/**
  * Check for visible `.wt-*` elements with zero width or zero height. Only
  * flags elements that are otherwise visible - hidden tabs/panels in tabbed
  * UIs legitimately have zero layout.
@@ -75,6 +91,7 @@ function findZeroSizeViolations(root, getComputedStyle, opts) {
 
     const w = typeof el.offsetWidth === "number" ? el.offsetWidth : 0;
     const h = typeof el.offsetHeight === "number" ? el.offsetHeight : 0;
+    if (!hasRenderableContent(el, getComputedStyle)) continue;
     if (w <= opts.zeroSizeThreshold || h <= opts.zeroSizeThreshold) {
       violations.push({
         type: "zero-size-visible",
@@ -244,6 +261,7 @@ function buildSanityCheckCdpExpression(options) {
     (() => {
       const DEFAULT_OPTS = ${JSON.stringify(opts)};
       const isHiddenByStyle = ${isHiddenByStyle.toString()};
+      const hasRenderableContent = ${hasRenderableContent.toString()};
       const describeElement = ${describeElement.toString()};
       const findPositionedAncestor = ${findPositionedAncestor.toString()};
       const findZeroSizeViolations = ${findZeroSizeViolations.toString()};
