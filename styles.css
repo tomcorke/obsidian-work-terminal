@@ -76,8 +76,7 @@
 .wt-session-filter {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .wt-session-filter-checkbox {
@@ -86,6 +85,10 @@
 }
 
 .wt-session-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.4;
   font-size: 11px;
   color: var(--text-muted);
   cursor: pointer;
