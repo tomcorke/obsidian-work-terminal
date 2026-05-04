@@ -144,6 +144,8 @@ describe("TaskCard", () => {
     const item = makeItem();
     const ctx = makeContext({
       onMoveToColumn: vi.fn().mockResolvedValue(false),
+      isPinned: vi.fn(() => true),
+      onUnpin: vi.fn(),
     });
     const card = new TaskCard();
 
@@ -155,7 +157,52 @@ describe("TaskCard", () => {
     await doneAndCloseItem?.callback();
 
     expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
+    expect(ctx.onUnpin).not.toHaveBeenCalled();
     expect(ctx.onCloseSessions).not.toHaveBeenCalled();
+  });
+
+  it("unpins pinned tasks after a Move to Done context-menu action succeeds", async () => {
+    const item = makeItem({ state: "active" });
+    const ctx = makeContext({
+      onMoveToColumn: vi.fn().mockResolvedValue(true),
+      isPinned: vi.fn(() => true),
+      onUnpin: vi.fn().mockResolvedValue(undefined),
+    });
+    const card = new TaskCard();
+
+    const menuItems = card.getContextMenuItems(item, ctx);
+    const moveToDoneItem = menuItems.find(
+      (menuItem) => (menuItem as any).title === "Move to Done",
+    ) as { callback: () => Promise<boolean> } | undefined;
+
+    expect(moveToDoneItem).toBeDefined();
+
+    await moveToDoneItem?.callback();
+
+    expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
+    expect(ctx.onUnpin).toHaveBeenCalledTimes(1);
+  });
+
+  it("unpins pinned tasks after a Move to Active context-menu action succeeds", async () => {
+    const item = makeItem({ state: "todo" });
+    const ctx = makeContext({
+      onMoveToColumn: vi.fn().mockResolvedValue(true),
+      isPinned: vi.fn(() => true),
+      onUnpin: vi.fn().mockResolvedValue(undefined),
+    });
+    const card = new TaskCard();
+
+    const menuItems = card.getContextMenuItems(item, ctx);
+    const moveToActiveItem = menuItems.find(
+      (menuItem) => (menuItem as any).title === "Move to Active",
+    ) as { callback: () => Promise<boolean> } | undefined;
+
+    expect(moveToActiveItem).toBeDefined();
+
+    await moveToActiveItem?.callback();
+
+    expect(ctx.onMoveToColumn).toHaveBeenCalledWith("active");
+    expect(ctx.onUnpin).toHaveBeenCalledTimes(1);
   });
 
   it("still closes sessions for synchronous move callbacks", async () => {
@@ -172,6 +219,37 @@ describe("TaskCard", () => {
 
     expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
     expect(ctx.onCloseSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("unpins pinned tasks before closing sessions from Done & Close Sessions", async () => {
+    const item = makeItem({ state: "active" });
+    const calls: string[] = [];
+    const ctx = makeContext({
+      onMoveToColumn: vi.fn(() => {
+        calls.push("move");
+        return true;
+      }),
+      isPinned: vi.fn(() => true),
+      onUnpin: vi.fn(async () => {
+        calls.push("unpin");
+      }),
+      onCloseSessions: vi.fn(() => {
+        calls.push("close");
+      }),
+    });
+    const card = new TaskCard();
+
+    const menuItems = card.getContextMenuItems(item, ctx);
+    const doneAndCloseItem = menuItems.find(
+      (menuItem) => (menuItem as any).title === "Done & Close Sessions",
+    ) as { callback: () => Promise<void> } | undefined;
+
+    await doneAndCloseItem?.callback();
+
+    expect(ctx.onMoveToColumn).toHaveBeenCalledWith("done");
+    expect(ctx.onUnpin).toHaveBeenCalledTimes(1);
+    expect(ctx.onCloseSessions).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["move", "unpin", "close"]);
   });
 
   it("copies the exact context prompt from the framework callback", async () => {
