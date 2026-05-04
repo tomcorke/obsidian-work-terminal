@@ -182,8 +182,8 @@ export interface WorkItemParser {
 }
 
 /**
- * Moves a work item between columns (states). Handles frontmatter updates,
- * file renames, and activity log entries.
+ * Moves a work item between columns (states). Handles frontmatter updates
+ * and file renames.
  */
 export interface WorkItemMover {
   /** Move an item file to the target column, updating state/tags/timestamps. Returns true on success, false on failure. */

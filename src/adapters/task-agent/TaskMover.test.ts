@@ -75,7 +75,7 @@ describe("TaskMover", () => {
     expect(match![1]).not.toMatch(/\.\d{3}Z/);
   });
 
-  it("appends activity log entry", async () => {
+  it("does not append activity log entries for board moves", async () => {
     const { app, modify } = createMockApp();
     const mover = new TaskMover(app, "", defaultSettings);
     const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
@@ -83,10 +83,12 @@ describe("TaskMover", () => {
     await mover.move(file, "active");
 
     const content = modify.mock.calls[0][1] as string;
-    expect(content).toMatch(/Moved to active \(via kanban board\)/);
+    expect(content).toContain("## Activity Log");
+    expect(content).toContain("Task created");
+    expect(content).not.toMatch(/Moved to active \(via kanban board\)/);
   });
 
-  it("inserts activity log before next section", async () => {
+  it("leaves later sections untouched when no activity log entry is added", async () => {
     const contentWithNextSection = SAMPLE_CONTENT.trimEnd() + "\n\n## Notes\nSome notes\n";
     const { app, modify, read } = createMockApp();
     read.mockResolvedValue(contentWithNextSection);
@@ -96,12 +98,11 @@ describe("TaskMover", () => {
     await mover.move(file, "active");
 
     const content = modify.mock.calls[0][1] as string;
-    const logIdx = content.indexOf("Moved to active");
-    const notesIdx = content.indexOf("## Notes");
-    expect(logIdx).toBeLessThan(notesIdx);
+    expect(content).toContain("## Notes\nSome notes");
+    expect(content).not.toContain("Moved to active");
   });
 
-  it("creates activity log section when missing", async () => {
+  it("does not create an activity log section when one is missing", async () => {
     const contentNoLog = `---
 id: abc-123
 tags:
@@ -122,8 +123,8 @@ created: 2026-03-26T00:00:00Z
     await mover.move(file, "active");
 
     const content = modify.mock.calls[0][1] as string;
-    expect(content).toContain("## Activity Log");
-    expect(content).toMatch(/Moved to active \(via kanban board\)/);
+    expect(content).not.toContain("## Activity Log");
+    expect(content).not.toContain("Moved to active");
   });
 
   it("returns true on successful move", async () => {
@@ -277,7 +278,7 @@ created: 2026-03-26T00:00:00Z
       expect(content).toMatch(/- task\/review/);
     });
 
-    it("appends activity log entry for dynamic state move", async () => {
+    it("does not append activity log entries for dynamic state moves", async () => {
       const { app, modify } = createMockApp();
       const mover = new TaskMover(app, "", defaultSettings);
       const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
@@ -285,7 +286,7 @@ created: 2026-03-26T00:00:00Z
       await mover.move(file, "blocked-upstream");
 
       const content = modify.mock.calls[0][1] as string;
-      expect(content).toContain("Moved to blocked-upstream (via kanban board)");
+      expect(content).not.toContain("Moved to blocked-upstream (via kanban board)");
     });
 
     it("with resolver: skips applyState for dynamic state (no folder mapping)", async () => {
