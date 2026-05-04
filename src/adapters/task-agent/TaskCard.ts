@@ -413,6 +413,17 @@ export class TaskCard implements CardRenderer {
     }
   }
 
+  private async moveToColumnFromMenu(ctx: CardActionContext, columnId: string): Promise<boolean> {
+    const moved = await ctx.onMoveToColumn(columnId);
+    if (moved === false) return false;
+
+    if (ctx.isPinned?.()) {
+      await ctx.onUnpin?.();
+    }
+
+    return true;
+  }
+
   getContextMenuItems(item: WorkItem, ctx: CardActionContext): MenuItem[] {
     const items: MenuItem[] = [];
 
@@ -451,7 +462,7 @@ export class TaskCard implements CardRenderer {
       if (col === item.state) continue;
       (items as any[]).push({
         title: `Move to ${COLUMN_LABELS[col]}`,
-        callback: () => ctx.onMoveToColumn(col),
+        callback: () => this.moveToColumnFromMenu(ctx, col),
       });
       // Done & Close Sessions right after Move to Done
       if (col === "done") {
@@ -460,7 +471,7 @@ export class TaskCard implements CardRenderer {
           callback: async () => {
             let moved: boolean | void;
             try {
-              moved = await ctx.onMoveToColumn("done");
+              moved = await this.moveToColumnFromMenu(ctx, "done");
             } catch (err) {
               console.error("[work-terminal] Failed to move task to done:", err);
               return;

@@ -219,7 +219,7 @@ export interface CardActionContext {
   /** Pin this item to the top of the kanban board. */
   onPin?(): void;
   /** Unpin this item, returning it to its real state column. */
-  onUnpin?(): void;
+  onUnpin?(): void | Promise<void>;
   /** Whether this item is currently pinned. */
   isPinned?(): boolean;
 }
