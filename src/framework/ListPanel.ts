@@ -759,12 +759,11 @@ export class ListPanel {
     });
   }
 
-  private unpinItem(item: WorkItem): void {
+  private async unpinItem(item: WorkItem): Promise<void> {
     if (!this.pinStore) return;
-    void this.pinStore.unpin(item.id).then(() => {
-      this.render(this.groups, this.customOrder);
-      this.selectItem(item);
-    });
+    await this.pinStore.unpin(item.id);
+    this.render(this.groups, this.customOrder);
+    this.selectItem(item);
   }
 
   setIngesting(id: string): void {
