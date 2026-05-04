@@ -901,6 +901,48 @@ describe("ListPanel", () => {
     expect(ctx.isPinned?.()).toBe(false);
   });
 
+  it("returns an awaitable onUnpin action context callback", async () => {
+    const { panel, onSelect } = createListPanel();
+    const item = makeItem("task-1");
+    const ids = ["task-1"];
+    let resolveUnpin!: () => void;
+    const unpinFinished = new Promise<void>((resolve) => {
+      resolveUnpin = () => {
+        const idx = ids.indexOf(item.id);
+        if (idx >= 0) ids.splice(idx, 1);
+        resolve();
+      };
+    });
+    const pinStore = {
+      ...createMockPinStore(["task-1"]),
+      getPinnedIds: vi.fn(() => [...ids]),
+      isPinned: vi.fn((id: string) => ids.includes(id)),
+      unpin: vi.fn(() => unpinFinished),
+    };
+    panel.setPinStore(pinStore as any);
+    panel.render({ todo: [item] }, {});
+
+    const ctx = (panel as any).buildCardActionContext(item, "todo");
+    const unpinResult = ctx.onUnpin?.();
+
+    expect(unpinResult).toBeInstanceOf(Promise);
+    let settled = false;
+    void unpinResult.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(pinStore.unpin).toHaveBeenCalledWith("task-1");
+
+    resolveUnpin();
+    await unpinResult;
+
+    expect(settled).toBe(true);
+    expect(onSelect).toHaveBeenLastCalledWith(item);
+    expect(document.querySelector('[data-column="__pinned__"]')).toBeNull();
+  });
+
   it("rekeys pinned items when rekeyCustomOrder is called", () => {
     const { panel } = createListPanel();
     const pinStore = createMockPinStore(["old-id"]);
