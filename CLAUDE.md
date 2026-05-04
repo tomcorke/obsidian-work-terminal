@@ -45,7 +45,7 @@ src/
       types.ts               # TaskFile, TaskState, KanbanColumn, STATE_FOLDER_MAP
       TaskAgentConfig.ts     # PluginConfig: columns, creationColumns, settings, itemName
       TaskParser.ts          # MetadataCache parsing, abandoned filtering, goal normalisation
-      TaskMover.ts           # Regex frontmatter updates, write-then-move, activity log
+      TaskMover.ts           # Regex frontmatter/tag updates, timestamp refresh, write-then-move
       TaskCard.ts            # Source/score/goal/blocker badges, compound context menu
       TaskFileTemplate.ts    # UUID + YAML frontmatter + slug filename generation
       TaskPromptBuilder.ts   # Title/state/path + conditional deadline/blocker
