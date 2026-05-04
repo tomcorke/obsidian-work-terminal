@@ -152,7 +152,7 @@ vi.mock("./PythonCheck", () => ({
     "Python 3 is required for terminal tabs. Install Python 3.7+ and ensure `python3` is on your PATH.",
 }));
 
-import { resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
+import { __resetViewportResyncWarnOnce, resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
 
 class FakeElement {
   appendChild = vi.fn();
@@ -191,6 +191,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       return 1;
     }) as typeof requestAnimationFrame);
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    __resetViewportResyncWarnOnce();
     vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
   });
 
@@ -407,6 +408,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining("xterm viewport scroll area internals unavailable"),
+      expect.any(Error),
     );
   });
 

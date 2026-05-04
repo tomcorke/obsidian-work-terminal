@@ -94,7 +94,13 @@ function warnViewportResyncFallback(err: unknown): void {
   hasWarnedViewportResync = true;
   console.warn(
     `[work-terminal] xterm viewport scroll area internals unavailable or failed; using terminal.resize() fallback. ${errorMessage(err)}`,
+    err,
   );
+}
+
+/** @internal Test helper for deterministic warn-once assertions. */
+export function __resetViewportResyncWarnOnce(): void {
+  hasWarnedViewportResync = false;
 }
 
 export function resolvePtyWrapperPath(pluginDir?: string): string {
