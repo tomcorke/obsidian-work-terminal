@@ -402,6 +402,42 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(mocks.electronShell.openExternal).toHaveBeenCalledWith("https://example.com");
   });
 
+  it("forces xterm's viewport scroll area to resync on show", () => {
+    const syncScrollArea = vi.fn();
+    const innerRefresh = vi.fn();
+    const terminal = {
+      options: {} as Record<string, unknown>,
+      refresh: vi.fn(),
+      scrollToBottom: vi.fn(),
+      focus: vi.fn(),
+      rows: 24,
+      _core: {
+        viewport: {
+          syncScrollArea,
+          _innerRefresh: innerRefresh,
+        },
+      },
+    };
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      terminal,
+      containerEl: {
+        removeClass: vi.fn(),
+        hasClass: vi.fn(() => false),
+        querySelectorAll: vi.fn(() => []),
+      },
+      _isDisposed: false,
+      fitAddon: { fit: vi.fn() },
+    }) as TerminalTab;
+
+    tab.show();
+
+    expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
+    expect(terminal.scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(syncScrollArea).toHaveBeenCalledWith(true, true);
+    expect(innerRefresh).toHaveBeenCalledTimes(1);
+    expect(terminal.focus).toHaveBeenCalledTimes(1);
+  });
+
   it("disposes the custom link provider before terminal teardown", () => {
     const order: string[] = [];
     const tab = Object.assign(Object.create(TerminalTab.prototype), {

@@ -52,6 +52,15 @@ type TerminalWithAddonManager = Terminal & {
   };
 };
 
+type TerminalWithViewportInternals = Terminal & {
+  _core?: {
+    viewport?: {
+      syncScrollArea?: (immediate?: boolean, force?: boolean) => void;
+      _innerRefresh?: () => void;
+    };
+  };
+};
+
 /**
  * Open a URL via Electron's shell.openExternal, with error handling.
  * Used by the OSC 8 linkHandler and WebLinksAddon to route link clicks
@@ -677,6 +686,25 @@ export class TerminalTab {
     }
   }
 
+  /**
+   * Hidden terminals can accumulate output while xterm's viewport DOM has no
+   * layout. In that state xterm may record the new buffer length without being
+   * able to update `.xterm-scroll-area`, so a later refresh/scrollToBottom is
+   * not enough to repair the native scrollbar. Force the viewport's own scroll
+   * area refresh after the terminal is visible instead of nudging rows through
+   * the public resize API.
+   */
+  private syncViewportScrollArea(): void {
+    try {
+      if (this._isDisposed) return;
+      const viewport = (this.terminal as TerminalWithViewportInternals)._core?.viewport;
+      viewport?.syncScrollArea?.(true, true);
+      viewport?._innerRefresh?.();
+    } catch {
+      /* ignore private viewport errors during visibility/layout transitions */
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // File path link provider
   // ---------------------------------------------------------------------------
@@ -938,6 +966,7 @@ export class TerminalTab {
         // renderer draws the buffer content.
         this.terminal.refresh(0, this.terminal.rows - 1);
         this.terminal.scrollToBottom();
+        this.syncViewportScrollArea();
         this.terminal.focus();
         requestAnimationFrame(() => {
           if (this._isDisposed) return;
