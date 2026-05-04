@@ -260,7 +260,7 @@ When the placement is set to anything other than **Split**, a small document-sty
 
 Tasks within a column can be reordered by dragging. Grab a card and drag it to a new position within the same column. The custom sort order is persisted and survives plugin reloads.
 
-You can also drag a task between columns to change its state. Dropping a task from "To Do" into "Active" will move the underlying file to the `active/` folder and update the frontmatter accordingly. Dropping a task into a dynamic column (one without a folder mapping) updates the frontmatter `state` field but leaves the file in its current folder.
+You can also drag a task between columns to change its state. Dropping a task from "To Do" into "Active" will move the underlying file to the `active/` folder and update the frontmatter accordingly. Dropping a task into a dynamic column (one without a folder mapping) updates the frontmatter `state` field but leaves the file in its current folder. These board moves do not append automatic `Moved to ...` entries to the task's activity log.
 
 ### Filtering
 

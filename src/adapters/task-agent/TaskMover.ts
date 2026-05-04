@@ -66,26 +66,8 @@ export class TaskMover implements WorkItemMover {
       const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
       updated = updated.replace(/^updated:\s*.+$/m, `updated: ${now}`);
 
-      // Append to activity log
-      const dateStr = this.formatActivityDate(new Date());
-      const logEntry = `- **${dateStr}** - Moved to ${newColumn} (via kanban board)`;
-
-      const logIndex = updated.indexOf("## Activity Log");
-      if (logIndex !== -1) {
-        const afterLog = updated.substring(logIndex + "## Activity Log".length);
-        const nextSection = afterLog.search(/\n## /);
-        const insertPos =
-          nextSection !== -1 ? logIndex + "## Activity Log".length + nextSection : updated.length;
-        updated =
-          updated.substring(0, insertPos).trimEnd() +
-          "\n" +
-          logEntry +
-          "\n" +
-          updated.substring(insertPos);
-      } else {
-        // Create Activity Log section if missing
-        updated = updated.trimEnd() + "\n\n## Activity Log\n" + logEntry + "\n";
-      }
+      // Intentionally do not append automatic activity-log entries here.
+      // Routine board moves should update state metadata without adding note noise.
 
       // Write updated content first (write-then-move pattern)
       await this.app.vault.modify(file, updated);
@@ -138,14 +120,5 @@ export class TaskMover implements WorkItemMover {
 
   private escapeRegex(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  private formatActivityDate(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    const h = String(date.getHours()).padStart(2, "0");
-    const min = String(date.getMinutes()).padStart(2, "0");
-    return `${y}-${m}-${d} ${h}:${min}`;
   }
 }

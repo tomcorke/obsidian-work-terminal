@@ -244,8 +244,8 @@ no layout-invariant contract yet.
 | UD-14 | Task parser: backfill IDs | Task without UUID in frontmatter | ID backfilled on load (only processes tasks without existing UUID). | | |
 | UD-15 | Task mover: regex preserves spacing | Move a task with custom frontmatter spacing | State/tag updates via regex preserve original YAML spacing. | | |
 | UD-16 | Task mover: ISO without milliseconds | Move a task, check `updated` timestamp | Format: `2025-03-26T14:15:30Z` (not `.123Z`). | | |
-| UD-17 | Task mover: activity log position | Move a task with existing sections below activity log | New activity log entry inserts before next `##` section, not at end of file. | | |
-| UD-18 | Task mover: write-then-move | Move a task to a different column, observe file operations | Content modified first (state/tags/timestamp/activity), THEN file renamed to new folder. | | |
+| UD-17 | Task mover: no automatic activity-log entry | Move a task with or without an existing `## Activity Log` section | State/tag/timestamp update still happens, but no `Moved to ... (via kanban board)` entry is added and no new activity-log section is created. | | |
+| UD-18 | Task mover: write-then-move | Move a task to a different column, observe file operations | Content modified first (state/tags/timestamp), THEN file renamed to new folder. | | |
 | UD-19 | pty-wrapper.py: stdin buffering | Send input to terminal | Only holds back potential resize sequence starts (`ESC ]`). Regular CSI escapes (`ESC [`) pass through immediately (prevents deadlock). | | |
 | UD-20 | pty-wrapper.py: login shell wrapping | Check how non-shell commands are spawned | Wrapped with `-l -i` for .zprofile/.zshrc sourcing (ensures PATH). | | |
 | UD-21 | pty-wrapper.py: 50ms select timeout | Check pty-wrapper select loop | Non-blocking 50ms timeout (not blocking select). Enables responsive signal handling. | | |
