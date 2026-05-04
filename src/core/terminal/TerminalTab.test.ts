@@ -372,6 +372,44 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(terminal.options.linkHandler).toBe(existingHandler);
   });
 
+  it("falls back to terminal.resize once and warns once when viewport internals are missing", () => {
+    const makeTab = () => {
+      const terminal = {
+        options: {} as Record<string, unknown>,
+        refresh: vi.fn(),
+        scrollToBottom: vi.fn(),
+        focus: vi.fn(),
+        resize: vi.fn(),
+        cols: 80,
+        rows: 24,
+      };
+      const tab = Object.assign(Object.create(TerminalTab.prototype), {
+        terminal,
+        containerEl: {
+          removeClass: vi.fn(),
+          hasClass: vi.fn(() => false),
+          querySelectorAll: vi.fn(() => []),
+        },
+        _isDisposed: false,
+        fitAddon: { fit: vi.fn() },
+      }) as TerminalTab;
+      return { tab, terminal };
+    };
+
+    const first = makeTab();
+    const second = makeTab();
+
+    first.tab.show();
+    second.tab.show();
+
+    expect(first.terminal.resize).toHaveBeenCalledWith(80, 24);
+    expect(second.terminal.resize).toHaveBeenCalledWith(80, 24);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("xterm viewport scroll area internals unavailable"),
+    );
+  });
+
   it("backfills linkHandler on show() for live terminals missing the handler", () => {
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
       terminal: {
