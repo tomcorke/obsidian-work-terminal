@@ -38,6 +38,7 @@ export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
 
 let sessionCounter = 0;
+let hasWarnedViewportResync = false;
 const TERMINAL_SCROLLBACK = 5000;
 
 type TerminalWithAddonManager = Terminal & {
@@ -82,6 +83,18 @@ function shouldPreservePrintableOptionCombo(event: KeyboardEvent): boolean {
   if (!event.altKey || event.ctrlKey || event.metaKey) return false;
   if (event.getModifierState?.("AltGraph")) return false;
   return /^Digit\d$/.test(event.code);
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : String(err);
+}
+
+function warnViewportResyncFallback(err: unknown): void {
+  if (hasWarnedViewportResync) return;
+  hasWarnedViewportResync = true;
+  console.warn(
+    `[work-terminal] xterm viewport scroll area internals unavailable or failed; using terminal.resize() fallback. ${errorMessage(err)}`,
+  );
 }
 
 export function resolvePtyWrapperPath(pluginDir?: string): string {
@@ -690,18 +703,34 @@ export class TerminalTab {
    * Hidden terminals can accumulate output while xterm's viewport DOM has no
    * layout. In that state xterm may record the new buffer length without being
    * able to update `.xterm-scroll-area`, so a later refresh/scrollToBottom is
-   * not enough to repair the native scrollbar. Force the viewport's own scroll
-   * area refresh after the terminal is visible instead of nudging rows through
-   * the public resize API.
+   * not enough to repair the native scrollbar. Prefer xterm's viewport refresh
+   * internals after the terminal is visible, with a public resize fallback for
+   * xterm upgrades or renderer states where those internals are unavailable.
    */
   private syncViewportScrollArea(): void {
+    if (this._isDisposed) return;
+
     try {
-      if (this._isDisposed) return;
       const viewport = (this.terminal as TerminalWithViewportInternals)._core?.viewport;
-      viewport?.syncScrollArea?.(true, true);
-      viewport?._innerRefresh?.();
+      if (
+        typeof viewport?.syncScrollArea !== "function" ||
+        typeof viewport._innerRefresh !== "function"
+      ) {
+        throw new Error("xterm viewport scroll area internals unavailable");
+      }
+      viewport.syncScrollArea(true, true);
+      viewport._innerRefresh();
+      return;
+    } catch (err) {
+      warnViewportResyncFallback(err);
+    }
+
+    try {
+      const resize = this.terminal.resize;
+      if (typeof resize !== "function") return;
+      resize.call(this.terminal, this.terminal.cols, this.terminal.rows);
     } catch {
-      /* ignore private viewport errors during visibility/layout transitions */
+      /* ignore resize fallback errors during visibility/layout transitions */
     }
   }
 
