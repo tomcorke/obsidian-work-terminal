@@ -152,7 +152,7 @@ vi.mock("./PythonCheck", () => ({
     "Python 3 is required for terminal tabs. Install Python 3.7+ and ensure `python3` is on your PATH.",
 }));
 
-import { resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
+import { __resetViewportResyncWarnOnce, resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
 
 class FakeElement {
   appendChild = vi.fn();
@@ -191,6 +191,7 @@ describe("TerminalTab hot-reload addon handling", () => {
       return 1;
     }) as typeof requestAnimationFrame);
     vi.spyOn(console, "warn").mockImplementation(() => {});
+    __resetViewportResyncWarnOnce();
     vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
   });
 
@@ -370,6 +371,45 @@ describe("TerminalTab hot-reload addon handling", () => {
 
     // Should not overwrite the existing handler
     expect(terminal.options.linkHandler).toBe(existingHandler);
+  });
+
+  it("falls back to terminal.resize once and warns once when viewport internals are missing", () => {
+    const makeTab = () => {
+      const terminal = {
+        options: {} as Record<string, unknown>,
+        refresh: vi.fn(),
+        scrollToBottom: vi.fn(),
+        focus: vi.fn(),
+        resize: vi.fn(),
+        cols: 80,
+        rows: 24,
+      };
+      const tab = Object.assign(Object.create(TerminalTab.prototype), {
+        terminal,
+        containerEl: {
+          removeClass: vi.fn(),
+          hasClass: vi.fn(() => false),
+          querySelectorAll: vi.fn(() => []),
+        },
+        _isDisposed: false,
+        fitAddon: { fit: vi.fn() },
+      }) as TerminalTab;
+      return { tab, terminal };
+    };
+
+    const first = makeTab();
+    const second = makeTab();
+
+    first.tab.show();
+    second.tab.show();
+
+    expect(first.terminal.resize).toHaveBeenCalledWith(80, 24);
+    expect(second.terminal.resize).toHaveBeenCalledWith(80, 24);
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("xterm viewport scroll area internals unavailable"),
+      expect.any(Error),
+    );
   });
 
   it("backfills linkHandler on show() for live terminals missing the handler", () => {
