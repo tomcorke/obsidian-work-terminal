@@ -1,7 +1,7 @@
 /**
  * PromptBox - inline item creation UI with title input and column selector.
  * Enter to submit, Shift+Enter for newline.
- * Coordinates with adapter.onItemCreated for background enrichment.
+ * Coordinates with adapter.onItemCreated for foreground and background enrichment.
  */
 import type { Plugin } from "obsidian";
 import { getProfileLaunchConfig, type AgentProfile } from "../core/agents/AgentProfile";
@@ -13,7 +13,7 @@ export class PromptBox {
   private columnSelect: HTMLSelectElement;
   private adapter: AdapterBundle;
   private plugin: Plugin;
-  private settings: Record<string, any>;
+  private getSettings: () => Record<string, any>;
   private onPlaceholderAdd: (path: string) => void;
   private onPlaceholderResolve: (path: string, success: boolean) => void;
   private onNewItemCreated: (result: ItemCreationResult, placeholderPath: string) => void;
@@ -23,14 +23,14 @@ export class PromptBox {
     parentEl: HTMLElement,
     adapter: AdapterBundle,
     plugin: Plugin,
-    settings: Record<string, any>,
+    getSettings: () => Record<string, any>,
     onPlaceholderAdd: (path: string) => void,
     onPlaceholderResolve: (path: string, success: boolean) => void,
     onNewItemCreated: (result: ItemCreationResult, placeholderPath: string) => void,
   ) {
     this.adapter = adapter;
     this.plugin = plugin;
-    this.settings = settings;
+    this.getSettings = getSettings;
     this.onPlaceholderAdd = onPlaceholderAdd;
     this.onPlaceholderResolve = onPlaceholderResolve;
     this.onNewItemCreated = onNewItemCreated;
@@ -135,17 +135,21 @@ export class PromptBox {
     const placeholderPath = `__pending_${Date.now()}`;
     this.onPlaceholderAdd(placeholderPath);
 
+    // Fetch current settings at submit time so changes (e.g. switching
+    // enrichment mode) take effect without requiring a plugin reload.
+    const settings = this.getSettings();
+
     try {
       // Adapter handles actual file creation
       let hasCardMapping = false;
       if (this.adapter.onItemCreated) {
         // Resolve enrichment profile if one is configured
         const enrichmentSettings: Record<string, any> = {
-          ...this.settings,
+          ...settings,
           _columnId: columnId,
           _placeholderPath: placeholderPath,
         };
-        const profileId = this.settings["adapter.enrichmentProfile"];
+        const profileId = settings["adapter.enrichmentProfile"];
         if (profileId) {
           const profileMgr = (this.plugin as any).profileManager;
           const profile = profileMgr?.getProfile?.(profileId);
