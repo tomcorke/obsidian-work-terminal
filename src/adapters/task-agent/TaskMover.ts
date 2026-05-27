@@ -4,7 +4,6 @@ import { yamlQuoteValue } from "../../core/utils";
 import { type KanbanColumn, STATE_FOLDER_MAP } from "./types";
 
 export class TaskMover implements WorkItemMover {
-  private basePath: string;
   private stateResolver: StateResolver | null;
 
   constructor(
@@ -13,19 +12,14 @@ export class TaskMover implements WorkItemMover {
     private settings: Record<string, any>,
     stateResolver?: StateResolver,
   ) {
-    // Deliberate construction-time caching: basePath is read once here and
-    // used for all subsequent move() calls. If adapter.taskBasePath changes
-    // at runtime the mover will not pick up the new value until the plugin is
-    // reloaded and a fresh mover is constructed via createMover(). This is
-    // acceptable because taskBasePath is a one-time setup setting and the
-    // parser (not the mover) is the component responsible for discovering
-    // items - the parser is recreated on every settings change via resetParser().
-    this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
     this.stateResolver = stateResolver ?? null;
   }
 
   async move(file: TFile, targetColumnId: string): Promise<boolean> {
     const newColumn = targetColumnId;
+    // Read basePath at call time so runtime changes to adapter.taskBasePath
+    // take effect immediately without requiring a plugin reload.
+    const basePath = (this.settings["adapter.taskBasePath"] as string) || "2 - Areas/Tasks";
 
     try {
       const content = await this.app.vault.read(file);
@@ -95,7 +89,7 @@ export class TaskMover implements WorkItemMover {
             file,
             newColumn,
             oldState,
-            this.basePath,
+            basePath,
           );
           if (!stateApplied) {
             return false;
@@ -105,7 +99,7 @@ export class TaskMover implements WorkItemMover {
         // Legacy fallback: direct folder move using STATE_FOLDER_MAP
         const targetFolder = STATE_FOLDER_MAP[newColumn as KanbanColumn];
         if (targetFolder) {
-          const newFolderPath = `${this.basePath}/${targetFolder}`;
+          const newFolderPath = `${basePath}/${targetFolder}`;
           const newPath = `${newFolderPath}/${file.name}`;
 
           if (file.path !== newPath) {
