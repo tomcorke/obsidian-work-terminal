@@ -382,7 +382,7 @@ export class MainView extends ItemView {
       this.leftPanelEl,
       this.adapter,
       this.pluginRef,
-      settings,
+      () => this.settings,
       (path: string) => {
         // Placeholder card callback
         this.listPanel?.addPlaceholder(path);

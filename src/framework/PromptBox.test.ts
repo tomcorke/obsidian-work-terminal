@@ -124,7 +124,7 @@ function createPromptBox(options?: {
     parentEl,
     adapter,
     plugin,
-    settings,
+    () => settings,
     onPlaceholderAdd,
     onPlaceholderResolve,
     onNewItemCreated,
@@ -348,7 +348,15 @@ describe("PromptBox", () => {
     const parentEl = document.createElement("div");
     document.body.appendChild(parentEl);
     const adapter = makeAdapter();
-    const pb = new PromptBox(parentEl, adapter, makePlugin(), {}, vi.fn(), vi.fn(), vi.fn());
+    const pb = new PromptBox(
+      parentEl,
+      adapter,
+      makePlugin(),
+      () => ({}),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+    );
 
     const selectEl = parentEl.querySelector(".wt-prompt-column-select") as HTMLSelectElement;
     expect(selectEl.options.length).toBe(2);
@@ -367,6 +375,78 @@ describe("PromptBox", () => {
     expect(selectEl.options[0].selected).toBe(true);
     expect(selectEl.options[1].value).toBe("done");
     expect(selectEl.options[2].value).toBe("active");
+  });
+
+  it("reads settings at submit time so changes between constructions and submissions take effect", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(99);
+    const onItemCreated = vi.fn().mockResolvedValue(undefined);
+    const parentEl = document.createElement("div");
+    document.body.appendChild(parentEl);
+    let currentSettings: Record<string, unknown> = { "adapter.enrichmentMode": "background" };
+    new PromptBox(
+      parentEl,
+      makeAdapter(onItemCreated),
+      makePlugin(),
+      () => currentSettings,
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+    );
+    const inputEl = parentEl.querySelector(".wt-prompt-input") as HTMLTextAreaElement;
+    const sendBtn = parentEl.querySelector(".wt-prompt-send") as HTMLButtonElement;
+
+    // Submit with initial settings - should pass background mode
+    inputEl.value = "Task A";
+    sendBtn.click();
+    await flushPromises();
+    expect(onItemCreated).toHaveBeenLastCalledWith(
+      "Task A",
+      expect.objectContaining({ "adapter.enrichmentMode": "background" }),
+    );
+
+    // Simulate settings change (e.g. user switched to foreground mode in settings dialog)
+    currentSettings = { "adapter.enrichmentMode": "foreground" };
+
+    inputEl.value = "Task B";
+    sendBtn.click();
+    await flushPromises();
+    expect(onItemCreated).toHaveBeenLastCalledWith(
+      "Task B",
+      expect.objectContaining({ "adapter.enrichmentMode": "foreground" }),
+    );
+  });
+
+  it("resolves placeholder as unsuccessful when getSettings callback throws", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(600);
+    const parentEl = document.createElement("div");
+    document.body.appendChild(parentEl);
+    const onPlaceholderAdd = vi.fn();
+    const onPlaceholderResolve = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    new PromptBox(
+      parentEl,
+      makeAdapter(),
+      makePlugin(),
+      () => {
+        throw new Error("settings unavailable");
+      },
+      onPlaceholderAdd,
+      onPlaceholderResolve,
+      vi.fn(),
+    );
+    const inputEl = parentEl.querySelector(".wt-prompt-input") as HTMLTextAreaElement;
+    const sendBtn = parentEl.querySelector(".wt-prompt-send") as HTMLButtonElement;
+
+    inputEl.value = "Task with bad settings";
+    sendBtn.click();
+    await flushPromises();
+
+    expect(onPlaceholderAdd).toHaveBeenCalledWith("__pending_600");
+    expect(onPlaceholderResolve).toHaveBeenCalledWith("__pending_600", false);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[work-terminal] Item creation failed:",
+      expect.any(Error),
+    );
   });
 
   it("ignores blank titles and resolves failures as unsuccessful placeholders", async () => {

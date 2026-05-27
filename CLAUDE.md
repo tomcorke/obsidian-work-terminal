@@ -127,6 +127,9 @@ Every user-visible feature must have an appropriate settings UI or interaction s
 ### Documentation requirement
 Updates to the user guide (`docs/user-guide.md`) are always part of implementing a feature. PRs that add user-visible features or change existing behaviour must include corresponding user guide updates. Treat missing documentation the same as missing tests - the feature is not done.
 
+### Settings access pattern
+**Prefer fetching settings at the point of use over caching them at construction time.** Components that cache a settings snapshot (e.g. `this.settings = settings` in a constructor) silently use stale values after the user changes settings - a bug that is easy to introduce and hard to notice. The preferred pattern is to accept a `getSettings: () => Record<string, any>` callback and call it when settings are actually needed (e.g. at submit time). This ensures every action uses current values without requiring any "sync on change" wiring, and eliminates an entire class of stale-state bugs. `MainView` keeps a single authoritative `this.settings` that is updated on every `SETTINGS_CHANGED_EVENT`; components that need settings should read from it via a callback (`() => this.settings`) rather than receiving a one-time snapshot.
+
 ### Placeholder format
 All new placeholder variables must use the `$name` form (camelCase, dollar prefix), matching the existing `AgentContextPrompt` / profile-template resolver. Do not introduce `{{NAME}}` or `{name}` forms. When extending a resolver with a new placeholder, add it to `AgentContextPrompt.expandProfilePlaceholders` / `buildAgentContextPrompt` or the adjacent enrichment resolver rather than inventing a new parallel placeholder syntax.
 
