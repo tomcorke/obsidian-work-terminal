@@ -135,11 +135,12 @@ export class PromptBox {
     const placeholderPath = `__pending_${Date.now()}`;
     this.onPlaceholderAdd(placeholderPath);
 
-    // Fetch current settings at submit time so changes (e.g. switching
-    // enrichment mode) take effect without requiring a plugin reload.
-    const settings = this.getSettings();
-
     try {
+      // Fetch current settings at submit time so changes (e.g. switching
+      // enrichment mode) take effect without requiring a plugin reload.
+      // Placed inside try/catch so a throwing callback resolves the placeholder
+      // as unsuccessful rather than leaving it stuck.
+      const settings = this.getSettings();
       // Adapter handles actual file creation
       let hasCardMapping = false;
       if (this.adapter.onItemCreated) {

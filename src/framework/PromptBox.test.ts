@@ -416,6 +416,39 @@ describe("PromptBox", () => {
     );
   });
 
+  it("resolves placeholder as unsuccessful when getSettings callback throws", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(600);
+    const parentEl = document.createElement("div");
+    document.body.appendChild(parentEl);
+    const onPlaceholderAdd = vi.fn();
+    const onPlaceholderResolve = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    new PromptBox(
+      parentEl,
+      makeAdapter(),
+      makePlugin(),
+      () => {
+        throw new Error("settings unavailable");
+      },
+      onPlaceholderAdd,
+      onPlaceholderResolve,
+      vi.fn(),
+    );
+    const inputEl = parentEl.querySelector(".wt-prompt-input") as HTMLTextAreaElement;
+    const sendBtn = parentEl.querySelector(".wt-prompt-send") as HTMLButtonElement;
+
+    inputEl.value = "Task with bad settings";
+    sendBtn.click();
+    await flushPromises();
+
+    expect(onPlaceholderAdd).toHaveBeenCalledWith("__pending_600");
+    expect(onPlaceholderResolve).toHaveBeenCalledWith("__pending_600", false);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[work-terminal] Item creation failed:",
+      expect.any(Error),
+    );
+  });
+
   it("ignores blank titles and resolves failures as unsuccessful placeholders", async () => {
     vi.spyOn(Date, "now").mockReturnValue(555);
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
