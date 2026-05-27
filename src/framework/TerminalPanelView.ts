@@ -150,6 +150,13 @@ export class TerminalPanelView {
   private profileManager: AgentProfileManager | null = null;
   private tabBarResizeObserver: ResizeObserver | null = null;
   private readonly handleSettingsChanged = (event: Event) => {
+    // Deliberate dual-strategy: this.settings is a cached snapshot kept in
+    // sync via this event handler. It is used for synchronous UI reads
+    // (tab-bar render, title, placement checks). Asynchronous spawn operations
+    // (spawnShell, spawnFromProfile, spawnFromResolvedProfile) call
+    // loadFreshSettings() instead to ensure shell/cwd/arg settings are read
+    // directly from plugin.loadData() at the moment of spawn, avoiding any
+    // race between a settings change and an in-flight UI event.
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
     // If the user was viewing the embedded detail and then switched the
     // placement away from "embedded", restore terminal wrapper visibility so

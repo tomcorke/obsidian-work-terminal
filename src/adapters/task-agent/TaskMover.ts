@@ -13,6 +13,13 @@ export class TaskMover implements WorkItemMover {
     private settings: Record<string, any>,
     stateResolver?: StateResolver,
   ) {
+    // Deliberate construction-time caching: basePath is read once here and
+    // used for all subsequent move() calls. If adapter.taskBasePath changes
+    // at runtime the mover will not pick up the new value until the plugin is
+    // reloaded and a fresh mover is constructed via createMover(). This is
+    // acceptable because taskBasePath is a one-time setup setting and the
+    // parser (not the mover) is the component responsible for discovering
+    // items - the parser is recreated on every settings change via resetParser().
     this.basePath = this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks";
     this.stateResolver = stateResolver ?? null;
   }

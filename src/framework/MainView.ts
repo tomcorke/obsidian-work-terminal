@@ -114,6 +114,12 @@ export class MainView extends ItemView {
     if (prevPlacement !== newPlacement) {
       this.remountDetailViewForCurrentSelection();
     }
+    // Recreate the parser so settings it reads at construction time
+    // (e.g. adapter.taskBasePath, adapter.jiraBaseUrl) reflect the new values.
+    // The mover stores basePath at construction and is not rebuilt here - it is
+    // recreated on the next full plugin reload, which is acceptable given that
+    // taskBasePath changes are rare one-time setup operations.
+    this.resetParser();
     this.scheduleRefresh();
   };
 

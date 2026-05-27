@@ -849,6 +849,7 @@ describe("MainView detail placement remount on settings change", () => {
     const adapter = {
       config: { creationColumns: [] },
       onSettingsChanged: vi.fn(),
+      createParser: vi.fn().mockReturnValue({}),
       detachDetailView,
       createDetailView,
     };
@@ -991,6 +992,7 @@ describe("MainView settings-driven tab title refresh", () => {
     const adapter = {
       config: { creationColumns: [] },
       onSettingsChanged: vi.fn(),
+      createParser: vi.fn().mockReturnValue({}),
     };
     (view as any).adapter = adapter;
     (view as any).listPanel = { updateSettings: vi.fn() };

@@ -30,6 +30,12 @@ export class TaskParser implements WorkItemParser {
     private settings: Record<string, any>,
     stateResolver?: StateResolver,
   ) {
+    // adapter.taskBasePath is read at construction time to set this.basePath.
+    // The parser is recreated via MainView.resetParser() on every settings
+    // change, so basePath always reflects the current setting at next parse.
+    // Other settings (e.g. adapter.jiraBaseUrl) are read from this.settings at
+    // call time; since resetParser() constructs a new instance, these are also
+    // fresh after each settings change.
     this.basePath = this.normaliseBasePath(
       this.settings["adapter.taskBasePath"] || "2 - Areas/Tasks",
     );
