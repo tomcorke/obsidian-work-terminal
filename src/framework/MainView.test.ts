@@ -849,6 +849,7 @@ describe("MainView detail placement remount on settings change", () => {
     const adapter = {
       config: { creationColumns: [] },
       onSettingsChanged: vi.fn(),
+      createParser: vi.fn().mockReturnValue({}),
       detachDetailView,
       createDetailView,
     };
@@ -991,6 +992,7 @@ describe("MainView settings-driven tab title refresh", () => {
     const adapter = {
       config: { creationColumns: [] },
       onSettingsChanged: vi.fn(),
+      createParser: vi.fn().mockReturnValue({}),
     };
     (view as any).adapter = adapter;
     (view as any).listPanel = { updateSettings: vi.fn() };
@@ -1043,5 +1045,49 @@ describe("MainView settings-driven tab title refresh", () => {
     });
     expect(() => (view as any)._handleSettingsChanged(event)).not.toThrow();
     expect(view.getDisplayText()).toBe("Work Terminal");
+  });
+});
+
+describe("MainView parser recreation on settings change", () => {
+  let dom: JSDOM;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dom = new JSDOM("<!doctype html><html><body></body></html>");
+    vi.stubGlobal("window", dom.window);
+    vi.stubGlobal("document", dom.window.document);
+    vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    dom.window.close();
+  });
+
+  it("calls adapter.createParser and replaces view.parser when settings change", () => {
+    const view = new MainView({} as any, {} as any, {} as any);
+    const newParserInstance = { loadAll: vi.fn() };
+    const createParser = vi.fn().mockReturnValue(newParserInstance);
+    const adapter = {
+      config: { creationColumns: [] },
+      onSettingsChanged: vi.fn(),
+      createParser,
+    };
+    (view as any).adapter = adapter;
+    (view as any).listPanel = { updateSettings: vi.fn() };
+    (view as any).promptBox = { updateCreationColumns: vi.fn() };
+    (view as any).settings = { "adapter.taskBasePath": "old/path" };
+    (view as any).app = {};
+    (view as any).leaf = {};
+    vi.spyOn(view as any, "scheduleRefresh").mockImplementation(() => {});
+
+    const event = new dom.window.CustomEvent("work-terminal:settings-changed", {
+      detail: { "adapter.taskBasePath": "new/path" },
+    });
+    (view as any)._handleSettingsChanged(event);
+
+    expect(createParser).toHaveBeenCalledWith({}, "", { "adapter.taskBasePath": "new/path" });
+    expect((view as any).parser).toBe(newParserInstance);
   });
 });

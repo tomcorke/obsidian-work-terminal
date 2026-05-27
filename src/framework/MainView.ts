@@ -114,6 +114,11 @@ export class MainView extends ItemView {
     if (prevPlacement !== newPlacement) {
       this.remountDetailViewForCurrentSelection();
     }
+    // Recreate the parser so settings it reads at construction time
+    // (e.g. adapter.taskBasePath) reflect the new values immediately.
+    // The mover reads basePath from settings at move() time, so it already
+    // reflects the current value without needing to be recreated.
+    this.resetParser();
     this.scheduleRefresh();
   };
 

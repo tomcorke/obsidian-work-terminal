@@ -224,7 +224,15 @@ export class ListPanel {
     }
   }
 
-  /** Update cached settings (called by MainView when settings change). */
+  /**
+   * Update cached settings (called by MainView._handleSettingsChanged).
+   *
+   * Deliberate caching: settings are read from this.settings only inside
+   * render-path methods (getDisplayMode, getViewMode, getRecentThreshold) so
+   * the snapshot is always fresh for the current render pass. There is no
+   * risk of stale reads between render calls because updateSettings() is
+   * invoked synchronously before scheduleRefresh() on every settings change.
+   */
   updateSettings(settings: Record<string, unknown>): void {
     this.settings = settings;
   }
