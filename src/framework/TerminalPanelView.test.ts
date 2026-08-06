@@ -2251,7 +2251,7 @@ describe("profile launch", () => {
       { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
     ];
     (view as any).profileManager = {
-      resolveCommand: () => "claude",
+      resolveCommand: () => process.execPath,
       resolveCwd: () => "~/projects",
       resolveArguments: () => "",
       resolveContextPrompt: () => "",
@@ -2260,11 +2260,8 @@ describe("profile launch", () => {
     // Add getButtonProfiles so renderTabBar (called at end of spawnAgentSession) works
     (view as any).profileManager.getButtonProfiles = () => [];
 
-    // Do NOT mock spawnAgentSession - let it run through to createTab
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ found: true, resolved: "claude" });
-
+    // Do NOT mock spawnAgentSession - let it run through to createTab.
+    // process.execPath keeps profile resolution independent of host PATH contents.
     await (view as any).spawnFromProfile(
       makeProfile({
         useContext: true,
@@ -2282,8 +2279,6 @@ describe("profile launch", () => {
     expect(joinedArgs).not.toContain("adapter prompt");
     // buildPrompt should never have been called
     expect(promptBuilder.buildPrompt).not.toHaveBeenCalled();
-
-    resolveStub.mockRestore();
   });
 
   it("always passes arguments on launch", async () => {
