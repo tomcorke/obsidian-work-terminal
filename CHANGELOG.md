@@ -6,6 +6,27 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-06
+
+### Highlights
+- Agent profile editing now includes a live, fully resolved launch preview showing the executable, working directory, exact argument boundaries, context placement, login-shell wrapping, and Python PTY layer. Preview and runtime share the same resolution path, including plugin paths for relative or empty vault bases. (#536, #540)
+- Context injection is now configurable per profile: preserve automatic agent-specific placement, or place `$workTerminalPrompt` manually with optional single-argument escaping and validation against duplicate or missing prompts. Existing profiles retain their current automatic behavior. (#537)
+- OpenCode is now a first-party agent type with `opencode` command discovery, correct `--prompt` context injection, session handling, installation guidance, and an official branded icon for profiles and tabs. Existing custom OpenCode profiles continue to work unchanged. (#538)
+
+### Improvements
+- Routine kanban moves no longer append noisy `Moved to ...` entries to task activity logs; state, tags, timestamps, and file placement still update normally. (#523)
+
+### Fixes
+- Hidden terminals now resync xterm's native scroll area when shown, with a public resize fallback and one-time diagnostic if xterm internals change, so scrollback no longer snaps or stops above the true bottom after background output. (#524, #527)
+- Context-menu state moves now unpin pinned tasks after a successful transition, including **Done & Close Sessions**, while failed moves leave pins intact. (#528)
+- Runtime setting changes now take effect without a plugin reload: new tasks use the current foreground/background enrichment mode, and task-base-path changes refresh task discovery and moves. (#531, #533)
+
+### Upgrade notes
+- Manual installations must update `pty-wrapper.py` alongside `main.js`; 0.7.0 uses the wrapper's new resolved-command launch mode.
+
+### Full changelog
+- Compare with 0.6.1: https://github.com/tomcorke/obsidian-work-terminal/compare/0.6.1...0.7.0
+
 ## [0.6.1] - 2026-05-01
 
 ### Fixes
