@@ -23,6 +23,11 @@ import {
   resolveCommandInfo,
 } from "../core/agents/AgentLauncher";
 import { expandTilde, isValidCssColor } from "../core/utils";
+import { formatProfileLaunchPreview, type ResolvedProfileLaunch } from "./ProfileLaunchResolver";
+
+export type ProfileLaunchPreviewResolver = (
+  profile: AgentProfile,
+) => ResolvedProfileLaunch | Promise<ResolvedProfileLaunch>;
 
 const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   claude: "Claude",
@@ -74,6 +79,8 @@ export class AgentProfileEditModal extends Modal {
    * the persisted profile by id (not the edited draft).
    */
   private originalProfile: AgentProfile | null;
+  private launchPreviewCodeEl: HTMLElement | null = null;
+  private launchPreviewSeq = 0;
 
   constructor(
     app: App,
@@ -98,6 +105,7 @@ export class AgentProfileEditModal extends Modal {
      * can unlock or lock the button without re-rendering.
      */
     private deleteGuard?: (profile: AgentProfile) => string | null,
+    private previewResolver?: ProfileLaunchPreviewResolver,
   ) {
     super(app);
     this.isNew = !profile;
@@ -166,6 +174,7 @@ export class AgentProfileEditModal extends Modal {
           .onChange((value) => {
             this.draft.command = value;
             this.updateCommandValidation(commandSetting.descEl);
+            void this.updateLaunchPreview();
           });
         text.inputEl.addClass("wt-profile-input");
       });
@@ -183,6 +192,7 @@ export class AgentProfileEditModal extends Modal {
           .setValue(this.draft.defaultCwd)
           .onChange((value) => {
             this.draft.defaultCwd = value;
+            void this.updateLaunchPreview();
           });
         text.inputEl.addClass("wt-profile-input");
       });
@@ -196,12 +206,41 @@ export class AgentProfileEditModal extends Modal {
       .addTextArea((ta) => {
         ta.setValue(this.draft.arguments).onChange((value) => {
           this.draft.arguments = value;
+          void this.updateLaunchPreview();
         });
         ta.inputEl.style.width = "100%";
         ta.inputEl.style.minHeight = "60px";
       });
     argsSetting.settingEl.style.flexWrap = "wrap";
     argsSetting.controlEl.style.width = "100%";
+
+    if (isCustom) {
+      new Setting(contentEl)
+        .setName("Prompt injection")
+        .setDesc("Pass context as a trailing argument or behind a CLI flag")
+        .addDropdown((dropdown) => {
+          dropdown.addOption("positional", "Trailing positional argument");
+          dropdown.addOption("flag", "Flag and value");
+          dropdown.setValue(this.draft.promptInjectionMode ?? "positional").onChange((value) => {
+            this.draft.promptInjectionMode = value as "positional" | "flag";
+            this.render();
+          });
+        });
+      if (this.draft.promptInjectionMode === "flag") {
+        new Setting(contentEl)
+          .setName("Prompt flag")
+          .setDesc("CLI flag placed immediately before the assembled context prompt")
+          .addText((text) => {
+            text
+              .setPlaceholder("--prompt")
+              .setValue(this.draft.promptFlag ?? "")
+              .onChange((value) => {
+                this.draft.promptFlag = value;
+                void this.updateLaunchPreview();
+              });
+          });
+      }
+    }
 
     // Login shell wrap
     new Setting(contentEl)
@@ -213,6 +252,7 @@ export class AgentProfileEditModal extends Modal {
       .addToggle((toggle) => {
         toggle.setValue(this.draft.loginShellWrap ?? false).onChange((value) => {
           this.draft.loginShellWrap = value;
+          void this.updateLaunchPreview();
         });
       });
 
@@ -227,12 +267,18 @@ export class AgentProfileEditModal extends Modal {
         toggle.setValue(this.draft.useContext).onChange((value) => {
           this.draft.useContext = value;
           this.renderContextDependentSection(contextDependentEl);
+          void this.updateLaunchPreview();
         });
       });
 
     // Reorder DOM: move contextDependentEl after the toggle setting
     contentEl.insertAfter(contextDependentEl, useContextSetting.settingEl);
     this.renderContextDependentSection(contextDependentEl);
+
+    contentEl.createEl("h4", { text: "Resolved launch preview" });
+    const launchPreviewEl = contentEl.createEl("pre", { cls: "wt-profile-launch-preview" });
+    this.launchPreviewCodeEl = launchPreviewEl.createEl("code", { text: "Resolving..." });
+    void this.updateLaunchPreview();
 
     // ---------------------------------------------------------------------------
     // Button configuration
@@ -416,6 +462,7 @@ export class AgentProfileEditModal extends Modal {
       .addToggle((toggle) => {
         toggle.setValue(this.draft.suppressAdapterPrompt).onChange((value) => {
           this.draft.suppressAdapterPrompt = value;
+          void this.updateLaunchPreview();
         });
       });
 
@@ -428,12 +475,32 @@ export class AgentProfileEditModal extends Modal {
       .addTextArea((ta) => {
         ta.setValue(this.draft.contextPrompt).onChange((value) => {
           this.draft.contextPrompt = value;
+          void this.updateLaunchPreview();
         });
         ta.inputEl.style.width = "100%";
         ta.inputEl.style.minHeight = "80px";
       });
     ctxSetting.settingEl.style.flexWrap = "wrap";
     ctxSetting.controlEl.style.width = "100%";
+  }
+
+  private async updateLaunchPreview(): Promise<void> {
+    if (!this.launchPreviewCodeEl) return;
+    if (!this.previewResolver) {
+      this.launchPreviewCodeEl.textContent = "Launch preview is unavailable in this context.";
+      return;
+    }
+    const seq = ++this.launchPreviewSeq;
+    try {
+      const resolved = await this.previewResolver(this.draft);
+      if (seq === this.launchPreviewSeq && this.launchPreviewCodeEl) {
+        this.launchPreviewCodeEl.textContent = formatProfileLaunchPreview(resolved);
+      }
+    } catch (error) {
+      if (seq === this.launchPreviewSeq && this.launchPreviewCodeEl) {
+        this.launchPreviewCodeEl.textContent = `Could not resolve launch preview: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
   }
 
   private addColorPreview(controlEl: HTMLElement): void {

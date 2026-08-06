@@ -532,6 +532,57 @@ export function buildAgentArgs(
   return args;
 }
 
+/** The exact command model handed to TerminalTab and, ultimately, pty-wrapper.py. */
+export interface ResolvedAgentInvocation {
+  command: ResolvedCommand;
+  cwd: string;
+  /** Agent arguments only, excluding argv[0]. */
+  args: string[];
+  /** Executable passed to TerminalTab as its shell/process target. */
+  executable: string;
+  /** Complete argv passed through the PTY wrapper, including argv[0]. */
+  argv: string[];
+  loginShellWrap: boolean;
+}
+
+/**
+ * Resolve the final agent process invocation. Both real launches and the
+ * profile editor preview use this function so command resolution, argv
+ * boundaries, prompt placement, CWD expansion, and login-shell behaviour
+ * cannot drift apart.
+ */
+export function resolveAgentInvocation(options: {
+  agentType: AgentType;
+  command: string;
+  cwd: string;
+  extraArgs?: string;
+  prompt?: string;
+  launchConfigOverride?: import("./AgentProfile").AgentLaunchConfig;
+  loginShellWrap?: boolean;
+  resolveCommand?: (command: string, cwd: string) => ResolvedCommand;
+}): ResolvedAgentInvocation {
+  const cwd = expandTilde(options.cwd);
+  const command = (options.resolveCommand ?? resolveCommandInfo)(options.command, cwd);
+  const args = buildAgentArgs(
+    options.agentType,
+    options.extraArgs,
+    options.prompt,
+    options.launchConfigOverride,
+  );
+  // Preserve interactive-shell profile behaviour when no explicit args exist.
+  if (options.agentType === "shell" && args.length === 0) args.push("-i");
+  const commandForArgv = options.loginShellWrap ? command.requested.trim() : command.resolved;
+
+  return {
+    command,
+    cwd,
+    args,
+    executable: command.resolved,
+    argv: [commandForArgv, ...args],
+    loginShellWrap: options.loginShellWrap === true,
+  };
+}
+
 /**
  * Build GitHub Copilot CLI argument array from settings and optional prompt.
  * @deprecated Use buildAgentArgs("copilot", ...) instead. Kept for backward compatibility.

@@ -63,6 +63,7 @@ import type {
   CardDisplayMode,
   CardFlagRule,
   SettingField,
+  WorkItemPromptBuilder,
 } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import { resetGuidedTourStatus } from "./GuidedTour";
@@ -77,6 +78,12 @@ import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
 import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 import { formatVersionForSettings } from "./version";
+import {
+  PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
+  PROFILE_PREVIEW_EXAMPLE_ITEM,
+  PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
+  resolveProfileLaunch,
+} from "./ProfileLaunchResolver";
 
 interface CoreSettings {
   "core.claudeCommand": string;
@@ -152,6 +159,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
   private plugin: Plugin;
   private profileManager: AgentProfileManager;
   private adapterPromptDescription?: string;
+  private promptBuilder: WorkItemPromptBuilder = { buildPrompt: () => "" };
 
   constructor(
     app: App,
@@ -164,11 +172,11 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     this.adapter = adapter;
     this.profileManager = profileManager;
 
-    // Get the adapter's prompt format description for the profile UI
+    // Get the adapter's prompt builder and format description for the profile UI.
     try {
-      const promptBuilder = adapter.createPromptBuilder();
-      if (promptBuilder?.describePromptFormat) {
-        this.adapterPromptDescription = promptBuilder.describePromptFormat();
+      this.promptBuilder = adapter.createPromptBuilder();
+      if (this.promptBuilder?.describePromptFormat) {
+        this.adapterPromptDescription = this.promptBuilder.describePromptFormat();
       }
     } catch (error) {
       // createPromptBuilder() or describePromptFormat() threw at construction time
@@ -427,7 +435,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * agent context textarea, and buttons to the Background enrichment and
    * Agent actions dialogs.
    */
-  private renderAgentsSection(containerEl: HTMLElement, _settings: SettingsSnapshot): void {
+  private renderAgentsSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "Agents" });
 
     // Profile Manager - first because it's the most frequent touchpoint.
@@ -445,6 +453,17 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
               this.app,
               this.profileManager,
               this.adapterPromptDescription,
+              (profile) =>
+                resolveProfileLaunch({
+                  profile,
+                  settings,
+                  profileManager: this.profileManager,
+                  promptBuilder: this.promptBuilder,
+                  item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+                  absoluteFilePath: PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
+                  sessionId: PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
+                  sourceLabel: "Clearly labelled example values (no selected work item)",
+                }),
             ).open();
           }),
       );

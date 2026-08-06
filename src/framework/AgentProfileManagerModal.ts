@@ -5,7 +5,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
-import { AgentProfileEditModal } from "./AgentProfileModal";
+import { AgentProfileEditModal, type ProfileLaunchPreviewResolver } from "./AgentProfileModal";
 import { electronRequire, isValidCssColor } from "../core/utils";
 import { isClaudeProfile } from "./splitTaskProfile";
 
@@ -50,6 +50,7 @@ export class AgentProfileManagerModal extends Modal {
     app: App,
     private manager: AgentProfileManager,
     private adapterPromptDescription?: string,
+    private previewResolver?: ProfileLaunchPreviewResolver,
   ) {
     super(app);
   }
@@ -101,6 +102,8 @@ export class AgentProfileManagerModal extends Modal {
         },
         undefined,
         this.adapterPromptDescription,
+        undefined,
+        this.previewResolver,
       ).open();
     });
 
@@ -195,6 +198,7 @@ export class AgentProfileManagerModal extends Modal {
         // Evaluate against the current profile list so a user who has just
         // added or removed a Claude profile gets the up-to-date guard state.
         buildLastClaudeDeleteGuard(this.manager.getProfiles()),
+        this.previewResolver,
       ).open();
     });
   }

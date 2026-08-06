@@ -1886,7 +1886,8 @@ button.wt-spawn-claude-ctx:hover svg {
   margin-bottom: 6px;
 }
 
-.wt-adapter-prompt-preview-code {
+.wt-adapter-prompt-preview-code,
+.wt-profile-launch-preview {
   margin: 0;
   padding: 8px 10px;
   background: var(--background-primary);
@@ -1896,6 +1897,7 @@ button.wt-spawn-claude-ctx:hover svg {
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--text-muted);
 }
 
