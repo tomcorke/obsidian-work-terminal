@@ -243,7 +243,11 @@ export function formatProfileLaunchPreview(resolved: ResolvedProfileLaunch): str
 
   invocation.argv.forEach((arg, index) => lines.push(`  argv[${index}]: ${quoted(arg)}`));
 
-  lines.push("", "Assembled context prompt:", `  ${prompt ? quoted(prompt) : "(none)"}`);
+  lines.push(
+    "",
+    "Assembled context prompt:",
+    `  ${prompt === undefined ? "(none)" : quoted(prompt)}`,
+  );
   if (promptPlacement === "automatic-flag") {
     lines.push(
       `Prompt placement: automatic flag ${quoted(launchConfig.promptFlag!)}, value at argv[${invocation.argv.length - 1}]`,

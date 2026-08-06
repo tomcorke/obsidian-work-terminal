@@ -125,7 +125,9 @@ describe("profile launch resolution and preview", () => {
 
     expect(resolved.prompt).toBe("");
     expect(resolved.invocation.args).toEqual(["--prompt", ""]);
-    expect(formatProfileLaunchPreview(resolved)).toContain(
+    const preview = formatProfileLaunchPreview(resolved);
+    expect(preview).toContain('Assembled context prompt:\n  ""');
+    expect(preview).toContain(
       "Prompt placement: manual escaped $workTerminalPrompt substitution (one argv value)",
     );
   });
