@@ -43,6 +43,10 @@ import {
   type AgentLaunchConfig,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
+import {
+  resolvePluginDir as resolveSharedPluginDir,
+  resolveVaultBasePath,
+} from "../core/workspace/pluginPaths";
 import { checkPython3Available } from "../core/terminal/PythonCheck";
 import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import {
@@ -1283,27 +1287,11 @@ export class TerminalPanelView {
   }
 
   private resolveVaultBasePath(): string {
-    const path = electronRequire("path") as typeof import("path");
-    const adapter = (this.plugin.app as any)?.vault?.adapter as any;
-    let vaultPath = expandTilde(adapter?.basePath || adapter?.getBasePath?.() || "");
-    const homeDir = process.env.HOME || process.env.USERPROFILE || "";
-
-    if (vaultPath && !path.isAbsolute(vaultPath)) {
-      vaultPath = homeDir ? path.resolve(homeDir, vaultPath) : path.resolve(vaultPath);
-    }
-
-    return vaultPath;
+    return resolveVaultBasePath(this.plugin.app);
   }
 
   private resolvePluginDir(): string {
-    const path = electronRequire("path") as typeof import("path");
-    const manifestDir = this.plugin.manifest.dir || `.obsidian/plugins/${this.plugin.manifest.id}`;
-    if (path.isAbsolute(manifestDir)) {
-      return manifestDir;
-    }
-
-    const vaultBasePath = this.resolveVaultBasePath();
-    return vaultBasePath ? path.resolve(vaultBasePath, manifestDir) : path.resolve(manifestDir);
+    return resolveSharedPluginDir(this.plugin.app, this.plugin.manifest);
   }
 
   private resolveWorkItemPath(itemPath: string): string {

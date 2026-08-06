@@ -78,7 +78,7 @@ import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
 import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 import { formatVersionForSettings } from "./version";
-import { electronRequire, expandTilde } from "../core/utils";
+import { resolvePluginDir as resolveSharedPluginDir } from "../core/workspace/pluginPaths";
 import { checkPython3Available } from "../core/terminal/PythonCheck";
 import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import {
@@ -439,12 +439,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * Agent actions dialogs.
    */
   private resolvePluginDir(): string {
-    const path = electronRequire("path") as typeof import("path");
-    const manifestDir = this.plugin.manifest.dir || `.obsidian/plugins/${this.plugin.manifest.id}`;
-    if (path.isAbsolute(manifestDir)) return manifestDir;
-    const adapter = (this.app as any)?.vault?.adapter;
-    const vaultPath = expandTilde(adapter?.basePath || adapter?.getBasePath?.() || "");
-    return path.resolve(vaultPath, manifestDir);
+    return resolveSharedPluginDir(this.app, this.plugin.manifest);
   }
 
   private renderAgentsSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
