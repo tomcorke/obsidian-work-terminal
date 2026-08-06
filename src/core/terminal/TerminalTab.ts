@@ -33,6 +33,9 @@ import {
 import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
 import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
+import { buildPtyLaunchPlan, resolvePtyWrapperPath } from "./PtyLaunch";
+
+export { resolvePtyWrapperPath } from "./PtyLaunch";
 
 export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
@@ -101,27 +104,6 @@ function warnViewportResyncFallback(err: unknown): void {
 /** @internal Test helper for deterministic warn-once assertions. */
 export function __resetViewportResyncWarnOnce(): void {
   hasWarnedViewportResync = false;
-}
-
-export function resolvePtyWrapperPath(pluginDir?: string): string {
-  const path = electronRequire("path") as typeof import("path");
-  const fs = electronRequire("fs") as typeof import("fs");
-  const candidates = [
-    ...(pluginDir ? [path.join(pluginDir, "pty-wrapper.py")] : []),
-    path.join(__dirname, "pty-wrapper.py"),
-  ];
-
-  return (
-    candidates.find((candidate) => {
-      try {
-        return fs.existsSync(candidate);
-      } catch {
-        return false;
-      }
-    }) ||
-    candidates[0] ||
-    "pty-wrapper.py"
-  );
 }
 
 export class TerminalTab {
@@ -889,12 +871,21 @@ export class TerminalTab {
     python3Path = "python3",
   ): ChildProcess {
     const cp = electronRequire("child_process") as typeof import("child_process");
-    const wrapperPath = resolvePtyWrapperPath(this.pluginDir);
+    const plan = buildPtyLaunchPlan({
+      python3Path,
+      wrapperPath: resolvePtyWrapperPath(this.pluginDir),
+      cols,
+      rows,
+      command: command || [this.shell, "-i"],
+      loginShellWrap: this.loginShellWrap,
+    });
+    const args = plan.python.argv.slice(1);
 
-    const cmd = command || [this.shell, "-i"];
-    const args = [wrapperPath, String(cols), String(rows), "--", ...cmd];
-
-    console.log("[work-terminal] Spawning via pty-wrapper:", python3Path, args.join(" "));
+    console.log(
+      "[work-terminal] Spawning via pty-wrapper:",
+      plan.python.executable,
+      args.join(" "),
+    );
     console.log("[work-terminal] cwd:", this.cwd);
 
     const spawnEnv: Record<string, string | undefined> = {
@@ -904,11 +895,7 @@ export class TerminalTab {
       LINES: String(rows),
       PATH: getFullPath(),
     };
-    if (this.loginShellWrap) {
-      spawnEnv.WT_LOGIN_SHELL_WRAP = "1";
-    }
-
-    const proc = cp.spawn(python3Path, args, {
+    const proc = cp.spawn(plan.python.executable, args, {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: spawnEnv,

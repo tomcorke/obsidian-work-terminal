@@ -56,6 +56,16 @@ describe("pty-wrapper.py", () => {
     expect(result.exitCode).not.toBeNull();
   }, 10000);
 
+  it("executes an already-resolved child argv without wrapping it again", async () => {
+    const result = await spawnAndCloseStdin(
+      ["80", "24", "--resolved", "--", "/usr/bin/true"],
+      5000,
+    );
+
+    expect(result.timedOut).toBe(false);
+    expect(result.exitCode).toBe(0);
+  }, 10000);
+
   it("should exit with child exit code when child terminates", async () => {
     // Spawn `true` which exits with code 0.
     // The wrapper should detect child exit and clean up.

@@ -14,9 +14,9 @@ import type { TerminalTab, AgentState } from "../core/terminal/TerminalTab";
 import {
   buildMissingCliNotice,
   resolveCommandInfo,
-  buildAgentArgs,
+  resolveAgentInvocation,
   mergeExtraArgs,
-  parseExtraArgs,
+  type ResolvedAgentInvocation,
 } from "../core/agents/AgentLauncher";
 import { SessionStore } from "../core/session/SessionStore";
 import type {
@@ -43,6 +43,15 @@ import {
   type AgentLaunchConfig,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
+import { checkPython3Available } from "../core/terminal/PythonCheck";
+import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
+import {
+  PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
+  PROFILE_PREVIEW_EXAMPLE_ITEM,
+  PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
+  resolveProfileLaunch,
+  type ResolvedProfileLaunch,
+} from "./ProfileLaunchResolver";
 
 interface WorkTerminalDebugSnapshot {
   version: 1;
@@ -928,144 +937,58 @@ export class TerminalPanelView {
     });
   }
 
-  /**
-   * Spawn a session from an agent profile.
-   * Resolves profile settings, builds the appropriate session type, and delegates
-   * to the existing spawn methods.
-   */
+  /** Spawn a session from the same resolved profile model shown in the editor preview. */
   async spawnFromProfile(profile: AgentProfile): Promise<void> {
     if (!this.profileManager) return;
     const fresh = await this.loadFreshSettings();
-    const sessionType = agentTypeToSessionType(
-      profile.agentType,
-      profile.useContext,
-      profile.agentType === "custom" ? profile.id : undefined,
-    );
-    const command = this.profileManager.resolveCommand(profile, fresh);
-    const cwd = this.profileManager.resolveCwd(profile, fresh);
-    const extraArgs = this.profileManager.resolveArguments(profile, fresh);
-    const label = profile.button.label || profile.name;
-
     const item = this.getActiveItem();
+    const resolved = resolveProfileLaunch({
+      profile,
+      settings: fresh,
+      profileManager: this.profileManager,
+      promptBuilder: this.promptBuilder,
+      item: item ?? undefined,
+      absoluteFilePath: item ? this.resolveWorkItemPath(item.path) : undefined,
+    });
 
-    if (profile.agentType === "shell") {
-      // Expand item placeholders in arguments for shell profiles
-      let expandedArgs = extraArgs;
-      if (item && expandedArgs) {
-        const absPath = this.resolveWorkItemPath(item.path);
-        expandedArgs = expandProfilePlaceholders(
-          expandedArgs,
-          item,
-          "$sessionId",
-          undefined,
-          absPath,
-        );
-      }
-      const commandArgs = expandedArgs ? parseExtraArgs(expandedArgs) : [];
-      const expandedCwd = expandTilde(cwd);
-      this.exitDetailView();
-      const tab = this.tabManager.createTab(
-        command,
-        expandedCwd,
-        label,
-        "shell",
-        undefined,
-        commandArgs.length > 0 ? commandArgs : undefined,
+    if (resolved.error === "context-item-required") {
+      new Notice(
+        `Select a ${this.adapter.config.itemName} first to launch this profile with context`,
       );
-      if (tab) {
-        tab.profileId = profile.id;
-        if (profile.button.color) tab.profileColor = profile.button.color;
-        if (profile.loginShellWrap) tab.loginShellWrap = true;
-      }
-      this.renderTabBar();
+      return;
+    }
+    if (resolved.error === "context-prompt-unavailable") {
+      new Notice("Could not build a contextual prompt for this item");
       return;
     }
 
-    // Build context prompt first so $workTerminalPrompt can be resolved in args
-    let prompt: string | undefined;
-    if (profile.useContext && item) {
-      const contextTemplate = this.profileManager.resolveContextPrompt(profile, fresh);
-      if (contextTemplate) {
-        // Build from adapter prompt + profile context template
-        const adapterPrompt = profile.suppressAdapterPrompt
-          ? null
-          : this.promptBuilder.buildPrompt(item, this.resolveWorkItemPath(item.path));
-        // Defer $sessionId in context template too (no $workTerminalPrompt in context itself)
-        const absPath = this.resolveWorkItemPath(item.path);
-        const expandedContext = expandProfilePlaceholders(
-          contextTemplate,
-          item,
-          "$sessionId",
-          undefined,
-          absPath,
-        );
-        prompt = adapterPrompt ? adapterPrompt + "\n\n" + expandedContext : expandedContext;
-      } else {
-        // Fall back to standard context prompt building
-        prompt = await this.getAgentContextPrompt(item, fresh, profile.suppressAdapterPrompt);
-      }
-      if (!prompt) {
-        if (!profile.suppressAdapterPrompt) {
-          new Notice("Could not build a contextual prompt for this item");
-          return;
-        }
-        // suppressAdapterPrompt is on but no template exists - launch without context.
-        // Use empty string (not undefined) so spawnAgentSession knows prompt was
-        // intentionally omitted and won't auto-build one from the adapter.
-        prompt = "";
-      }
-    }
-
-    // Expand item placeholders in arguments (defer $sessionId until the real ID is known)
-    // $workTerminalPrompt resolves to the assembled context prompt above
-    let expandedArgs = extraArgs;
-    if (item && expandedArgs) {
-      const absPath = this.resolveWorkItemPath(item.path);
-      expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt, absPath);
-    }
-
-    // Profile's resolveArguments() already includes global args, so skip the
-    // global merge inside spawnAgentSession to avoid doubling them.
-    const resolvedConfig = this.resolveLaunchConfig(profile.agentType, profile);
-    const launchConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
-    await this.spawnAgentSession({
+    // resolveArguments() already merged global + profile args, so do not merge
+    // global args again inside spawnAgentSession.
+    const tab = await this.spawnAgentSession({
       agentType: profile.agentType,
-      sessionType,
-      command,
-      cwd,
-      extraArgs: expandedArgs,
+      sessionType: resolved.sessionType,
+      command: resolved.command,
+      cwd: resolved.cwd,
+      extraArgs: resolved.extraArgs,
       skipGlobalArgs: true,
-      label,
-      prompt,
+      label: profile.button.label || profile.name,
+      prompt: resolved.prompt,
       freshSettings: fresh,
-      launchConfigOverrides,
+      launchConfigOverrides: profile.agentType === "custom" ? resolved.launchConfig : undefined,
       loginShellWrap: profile.loginShellWrap,
+      invocation: resolved.invocation,
     });
 
-    // Apply profile metadata to the newly created tab
-    const activeItemId = this.tabManager.getActiveItemId();
-    if (activeItemId) {
-      const tabs = this.tabManager.getTabs(activeItemId);
-      const lastTab = tabs[tabs.length - 1];
-      if (lastTab) {
-        lastTab.profileId = profile.id;
-        if (profile.button.color) lastTab.profileColor = profile.button.color;
-        // Set activity patterns from the resolved launch config.
-        // For custom profiles, explicitly set empty patterns when none are
-        // configured so active-indicator checks don't fall back to legacy
-        // Claude/Copilot detection.
-        lastTab.activityPatterns =
-          resolvedConfig.activityPatterns ??
-          (profile.agentType === "custom"
-            ? { activeLinePatterns: [], activeJoinedPatterns: [] }
-            : undefined);
-        // Launch through login shell when profile requests it
-        if (profile.loginShellWrap) {
-          lastTab.loginShellWrap = true;
-        }
-        this.renderTabBar();
-      }
-    }
+    if (!tab) return;
+    tab.profileId = profile.id;
+    if (profile.button.color) tab.profileColor = profile.button.color;
+    tab.activityPatterns =
+      resolved.launchConfig.activityPatterns ??
+      (profile.agentType === "custom"
+        ? { activeLinePatterns: [], activeJoinedPatterns: [] }
+        : undefined);
+    if (profile.loginShellWrap) tab.loginShellWrap = true;
+    this.renderTabBar();
   }
 
   private async spawnShell(): Promise<void> {
@@ -1518,6 +1441,29 @@ export class TerminalPanelView {
           this.plugin.app,
           this.profileManager,
           adapterPromptDescription,
+          async (profile): Promise<ResolvedProfileLaunch> => {
+            const settings = await this.loadFreshSettings();
+            const selectedItem = this.getActiveItem();
+            const item = selectedItem ?? PROFILE_PREVIEW_EXAMPLE_ITEM;
+            return resolveProfileLaunch({
+              profile,
+              settings,
+              profileManager: this.profileManager!,
+              promptBuilder: this.promptBuilder,
+              item,
+              absoluteFilePath: selectedItem
+                ? this.resolveWorkItemPath(selectedItem.path)
+                : PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
+              sessionId: selectedItem ? "$sessionId" : PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
+              sourceLabel: selectedItem
+                ? `Selected work item: ${selectedItem.title}`
+                : "Clearly labelled example values (no selected work item)",
+              pty: {
+                python3Path: checkPython3Available() ?? "python3 (not found)",
+                wrapperPath: resolvePtyWrapperPath(this.resolvePluginDir()),
+              },
+            });
+          },
         ).open();
       },
     ).open();
@@ -1566,6 +1512,8 @@ export class TerminalPanelView {
      * shell functions/aliases defined in ~/.zshrc etc.
      */
     loginShellWrap?: boolean;
+    /** Exact invocation already resolved by the shared profile launch path. */
+    invocation?: ResolvedAgentInvocation;
     /** Create tab for a specific item instead of the active item. */
     targetItemId?: string;
   }): Promise<TerminalTab | null> {
@@ -1600,15 +1548,8 @@ export class TerminalPanelView {
     const agentCmd =
       options.command ||
       this.getStringSetting(fresh, launchConfig.commandSettingKey, launchConfig.defaultCommand);
-    const cwd = expandTilde(
-      options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-    );
-    const resolved = this.resolveAgentCommandOrNotice(options.agentType, agentCmd, cwd);
-    if (!resolved) {
-      return null;
-    }
 
-    // Merge extra args (skip global merge when profile already includes them)
+    // Merge extra args (skip global merge when profile already includes them).
     const mergedExtraArgs = options.skipGlobalArgs
       ? options.extraArgs || ""
       : mergeExtraArgs(
@@ -1616,34 +1557,41 @@ export class TerminalPanelView {
           options.extraArgs || "",
         );
 
-    // Build args via the unified buildAgentArgs helper
-    const args = buildAgentArgs(
-      options.agentType,
-      mergedExtraArgs,
-      prompt,
-      options.launchConfigOverrides,
-    );
+    const invocation =
+      options.invocation ??
+      resolveAgentInvocation({
+        agentType: options.agentType,
+        command: agentCmd,
+        cwd: options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+        extraArgs: mergedExtraArgs,
+        prompt,
+        launchConfigOverride: options.launchConfigOverrides,
+        loginShellWrap: options.loginShellWrap,
+        resolveCommand: (command, cwd) => resolveCommandInfo(command, cwd),
+      });
+    if (!invocation.command.found) {
+      new Notice(buildMissingCliNotice(options.agentType, agentCmd));
+      return null;
+    }
 
     const label = options.label || getDefaultSessionLabel(options.sessionType);
-    const cmdForArgs = options.loginShellWrap ? agentCmd.trim() : resolved;
-    const commandArgs = [cmdForArgs, ...args];
     const tab = options.targetItemId
       ? this.tabManager.createTabForItem(
           options.targetItemId,
-          resolved,
-          cwd,
+          invocation.executable,
+          invocation.cwd,
           label,
           options.sessionType,
           undefined,
-          commandArgs,
+          invocation.argv,
         )
       : this.tabManager.createTab(
-          resolved,
-          cwd,
+          invocation.executable,
+          invocation.cwd,
           label,
           options.sessionType,
           undefined,
-          commandArgs,
+          invocation.argv,
         );
     if (tab) {
       if (options.loginShellWrap) {
@@ -1655,19 +1603,6 @@ export class TerminalPanelView {
     }
     this.renderTabBar();
     return tab;
-  }
-
-  private resolveAgentCommandOrNotice(
-    agent: AgentType,
-    command: string,
-    cwd?: string,
-  ): string | null {
-    const resolution = resolveCommandInfo(command, cwd);
-    if (resolution.found) {
-      return resolution.resolved;
-    }
-    new Notice(buildMissingCliNotice(agent, command));
-    return null;
   }
 
   /**
