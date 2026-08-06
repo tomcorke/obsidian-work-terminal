@@ -158,12 +158,33 @@ describe("AgentProfileManager", () => {
       expect(parsed.length).toBeGreaterThan(0);
     });
 
-    it("imports valid profiles", async () => {
-      const toImport = [createDefaultProfile({ name: "Imported Agent", sortOrder: 0 })];
+    it("imports and exports manual context injection settings", async () => {
+      const toImport = [
+        createDefaultProfile({
+          name: "Imported Agent",
+          sortOrder: 0,
+          appendContextPrompt: false,
+          escapeWorkTerminalPrompt: false,
+          arguments: "--prompt $workTerminalPrompt",
+        }),
+      ];
       const result = await manager.importProfiles(JSON.stringify(toImport));
       expect(result.imported).toBe(1);
       expect(result.errors).toHaveLength(0);
-      expect(manager.getProfiles().find((p) => p.name === "Imported Agent")).toBeTruthy();
+      const imported = manager.getProfiles().find((p) => p.name === "Imported Agent");
+      expect(imported).toMatchObject({
+        appendContextPrompt: false,
+        escapeWorkTerminalPrompt: false,
+      });
+      expect(JSON.parse(manager.exportProfiles())).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Imported Agent",
+            appendContextPrompt: false,
+            escapeWorkTerminalPrompt: false,
+          }),
+        ]),
+      );
     });
 
     it("rejects invalid JSON", async () => {
@@ -345,6 +366,8 @@ describe("AgentProfileManager", () => {
       expect(profile.defaultCwd).toBe("");
       expect(profile.useContext).toBe(false);
       expect(profile.sortOrder).toBe(0);
+      expect(profile.appendContextPrompt).toBe(true);
+      expect(profile.escapeWorkTerminalPrompt).toBe(true);
       expect(plugin.saveData).not.toHaveBeenCalled();
     });
   });

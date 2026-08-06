@@ -244,6 +244,8 @@ function makeProfile(overrides: Partial<AgentProfile> & { id: string }): AgentPr
     contextPrompt: overrides.contextPrompt ?? "",
     useContext: overrides.useContext ?? false,
     suppressAdapterPrompt: overrides.suppressAdapterPrompt ?? false,
+    appendContextPrompt: overrides.appendContextPrompt,
+    escapeWorkTerminalPrompt: overrides.escapeWorkTerminalPrompt,
     button: overrides.button ?? { enabled: false, label: overrides.name ?? overrides.id },
     sortOrder: overrides.sortOrder ?? 0,
   };
@@ -260,6 +262,49 @@ function getDeleteButton(modal: AgentProfileEditModal): HTMLButtonElement | null
 
 describe("AgentProfileEditModal validation", () => {
   beforeEach(() => NoticeMock.mockClear());
+
+  it("blocks saving manual context injection without $workTerminalPrompt", () => {
+    const onSave = vi.fn();
+    const modal = new AgentProfileEditModal(
+      {} as any,
+      makeProfile({
+        id: "manual",
+        useContext: true,
+        appendContextPrompt: false,
+        arguments: "--prompt missing",
+      }),
+      onSave,
+    );
+    modal.open();
+
+    const save = Array.from(
+      (modal as any).contentEl.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent === "Save")!;
+    save.click();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(NoticeMock).toHaveBeenCalledWith(expect.stringContaining("$workTerminalPrompt"));
+  });
+
+  it("shows safe substitution controls only when automatic appending is disabled", () => {
+    const modal = new AgentProfileEditModal(
+      {} as any,
+      makeProfile({
+        id: "manual",
+        useContext: true,
+        appendContextPrompt: false,
+        escapeWorkTerminalPrompt: true,
+        arguments: "--prompt $workTerminalPrompt",
+      }),
+      vi.fn(),
+    );
+    modal.open();
+
+    expect((modal as any).contentEl.textContent).toContain("Append context prompt automatically");
+    expect((modal as any).contentEl.textContent).toContain(
+      "Escape $workTerminalPrompt as one argument",
+    );
+  });
 
   it("ignores stale custom prompt injection fields after switching to a built-in type", () => {
     const onSave = vi.fn();

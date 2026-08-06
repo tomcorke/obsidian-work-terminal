@@ -27,7 +27,6 @@ import type {
 } from "../core/session/types";
 import { electronRequire, expandTilde } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
-import { expandProfilePlaceholders } from "./AgentContextPrompt";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
 import { SETTINGS_CHANGED_EVENT } from "./SettingsTab";
@@ -40,6 +39,7 @@ import {
   sessionTypeToAgentType,
   getLaunchConfig,
   getProfileLaunchConfig,
+  validateProfilePromptInjection,
   type AgentLaunchConfig,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
@@ -53,6 +53,7 @@ import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
   PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
+  resolveProfileArguments,
   resolveProfileLaunch,
   type ResolvedProfileLaunch,
 } from "./ProfileLaunchResolver";
@@ -965,6 +966,10 @@ export class TerminalPanelView {
       new Notice("Could not build a contextual prompt for this item");
       return;
     }
+    if (resolved.error === "manual-prompt-placeholder-required") {
+      new Notice(validateProfilePromptInjection(profile)!);
+      return;
+    }
 
     // resolveArguments() already merged global + profile args, so do not merge
     // global args again inside spawnAgentSession.
@@ -1092,26 +1097,42 @@ export class TerminalPanelView {
     );
     const command = this.profileManager.resolveCommand(profile, fresh);
     const cwd = options.cwdOverride || this.profileManager.resolveCwd(profile, fresh);
-    const extraArgs = this.profileManager.resolveArguments(profile, fresh);
     const label = options.label || profile.button.label || profile.name;
-
-    // Expand $sessionId lazily (TabManager resolves it) and $workTerminalPrompt now.
-    const item = options.targetItem ?? this.getActiveItem();
-    let expandedArgs = extraArgs;
-    if (item && expandedArgs) {
-      const absPath = this.resolveWorkItemPath(item.path);
-      expandedArgs = expandProfilePlaceholders(expandedArgs, item, "$sessionId", prompt, absPath);
+    const validationError = validateProfilePromptInjection(profile);
+    if (validationError) {
+      new Notice(validationError);
+      return;
     }
 
+    // Expand $sessionId lazily (TabManager resolves it) and resolve manual prompt
+    // substitution through the same argv-preserving path as interactive launches.
+    const item = options.targetItem ?? this.getActiveItem();
+    const resolvedArguments = resolveProfileArguments({
+      template: this.profileManager.resolveArguments(profile, fresh),
+      profile,
+      item: item ?? undefined,
+      sessionId: "$sessionId",
+      prompt,
+      absoluteFilePath: item ? this.resolveWorkItemPath(item.path) : undefined,
+    });
     const resolvedConfig = this.resolveLaunchConfig(profile.agentType, profile);
     const launchConfigOverrides = profile.agentType === "custom" ? resolvedConfig : undefined;
+    const invocation = resolveAgentInvocation({
+      agentType: profile.agentType,
+      command,
+      cwd,
+      extraArgs: resolvedArguments.argv,
+      prompt: profile.useContext && profile.appendContextPrompt === false ? undefined : prompt,
+      launchConfigOverride: launchConfigOverrides,
+      loginShellWrap: profile.loginShellWrap,
+    });
 
     const tab = await this.spawnAgentSession({
       agentType: profile.agentType,
       sessionType,
       command,
       cwd,
-      extraArgs: expandedArgs,
+      extraArgs: resolvedArguments.expanded,
       skipGlobalArgs: true,
       label,
       prompt,
@@ -1119,6 +1140,7 @@ export class TerminalPanelView {
       launchConfigOverrides,
       loginShellWrap: profile.loginShellWrap,
       targetItemId: options.targetItem?.id,
+      invocation,
     });
 
     if (!tab) {

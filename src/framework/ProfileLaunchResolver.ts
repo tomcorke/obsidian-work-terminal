@@ -3,10 +3,15 @@ import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import {
   agentTypeToSessionType,
   getProfileLaunchConfig,
+  validateProfilePromptInjection,
   type AgentLaunchConfig,
   type AgentProfile,
 } from "../core/agents/AgentProfile";
-import { resolveAgentInvocation, type ResolvedAgentInvocation } from "../core/agents/AgentLauncher";
+import {
+  parseExtraArgs,
+  resolveAgentInvocation,
+  type ResolvedAgentInvocation,
+} from "../core/agents/AgentLauncher";
 import { expandTilde } from "../core/utils";
 import { buildPtyLaunchPlan, type PtyLaunchPlan } from "../core/terminal/PtyLaunch";
 import { expandProfilePlaceholders } from "./AgentContextPrompt";
@@ -22,6 +27,13 @@ export const PROFILE_PREVIEW_EXAMPLE_ITEM: WorkItem = {
 export const PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH = "/example-vault/Tasks/example-task.md";
 export const PROFILE_PREVIEW_EXAMPLE_SESSION_ID = "[example session id]";
 
+export type ProfilePromptPlacement =
+  | "automatic-positional"
+  | "automatic-flag"
+  | "manual-escaped"
+  | "manual-raw"
+  | "not-injected";
+
 export interface ResolvedProfileLaunch {
   sourceLabel: string;
   sessionType: ReturnType<typeof agentTypeToSessionType>;
@@ -32,7 +44,59 @@ export interface ResolvedProfileLaunch {
   launchConfig: AgentLaunchConfig;
   invocation: ResolvedAgentInvocation;
   pty: PtyLaunchPlan;
-  error?: "context-item-required" | "context-prompt-unavailable";
+  promptPlacement: ProfilePromptPlacement;
+  error?:
+    | "context-item-required"
+    | "context-prompt-unavailable"
+    | "manual-prompt-placeholder-required";
+}
+
+const PROTECTED_PROMPT_MARKER = "\uE000work-terminal-prompt\uE001";
+
+export interface ResolvedProfileArguments {
+  expanded: string;
+  argv: string[];
+}
+
+/** Expand profile placeholders while optionally protecting the prompt as one argv value. */
+export function resolveProfileArguments(options: {
+  template: string;
+  profile: AgentProfile;
+  item?: WorkItem;
+  sessionId: string;
+  prompt?: string;
+  absoluteFilePath?: string;
+}): ResolvedProfileArguments {
+  const { template, profile, item, sessionId, prompt, absoluteFilePath } = options;
+  if (!template) return { expanded: template, argv: [] };
+
+  const expanded = item
+    ? expandProfilePlaceholders(template, item, sessionId, prompt, absoluteFilePath ?? item.path)
+    : template.replaceAll("$workTerminalPrompt", prompt ?? "");
+  if (
+    !profile.useContext ||
+    profile.appendContextPrompt !== false ||
+    profile.escapeWorkTerminalPrompt === false
+  ) {
+    return { expanded, argv: parseExtraArgs(expanded) };
+  }
+
+  const protectedTemplate = template.replaceAll("$workTerminalPrompt", PROTECTED_PROMPT_MARKER);
+  const protectedExpanded = item
+    ? expandProfilePlaceholders(
+        protectedTemplate,
+        item,
+        sessionId,
+        undefined,
+        absoluteFilePath ?? item.path,
+      )
+    : protectedTemplate;
+  return {
+    expanded,
+    argv: parseExtraArgs(protectedExpanded).map((arg) =>
+      arg.replaceAll(PROTECTED_PROMPT_MARKER, prompt ?? ""),
+    ),
+  };
 }
 
 /**
@@ -102,23 +166,36 @@ export function resolveProfileLaunch(options: {
     }
   }
 
-  let extraArgs = profileManager.resolveArguments(profile, settings);
-  if (item && extraArgs) {
-    extraArgs = expandProfilePlaceholders(
-      extraArgs,
-      item,
-      sessionId,
-      prompt,
-      options.absoluteFilePath ?? item.path,
-    );
+  const resolvedArguments = resolveProfileArguments({
+    template: profileManager.resolveArguments(profile, settings),
+    profile,
+    item,
+    sessionId,
+    prompt,
+    absoluteFilePath: options.absoluteFilePath,
+  });
+  const extraArgs = resolvedArguments.expanded;
+  const appendAutomatically = profile.appendContextPrompt !== false;
+  const promptPlacement: ProfilePromptPlacement = !prompt
+    ? "not-injected"
+    : appendAutomatically
+      ? launchConfig.promptInjectionMode === "flag" && launchConfig.promptFlag
+        ? "automatic-flag"
+        : "automatic-positional"
+      : profile.escapeWorkTerminalPrompt === false
+        ? "manual-raw"
+        : "manual-escaped";
+
+  if (validateProfilePromptInjection(profile)) {
+    error = "manual-prompt-placeholder-required";
   }
 
   const invocation = resolveAgentInvocation({
     agentType: profile.agentType,
     command,
     cwd,
-    extraArgs,
-    prompt,
+    extraArgs: resolvedArguments.argv,
+    prompt: appendAutomatically ? prompt : undefined,
     launchConfigOverride: profile.agentType === "custom" ? launchConfig : undefined,
     loginShellWrap: profile.loginShellWrap,
   });
@@ -143,6 +220,7 @@ export function resolveProfileLaunch(options: {
     launchConfig,
     invocation,
     pty,
+    promptPlacement,
     error,
   };
 }
@@ -153,7 +231,7 @@ function quoted(value: string): string {
 
 /** Format a launch model with explicit argv indexes and escaped control characters. */
 export function formatProfileLaunchPreview(resolved: ResolvedProfileLaunch): string {
-  const { invocation, prompt, launchConfig } = resolved;
+  const { invocation, prompt, launchConfig, promptPlacement } = resolved;
   const lines = [
     `Values: ${resolved.sourceLabel}`,
     `Resolved executable: ${quoted(invocation.executable)}`,
@@ -165,13 +243,18 @@ export function formatProfileLaunchPreview(resolved: ResolvedProfileLaunch): str
   invocation.argv.forEach((arg, index) => lines.push(`  argv[${index}]: ${quoted(arg)}`));
 
   lines.push("", "Assembled context prompt:", `  ${prompt ? quoted(prompt) : "(none)"}`);
-  if (prompt) {
-    const promptIndex = invocation.argv.length - 1;
+  if (promptPlacement === "automatic-flag") {
     lines.push(
-      launchConfig.promptInjectionMode === "flag" && launchConfig.promptFlag
-        ? `Prompt placement: flag ${quoted(launchConfig.promptFlag)}, value at argv[${promptIndex}]`
-        : `Prompt placement: positional argv[${promptIndex}]`,
+      `Prompt placement: automatic flag ${quoted(launchConfig.promptFlag!)}, value at argv[${invocation.argv.length - 1}]`,
     );
+  } else if (promptPlacement === "automatic-positional") {
+    lines.push(`Prompt placement: automatic positional argv[${invocation.argv.length - 1}]`);
+  } else if (promptPlacement === "manual-escaped") {
+    lines.push(
+      "Prompt placement: manual escaped $workTerminalPrompt substitution (one argv value)",
+    );
+  } else if (promptPlacement === "manual-raw") {
+    lines.push("Prompt placement: manual raw $workTerminalPrompt substitution");
   } else {
     lines.push("Prompt placement: not injected");
   }

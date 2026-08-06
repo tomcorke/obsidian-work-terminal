@@ -509,15 +509,17 @@ export function mergeExtraArgs(...extraArgs: Array<string | undefined>): string 
  */
 export function buildAgentArgs(
   agentType: AgentType,
-  extraArgs?: string,
+  extraArgs?: string | readonly string[],
   prompt?: string,
   launchConfigOverride?: import("./AgentProfile").AgentLaunchConfig,
 ): string[] {
   const config = launchConfigOverride ?? getLaunchConfig(agentType);
   const args: string[] = [];
 
-  if (extraArgs) {
+  if (typeof extraArgs === "string") {
     args.push(...parseExtraArgs(extraArgs));
+  } else if (extraArgs) {
+    args.push(...extraArgs);
   }
 
   if (prompt) {
@@ -555,7 +557,7 @@ export function resolveAgentInvocation(options: {
   agentType: AgentType;
   command: string;
   cwd: string;
-  extraArgs?: string;
+  extraArgs?: string | readonly string[];
   prompt?: string;
   launchConfigOverride?: import("./AgentProfile").AgentLaunchConfig;
   loginShellWrap?: boolean;

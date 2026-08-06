@@ -92,6 +92,10 @@ export interface AgentProfile {
   promptInjectionMode?: "positional" | "flag";
   /** CLI flag for injecting context prompt (e.g. "-i"). Used when promptInjectionMode is "flag". */
   promptFlag?: string;
+  /** Append the assembled context prompt using the agent launch config. Defaults to true. */
+  appendContextPrompt?: boolean;
+  /** Preserve manual `$workTerminalPrompt` substitution as one argv value. Defaults to true. */
+  escapeWorkTerminalPrompt?: boolean;
   /**
    * When true, the command is launched through a login shell even if it
    * resolves to an absolute path. This preserves shell wrapper functions
@@ -131,6 +135,8 @@ const AgentProfileSchema = z.object({
   sortOrder: z.number(),
   promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
   promptFlag: z.string().optional(),
+  appendContextPrompt: z.boolean().default(true),
+  escapeWorkTerminalPrompt: z.boolean().default(true),
   loginShellWrap: z.boolean().optional(),
 });
 
@@ -157,6 +163,8 @@ const StoredProfileSchema = z
     sortOrder: z.number().default(0),
     promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
     promptFlag: z.string().optional(),
+    appendContextPrompt: z.boolean().default(true),
+    escapeWorkTerminalPrompt: z.boolean().default(true),
     loginShellWrap: z.boolean().optional(),
   })
   .strip();
@@ -368,6 +376,21 @@ export function sessionTypeToAgentType(sessionType: SessionType): {
   }
 }
 
+export const MANUAL_CONTEXT_PROMPT_REQUIRED_NOTICE =
+  "Arguments must include $workTerminalPrompt when automatic context prompt appending is disabled";
+
+export function validateProfilePromptInjection(profile: AgentProfile): string | null {
+  if (
+    profile.agentType !== "shell" &&
+    profile.useContext &&
+    profile.appendContextPrompt === false &&
+    !profile.arguments.includes("$workTerminalPrompt")
+  ) {
+    return MANUAL_CONTEXT_PROMPT_REQUIRED_NOTICE;
+  }
+  return null;
+}
+
 export function createDefaultProfile(overrides?: Partial<AgentProfile>): AgentProfile {
   return {
     id: crypto.randomUUID(),
@@ -379,6 +402,8 @@ export function createDefaultProfile(overrides?: Partial<AgentProfile>): AgentPr
     contextPrompt: "",
     useContext: false,
     suppressAdapterPrompt: false,
+    appendContextPrompt: true,
+    escapeWorkTerminalPrompt: true,
     button: {
       enabled: false,
       label: "",
@@ -403,6 +428,8 @@ export function createDefaultClaudeProfile(sortOrder = 0): AgentProfile {
     contextPrompt: "",
     useContext: false,
     suppressAdapterPrompt: false,
+    appendContextPrompt: true,
+    escapeWorkTerminalPrompt: true,
     button: {
       enabled: true,
       label: "Claude",
@@ -425,6 +452,8 @@ export function createDefaultClaudeCtxProfile(sortOrder = 1): AgentProfile {
     contextPrompt: "",
     useContext: true,
     suppressAdapterPrompt: false,
+    appendContextPrompt: true,
+    escapeWorkTerminalPrompt: true,
     button: {
       enabled: true,
       label: "Claude (ctx)",
@@ -447,6 +476,8 @@ export function createDefaultCopilotProfile(sortOrder = 2): AgentProfile {
     contextPrompt: "",
     useContext: false,
     suppressAdapterPrompt: false,
+    appendContextPrompt: true,
+    escapeWorkTerminalPrompt: true,
     button: {
       enabled: false,
       label: "Copilot",

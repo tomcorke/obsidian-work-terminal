@@ -55,7 +55,7 @@ describe("profile launch resolution and preview", () => {
     expect(resolved.invocation.argv[0]).toBe("/bin/echo");
 
     const preview = formatProfileLaunchPreview(resolved);
-    expect(preview).toContain("Prompt placement: positional");
+    expect(preview).toContain("Prompt placement: automatic positional");
     expect(preview).toContain("\\n");
     expect(preview).toContain("argv[");
     expect(preview).not.toContain("Clearly");
@@ -78,10 +78,109 @@ describe("profile launch resolution and preview", () => {
 
     expect(resolved.invocation.argv.slice(-2)).toEqual(["--prompt", resolved.prompt]);
     const preview = formatProfileLaunchPreview(resolved);
-    expect(preview).toContain('Prompt placement: flag "--prompt"');
+    expect(preview).toContain('Prompt placement: automatic flag "--prompt"');
     expect(preview).toContain("PTY Python wrapper layer:");
     expect(preview).toContain("Login-shell child layer:");
     expect(preview).toContain('argv[4]: "/bin/echo --global');
+  });
+
+  it("substitutes a manual escaped multiline prompt as exactly one argv value", () => {
+    const resolved = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        arguments: "--prompt $workTerminalPrompt --mode review",
+        appendContextPrompt: false,
+        escapeWorkTerminalPrompt: true,
+        contextPrompt: "line one with 'single' and \"double\"\\path\nline two",
+      },
+      settings: {},
+      profileManager: manager,
+      promptBuilder: { buildPrompt: () => "" },
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+      absoluteFilePath: PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
+    });
+
+    expect(resolved.error).toBeUndefined();
+    expect(resolved.invocation.args).toEqual(["--prompt", resolved.prompt, "--mode", "review"]);
+    expect(resolved.invocation.args.filter((arg) => arg === resolved.prompt)).toHaveLength(1);
+    expect(formatProfileLaunchPreview(resolved)).toContain(
+      "Prompt placement: manual escaped $workTerminalPrompt substitution (one argv value)",
+    );
+  });
+
+  it("retains intentional raw manual substitution without a duplicate automatic prompt", () => {
+    const resolved = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        arguments: "--prompt $workTerminalPrompt",
+        appendContextPrompt: false,
+        escapeWorkTerminalPrompt: false,
+        contextPrompt: "two words\nthen more",
+      },
+      settings: {},
+      profileManager: manager,
+      promptBuilder: { buildPrompt: () => "" },
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+    });
+
+    expect(resolved.invocation.args).toEqual(["--prompt", "two", "words", "then", "more"]);
+    expect(resolved.invocation.args).not.toContain(resolved.prompt);
+    expect(formatProfileLaunchPreview(resolved)).toContain(
+      "Prompt placement: manual raw $workTerminalPrompt substitution",
+    );
+  });
+
+  it("preserves escaped prompt boundaries through login-shell planning", () => {
+    const resolved = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        command: "opencode",
+        arguments: "--prompt $workTerminalPrompt",
+        appendContextPrompt: false,
+        escapeWorkTerminalPrompt: true,
+        loginShellWrap: true,
+        contextPrompt: "quotes ' and \" plus \\ and\nnewline",
+      },
+      settings: {},
+      profileManager: manager,
+      promptBuilder: { buildPrompt: () => "" },
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+      pty: {
+        python3Path: "/usr/bin/python3",
+        wrapperPath: "/plugin/pty-wrapper.py",
+        shell: "/bin/zsh",
+      },
+    });
+
+    expect(resolved.invocation.argv.slice(-2)).toEqual(["--prompt", resolved.prompt]);
+    expect(resolved.pty.loginShellWrapped).toBe(true);
+    expect(resolved.pty.child.argv).toEqual([
+      "/bin/zsh",
+      "-l",
+      "-i",
+      "-c",
+      expect.stringContaining("--prompt"),
+    ]);
+    expect(resolved.pty.child.argv[4]).toContain("'\"'\"'");
+  });
+
+  it("reports the missing manual prompt placeholder before launch", () => {
+    const resolved = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        arguments: "--mode review",
+        appendContextPrompt: false,
+      },
+      settings: {},
+      profileManager: manager,
+      promptBuilder,
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+    });
+
+    expect(resolved.error).toBe("manual-prompt-placeholder-required");
+    expect(formatProfileLaunchPreview(resolved)).toContain(
+      "Warning: manual prompt placeholder required.",
+    );
   });
 
   it("uses the supplied manager resolution path for global/profile merging", () => {
