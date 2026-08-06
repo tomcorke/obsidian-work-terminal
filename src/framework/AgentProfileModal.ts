@@ -16,6 +16,7 @@ import {
   BRAND_COLORS,
   PROFILE_ICONS,
   createDefaultProfile,
+  validateProfilePromptInjection,
 } from "../core/agents/AgentProfile";
 import {
   isAbsoluteCommandPath,
@@ -432,6 +433,11 @@ export class AgentProfileEditModal extends Modal {
         new Notice("Prompt flag is required when injection mode is set to flag");
         return;
       }
+      const promptInjectionError = validateProfilePromptInjection(this.draft);
+      if (promptInjectionError) {
+        new Notice(promptInjectionError);
+        return;
+      }
       this.onSave(this.draft);
       this.close();
     });
@@ -469,6 +475,35 @@ export class AgentProfileEditModal extends Modal {
           void this.updateLaunchPreview();
         });
       });
+
+    if (this.draft.agentType !== "shell") {
+      new Setting(containerEl)
+        .setName("Append context prompt automatically")
+        .setDesc(
+          "Use this agent type's configured positional or flag-based prompt injection. Disable it to place $workTerminalPrompt explicitly in Arguments.",
+        )
+        .addToggle((toggle) => {
+          toggle.setValue(this.draft.appendContextPrompt !== false).onChange((value) => {
+            this.draft.appendContextPrompt = value;
+            this.renderContextDependentSection(containerEl);
+            void this.updateLaunchPreview();
+          });
+        });
+
+      if (this.draft.appendContextPrompt === false) {
+        new Setting(containerEl)
+          .setName("Escape $workTerminalPrompt as one argument")
+          .setDesc(
+            "Preserve the complete prompt as one argv value even when it contains spaces, newlines, quotes, or backslashes. Disable only for intentional raw substitution.",
+          )
+          .addToggle((toggle) => {
+            toggle.setValue(this.draft.escapeWorkTerminalPrompt !== false).onChange((value) => {
+              this.draft.escapeWorkTerminalPrompt = value;
+              void this.updateLaunchPreview();
+            });
+          });
+      }
+    }
 
     // Context prompt template
     const ctxSetting = new Setting(containerEl)

@@ -14,6 +14,7 @@ import {
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
+  validateProfilePromptInjection,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -74,6 +75,8 @@ describe("createDefaultProfile", () => {
     expect(profile.id).toBeTruthy();
     expect(profile.name).toBe("New Profile");
     expect(profile.agentType).toBe("claude");
+    expect(profile.appendContextPrompt).toBe(true);
+    expect(profile.escapeWorkTerminalPrompt).toBe(true);
     expect(profile.button.enabled).toBe(false);
   });
 
@@ -81,6 +84,22 @@ describe("createDefaultProfile", () => {
     const profile = createDefaultProfile({ name: "Test", agentType: "copilot" });
     expect(profile.name).toBe("Test");
     expect(profile.agentType).toBe("copilot");
+  });
+});
+
+describe("profile prompt injection validation", () => {
+  it("requires the manual placeholder only for contextual non-shell profiles", () => {
+    const invalid = createDefaultProfile({
+      useContext: true,
+      appendContextPrompt: false,
+      arguments: "--prompt missing",
+    });
+    expect(validateProfilePromptInjection(invalid)).toContain("$workTerminalPrompt");
+    expect(
+      validateProfilePromptInjection({ ...invalid, arguments: "--prompt $workTerminalPrompt" }),
+    ).toBeNull();
+    expect(validateProfilePromptInjection({ ...invalid, useContext: false })).toBeNull();
+    expect(validateProfilePromptInjection({ ...invalid, agentType: "shell" })).toBeNull();
   });
 });
 

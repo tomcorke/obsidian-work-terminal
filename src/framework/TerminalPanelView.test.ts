@@ -1941,10 +1941,73 @@ describe("profile launch", () => {
     };
   }
 
+  it("blocks launching manual context injection without $workTerminalPrompt", async () => {
+    const { view } = createView();
+    await flushAsync();
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => process.execPath,
+      resolveCwd: () => "~",
+      resolveArguments: (profile: any) => profile.arguments,
+      resolveContextPrompt: () => "context",
+    };
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession");
+
+    await (view as any).spawnFromProfile(
+      makeProfile({
+        useContext: true,
+        appendContextPrompt: false,
+        arguments: "--prompt missing",
+      }),
+    );
+
+    expect(spawnAgentSpy).not.toHaveBeenCalled();
+    expect(mockState.notices).toContain(
+      "Arguments must include $workTerminalPrompt when automatic context prompt appending is disabled",
+    );
+  });
+
+  it("uses safe manual prompt argv for action-driven profile launches", async () => {
+    const { view } = createView();
+    await flushAsync();
+    (view as any).profileManager = {
+      resolveCommand: () => process.execPath,
+      resolveCwd: () => "~",
+      resolveArguments: (profile: any) => profile.arguments,
+      getButtonProfiles: () => [],
+    };
+    const spawnAgentSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue({});
+    const targetItem = {
+      id: "task-1",
+      title: "Task",
+      state: "doing",
+      path: "Tasks/task-1.md",
+    };
+    const prompt = "line one with ' and \" and \\\nline two";
+
+    await view.spawnClaudeWithPrompt(
+      prompt,
+      undefined,
+      {
+        profile: makeProfile({
+          command: process.execPath,
+          useContext: true,
+          appendContextPrompt: false,
+          escapeWorkTerminalPrompt: true,
+          arguments: "--prompt $workTerminalPrompt",
+        }) as any,
+      },
+      targetItem as any,
+    );
+
+    expect(spawnAgentSpy).toHaveBeenCalledOnce();
+    expect(spawnAgentSpy.mock.calls[0][0].invocation.argv.slice(-2)).toEqual(["--prompt", prompt]);
+  });
+
   it("applies profile metadata only to the tab returned by spawnAgentSession", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ requested: "claude", found: true, resolved: "/bin/echo" });
     const createdTab: any = {};
     const existingTab: any = { label: "Existing" };
     mockState.nextCreatedTab = createdTab;
@@ -1953,7 +2016,7 @@ describe("profile launch", () => {
     const { view } = createView();
     await flushAsync();
     (view as any).profileManager = {
-      resolveCommand: () => "claude",
+      resolveCommand: () => process.execPath,
       resolveCwd: () => "~/projects",
       resolveArguments: () => "",
       getButtonProfiles: () => [],
@@ -1976,7 +2039,6 @@ describe("profile launch", () => {
     expect(createdTab.profileId).toBe("profile-1");
     expect(createdTab.profileColor).toBe("#f00");
     expect(existingTab.profileId).toBeUndefined();
-    resolveStub.mockRestore();
   });
 
   it("does not apply profile metadata to an existing tab when spawning fails", async () => {
