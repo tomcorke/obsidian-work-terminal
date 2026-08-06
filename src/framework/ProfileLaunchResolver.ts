@@ -176,15 +176,16 @@ export function resolveProfileLaunch(options: {
   });
   const extraArgs = resolvedArguments.expanded;
   const appendAutomatically = profile.appendContextPrompt !== false;
-  const promptPlacement: ProfilePromptPlacement = !prompt
-    ? "not-injected"
-    : appendAutomatically
-      ? launchConfig.promptInjectionMode === "flag" && launchConfig.promptFlag
-        ? "automatic-flag"
-        : "automatic-positional"
-      : profile.escapeWorkTerminalPrompt === false
-        ? "manual-raw"
-        : "manual-escaped";
+  const promptPlacement: ProfilePromptPlacement =
+    prompt === undefined
+      ? "not-injected"
+      : appendAutomatically
+        ? launchConfig.promptInjectionMode === "flag" && launchConfig.promptFlag
+          ? "automatic-flag"
+          : "automatic-positional"
+        : profile.escapeWorkTerminalPrompt === false
+          ? "manual-raw"
+          : "manual-escaped";
 
   if (validateProfilePromptInjection(profile)) {
     error = "manual-prompt-placeholder-required";

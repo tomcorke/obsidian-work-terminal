@@ -108,6 +108,28 @@ describe("profile launch resolution and preview", () => {
     );
   });
 
+  it("shows manual placement when an intentionally empty prompt is still passed", () => {
+    const resolved = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        arguments: "--prompt $workTerminalPrompt",
+        appendContextPrompt: false,
+        suppressAdapterPrompt: true,
+        contextPrompt: "",
+      },
+      settings: {},
+      profileManager: manager,
+      promptBuilder: { buildPrompt: () => "unused" },
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+    });
+
+    expect(resolved.prompt).toBe("");
+    expect(resolved.invocation.args).toEqual(["--prompt", ""]);
+    expect(formatProfileLaunchPreview(resolved)).toContain(
+      "Prompt placement: manual escaped $workTerminalPrompt substitution (one argv value)",
+    );
+  });
+
   it("retains intentional raw manual substitution without a duplicate automatic prompt", () => {
     const resolved = resolveProfileLaunch({
       profile: {
