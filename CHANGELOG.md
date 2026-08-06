@@ -10,7 +10,7 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ### Highlights
 - Agent profile editing now includes a live, fully resolved launch preview showing the executable, working directory, exact argument boundaries, context placement, login-shell wrapping, and Python PTY layer. Preview and runtime share the same resolution path, including plugin paths for relative or empty vault bases. (#536, #540)
-- Context injection is now configurable per profile: preserve automatic agent-specific placement, or place `$workTerminalPrompt` manually with optional single-argument escaping and validation against duplicate or missing prompts. Existing profiles retain their current automatic behavior. (#537)
+- Context injection is now configurable per profile: preserve automatic agent-specific placement, or place `$workTerminalPrompt` manually with optional single-argument escaping. Manual placement avoids duplicate automatic injection and validates that the placeholder is present. Existing profiles retain their current automatic behavior. (#537)
 - OpenCode is now a first-party agent type with `opencode` command discovery, correct `--prompt` context injection, session handling, installation guidance, and an official branded icon for profiles and tabs. Existing custom OpenCode profiles continue to work unchanged. (#538)
 
 ### Improvements
