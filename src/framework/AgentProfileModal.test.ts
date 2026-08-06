@@ -258,6 +258,31 @@ function getDeleteButton(modal: AgentProfileEditModal): HTMLButtonElement | null
   return null;
 }
 
+describe("AgentProfileEditModal validation", () => {
+  beforeEach(() => NoticeMock.mockClear());
+
+  it("ignores stale custom prompt injection fields after switching to a built-in type", () => {
+    const onSave = vi.fn();
+    const profile = {
+      ...makeProfile({ id: "c1", agentType: "claude" }),
+      promptInjectionMode: "flag" as const,
+      promptFlag: "",
+    };
+    const modal = new AgentProfileEditModal({} as any, profile, onSave);
+    modal.open();
+
+    const save = Array.from(
+      (modal as any).contentEl.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent === "Save")!;
+    save.click();
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ agentType: "claude" }));
+    expect(NoticeMock).not.toHaveBeenCalledWith(
+      "Prompt flag is required when injection mode is set to flag",
+    );
+  });
+});
+
 describe("AgentProfileEditModal delete guard", () => {
   beforeEach(() => {
     NoticeMock.mockClear();

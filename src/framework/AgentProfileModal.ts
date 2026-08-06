@@ -424,7 +424,11 @@ export class AgentProfileEditModal extends Modal {
         new Notice("Executable path is required for custom profiles");
         return;
       }
-      if (this.draft.promptInjectionMode === "flag" && !this.draft.promptFlag?.trim()) {
+      if (
+        this.draft.agentType === "custom" &&
+        this.draft.promptInjectionMode === "flag" &&
+        !this.draft.promptFlag?.trim()
+      ) {
         new Notice("Prompt flag is required when injection mode is set to flag");
         return;
       }

@@ -78,6 +78,9 @@ import type { ViewMode, RecentThreshold } from "./ActivityTracker";
 import type { DetailViewPlacement, DetailViewSplitDirection } from "../core/detailViewPlacement";
 import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 import { formatVersionForSettings } from "./version";
+import { electronRequire, expandTilde } from "../core/utils";
+import { checkPython3Available } from "../core/terminal/PythonCheck";
+import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -435,6 +438,15 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
    * agent context textarea, and buttons to the Background enrichment and
    * Agent actions dialogs.
    */
+  private resolvePluginDir(): string {
+    const path = electronRequire("path") as typeof import("path");
+    const manifestDir = this.plugin.manifest.dir || `.obsidian/plugins/${this.plugin.manifest.id}`;
+    if (path.isAbsolute(manifestDir)) return manifestDir;
+    const adapter = (this.app as any)?.vault?.adapter;
+    const vaultPath = expandTilde(adapter?.basePath || adapter?.getBasePath?.() || "");
+    return path.resolve(vaultPath, manifestDir);
+  }
+
   private renderAgentsSection(containerEl: HTMLElement, settings: SettingsSnapshot): void {
     containerEl.createEl("h2", { text: "Agents" });
 
@@ -463,6 +475,10 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
                   absoluteFilePath: PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
                   sessionId: PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
                   sourceLabel: "Clearly labelled example values (no selected work item)",
+                  pty: {
+                    python3Path: checkPython3Available() ?? "python3 (not found)",
+                    wrapperPath: resolvePtyWrapperPath(this.resolvePluginDir()),
+                  },
                 }),
             ).open();
           }),

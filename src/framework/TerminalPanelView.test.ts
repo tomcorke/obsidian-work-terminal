@@ -2310,6 +2310,41 @@ describe("profile launch", () => {
     expect(callArgs.extraArgs).toBe("--model opus");
   });
 
+  it("hands the profile resolver invocation unchanged to TabManager", async () => {
+    const { view } = createView();
+    await flushAsync();
+
+    mockState.activeItemId = "task-1";
+    (view as any).allItems = [
+      { id: "task-1", title: "Task", state: "doing", path: "Tasks/task-1.md" },
+    ];
+    (view as any).profileManager = {
+      resolveCommand: () => "/bin/echo",
+      resolveCwd: () => "~/projects",
+      resolveArguments: () => "--model opus",
+      resolveContextPrompt: () => "",
+      getButtonProfiles: () => [],
+    };
+    const spawnSpy = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue(null);
+
+    await (view as any).spawnFromProfile(
+      makeProfile({ command: "/bin/echo", arguments: "--model opus" }),
+    );
+
+    const invocation = spawnSpy.mock.calls[0][0].invocation;
+    expect(invocation.argv).toEqual(["/bin/echo", "--model", "opus"]);
+    spawnSpy.mockRestore();
+
+    await (view as any).spawnAgentSession({
+      agentType: "claude",
+      sessionType: "claude",
+      invocation,
+      prompt: "",
+      freshSettings: {},
+    });
+    expect(mockState.latestCreateTabArgs?.[5]).toBe(invocation.argv);
+  });
+
   it("always passes arguments and prompt on launch when useContext is enabled", async () => {
     const promptBuilder = {
       buildPrompt: vi.fn(() => "adapter prompt"),

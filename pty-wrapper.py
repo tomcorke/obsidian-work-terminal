@@ -32,6 +32,10 @@ def main():
         rows = int(args[1])
         args = args[2:]
 
+    resolved_command = bool(args and args[0] == "--resolved")
+    if resolved_command:
+        args = args[1:]
+
     if args and args[0] == "--":
         args = args[1:]
 
@@ -47,23 +51,23 @@ def main():
         except Exception:
             pass
 
-        # If the command is already a shell, exec directly (e.g. /bin/zsh -i).
-        # If WT_LOGIN_SHELL_WRAP is set, always wrap in a login shell so that
-        # shell functions/aliases from ~/.zshrc etc. are available.
-        # If the command is an absolute path (and no login-shell-wrap), exec
-        # directly to avoid shell quoting issues with arguments.
-        # Otherwise, wrap in a login shell for the full user environment.
-        login_shell_wrap = os.environ.get("WT_LOGIN_SHELL_WRAP") == "1"
-        shells = {"/bin/zsh", "/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/bash",
-                  "zsh", "bash", "sh"}
-        if args[0] in shells:
-            os.execvp(args[0], args)
-        elif args[0].startswith("/") and not login_shell_wrap:
+        # Current callers resolve the exact child argv in TypeScript so the
+        # profile preview and runtime share one launch plan. Keep the legacy
+        # branch for direct/manual wrapper invocations.
+        if resolved_command:
             os.execvp(args[0], args)
         else:
-            shell = os.environ.get("SHELL", "/bin/zsh")
-            cmd_str = " ".join(shlex.quote(a) for a in args)
-            os.execvp(shell, [shell, "-l", "-i", "-c", cmd_str])
+            login_shell_wrap = os.environ.get("WT_LOGIN_SHELL_WRAP") == "1"
+            shells = {"/bin/zsh", "/bin/bash", "/bin/sh", "/usr/bin/zsh", "/usr/bin/bash",
+                      "zsh", "bash", "sh"}
+            if args[0] in shells:
+                os.execvp(args[0], args)
+            elif args[0].startswith("/") and not login_shell_wrap:
+                os.execvp(args[0], args)
+            else:
+                shell = os.environ.get("SHELL", "/bin/zsh")
+                cmd_str = " ".join(shlex.quote(a) for a in args)
+                os.execvp(shell, [shell, "-l", "-i", "-c", cmd_str])
     else:
         # Parent process - proxy I/O with resize support
         import select

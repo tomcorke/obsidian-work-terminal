@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../core/agents/AgentProfile";
+import { buildPtyLaunchPlan } from "../core/terminal/PtyLaunch";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -78,8 +79,9 @@ describe("profile launch resolution and preview", () => {
     expect(resolved.invocation.argv.slice(-2)).toEqual(["--prompt", resolved.prompt]);
     const preview = formatProfileLaunchPreview(resolved);
     expect(preview).toContain('Prompt placement: flag "--prompt"');
-    expect(preview).toContain("login shell:");
-    expect(preview).not.toContain("login shell: disabled");
+    expect(preview).toContain("PTY Python wrapper layer:");
+    expect(preview).toContain("Login-shell child layer:");
+    expect(preview).toContain('argv[4]: "/bin/echo --global');
   });
 
   it("uses the supplied manager resolution path for global/profile merging", () => {
@@ -97,15 +99,59 @@ describe("profile launch resolution and preview", () => {
     expect(formatProfileLaunchPreview(resolved)).toContain("Prompt placement: not injected");
   });
 
-  it("keeps shell profiles interactive when they have no explicit arguments", () => {
+  it("keeps shell profiles interactive and never passes context as a script", () => {
+    const buildPrompt = vi.fn(() => "must not become a shell script");
     const resolved = resolveProfileLaunch({
-      profile: { ...baseProfile, agentType: "shell", useContext: false, arguments: "" },
+      profile: { ...baseProfile, agentType: "shell", useContext: true, arguments: "" },
+      settings: {},
+      profileManager: manager,
+      promptBuilder: { buildPrompt },
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+    });
+
+    expect(buildPrompt).not.toHaveBeenCalled();
+    expect(resolved.prompt).toBeUndefined();
+    expect(resolved.invocation.argv).toEqual(["/bin/echo", "-i"]);
+    expect(resolved.error).toBeUndefined();
+  });
+
+  it("uses the exact PTY plan consumed by TerminalTab in its formatted preview", () => {
+    const resolved = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        command: "pi",
+        loginShellWrap: true,
+        useContext: false,
+        arguments: "--message 'both quotes: \\\" and single'",
+      },
       settings: {},
       profileManager: manager,
       promptBuilder,
       item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+      pty: {
+        python3Path: "/usr/bin/python3",
+        wrapperPath: "/plugin/pty-wrapper.py",
+        cols: 101,
+        rows: 37,
+        shell: "/bin/zsh",
+      },
     });
 
-    expect(resolved.invocation.argv).toEqual(["/bin/echo", "-i"]);
+    expect(resolved.pty).toEqual(
+      buildPtyLaunchPlan({
+        python3Path: "/usr/bin/python3",
+        wrapperPath: "/plugin/pty-wrapper.py",
+        cols: 101,
+        rows: 37,
+        command: resolved.invocation.argv,
+        loginShellWrap: true,
+        shell: "/bin/zsh",
+      }),
+    );
+    const preview = formatProfileLaunchPreview(resolved);
+    resolved.pty.python.argv.forEach((arg, index) => {
+      expect(preview).toContain(`argv[${index}]: ${JSON.stringify(arg)}`);
+    });
+    expect(preview).not.toContain("<shell-quoted");
   });
 });

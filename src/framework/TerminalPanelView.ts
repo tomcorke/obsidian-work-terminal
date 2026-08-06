@@ -16,6 +16,7 @@ import {
   resolveCommandInfo,
   resolveAgentInvocation,
   mergeExtraArgs,
+  type ResolvedAgentInvocation,
 } from "../core/agents/AgentLauncher";
 import { SessionStore } from "../core/session/SessionStore";
 import type {
@@ -42,6 +43,8 @@ import {
   type AgentLaunchConfig,
 } from "../core/agents/AgentProfile";
 import { createProfileIcon } from "../ui/ProfileIcons";
+import { checkPython3Available } from "../core/terminal/PythonCheck";
+import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -973,6 +976,7 @@ export class TerminalPanelView {
       freshSettings: fresh,
       launchConfigOverrides: profile.agentType === "custom" ? resolved.launchConfig : undefined,
       loginShellWrap: profile.loginShellWrap,
+      invocation: resolved.invocation,
     });
 
     if (!tab) return;
@@ -1433,13 +1437,13 @@ export class TerminalPanelView {
             error,
           );
         }
-        const selectedItem = this.getActiveItem();
         new AgentProfileManagerModal(
           this.plugin.app,
           this.profileManager,
           adapterPromptDescription,
           async (profile): Promise<ResolvedProfileLaunch> => {
             const settings = await this.loadFreshSettings();
+            const selectedItem = this.getActiveItem();
             const item = selectedItem ?? PROFILE_PREVIEW_EXAMPLE_ITEM;
             return resolveProfileLaunch({
               profile,
@@ -1454,6 +1458,10 @@ export class TerminalPanelView {
               sourceLabel: selectedItem
                 ? `Selected work item: ${selectedItem.title}`
                 : "Clearly labelled example values (no selected work item)",
+              pty: {
+                python3Path: checkPython3Available() ?? "python3 (not found)",
+                wrapperPath: resolvePtyWrapperPath(this.resolvePluginDir()),
+              },
             });
           },
         ).open();
@@ -1504,6 +1512,8 @@ export class TerminalPanelView {
      * shell functions/aliases defined in ~/.zshrc etc.
      */
     loginShellWrap?: boolean;
+    /** Exact invocation already resolved by the shared profile launch path. */
+    invocation?: ResolvedAgentInvocation;
     /** Create tab for a specific item instead of the active item. */
     targetItemId?: string;
   }): Promise<TerminalTab | null> {
@@ -1547,16 +1557,18 @@ export class TerminalPanelView {
           options.extraArgs || "",
         );
 
-    const invocation = resolveAgentInvocation({
-      agentType: options.agentType,
-      command: agentCmd,
-      cwd: options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
-      extraArgs: mergedExtraArgs,
-      prompt,
-      launchConfigOverride: options.launchConfigOverrides,
-      loginShellWrap: options.loginShellWrap,
-      resolveCommand: (command, cwd) => resolveCommandInfo(command, cwd),
-    });
+    const invocation =
+      options.invocation ??
+      resolveAgentInvocation({
+        agentType: options.agentType,
+        command: agentCmd,
+        cwd: options.cwd || this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"),
+        extraArgs: mergedExtraArgs,
+        prompt,
+        launchConfigOverride: options.launchConfigOverrides,
+        loginShellWrap: options.loginShellWrap,
+        resolveCommand: (command, cwd) => resolveCommandInfo(command, cwd),
+      });
     if (!invocation.command.found) {
       new Notice(buildMissingCliNotice(options.agentType, agentCmd));
       return null;
