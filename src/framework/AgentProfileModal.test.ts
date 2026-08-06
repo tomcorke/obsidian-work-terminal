@@ -284,6 +284,9 @@ describe("AgentProfileEditModal validation", () => {
         expect.objectContaining({ value: "opencode", textContent: "OpenCode (branded)" }),
       ]),
     );
+    expect((modal as any).contentEl.querySelector(".wt-command-validation-note")?.textContent).toBe(
+      "Will use the built-in default: opencode",
+    );
   });
 
   it("blocks saving manual context injection without $workTerminalPrompt", () => {

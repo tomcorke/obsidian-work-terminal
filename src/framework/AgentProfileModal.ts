@@ -581,7 +581,10 @@ export class AgentProfileEditModal extends Modal {
     if (!command) {
       badgeEl.textContent = "";
       badgeEl.className = "wt-command-status-badge";
-      noteEl.textContent = "Will use the global default for this agent type";
+      noteEl.textContent =
+        this.draft.agentType === "opencode"
+          ? "Will use the built-in default: opencode"
+          : "Will use the global default for this agent type";
       noteEl.className = "wt-command-validation-note";
       return;
     }
