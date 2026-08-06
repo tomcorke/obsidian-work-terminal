@@ -65,6 +65,20 @@ describe("AgentLauncher", () => {
     ).toEqual(["--model", "gpt-5.4", "--allow-all-tools", "-i", "Review this task"]);
   });
 
+  it("builds OpenCode args with one flag-delimited prompt argument", () => {
+    const prompt = "Review this task\nKeep 'single' and \"double\" quotes";
+    expect(buildAgentArgs("opencode", "--model test", prompt)).toEqual([
+      "--model",
+      "test",
+      "--prompt",
+      prompt,
+    ]);
+  });
+
+  it("does not add an OpenCode prompt flag without context", () => {
+    expect(buildAgentArgs("opencode", "--model test")).toEqual(["--model", "test"]);
+  });
+
   it("builds agent args for strands with positional prompt injection", () => {
     expect(buildAgentArgs("strands", "--verbose --region us-east-1", "Review this task")).toEqual([
       "--verbose",
@@ -324,5 +338,12 @@ describe("AgentLauncher", () => {
 
   it("builds the Copilot missing CLI notice", () => {
     expect(buildMissingCliNotice("copilot", "copilot")).toContain("brew install copilot-cli");
+  });
+
+  it("builds OpenCode-specific missing CLI guidance", () => {
+    const notice = buildMissingCliNotice("opencode", "");
+    expect(notice).toContain('OpenCode CLI not found for "opencode"');
+    expect(notice).toContain("brew install anomalyco/tap/opencode");
+    expect(notice).toContain("https://opencode.ai/docs");
   });
 });

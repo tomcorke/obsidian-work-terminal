@@ -30,7 +30,15 @@ User-configured command (default: `copilot`) with optional `-i <prompt>`.
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildCopilotArgs()`
 - **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
 
-### 4. AWS Strands
+### 4. OpenCode CLI
+
+Profile-configured command (default: `opencode`) with optional `--prompt <prompt>`. The prompt is passed as one argv value.
+
+- **Trigger**: User launches an OpenCode session via profile launch modal or tab bar button
+- **Source**: `src/core/agents/AgentProfile.ts` launch configuration and the shared `src/core/agents/AgentLauncher.ts` pipeline
+- **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
+
+### 5. AWS Strands
 
 User-configured command with optional positional prompt argument. Extra args from settings are prepended.
 
@@ -38,7 +46,7 @@ User-configured command with optional positional prompt argument. Extra args fro
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildStrandsArgs()`
 - **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
 
-### 5. Custom agent profiles
+### 6. Custom agent profiles
 
 User-configured command with user-configured arguments. Any executable can be launched as a custom agent type.
 
@@ -46,7 +54,7 @@ User-configured command with user-configured arguments. Any executable can be la
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildCustomArgs()`
 - **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
 
-### 6. Headless agent (background enrichment)
+### 7. Headless agent (background enrichment)
 
 One-shot `claude -p <prompt> --output-format text` (or the configured enrichment profile command) for background task enrichment. Extra args from the profile are prepended.
 
@@ -54,7 +62,7 @@ One-shot `claude -p <prompt> --output-format text` (or the configured enrichment
 - **Source**: `src/core/claude/HeadlessClaude.ts` - `spawnHeadlessClaude()`
 - **Mechanism**: `child_process.spawn()` with array args (no shell interpretation)
 
-### 7. VS Code
+### 8. VS Code
 
 `code --goto "{file}:{line}"` on terminal file-link clicks (Cmd+click on file paths in terminal output). Falls back to `shell.openPath()` if VS Code is not available.
 
@@ -62,7 +70,7 @@ One-shot `claude -p <prompt> --output-format text` (or the configured enrichment
 - **Source**: `src/core/terminal/TerminalTab.ts` - link provider `activate` callback
 - **Mechanism**: `child_process.exec()` (string form, with shell interpretation)
 
-**Note**: All terminal processes (Shell, Claude, Copilot, Strands, custom agents) run inside `pty-wrapper.py`, a Python script that uses `pty.fork()` to provide a real pseudo-terminal. Electron's sandbox blocks native PTY access, so this Python wrapper is the necessary bridge between xterm.js and the child process.
+**Note**: All terminal processes (Shell, Claude, Copilot, OpenCode, Strands, custom agents) run inside `pty-wrapper.py`, a Python script that uses `pty.fork()` to provide a real pseudo-terminal. Electron's sandbox blocks native PTY access, so this Python wrapper is the necessary bridge between xterm.js and the child process.
 
 ## Filesystem access
 
@@ -113,7 +121,7 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 
 ## Security properties
 
-- **All external commands are user-configured** - Shell, Claude, Copilot, and Strands commands are set in plugin settings, not hardcoded. The plugin resolves them via `resolveCommandInfo()`, which searches an augmented PATH that includes `$PATH`, the user's login shell PATH (via `$SHELL -lc 'echo $PATH'`), and nvm/fnm version-manager directories as a fallback. It validates commands exist before spawning. (`src/core/agents/AgentLauncher.ts`)
+- **External commands are profile-configurable** - Shell and agent commands can be overridden in profiles or settings; built-in types provide defaults including `claude`, `copilot`, and `opencode`. The plugin resolves them via `resolveCommandInfo()`, which searches an augmented PATH that includes `$PATH`, the user's login shell PATH (via `$SHELL -lc 'echo $PATH'`), and nvm/fnm version-manager directories as a fallback. It validates commands exist before spawning. (`src/core/agents/AgentLauncher.ts`)
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
 - **Zero outbound network requests from the plugin itself** - The plugin makes no network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
 - **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()` / `app.vault.trash()`, never direct `fs.*` writes to vault files. Enrichment logs use the lower-level `app.vault.adapter.write()` but this is still within the Obsidian API surface.

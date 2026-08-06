@@ -34,7 +34,15 @@ describe("ProfileIcons", () => {
   });
 
   describe("branded icons", () => {
-    const brandedIcons: ProfileIcon[] = ["claude", "copilot", "aws", "skyscanner", "bee", "pi"];
+    const brandedIcons: ProfileIcon[] = [
+      "claude",
+      "copilot",
+      "opencode",
+      "aws",
+      "skyscanner",
+      "bee",
+      "pi",
+    ];
 
     for (const icon of brandedIcons) {
       it(`creates ${icon} icon with path elements`, () => {
@@ -53,6 +61,15 @@ describe("ProfileIcons", () => {
     it("copilot icon uses 24x24 viewBox", () => {
       const svg = createProfileIcon("copilot");
       expect(svg!.getAttribute("viewBox")).toBe("0 0 24 24");
+    });
+
+    it("OpenCode icon uses the official square-logo geometry", () => {
+      const svg = createProfileIcon("opencode");
+      expect(svg!.getAttribute("viewBox")).toBe("0 0 300 300");
+      const paths = svg!.querySelectorAll("path");
+      expect(paths).toHaveLength(2);
+      expect(paths[0].getAttribute("d")).toBe("M210 240H90V120H210V240Z");
+      expect(paths[1].getAttribute("d")).toBe("M210 60H90V240H210V60ZM270 300H30V0H270V300Z");
     });
 
     it("aws icon uses 24x24 viewBox", () => {

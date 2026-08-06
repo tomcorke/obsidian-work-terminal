@@ -399,7 +399,7 @@ Agent profiles define reusable launch configurations for terminal sessions. Open
 Each profile includes:
 
 - **Name** - display name shown in the tab bar and launch modal
-- **Agent type** - the type of agent (Claude, Copilot, Strands, or custom)
+- **Agent type** - the type of agent (Claude, Copilot, OpenCode, Strands, or custom)
 - **Command** - the executable to run (e.g. `claude`, `copilot`, `gh`)
 - **Arguments** - command-line arguments passed to the agent
 - **Default CWD** - working directory for the session (supports `~` expansion)
@@ -407,6 +407,8 @@ Each profile includes:
 - **Context prompt** - a prompt template injected when launching with task context
 
 The per-profile **Context prompt** field is the place to configure additional context that used to live in the removed **Additional agent context prompt** setting (issue #472). Set it on each profile that should inject task context on top of the adapter prompt.
+
+**OpenCode** is available as a first-party agent type. Leave its executable blank to use `opencode`; Work Terminal resolves it through the same augmented PATH and optional login-shell flow as other agents. Contextual OpenCode profiles pass the complete prompt as `--prompt <value>` with the value kept as one argv entry, while non-context launches add no prompt flag. If the CLI is missing, install it with `brew install anomalyco/tap/opencode` or follow the [OpenCode documentation](https://opencode.ai/docs). The branded OpenCode icon is available in the profile icon picker.
 
 **Placeholders**: The **Arguments** and **Context prompt** fields support placeholder variables that expand to work item data at launch time:
 
@@ -434,7 +436,7 @@ For example, an argument string like `--file $absoluteFilePath --task $title` wo
 
 **Import/Export**: Profiles can be exported as JSON for sharing or backup, and imported from JSON to quickly set up a new installation.
 
-**Last-Claude-profile deletion guard**: The Profile Manager prevents deleting a Claude-family profile when doing so would leave zero Claude profiles. This keeps the fallback chain for **Split Task** and **Retry Enrichment** intact - both actions launch Claude specifically, so at least one Claude profile must exist. The **Delete** button on the edit modal is greyed out with a tooltip explaining that at least one Claude profile must remain for **Split Task** and **Retry Enrichment** in that situation. Non-Claude profiles (shell, Copilot, Strands, custom) are never counted towards the minimum and can always be deleted. Built-in `default-claude` and `default-claude-ctx` profiles are not specially protected - either can be deleted as long as another Claude profile remains.
+**Last-Claude-profile deletion guard**: The Profile Manager prevents deleting a Claude-family profile when doing so would leave zero Claude profiles. This keeps the fallback chain for **Split Task** and **Retry Enrichment** intact - both actions launch Claude specifically, so at least one Claude profile must exist. The **Delete** button on the edit modal is greyed out with a tooltip explaining that at least one Claude profile must remain for **Split Task** and **Retry Enrichment** in that situation. Non-Claude profiles (shell, Copilot, OpenCode, Strands, custom) are never counted towards the minimum and can always be deleted. Built-in `default-claude` and `default-claude-ctx` profiles are not specially protected - either can be deleted as long as another Claude profile remains.
 
 ### Card indicator rules
 

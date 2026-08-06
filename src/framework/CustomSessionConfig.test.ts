@@ -63,6 +63,8 @@ describe("CustomSessionConfig", () => {
     expect(getDefaultSessionLabel("claude-with-context")).toBe("Claude (ctx)");
     expect(getDefaultSessionLabel("copilot")).toBe("Copilot");
     expect(getDefaultSessionLabel("copilot-with-context")).toBe("Copilot (ctx)");
+    expect(getDefaultSessionLabel("opencode")).toBe("OpenCode");
+    expect(getDefaultSessionLabel("opencode-with-context")).toBe("OpenCode (ctx)");
     expect(getDefaultSessionLabel("strands")).toBe("Strands");
     expect(getDefaultSessionLabel("strands-with-context")).toBe("Strands (ctx)");
   });
@@ -71,6 +73,7 @@ describe("CustomSessionConfig", () => {
     expect(isContextSession("claude-with-context")).toBe(true);
     expect(isContextSession("copilot-with-context")).toBe(true);
     expect(isContextSession("strands-with-context")).toBe(true);
+    expect(isContextSession("opencode-with-context")).toBe(true);
     expect(isContextSession("copilot")).toBe(false);
     expect(isContextSession("strands")).toBe(false);
     expect(isClaudeSession("claude")).toBe(true);
@@ -85,6 +88,7 @@ describe("CustomSessionConfig", () => {
     expect(supportsExtraArgs("shell")).toBe(false);
     expect(supportsExtraArgs("claude")).toBe(true);
     expect(supportsExtraArgs("copilot")).toBe(true);
+    expect(supportsExtraArgs("opencode")).toBe(true);
     expect(supportsExtraArgs("strands")).toBe(true);
   });
 
@@ -99,6 +103,7 @@ describe("CustomSessionConfig", () => {
     expect(isAgentTypeSession("claude", "claude")).toBe(true);
     expect(isAgentTypeSession("claude-with-context", "claude")).toBe(true);
     expect(isAgentTypeSession("copilot", "copilot")).toBe(true);
+    expect(isAgentTypeSession("opencode", "opencode")).toBe(true);
     expect(isAgentTypeSession("strands", "strands")).toBe(true);
     expect(isAgentTypeSession("shell", "shell")).toBe(true);
     expect(isAgentTypeSession("claude", "copilot")).toBe(false);

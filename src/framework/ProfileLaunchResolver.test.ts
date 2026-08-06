@@ -61,6 +61,38 @@ describe("profile launch resolution and preview", () => {
     expect(preview).not.toContain("Clearly");
   });
 
+  it("launches first-party OpenCode context with --prompt as one argv value", () => {
+    const contextual = resolveProfileLaunch({
+      profile: {
+        ...baseProfile,
+        agentType: "opencode",
+        command: "opencode",
+        arguments: "--model test",
+      },
+      settings: {},
+      profileManager: manager,
+      promptBuilder,
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+      absoluteFilePath: PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
+    });
+    expect(contextual.sessionType).toBe("opencode-with-context");
+    expect(contextual.invocation.argv.slice(-2)).toEqual(["--prompt", contextual.prompt]);
+    expect(contextual.invocation.args.filter((arg) => arg === contextual.prompt)).toHaveLength(1);
+    expect(formatProfileLaunchPreview(contextual)).toContain(
+      'Prompt placement: automatic flag "--prompt"',
+    );
+
+    const plain = resolveProfileLaunch({
+      profile: { ...baseProfile, agentType: "opencode", command: "opencode", useContext: false },
+      settings: {},
+      profileManager: manager,
+      promptBuilder,
+      item: PROFILE_PREVIEW_EXAMPLE_ITEM,
+    });
+    expect(plain.sessionType).toBe("opencode");
+    expect(plain.invocation.args).not.toContain("--prompt");
+  });
+
   it("shows flag placement and the login-shell layer without losing prompt boundaries", () => {
     const resolved = resolveProfileLaunch({
       profile: {

@@ -16,6 +16,8 @@ export const KNOWN_SESSION_TYPES = [
   "claude-with-context",
   "copilot",
   "copilot-with-context",
+  "opencode",
+  "opencode-with-context",
   "strands",
   "strands-with-context",
   "custom",

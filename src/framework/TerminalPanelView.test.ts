@@ -1144,6 +1144,29 @@ describe("TerminalPanelView", () => {
     expect(mockState.notices).toContain("Session diagnostics copied to clipboard");
   });
 
+  it("renders the official OpenCode icon on profile tab-bar buttons", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+    (view as any).profileManager = {
+      getButtonProfiles: () => [
+        {
+          id: "opencode",
+          name: "OpenCode",
+          agentType: "opencode",
+          button: { enabled: true, label: "OpenCode", icon: "opencode" },
+        },
+      ],
+    };
+
+    (view as any).renderTabBar();
+
+    const button = panelEl.querySelector<HTMLButtonElement>(
+      '.wt-spawn-profile[aria-label="Launch OpenCode"]',
+    );
+    expect(button?.textContent).toContain("OpenCode");
+    expect(button?.querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 300 300");
+  });
+
   it("resolves pluginDir from a relative vault path using USERPROFILE semantics", async () => {
     const originalHome = process.env.HOME;
     const originalUserProfile = process.env.USERPROFILE;
