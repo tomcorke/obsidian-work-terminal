@@ -70,6 +70,8 @@ describe("PersistedSession", () => {
 
   it("validates unknown session types", () => {
     expect(isSessionType("claude")).toBe(true);
+    expect(isSessionType("opencode")).toBe(true);
+    expect(isSessionType("opencode-with-context")).toBe(true);
     expect(isSessionType("unknown")).toBe(false);
     expect(isSessionType(null)).toBe(false);
   });

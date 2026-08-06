@@ -32,6 +32,7 @@ export const PROFILE_ICONS = [
   // Branded
   "claude",
   "copilot",
+  "opencode",
   "aws",
   "skyscanner",
   "pi",
@@ -46,6 +47,7 @@ export type BorderStyle = (typeof BORDER_STYLES)[number];
 export const BRAND_COLORS: Partial<Record<ProfileIcon, string>> = {
   claude: "#D97757",
   copilot: "#6E40C9",
+  opencode: "#131010",
   aws: "#FF9900",
   skyscanner: "#0770E3",
   pi: "#00C853",
@@ -55,7 +57,7 @@ export const BRAND_COLORS: Partial<Record<ProfileIcon, string>> = {
 // Agent types (maps to session type families)
 // ---------------------------------------------------------------------------
 
-export const AGENT_TYPES = ["claude", "copilot", "strands", "shell", "custom"] as const;
+export const AGENT_TYPES = ["claude", "copilot", "opencode", "strands", "shell", "custom"] as const;
 export type AgentType = (typeof AGENT_TYPES)[number];
 
 // ---------------------------------------------------------------------------
@@ -247,6 +249,17 @@ const AGENT_LAUNCH_CONFIGS: Record<AgentType, AgentLaunchConfig> = {
       ],
     },
   },
+  opencode: {
+    promptInjectionMode: "flag",
+    promptFlag: "--prompt",
+    commandSettingKey: "",
+    defaultCommand: "opencode",
+    extraArgsSettingKey: "",
+    cliDisplayName: "OpenCode CLI",
+    installHint:
+      "Install it first with brew install anomalyco/tap/opencode or see https://opencode.ai/docs, then retry the profile.",
+    displayLabel: "OpenCode",
+  },
   strands: {
     promptInjectionMode: "positional",
     commandSettingKey: "core.strandsCommand",
@@ -320,6 +333,8 @@ export function agentTypeToSessionType(
       return withContext ? "claude-with-context" : "claude";
     case "copilot":
       return withContext ? "copilot-with-context" : "copilot";
+    case "opencode":
+      return withContext ? "opencode-with-context" : "opencode";
     case "strands":
       return withContext ? "strands-with-context" : "strands";
     case "shell":
@@ -362,6 +377,10 @@ export function sessionTypeToAgentType(sessionType: SessionType): {
       return { agentType: "copilot", withContext: false };
     case "copilot-with-context":
       return { agentType: "copilot", withContext: true };
+    case "opencode":
+      return { agentType: "opencode", withContext: false };
+    case "opencode-with-context":
+      return { agentType: "opencode", withContext: true };
     case "strands":
       return { agentType: "strands", withContext: false };
     case "strands-with-context":

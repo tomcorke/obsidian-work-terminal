@@ -162,6 +162,8 @@ describe("AgentProfileManager", () => {
       const toImport = [
         createDefaultProfile({
           name: "Imported Agent",
+          agentType: "opencode",
+          button: { enabled: true, label: "OpenCode", icon: "opencode" },
           sortOrder: 0,
           appendContextPrompt: false,
           escapeWorkTerminalPrompt: false,
@@ -173,13 +175,16 @@ describe("AgentProfileManager", () => {
       expect(result.errors).toHaveLength(0);
       const imported = manager.getProfiles().find((p) => p.name === "Imported Agent");
       expect(imported).toMatchObject({
+        agentType: "opencode",
         appendContextPrompt: false,
         escapeWorkTerminalPrompt: false,
+        button: { icon: "opencode" },
       });
       expect(JSON.parse(manager.exportProfiles())).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             name: "Imported Agent",
+            agentType: "opencode",
             appendContextPrompt: false,
             escapeWorkTerminalPrompt: false,
           }),
@@ -273,10 +278,10 @@ describe("AgentProfileManager", () => {
     });
 
     it("resolves command for each agent type", () => {
-      for (const [agentType, settingKey, _fallback] of [
-        ["claude", "core.claudeCommand", "claude"],
-        ["copilot", "core.copilotCommand", "copilot"],
-        ["strands", "core.strandsCommand", "strands"],
+      for (const [agentType, settingKey] of [
+        ["claude", "core.claudeCommand"],
+        ["copilot", "core.copilotCommand"],
+        ["strands", "core.strandsCommand"],
       ] as const) {
         // Profile command takes priority
         const withCmd = createDefaultProfile({ command: "/custom/bin", agentType });
@@ -287,6 +292,9 @@ describe("AgentProfileManager", () => {
           "global-cmd",
         );
       }
+
+      const openCode = createDefaultProfile({ command: "", agentType: "opencode" });
+      expect(manager.resolveCommand(openCode, {})).toBe("opencode");
     });
   });
 
@@ -309,12 +317,24 @@ describe("AgentProfileManager", () => {
     });
 
     it("accepts valid stored profiles", async () => {
-      const existing = [createDefaultProfile({ name: "Valid Profile", sortOrder: 0 })];
+      const existing = [
+        createDefaultProfile({
+          name: "OpenCode",
+          agentType: "opencode",
+          command: "",
+          button: { enabled: true, label: "OpenCode", icon: "opencode" },
+          sortOrder: 0,
+        }),
+      ];
       plugin = createMockPlugin({ agentProfiles: existing });
       manager = new AgentProfileManager(plugin);
       await manager.load();
       expect(manager.getProfiles()).toHaveLength(1);
-      expect(manager.getProfiles()[0].name).toBe("Valid Profile");
+      expect(manager.getProfiles()[0]).toMatchObject({
+        name: "OpenCode",
+        agentType: "opencode",
+        button: { icon: "opencode" },
+      });
     });
 
     it("does NOT call saveData when stored profiles fail validation", async () => {

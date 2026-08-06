@@ -40,6 +40,7 @@ export function buildLastClaudeDeleteGuard(
 const AGENT_TYPE_LABELS: Record<string, string> = {
   claude: "Claude",
   copilot: "Copilot",
+  opencode: "OpenCode",
   strands: "Strands",
   shell: "Shell",
   custom: "Custom",

@@ -14,6 +14,7 @@ import {
   createDefaultClaudeCtxProfile,
   createDefaultCopilotProfile,
   getBuiltInProfiles,
+  getLaunchConfig,
   validateProfilePromptInjection,
 } from "./AgentProfile";
 
@@ -29,6 +30,10 @@ describe("agentTypeToSessionType", () => {
   });
   it("maps copilot with context", () => {
     expect(agentTypeToSessionType("copilot", true)).toBe("copilot-with-context");
+  });
+  it("maps OpenCode sessions", () => {
+    expect(agentTypeToSessionType("opencode", false)).toBe("opencode");
+    expect(agentTypeToSessionType("opencode", true)).toBe("opencode-with-context");
   });
   it("maps strands without context", () => {
     expect(agentTypeToSessionType("strands", false)).toBe("strands");
@@ -54,6 +59,16 @@ describe("sessionTypeToAgentType", () => {
     expect(sessionTypeToAgentType("copilot")).toEqual({ agentType: "copilot", withContext: false });
     expect(sessionTypeToAgentType("copilot-with-context")).toEqual({
       agentType: "copilot",
+      withContext: true,
+    });
+  });
+  it("maps OpenCode session types", () => {
+    expect(sessionTypeToAgentType("opencode")).toEqual({
+      agentType: "opencode",
+      withContext: false,
+    });
+    expect(sessionTypeToAgentType("opencode-with-context")).toEqual({
+      agentType: "opencode",
       withContext: true,
     });
   });
@@ -173,6 +188,7 @@ describe("BRAND_COLORS", () => {
   it("defines colors for all branded icons", () => {
     expect(BRAND_COLORS.claude).toBe("#D97757");
     expect(BRAND_COLORS.copilot).toBe("#6E40C9");
+    expect(BRAND_COLORS.opencode).toBe("#131010");
     expect(BRAND_COLORS.aws).toBe("#FF9900");
     expect(BRAND_COLORS.skyscanner).toBe("#0770E3");
   });
@@ -203,6 +219,27 @@ describe("default profile button colors", () => {
 // ---------------------------------------------------------------------------
 // Custom agent type
 // ---------------------------------------------------------------------------
+
+describe("OpenCode agent type", () => {
+  it("uses the first-party command and prompt launch configuration", () => {
+    expect(getLaunchConfig("opencode")).toMatchObject({
+      defaultCommand: "opencode",
+      promptInjectionMode: "flag",
+      promptFlag: "--prompt",
+      cliDisplayName: "OpenCode CLI",
+      displayLabel: "OpenCode",
+    });
+  });
+
+  it("is accepted by the profile schema", () => {
+    const profile = createDefaultProfile({
+      agentType: "opencode",
+      button: { enabled: true, label: "OpenCode", icon: "opencode" },
+    });
+    expect(AGENT_TYPES).toContain("opencode");
+    expect(AgentProfileSchema.safeParse(profile).success).toBe(true);
+  });
+});
 
 describe("custom agent type", () => {
   it("is included in AGENT_TYPES", () => {

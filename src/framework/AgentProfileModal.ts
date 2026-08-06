@@ -33,6 +33,7 @@ export type ProfileLaunchPreviewResolver = (
 const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   claude: "Claude",
   copilot: "Copilot",
+  opencode: "OpenCode",
   strands: "Strands",
   shell: "Shell",
   custom: "Custom",
@@ -64,6 +65,7 @@ const ICON_LABELS: Record<ProfileIcon, string> = {
   bee: "Bee",
   claude: "Claude (branded)",
   copilot: "Copilot (branded)",
+  opencode: "OpenCode (branded)",
   aws: "AWS (branded)",
   skyscanner: "Skyscanner (branded)",
   pi: "pi (branded)",
@@ -166,7 +168,7 @@ export class AgentProfileEditModal extends Modal {
       .setDesc(
         isCustom
           ? "Path or name of the CLI binary (required for custom profiles)."
-          : "Path or name of the CLI binary. Leave blank to use the global setting for this agent type.",
+          : "Path or name of the CLI binary. Leave blank to use the global setting or built-in default for this agent type.",
       )
       .addText((text) => {
         text

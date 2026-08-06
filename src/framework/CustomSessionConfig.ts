@@ -19,6 +19,8 @@ export const CUSTOM_SESSION_TYPE_OPTIONS: Array<{ value: SessionType; label: str
   { value: "claude-with-context", label: "Claude (ctx)" },
   { value: "copilot", label: "Copilot" },
   { value: "copilot-with-context", label: "Copilot (ctx)" },
+  { value: "opencode", label: "OpenCode" },
+  { value: "opencode-with-context", label: "OpenCode (ctx)" },
   { value: "strands", label: "Strands" },
   { value: "strands-with-context", label: "Strands (ctx)" },
   { value: "custom", label: "Custom" },

@@ -263,6 +263,29 @@ function getDeleteButton(modal: AgentProfileEditModal): HTMLButtonElement | null
 describe("AgentProfileEditModal validation", () => {
   beforeEach(() => NoticeMock.mockClear());
 
+  it("offers OpenCode as an agent type and branded icon", () => {
+    const modal = new AgentProfileEditModal(
+      {} as any,
+      makeProfile({
+        id: "opencode",
+        agentType: "opencode",
+        button: { enabled: true, label: "OpenCode", icon: "opencode" },
+      }),
+      vi.fn(),
+    );
+    modal.open();
+
+    const options = Array.from(
+      (modal as any).contentEl.querySelectorAll<HTMLOptionElement>("option"),
+    );
+    expect(options).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: "opencode", textContent: "OpenCode" }),
+        expect.objectContaining({ value: "opencode", textContent: "OpenCode (branded)" }),
+      ]),
+    );
+  });
+
   it("blocks saving manual context injection without $workTerminalPrompt", () => {
     const onSave = vi.fn();
     const modal = new AgentProfileEditModal(
