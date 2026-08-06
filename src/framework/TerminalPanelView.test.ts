@@ -2008,9 +2008,6 @@ describe("profile launch", () => {
   });
 
   it("applies profile metadata only to the tab returned by spawnAgentSession", async () => {
-    const resolveStub = vi
-      .spyOn(AgentLauncher, "resolveCommandInfo")
-      .mockReturnValue({ requested: "claude", found: true, resolved: "/bin/echo" });
     const createdTab: any = {};
     const existingTab: any = { label: "Existing" };
     mockState.nextCreatedTab = createdTab;
@@ -2019,7 +2016,7 @@ describe("profile launch", () => {
     const { view } = createView();
     await flushAsync();
     (view as any).profileManager = {
-      resolveCommand: () => "claude",
+      resolveCommand: () => process.execPath,
       resolveCwd: () => "~/projects",
       resolveArguments: () => "",
       getButtonProfiles: () => [],
@@ -2042,7 +2039,6 @@ describe("profile launch", () => {
     expect(createdTab.profileId).toBe("profile-1");
     expect(createdTab.profileColor).toBe("#f00");
     expect(existingTab.profileId).toBeUndefined();
-    resolveStub.mockRestore();
   });
 
   it("does not apply profile metadata to an existing tab when spawning fails", async () => {
