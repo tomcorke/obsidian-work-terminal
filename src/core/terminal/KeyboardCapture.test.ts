@@ -235,8 +235,10 @@ describe("KeyboardCapture", () => {
     expect(downEvent.defaultPrevented).toBe(true);
   });
 
-  it("sends Escape as \\x1b to PTY and prevents propagation", () => {
+  it("sends Escape as \\x1b before document capture handlers", () => {
     const write = vi.fn();
+    const documentHandler = vi.fn();
+    document.addEventListener("keydown", documentHandler, true);
     const cleanup = attachCapturePhase(
       containerEl,
       () =>
@@ -251,11 +253,13 @@ describe("KeyboardCapture", () => {
       bubbles: true,
       cancelable: true,
     });
-    document.dispatchEvent(event);
+    textareaEl.dispatchEvent(event);
 
     cleanup();
+    document.removeEventListener("keydown", documentHandler, true);
 
     expect(write).toHaveBeenCalledWith("\x1b");
+    expect(documentHandler).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
   });
 

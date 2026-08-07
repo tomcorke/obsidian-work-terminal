@@ -683,6 +683,7 @@ The API exposes session metadata, task state, and terminal references. It is dis
 
 When a terminal tab is focused, Work Terminal captures keyboard input to prevent Obsidian's hotkeys from interfering with terminal interaction. The capture handles:
 
+- **Escape** is sent to the active terminal without moving focus back to Obsidian
 - **Option+Arrow** keys for word-by-word navigation
 - **Option+B/F/D** for readline-style movement and deletion
 - **Shift+Enter** for sending literal newlines
