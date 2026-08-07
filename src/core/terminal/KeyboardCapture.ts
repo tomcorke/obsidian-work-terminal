@@ -5,7 +5,7 @@
  * Obsidian's bubble-phase handlers from intercepting keyboard events after
  * xterm processes them.
  *
- * Layer 2 (capture phase): intercept specific modifier combos on document
+ * Layer 2 (capture phase): intercept specific modifier combos on window
  * (capture phase) before Obsidian sees them. Synthesizes terminal escape
  * sequences directly to PTY stdin, then kills the event entirely.
  */
@@ -69,13 +69,13 @@ export function attachInputCapture(containerEl: HTMLElement): () => void {
 }
 
 /**
- * Attach capture-phase keyboard interception on document for modifier combos
- * that Obsidian steals in its own capture-phase handlers.
+ * Attach capture-phase keyboard interception on window for modifier combos
+ * before Obsidian's document-level capture handlers.
  *
  * Only acts when the terminal's hidden textarea is the active element,
  * ensuring we don't block keyboard events for other UI elements.
  *
- * @returns A cleanup function that removes the document listener.
+ * @returns A cleanup function that removes the window listener.
  */
 export function attachCapturePhase(
   containerEl: HTMLElement,
@@ -179,9 +179,9 @@ export function attachCapturePhase(
     }
   };
 
-  document.addEventListener("keydown", handler, true);
+  window.addEventListener("keydown", handler, true);
 
   return () => {
-    document.removeEventListener("keydown", handler, true);
+    window.removeEventListener("keydown", handler, true);
   };
 }
