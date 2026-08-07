@@ -6,6 +6,14 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-07
+
+### Fixes
+- Pressing **Escape** in a focused terminal now reaches the active agent or shell without moving focus back to Obsidian, restoring Escape-driven controls in tools such as OpenCode. (#378)
+
+### Full changelog
+- Compare with 0.7.0: https://github.com/tomcorke/obsidian-work-terminal/compare/0.7.0...0.7.1
+
 ## [0.7.0] - 2026-08-06
 
 ### Highlights
