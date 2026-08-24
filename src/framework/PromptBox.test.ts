@@ -102,6 +102,10 @@ function makePlugin(profileId?: string, profile?: Record<string, unknown>) {
       getProfile: vi.fn((requestedProfileId: string) =>
         requestedProfileId === profileId ? profile : undefined,
       ),
+      getProfiles: vi.fn(() => (profile ? [{ id: profileId, ...profile }] : [])),
+      resolveCommand: vi.fn((resolvedProfile: any) => resolvedProfile.command),
+      resolveArguments: vi.fn((resolvedProfile: any) => resolvedProfile.arguments),
+      resolveCwd: vi.fn((resolvedProfile: any) => resolvedProfile.defaultCwd),
     },
   } as any;
 }
@@ -224,7 +228,7 @@ describe("PromptBox", () => {
         promptFlag: "--prompt",
       },
     });
-    expect(plugin.profileManager.getProfile).toHaveBeenCalledWith("profile-1");
+    expect(plugin.profileManager.getProfiles).toHaveBeenCalled();
   });
 
   it("defaults custom enrichment profiles without prompt injection mode to positional", async () => {

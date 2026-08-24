@@ -28,6 +28,8 @@ import { titleCase } from "../core/utils";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
+import { applyActionOverrides, getActionOverrides } from "./actionProfileOverrides";
+import { resolveActionProfile } from "./splitTaskProfile";
 import { ActivityTracker } from "./ActivityTracker";
 
 interface PendingRename {
@@ -573,10 +575,16 @@ export class MainView extends ItemView {
     cwdOverride: string;
   } | null {
     if (!this.profileManager) return null;
-    const profileId = this.settings["adapter.enrichmentProfile"];
-    if (typeof profileId !== "string" || !profileId.trim()) return null;
-    const profile = this.profileManager.getProfile(profileId.trim());
-    if (!profile) return null;
+    const storedProfile = resolveActionProfile(
+      this.settings,
+      this.profileManager.getProfiles(),
+      "adapter.enrichmentProfile",
+    );
+    if (!storedProfile) return null;
+    const profile = applyActionOverrides(
+      storedProfile,
+      getActionOverrides(this.settings, "adapter.enrichment"),
+    );
     return {
       profile,
       cwdOverride: this.profileManager.resolveCwd(profile, this.settings),

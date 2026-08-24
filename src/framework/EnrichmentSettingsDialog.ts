@@ -28,6 +28,12 @@ import {
   DEFAULT_PREVIEW_VARS,
 } from "./enrichmentPromptPreview";
 import { SETTINGS_CHANGED_EVENT, loadAllSettings } from "./SettingsTab";
+import {
+  REASONING_EFFORTS,
+  supportsEffortOverride,
+  supportsModelOverride,
+} from "./actionProfileOverrides";
+import { resolveActionProfile, resolveRetryEnrichmentProfile } from "./splitTaskProfile";
 
 export class EnrichmentSettingsDialog extends Modal {
   protected plugin: Plugin;
@@ -104,7 +110,14 @@ export class EnrichmentSettingsDialog extends Modal {
       settings,
     );
     this.renderProfileDropdown(containerEl, settings);
+    this.renderProfileOverrides(containerEl, settings, "adapter.enrichment", "Enrichment");
     this.renderRetryProfileDropdown(containerEl, settings);
+    this.renderProfileOverrides(
+      containerEl,
+      settings,
+      "adapter.retryEnrichment",
+      "Retry enrichment",
+    );
     this.renderTimeoutField(containerEl, settings);
     this.renderPreviewPanel(containerEl, settings);
   }
@@ -267,6 +280,7 @@ export class EnrichmentSettingsDialog extends Modal {
           await this.saveSettings((s) => {
             s["adapter.enrichmentProfile"] = newValue;
           });
+          await this.render();
         });
       });
   }
@@ -300,8 +314,52 @@ export class EnrichmentSettingsDialog extends Modal {
           await this.saveSettings((s) => {
             s["adapter.retryEnrichmentProfile"] = newValue;
           });
+          await this.render();
         });
       });
+  }
+
+  private renderProfileOverrides(
+    containerEl: HTMLElement,
+    settings: Record<string, unknown>,
+    prefix: string,
+    label: string,
+  ): void {
+    const profiles = this.profileManager.getProfiles();
+    const profile =
+      prefix === "adapter.retryEnrichment"
+        ? resolveRetryEnrichmentProfile(settings, profiles)
+        : resolveActionProfile(settings, profiles, `${prefix}Profile`);
+    if (!profile) return;
+
+    if (supportsModelOverride(profile)) {
+      new Setting(containerEl)
+        .setName(`${label} model`)
+        .setDesc("Optional model ID override. Leave blank to use profile arguments.")
+        .addText((text) =>
+          text.setValue((settings[`${prefix}Model`] as string) || "").onChange(async (value) => {
+            await this.saveSettings((s) => {
+              s[`${prefix}Model`] = value.trim();
+            });
+          }),
+        );
+    }
+    if (supportsEffortOverride(profile)) {
+      new Setting(containerEl)
+        .setName(`${label} reasoning effort`)
+        .setDesc("Optional typed override. Leave default to use profile arguments.")
+        .addDropdown((dropdown) => {
+          dropdown.addOption("", "Profile default");
+          for (const effort of REASONING_EFFORTS.slice(1)) dropdown.addOption(effort, effort);
+          dropdown
+            .setValue((settings[`${prefix}Effort`] as string) || "")
+            .onChange(async (value) => {
+              await this.saveSettings((s) => {
+                s[`${prefix}Effort`] = value;
+              });
+            });
+        });
+    }
   }
 
   private renderTimeoutField(containerEl: HTMLElement, settings: Record<string, unknown>): void {
