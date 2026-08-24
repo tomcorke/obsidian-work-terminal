@@ -102,6 +102,12 @@ Uses `plugin.loadData()` / `plugin.saveData()`, stored in `.obsidian/plugins/wor
 
 Source: `src/core/PluginDataStore.ts`, `src/core/LastActiveStore.ts`, `src/framework/GuidedTour.ts`, `src/framework/TerminalPanelView.ts`, `src/framework/MainView.ts`
 
+### Agent profiles file (raw `fs`)
+
+Agent profiles live in `~/.config/obsidian-work-terminal/profiles.json`, outside plugin data, so they can be hand-edited, bulk-edited, and version-controlled. The file is a JSON array of profiles, shared across vaults. Reads treat a missing or empty file as "no profiles yet" and migrate from the plugin data key `agentProfiles`; an unreadable or non-array file is left untouched and built-in defaults are used in memory.
+
+Source: `src/core/agents/ProfileFileStore.ts`, `src/core/agents/AgentProfileManager.ts`
+
 ### Plugin directory (Obsidian vault adapter)
 
 Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-terminal/logs/` using `app.vault.adapter.write()` (not raw `fs.*`). Logs contain the enrichment prompt, agent stdout/stderr, exit code, and error details. Retention is capped at 50 files and 7 days.

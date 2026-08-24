@@ -17,7 +17,7 @@ src/
     PinStore.ts           # Pinned-task persistence (UUID set)
     PluginDataStore.ts    # Typed read/write for plugin data.json
     terminal/             # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager, PythonCheck
-    agents/               # AgentLauncher, AgentStateDetector, AgentProfile, AgentProfileManager
+    agents/               # AgentLauncher, AgentStateDetector, AgentProfile, AgentProfileManager, ProfileFileStore
     claude/               # HeadlessClaude
     resolvers/            # FolderStateResolver, FrontmatterStateResolver, CompositeStateResolver
     session/              # SessionStore (window-global), types

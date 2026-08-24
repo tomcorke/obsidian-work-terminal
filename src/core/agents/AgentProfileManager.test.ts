@@ -1,22 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-vi.mock("../PluginDataStore", () => ({
-  mergeAndSavePluginData: async (
-    plugin: {
-      loadData: () => Promise<Record<string, any> | null>;
-      saveData: (data: Record<string, any>) => Promise<void>;
-    },
-    update: (data: Record<string, any>) => void | Promise<void>,
-  ) => {
-    const data = (await plugin.loadData()) || {};
-    await update(data);
-    await plugin.saveData(data);
-  },
-}));
-
 import { AgentProfileManager } from "./AgentProfileManager";
 import { createDefaultProfile } from "./AgentProfile";
+import type { ProfileFileStore } from "./ProfileFileStore";
 
 function createMockPlugin(initialData: Record<string, any> = {}) {
   let data = { ...initialData };
@@ -29,13 +16,30 @@ function createMockPlugin(initialData: Record<string, any> = {}) {
   };
 }
 
+function createMemoryStore(initial: unknown[] | null = null) {
+  let contents = initial;
+  return {
+    path: "/tmp/work-terminal-test/profiles.json",
+    read: vi.fn(async () => (contents ? [...contents] : null)),
+    write: vi.fn(async (profiles: unknown[]) => {
+      contents = [...profiles];
+    }),
+    _get: () => contents,
+    _set: (next: unknown[] | null) => {
+      contents = next;
+    },
+  } satisfies ProfileFileStore & Record<string, unknown>;
+}
+
 describe("AgentProfileManager", () => {
   let plugin: ReturnType<typeof createMockPlugin>;
+  let store: ReturnType<typeof createMemoryStore>;
   let manager: AgentProfileManager;
 
   beforeEach(() => {
     plugin = createMockPlugin();
-    manager = new AgentProfileManager(plugin);
+    store = createMemoryStore();
+    manager = new AgentProfileManager(plugin, store);
   });
 
   describe("load", () => {
@@ -48,10 +52,10 @@ describe("AgentProfileManager", () => {
       expect(profiles.find((p) => p.name === "Copilot")).toBeTruthy();
     });
 
-    it("loads existing profiles from stored data", async () => {
+    it("loads existing profiles from the profiles file", async () => {
       const existing = [createDefaultProfile({ name: "Test Profile", sortOrder: 0 })];
-      plugin = createMockPlugin({ agentProfiles: existing });
-      manager = new AgentProfileManager(plugin);
+      store = createMemoryStore(existing);
+      manager = new AgentProfileManager(plugin, store);
       await manager.load();
       const profiles = manager.getProfiles();
       expect(profiles).toHaveLength(1);
@@ -68,7 +72,7 @@ describe("AgentProfileManager", () => {
           "core.strandsCommand": "/usr/local/bin/strands",
         },
       });
-      manager = new AgentProfileManager(plugin);
+      manager = new AgentProfileManager(plugin, store);
       await manager.load();
       const profiles = manager.getProfiles();
 
@@ -90,10 +94,45 @@ describe("AgentProfileManager", () => {
       expect(strands!.command).toBe("/usr/local/bin/strands");
     });
 
-    it("sets migrated flag after migration", async () => {
+    it("writes migrated profiles to the profiles file", async () => {
       await manager.load();
-      const savedData = plugin._getData();
-      expect(savedData.agentProfilesMigrated).toBe(true);
+      expect(store.write).toHaveBeenCalledTimes(1);
+      expect(store._get()).toHaveLength(manager.getProfiles().length);
+    });
+
+    it("migrates profiles previously stored in plugin data and leaves the old key", async () => {
+      const existing = [createDefaultProfile({ name: "From data.json", sortOrder: 0 })];
+      plugin = createMockPlugin({ agentProfiles: existing });
+      manager = new AgentProfileManager(plugin, store);
+      await manager.load();
+      expect(manager.getProfiles()).toHaveLength(1);
+      expect(manager.getProfiles()[0].name).toBe("From data.json");
+      expect(store._get()).toHaveLength(1);
+      // Old key untouched so downgrading still finds its profiles
+      expect(plugin.saveData).not.toHaveBeenCalled();
+      expect(plugin._getData().agentProfiles).toEqual(existing);
+    });
+
+    it("does not re-migrate once the profiles file exists", async () => {
+      plugin = createMockPlugin({
+        agentProfiles: [createDefaultProfile({ name: "Stale", sortOrder: 0 })],
+      });
+      store = createMemoryStore([createDefaultProfile({ name: "Current", sortOrder: 0 })]);
+      manager = new AgentProfileManager(plugin, store);
+      await manager.load();
+      expect(manager.getProfiles().map((p) => p.name)).toEqual(["Current"]);
+      expect(store.write).not.toHaveBeenCalled();
+    });
+
+    it("reload picks up edits made to the file outside the plugin", async () => {
+      await manager.load();
+      store._set([createDefaultProfile({ name: "Hand Edited", sortOrder: 0 })]);
+      const reloaded = await manager.reload();
+      expect(reloaded.map((p) => p.name)).toEqual(["Hand Edited"]);
+    });
+
+    it("exposes the profiles file path", () => {
+      expect(manager.profilesPath).toBe(store.path);
     });
   });
 
@@ -300,10 +339,8 @@ describe("AgentProfileManager", () => {
 
   describe("load validation", () => {
     it("falls back to built-in defaults when stored profiles are invalid", async () => {
-      plugin = createMockPlugin({
-        agentProfiles: [{ invalid: "data" }],
-      });
-      manager = new AgentProfileManager(plugin);
+      store = createMemoryStore([{ invalid: "data" }]);
+      manager = new AgentProfileManager(plugin, store);
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       await manager.load();
       const profiles = manager.getProfiles();
@@ -326,8 +363,8 @@ describe("AgentProfileManager", () => {
           sortOrder: 0,
         }),
       ];
-      plugin = createMockPlugin({ agentProfiles: existing });
-      manager = new AgentProfileManager(plugin);
+      store = createMemoryStore(existing);
+      manager = new AgentProfileManager(plugin, store);
       await manager.load();
       expect(manager.getProfiles()).toHaveLength(1);
       expect(manager.getProfiles()[0]).toMatchObject({
@@ -337,48 +374,50 @@ describe("AgentProfileManager", () => {
       });
     });
 
-    it("does NOT call saveData when stored profiles fail validation", async () => {
-      plugin = createMockPlugin({
-        agentProfiles: [{ id: "bad", agentType: "not-a-real-type" }],
-        agentProfilesMigrated: true,
-      });
-      manager = new AgentProfileManager(plugin);
+    it("does NOT overwrite the file when stored profiles fail validation", async () => {
+      store = createMemoryStore([{ id: "bad", agentType: "not-a-real-type" }]);
+      manager = new AgentProfileManager(plugin, store);
       vi.spyOn(console, "warn").mockImplementation(() => {});
       await manager.load();
-      expect(plugin.saveData).not.toHaveBeenCalled();
+      expect(store.write).not.toHaveBeenCalled();
       vi.restoreAllMocks();
     });
 
-    it("does NOT call saveData when migrated flag is set but profiles are absent", async () => {
-      plugin = createMockPlugin({
-        agentProfilesMigrated: true,
-        // No agentProfiles key
-      });
-      manager = new AgentProfileManager(plugin);
-      vi.spyOn(console, "warn").mockImplementation(() => {});
+    it("does NOT overwrite the file when it cannot be read", async () => {
+      store = createMemoryStore();
+      store.read.mockRejectedValueOnce(new Error("EACCES"));
+      manager = new AgentProfileManager(plugin, store);
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       await manager.load();
 
       // Uses built-in defaults in-memory
       expect(manager.getProfiles().find((p) => p.name === "Claude")).toBeTruthy();
-      // Does NOT write to disk
-      expect(plugin.saveData).not.toHaveBeenCalled();
+      expect(store.write).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalled();
       vi.restoreAllMocks();
     });
 
+    it("propagates write failures so callers can surface them", async () => {
+      store = createMemoryStore([createDefaultProfile({ name: "Only", sortOrder: 0 })]);
+      manager = new AgentProfileManager(plugin, store);
+      await manager.load();
+      store.write.mockRejectedValueOnce(new Error("EROFS"));
+      await expect(
+        manager.updateProfile(manager.getProfiles()[0].id, { name: "X" }),
+      ).rejects.toThrow("EROFS");
+    });
+
     it("fills in defaults for profiles saved without newer fields", async () => {
-      plugin = createMockPlugin({
-        agentProfiles: [
-          {
-            id: "old-1",
-            name: "Legacy Profile",
-            agentType: "claude",
-            // Missing: command, defaultCwd, arguments, contextPrompt, useContext,
-            //          button, sortOrder
-          },
-        ],
-        agentProfilesMigrated: true,
-      });
-      manager = new AgentProfileManager(plugin);
+      store = createMemoryStore([
+        {
+          id: "old-1",
+          name: "Legacy Profile",
+          agentType: "claude",
+          // Missing: command, defaultCwd, arguments, contextPrompt, useContext,
+          //          button, sortOrder
+        },
+      ]);
+      manager = new AgentProfileManager(plugin, store);
       await manager.load();
       const profile = manager.getProfiles()[0];
       expect(profile.name).toBe("Legacy Profile");
@@ -388,7 +427,7 @@ describe("AgentProfileManager", () => {
       expect(profile.sortOrder).toBe(0);
       expect(profile.appendContextPrompt).toBe(true);
       expect(profile.escapeWorkTerminalPrompt).toBe(true);
-      expect(plugin.saveData).not.toHaveBeenCalled();
+      expect(store.write).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,11 +1,13 @@
 /**
  * AgentProfileManager - CRUD, import/export, and migration for agent profiles.
  *
- * Profiles are stored in the plugin data store under the key "agentProfiles".
- * Migration from legacy settings happens on first load when no profiles exist.
+ * Profiles are stored in a standalone JSON file (see ProfileFileStore) so they
+ * can be hand-edited and backed up independently of plugin data. On first load
+ * with no profiles file, profiles are migrated from the plugin data key
+ * "agentProfiles" or, failing that, from the legacy per-agent settings keys.
  */
 import type { PluginDataStore } from "../PluginDataStore";
-import { mergeAndSavePluginData } from "../PluginDataStore";
+import { createProfileFileStore, type ProfileFileStore } from "./ProfileFileStore";
 import {
   type AgentProfile,
   type AgentType,
@@ -20,7 +22,6 @@ import {
 } from "./AgentProfile";
 
 const PROFILES_KEY = "agentProfiles";
-const MIGRATED_KEY = "agentProfilesMigrated";
 
 export const PROFILES_CHANGED_EVENT = "work-terminal:agent-profiles-changed";
 
@@ -28,48 +29,87 @@ export class AgentProfileManager {
   private profiles: AgentProfile[] = [];
   private loaded = false;
 
-  constructor(private plugin: PluginDataStore) {}
+  constructor(
+    private plugin: PluginDataStore,
+    private file: ProfileFileStore = createProfileFileStore(),
+  ) {}
+
+  /** Path of the profiles file, for display in the UI. */
+  get profilesPath(): string {
+    return this.file.path;
+  }
 
   // ---------------------------------------------------------------------------
   // Load / Save
   // ---------------------------------------------------------------------------
 
   async load(): Promise<AgentProfile[]> {
-    const data = (await this.plugin.loadData()) || {};
+    let stored: unknown[] | null;
+    try {
+      stored = await this.file.read();
+    } catch (err) {
+      // File exists but is unreadable or not a JSON array. Do NOT overwrite it -
+      // fall back in-memory so the user can fix the file by hand.
+      console.warn(
+        `[work-terminal] Could not read profiles file ${this.file.path} (kept on disk, using built-in defaults in-memory):`,
+        err,
+      );
+      this.profiles = getBuiltInProfiles();
+      this.loaded = true;
+      return this.getProfiles();
+    }
 
-    if (data[PROFILES_KEY] && Array.isArray(data[PROFILES_KEY])) {
+    if (stored) {
       // Use the lenient schema for loading stored profiles - tolerates missing
       // fields from older versions so user customisations are never discarded.
-      const result = StoredProfileArraySchema.safeParse(data[PROFILES_KEY]);
+      const result = StoredProfileArraySchema.safeParse(stored);
       if (result.success) {
         this.profiles = result.data as AgentProfile[];
       } else {
         // Even the lenient schema failed - profiles are seriously malformed.
-        // Log but do NOT overwrite the stored data; fall back in-memory only
-        // so the user can export/fix via settings on next open.
+        // Log but do NOT overwrite the file; fall back in-memory only so the
+        // user can fix the file on disk.
         console.warn(
           "[work-terminal] Stored profiles failed validation (kept on disk, using built-in defaults in-memory):",
           result.error.issues,
         );
         this.profiles = getBuiltInProfiles();
       }
-    } else if (!data[MIGRATED_KEY]) {
-      // First load - migrate from legacy settings or create defaults
-      this.profiles = this.migrateFromLegacySettings(data);
-      await this.saveAndMark(true);
     } else {
-      // Migrated but no profiles in data - this can happen if data.json was
-      // partially written or corrupted. Use defaults in-memory but do NOT
-      // overwrite the file (avoids permanently losing profiles if the read
-      // was the one at fault).
-      console.warn(
-        "[work-terminal] agentProfilesMigrated is set but no profiles found in data - using built-in defaults without overwriting disk",
-      );
-      this.profiles = getBuiltInProfiles();
+      // No profiles file yet - migrate from plugin data and write the file.
+      this.profiles = this.migrateFromPluginData((await this.plugin.loadData()) || {});
+      await this.save();
     }
 
     this.loaded = true;
     return this.getProfiles();
+  }
+
+  /** Re-read the profiles file, picking up edits made outside the plugin. */
+  async reload(): Promise<AgentProfile[]> {
+    const profiles = await this.load();
+    this.notifyChanged();
+    return profiles;
+  }
+
+  /**
+   * One-time migration into the profiles file. Profiles previously lived in
+   * plugin data under "agentProfiles"; before that, in per-agent settings keys.
+   * The old plugin data key is left untouched so downgrades keep working.
+   */
+  private migrateFromPluginData(data: Record<string, any>): AgentProfile[] {
+    if (!Array.isArray(data[PROFILES_KEY])) {
+      return this.migrateFromLegacySettings(data);
+    }
+    const result = StoredProfileArraySchema.safeParse(data[PROFILES_KEY]);
+    if (result.success) {
+      return result.data as AgentProfile[];
+    }
+    console.warn(
+      "[work-terminal] Profiles in plugin data failed validation - migrating built-in defaults instead:",
+      result.error.issues,
+    );
+    return getBuiltInProfiles();
   }
 
   private migrateFromLegacySettings(data: Record<string, any>): AgentProfile[] {
@@ -136,19 +176,9 @@ export class AgentProfileManager {
   }
 
   private async save(): Promise<void> {
-    await mergeAndSavePluginData(this.plugin, async (data) => {
-      data[PROFILES_KEY] = this.profiles;
-    });
-    this.notifyChanged();
-  }
-
-  private async saveAndMark(migrated: boolean): Promise<void> {
-    await mergeAndSavePluginData(this.plugin, async (data) => {
-      data[PROFILES_KEY] = this.profiles;
-      if (migrated) {
-        data[MIGRATED_KEY] = true;
-      }
-    });
+    // Write failures propagate so callers can surface them - silently dropping a
+    // profile edit loses user data.
+    await this.file.write(this.getProfiles());
     this.notifyChanged();
   }
 
