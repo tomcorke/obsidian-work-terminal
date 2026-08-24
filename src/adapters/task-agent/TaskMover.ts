@@ -1,5 +1,5 @@
 import type { App, TFile } from "obsidian";
-import type { WorkItemMover, StateResolver } from "../../core/interfaces";
+import type { WorkItem, WorkItemMover, StateResolver } from "../../core/interfaces";
 import { yamlQuoteValue } from "../../core/utils";
 import { type KanbanColumn, STATE_FOLDER_MAP } from "./types";
 
@@ -15,27 +15,37 @@ export class TaskMover implements WorkItemMover {
     this.stateResolver = stateResolver ?? null;
   }
 
-  async setParent(
-    file: TFile,
-    parent: { id: string; title: string; path: string } | null,
-  ): Promise<boolean> {
+  async setParent(file: TFile, parent: WorkItem | null): Promise<boolean> {
     try {
       const content = await this.app.vault.read(file);
-      const parentBlock = parent
-        ? `sub-task: true\nparent:\n  id: ${yamlQuoteValue(parent.id)}\n  title: ${yamlQuoteValue(parent.title)}\n  path: ${yamlQuoteValue(parent.path)}\n`
-        : "sub-task: false\n";
-      let updated = content;
-      updated = updated.replace(/^sub-task:\s*.+\n?/m, "");
-      updated = updated.replace(/^parent:\n(?:  .*\n?)*/m, "");
-      const frontmatter = updated.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+      const frontmatter = content.match(/^(---(\r?\n))([\s\S]*?)(^---(\r?\n|$))/m);
       if (!frontmatter) return false;
-      const eol = frontmatter[1].includes("\r\n") ? "\r\n" : "\n";
-      const body = frontmatter[2].replace(/\n$/, "");
-      const insertion = parentBlock.replace(/\n/g, eol);
-      updated = updated.replace(
-        frontmatter[0],
-        `${frontmatter[1]}${body}${eol}${insertion}${frontmatter[3]}`,
-      );
+      const [, , eol, rawBody, closeFence] = frontmatter;
+      const lines = rawBody.split(eol);
+      while (lines.length && lines[lines.length - 1] === "") lines.pop();
+      const kept: string[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (/^sub-task:\s*/.test(lines[i]) || /^parent:\s*$/.test(lines[i])) {
+          if (/^parent:\s*$/.test(lines[i])) {
+            while (i + 1 < lines.length && /^  \w[^:]*:\s*/.test(lines[i + 1])) i++;
+          }
+          continue;
+        }
+        kept.push(lines[i]);
+      }
+      if (parent) {
+        kept.push(
+          `sub-task: true`,
+          `parent:`,
+          `  id: ${yamlQuoteValue(parent.id)}`,
+          `  title: ${yamlQuoteValue(parent.title)}`,
+          `  path: ${yamlQuoteValue(parent.path)}`,
+        );
+      } else {
+        kept.push("sub-task: false");
+      }
+      const replacement = `---${eol}${kept.join(eol)}${eol}${closeFence}`;
+      const updated = content.replace(frontmatter[0], replacement);
       await this.app.vault.modify(file, updated);
       return true;
     } catch (err) {

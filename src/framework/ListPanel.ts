@@ -1249,8 +1249,10 @@ export class ListPanel {
         ? this.items.find((i) => i.id === target.dataset.itemId)
         : undefined;
       const sourceItem = this.items.find((i) => i.id === this.dragSourceId);
-      if (sourceItem && targetItem && this.canNest(sourceItem, targetItem)) {
-        await this.setItemParent(sourceItem, targetItem);
+      if (targetItem) {
+        if (sourceItem && this.canNest(sourceItem, targetItem)) {
+          await this.setItemParent(sourceItem, targetItem);
+        }
         return;
       }
       if (sourceItem && !targetItem && this.getParentId(sourceItem)) {
