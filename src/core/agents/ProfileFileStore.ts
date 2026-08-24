@@ -28,8 +28,13 @@ export function createProfileFileStore(rawPath: string = DEFAULT_PROFILES_PATH):
 
     async read(): Promise<unknown[] | null> {
       const fs = electronRequire("fs") as typeof import("fs");
-      if (!fs.existsSync(resolved)) return null;
-      const raw = fs.readFileSync(resolved, "utf-8");
+      let raw: string;
+      try {
+        raw = await fs.promises.readFile(resolved, "utf-8");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw err;
+      }
       if (!raw.trim()) return null;
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
@@ -41,8 +46,14 @@ export function createProfileFileStore(rawPath: string = DEFAULT_PROFILES_PATH):
     async write(profiles: unknown[]): Promise<void> {
       const fs = electronRequire("fs") as typeof import("fs");
       const path = electronRequire("path") as typeof import("path");
-      fs.mkdirSync(path.dirname(resolved), { recursive: true });
-      fs.writeFileSync(resolved, `${JSON.stringify(profiles, null, 2)}\n`, "utf-8");
+      const temp = `${resolved}.${process.pid}.${crypto.randomUUID()}.tmp`;
+      await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+      try {
+        await fs.promises.writeFile(temp, `${JSON.stringify(profiles, null, 2)}\n`, "utf-8");
+        await fs.promises.rename(temp, resolved);
+      } finally {
+        await fs.promises.rm(temp, { force: true });
+      }
     },
   };
 }

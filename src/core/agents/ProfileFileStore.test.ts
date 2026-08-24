@@ -24,12 +24,14 @@ describe("ProfileFileStore", () => {
 
   it("creates parent directories and round-trips profiles", async () => {
     const store = createProfileFileStore(file);
+    await store.write([{ id: "old" }]);
     await store.write([{ id: "a", name: "A" }]);
     expect(await store.read()).toEqual([{ id: "a", name: "A" }]);
     // Pretty-printed and newline-terminated so hand edits and diffs stay readable
     expect(fs.readFileSync(file, "utf-8")).toBe(
       '[\n  {\n    "id": "a",\n    "name": "A"\n  }\n]\n',
     );
+    expect(fs.readdirSync(path.dirname(file))).toEqual(["profiles.json"]);
   });
 
   it("treats an empty file as absent", async () => {
