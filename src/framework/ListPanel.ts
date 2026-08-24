@@ -157,6 +157,7 @@ export class ListPanel {
   // Drag state
   private dragSourceId: string | null = null;
   private dragSourceColumn: string | null = null;
+  private parentDropTarget: HTMLElement | null = null;
 
   constructor(
     parentEl: HTMLElement,
@@ -1187,6 +1188,7 @@ export class ListPanel {
       cardEl.removeClass("wt-card-dragging");
       // Remove all drop indicators
       this.listEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+      this.clearParentDropTarget();
     });
   }
 
@@ -1208,6 +1210,7 @@ export class ListPanel {
     cardsEl.addEventListener("dragover", (e: DragEvent) => {
       e.preventDefault();
       if (!this.dragSourceId) return;
+      this.updateParentDropTarget(e);
 
       // Auto-expand if collapsed
       if (this.collapsedSections.has(columnId)) {
@@ -1224,6 +1227,7 @@ export class ListPanel {
       const related = e.relatedTarget as Node | null;
       if (!related || !cardsEl.contains(related)) {
         cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+        this.clearParentDropTarget();
       }
     });
 
@@ -1236,6 +1240,25 @@ export class ListPanel {
 
       // Remove drop indicators
       cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+      this.listEl
+        .querySelectorAll(".wt-card-drop-parent")
+        .forEach((el) => el.removeClass("wt-card-drop-parent"));
+
+      const target = this.parentDropTarget;
+      const targetItem = target
+        ? this.items.find((i) => i.id === target.dataset.itemId)
+        : undefined;
+      const sourceItem = this.items.find((i) => i.id === this.dragSourceId);
+      if (targetItem) {
+        if (sourceItem && this.canNest(sourceItem, targetItem)) {
+          await this.setItemParent(sourceItem, targetItem);
+        }
+        return;
+      }
+      if (sourceItem && !targetItem && this.getParentId(sourceItem)) {
+        await this.setItemParent(sourceItem, null);
+        return;
+      }
 
       // Handle drops involving the pinned section
       const item = this.items.find((i) => i.id === this.dragSourceId);
@@ -1317,6 +1340,59 @@ export class ListPanel {
         }
       }
     });
+  }
+
+  private canNest(source: WorkItem, target: WorkItem): boolean {
+    if (source.id === target.id) return false;
+    let current: WorkItem | undefined = target;
+    const seen = new Set<string>();
+    while (current && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parentId = this.getParentId(current);
+      if (!parentId) return true;
+      if (parentId === source.id) return false;
+      current = this.items.find((item) => item.id === parentId);
+    }
+    return false;
+  }
+
+  private async setItemParent(source: WorkItem, parent: WorkItem | null): Promise<void> {
+    if (!this.mover.setParent) return;
+    const file = this.app.vault.getAbstractFileByPath(source.path);
+    if (!(file instanceof TFile)) return;
+    if (!(await this.mover.setParent(file, parent))) return;
+    const metadata = { ...source.metadata } as Record<string, unknown>;
+    if (parent) {
+      metadata.parent = { id: parent.id, title: parent.title, path: parent.path };
+      metadata.isSubTask = true;
+    } else {
+      delete metadata.parent;
+      metadata.isSubTask = false;
+    }
+    this.items = this.items.map((item) => (item.id === source.id ? { ...item, metadata } : item));
+    this.groups = this.adapter.parser.groupByColumn(this.items);
+    this.render(this.groups, this.customOrder);
+  }
+
+  private updateParentDropTarget(e: DragEvent): void {
+    this.clearParentDropTarget();
+    const card = (e.target as HTMLElement).closest<HTMLElement>(".wt-card-wrapper");
+    if (!card || card.dataset.itemId === this.dragSourceId) return;
+    const source = this.items.find((item) => item.id === this.dragSourceId);
+    const target = this.items.find((item) => item.id === card.dataset.itemId);
+    if (!source || !target || !this.canNest(source, target)) return;
+    const rect = card.getBoundingClientRect();
+    // Card centre = explicit nesting. Edges and gaps stay reorder zones.
+    if (e.clientY < rect.top + rect.height * 0.25 || e.clientY > rect.bottom - rect.height * 0.25) {
+      return;
+    }
+    card.addClass("wt-card-drop-parent");
+    this.parentDropTarget = card;
+  }
+
+  private clearParentDropTarget(): void {
+    this.parentDropTarget?.removeClass("wt-card-drop-parent");
+    this.parentDropTarget = null;
   }
 
   private positionDropIndicator(cardsEl: HTMLElement, clientY: number): void {

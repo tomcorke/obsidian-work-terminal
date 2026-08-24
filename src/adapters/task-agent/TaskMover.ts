@@ -1,5 +1,5 @@
 import type { App, TFile } from "obsidian";
-import type { WorkItemMover, StateResolver } from "../../core/interfaces";
+import type { WorkItem, WorkItemMover, StateResolver } from "../../core/interfaces";
 import { yamlQuoteValue } from "../../core/utils";
 import { type KanbanColumn, STATE_FOLDER_MAP } from "./types";
 
@@ -13,6 +13,45 @@ export class TaskMover implements WorkItemMover {
     stateResolver?: StateResolver,
   ) {
     this.stateResolver = stateResolver ?? null;
+  }
+
+  async setParent(file: TFile, parent: WorkItem | null): Promise<boolean> {
+    try {
+      const content = await this.app.vault.read(file);
+      const frontmatter = content.match(/^(---(\r?\n))([\s\S]*?)(^---(\r?\n|$))/m);
+      if (!frontmatter) return false;
+      const [, , eol, rawBody, closeFence] = frontmatter;
+      const lines = rawBody.split(eol);
+      while (lines.length && lines[lines.length - 1] === "") lines.pop();
+      const kept: string[] = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (/^sub-task:\s*/.test(lines[i]) || /^parent:\s*$/.test(lines[i])) {
+          if (/^parent:\s*$/.test(lines[i])) {
+            while (i + 1 < lines.length && /^  \w[^:]*:\s*/.test(lines[i + 1])) i++;
+          }
+          continue;
+        }
+        kept.push(lines[i]);
+      }
+      if (parent) {
+        kept.push(
+          `sub-task: true`,
+          `parent:`,
+          `  id: ${yamlQuoteValue(parent.id)}`,
+          `  title: ${yamlQuoteValue(parent.title)}`,
+          `  path: ${yamlQuoteValue(parent.path)}`,
+        );
+      } else {
+        kept.push("sub-task: false");
+      }
+      const replacement = `---${eol}${kept.join(eol)}${eol}${closeFence}`;
+      const updated = content.replace(frontmatter[0], replacement);
+      await this.app.vault.modify(file, updated);
+      return true;
+    } catch (err) {
+      console.error("[work-terminal] TaskMover.setParent failed:", err);
+      return false;
+    }
   }
 
   async move(file: TFile, targetColumnId: string): Promise<boolean> {

@@ -173,6 +173,13 @@
   background: var(--background-modifier-hover);
 }
 
+/* Center-drop target: distinct from the line used for reordering. */
+.wt-card-wrapper.wt-card-drop-parent {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
 .wt-card-selected {
   background: var(--background-modifier-active-hover) !important;
   border-left-color: var(--interactive-accent);
@@ -308,10 +315,18 @@
    ============================================================================= */
 
 .wt-drop-indicator {
-  height: 2px;
+  height: 12px;
+  background: transparent;
+  margin: 0 4px;
+  position: relative;
+}
+
+.wt-drop-indicator::after {
+  content: "";
+  position: absolute;
+  inset: 5px 0;
   background: var(--interactive-accent);
   border-radius: 1px;
-  margin: 1px 4px;
 }
 
 /* =============================================================================
@@ -2311,8 +2326,11 @@ button.wt-spawn-claude-ctx:hover svg {
 
 /* Compact mode: drop indicator thinner */
 .wt-compact .wt-drop-indicator {
-  height: 1px;
-  margin: 0 4px;
+  height: 8px;
+}
+
+.wt-compact .wt-drop-indicator::after {
+  inset: 3px 0;
 }
 
 /* Compact mode: session badge slightly smaller */
@@ -2398,8 +2416,11 @@ button.wt-spawn-claude-ctx:hover svg {
 
 /* Comfortable drop indicator: between compact (1px, 0 4px) and standard (2px, 1px 4px) */
 .wt-comfortable .wt-drop-indicator {
-  height: 2px;
-  margin: 1px 4px;
+  height: 10px;
+}
+
+.wt-comfortable .wt-drop-indicator::after {
+  inset: 4px 0;
 }
 
 /* =============================================================================
