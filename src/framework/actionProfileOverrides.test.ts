@@ -19,6 +19,17 @@ describe("action profile overrides", () => {
     expect(profile.arguments).toBe("--model old --effort low --verbose");
   });
 
+  it("preserves the next argument when an existing override flag has no value", () => {
+    const profile = createDefaultProfile({
+      arguments: "--model --verbose",
+      agentType: "claude",
+    });
+
+    expect(applyActionOverrides(profile, { model: "new-model", effort: "" }).arguments).toBe(
+      "--verbose --model new-model",
+    );
+  });
+
   it("uses explicit profile flags for custom agents such as Pi", () => {
     const profile = createDefaultProfile({
       agentType: "custom",

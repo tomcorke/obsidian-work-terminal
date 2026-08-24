@@ -55,7 +55,7 @@ export function applyActionOverrides(
   for (const [flag, value] of pairs) {
     if (!flag || !value) continue;
     const index = args.indexOf(flag);
-    if (index >= 0) args.splice(index, index + 1 < args.length ? 2 : 1);
+    if (index >= 0) args.splice(index, args[index + 1]?.startsWith("-") ? 1 : 2);
     args = [...args, flag, value];
   }
   return { ...profile, arguments: mergeExtraArgs(args.join(" ")) };
