@@ -228,6 +228,37 @@ created: 2026-03-26T00:00:00Z
     });
   });
 
+  describe("setParent", () => {
+    const parent = { id: "parent-id", title: "Parent", path: "todo/parent.md" } as any;
+
+    it("updates hierarchy fields without touching markdown body", async () => {
+      const { app, modify, read } = createMockApp();
+      read.mockResolvedValue(`${SAMPLE_CONTENT}\nparent: body text\n`);
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "todo/task.md", name: "task.md" } as TFile;
+
+      expect(await mover.setParent(file, parent)).toBe(true);
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toContain("sub-task: true");
+      expect(content).toContain("parent:\n  id: parent-id");
+      expect(content).toContain("# Test Task\n\n## Activity Log");
+      expect(content).toContain("parent: body text");
+    });
+
+    it("preserves CRLF frontmatter", async () => {
+      const { app, modify, read } = createMockApp();
+      read.mockResolvedValue(SAMPLE_CONTENT.replaceAll("\n", "\r\n"));
+      const mover = new TaskMover(app, "", defaultSettings);
+      const file = { path: "todo/task.md", name: "task.md" } as TFile;
+
+      await mover.setParent(file, null);
+      const content = modify.mock.calls[0][1] as string;
+      expect(content).toContain("---\r\n");
+      expect(content).toContain("sub-task: false\r\n---");
+      expect(content).not.toContain("\nsub-task: false\n");
+    });
+  });
+
   it("maps done column to archive folder", async () => {
     const { app, rename, getAbstractFileByPath } = createMockApp();
     getAbstractFileByPath.mockReturnValue(null);
