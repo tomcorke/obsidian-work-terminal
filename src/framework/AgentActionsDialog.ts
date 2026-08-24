@@ -25,6 +25,12 @@ import type { AdapterBundle } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { SETTINGS_CHANGED_EVENT, loadAllSettings } from "./SettingsTab";
+import {
+  REASONING_EFFORTS,
+  supportsEffortOverride,
+  supportsModelOverride,
+} from "./actionProfileOverrides";
+import { resolveCreateSubTaskProfile, resolveSplitTaskProfile } from "./splitTaskProfile";
 
 export class AgentActionsDialog extends Modal {
   protected plugin: Plugin;
@@ -77,42 +83,74 @@ export class AgentActionsDialog extends Modal {
     const data = (await this.plugin.loadData()) || {};
     const settings: Record<string, unknown> = data.settings || {};
 
-    this.renderProfileDropdown(
-      containerEl,
-      "Split task profile",
-      "Profile used when launching Claude for the Split Task context menu action. " +
-        "Default: the first available Claude-family profile (preferring the built-in " +
-        "Claude-with-context profile when present). Renaming or deleting profiles does " +
-        "not break this binding - the fallback chain still resolves to any remaining Claude profile.",
-      "adapter.splitTaskProfile",
-      settings,
-    );
+    this.renderAction(containerEl, "Split task", "adapter.splitTask", settings);
+    this.renderAction(containerEl, "Create sub-task", "adapter.createSubTask", settings);
   }
 
-  private renderProfileDropdown(
+  private renderAction(
     containerEl: HTMLElement,
     name: string,
-    description: string,
+    prefix: string,
+    settings: Record<string, unknown>,
+  ): void {
+    const profileKey = `${prefix}Profile`;
+    const profiles = this.profileManager.getProfiles();
+    const value = (settings[profileKey] as string) || "";
+    const selected =
+      prefix === "adapter.createSubTask"
+        ? resolveCreateSubTaskProfile(settings, profiles)
+        : resolveSplitTaskProfile(settings, profiles);
+
+    new Setting(containerEl)
+      .setName(`${name} profile`)
+      .setDesc(
+        "Profile used by this action. Default prefers Claude (ctx), then any available profile.",
+      )
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Default (see description)");
+        for (const profile of profiles) dropdown.addOption(profile.id, profile.name);
+        dropdown.setValue(value).onChange(async (newValue) => {
+          await this.saveSettings((s) => {
+            s[profileKey] = newValue;
+          });
+          await this.render();
+        });
+      });
+
+    if (selected && supportsModelOverride(selected)) {
+      this.renderTextOverride(containerEl, `${name} model`, `${prefix}Model`, settings);
+    }
+    if (selected && supportsEffortOverride(selected)) {
+      new Setting(containerEl)
+        .setName(`${name} reasoning effort`)
+        .setDesc("Optional typed override. Leave default to use profile arguments.")
+        .addDropdown((dropdown) => {
+          dropdown.addOption("", "Profile default");
+          for (const effort of REASONING_EFFORTS.slice(1)) dropdown.addOption(effort, effort);
+          dropdown
+            .setValue((settings[`${prefix}Effort`] as string) || "")
+            .onChange(async (newValue) => {
+              await this.saveSettings((s) => {
+                s[`${prefix}Effort`] = newValue;
+              });
+            });
+        });
+    }
+  }
+
+  private renderTextOverride(
+    containerEl: HTMLElement,
+    name: string,
     key: string,
     settings: Record<string, unknown>,
   ): void {
-    const value = (settings[key] as string) || "";
-    // Split Task / Retry Enrichment actions launch Claude specifically - the
-    // resolution helpers and spawnClaudeWithPrompt assume a Claude profile.
-    // Only surface Claude profiles in the dropdown so users cannot bind a
-    // shell/copilot/custom profile that would be rejected at launch time.
-    const claudeProfiles = this.profileManager.getProfilesByType("claude");
     new Setting(containerEl)
       .setName(name)
-      .setDesc(description)
-      .addDropdown((dropdown) => {
-        dropdown.addOption("", "Default (see description)");
-        for (const profile of claudeProfiles) {
-          dropdown.addOption(profile.id, profile.name);
-        }
-        dropdown.setValue(value).onChange(async (newValue) => {
+      .setDesc("Optional model ID override. Leave blank to use profile arguments.")
+      .addText((text) => {
+        text.setValue((settings[key] as string) || "").onChange(async (newValue) => {
           await this.saveSettings((s) => {
-            s[key] = newValue;
+            s[key] = newValue.trim();
           });
         });
       });

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentProfile } from "../core/agents/AgentProfile";
-import { resolveRetryEnrichmentProfile, resolveSplitTaskProfile } from "./splitTaskProfile";
+import {
+  resolveCreateSubTaskProfile,
+  resolveRetryEnrichmentProfile,
+  resolveSplitTaskProfile,
+} from "./splitTaskProfile";
 
 function makeProfile(overrides: Partial<AgentProfile> & { id: string }): AgentProfile {
   return {
@@ -60,31 +64,39 @@ describe("resolveSplitTaskProfile", () => {
     expect(profile?.id).toBe("other-claude");
   });
 
-  it("returns null when no claude profile exists", () => {
+  it("uses any available profile before returning null", () => {
     const shell = makeProfile({ id: "shell-only", agentType: "shell" });
-    expect(resolveSplitTaskProfile({}, [shell])).toBeNull();
+    expect(resolveSplitTaskProfile({}, [shell])).toBe(shell);
     expect(resolveSplitTaskProfile({}, [])).toBeNull();
   });
 
-  it("rejects a configured non-claude profile and falls back to defaults", () => {
+  it("accepts any configured agent profile", () => {
     const shell = makeProfile({ id: "my-shell", agentType: "shell" });
-    const profile = resolveSplitTaskProfile({ "adapter.splitTaskProfile": "my-shell" }, [
-      shell,
-      claudeCtx,
-      claude,
-    ]);
-    expect(profile?.id).toBe("default-claude-ctx");
+    expect(
+      resolveSplitTaskProfile({ "adapter.splitTaskProfile": "my-shell" }, [shell, claude]),
+    ).toBe(shell);
   });
 
-  it("rejects a non-claude default-claude-ctx and continues the fallback chain", () => {
-    const notClaude = makeProfile({ id: "default-claude-ctx", agentType: "shell" });
-    const profile = resolveSplitTaskProfile({}, [notClaude, claude]);
-    expect(profile?.id).toBe("default-claude");
-  });
-
-  it("rejects a non-claude last-resort fallback", () => {
+  it("uses the first available profile when no built-in fallback exists", () => {
     const copilot = makeProfile({ id: "default-copilot", agentType: "copilot" });
-    expect(resolveSplitTaskProfile({}, [copilot])).toBeNull();
+    expect(resolveSplitTaskProfile({}, [copilot])).toBe(copilot);
+  });
+});
+
+describe("resolveCreateSubTaskProfile", () => {
+  it("prefers its own profile and falls back to the legacy split-task binding", () => {
+    expect(
+      resolveCreateSubTaskProfile(
+        {
+          "adapter.createSubTaskProfile": "default-claude",
+          "adapter.splitTaskProfile": "custom-123",
+        },
+        [claude, custom],
+      ),
+    ).toBe(claude);
+    expect(
+      resolveCreateSubTaskProfile({ "adapter.splitTaskProfile": "custom-123" }, [claude, custom]),
+    ).toBe(custom);
   });
 });
 

@@ -94,6 +94,10 @@ export interface AgentProfile {
   promptInjectionMode?: "positional" | "flag";
   /** CLI flag for injecting context prompt (e.g. "-i"). Used when promptInjectionMode is "flag". */
   promptFlag?: string;
+  /** CLI flag used for typed per-action model overrides. Empty disables model overrides. */
+  modelFlag?: string;
+  /** CLI flag used for typed per-action reasoning-effort overrides. Empty disables effort overrides. */
+  effortFlag?: string;
   /** Append the assembled context prompt using the agent launch config. Defaults to true. */
   appendContextPrompt?: boolean;
   /** Preserve manual `$workTerminalPrompt` substitution as one argv value. Defaults to true. */
@@ -137,6 +141,8 @@ const AgentProfileSchema = z.object({
   sortOrder: z.number(),
   promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
   promptFlag: z.string().optional(),
+  modelFlag: z.string().optional(),
+  effortFlag: z.string().optional(),
   appendContextPrompt: z.boolean().default(true),
   escapeWorkTerminalPrompt: z.boolean().default(true),
   loginShellWrap: z.boolean().optional(),
@@ -165,6 +171,8 @@ const StoredProfileSchema = z
     sortOrder: z.number().default(0),
     promptInjectionMode: z.enum(PROMPT_INJECTION_MODES).optional(),
     promptFlag: z.string().optional(),
+    modelFlag: z.string().optional(),
+    effortFlag: z.string().optional(),
     appendContextPrompt: z.boolean().default(true),
     escapeWorkTerminalPrompt: z.boolean().default(true),
     loginShellWrap: z.boolean().optional(),

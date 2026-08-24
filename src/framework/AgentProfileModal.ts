@@ -217,6 +217,35 @@ export class AgentProfileEditModal extends Modal {
     argsSetting.settingEl.style.flexWrap = "wrap";
     argsSetting.controlEl.style.width = "100%";
 
+    if (this.draft.agentType !== "shell") {
+      new Setting(contentEl)
+        .setName("Model override flag")
+        .setDesc(
+          "CLI flag used when an action overrides this profile's model. Known agents default to --model; leave blank to disable overrides.",
+        )
+        .addText((text) =>
+          text
+            .setPlaceholder("--model")
+            .setValue(this.draft.modelFlag ?? "")
+            .onChange((value) => {
+              this.draft.modelFlag = value.trim();
+            }),
+        );
+      new Setting(contentEl)
+        .setName("Reasoning effort override flag")
+        .setDesc(
+          "CLI flag used when an action overrides reasoning effort. Claude defaults to --effort. Other agents require an explicit flag, for example --thinking for Pi. Leave blank to disable overrides.",
+        )
+        .addText((text) =>
+          text
+            .setPlaceholder(this.draft.agentType === "claude" ? "--effort" : "unsupported")
+            .setValue(this.draft.effortFlag ?? "")
+            .onChange((value) => {
+              this.draft.effortFlag = value.trim();
+            }),
+        );
+    }
+
     if (isCustom) {
       new Setting(contentEl)
         .setName("Prompt injection")

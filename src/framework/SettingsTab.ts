@@ -152,10 +152,21 @@ const ENRICHMENT_DIALOG_KEYS = new Set([
   "enrichmentPrompt",
   "retryEnrichmentPrompt",
   "enrichmentProfile",
+  "enrichmentModel",
+  "enrichmentEffort",
   "enrichmentTimeout",
   "retryEnrichmentProfile",
+  "retryEnrichmentModel",
+  "retryEnrichmentEffort",
 ]);
-const AGENT_ACTIONS_DIALOG_KEYS = new Set(["splitTaskProfile"]);
+const AGENT_ACTIONS_DIALOG_KEYS = new Set([
+  "splitTaskProfile",
+  "splitTaskModel",
+  "splitTaskEffort",
+  "createSubTaskProfile",
+  "createSubTaskModel",
+  "createSubTaskEffort",
+]);
 
 export class WorkTerminalSettingsTab extends PluginSettingTab {
   private adapter: AdapterBundle;

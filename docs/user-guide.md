@@ -522,8 +522,10 @@ The dialog contains:
 - **Enrichment launch mode** - choose **Background (headless)** to keep the existing automatic background process, or **Foreground (visible session)** to create the task, select it, launch an enrichment session in that task, and send the enrichment prompt there so you can watch and interact with the agent.
 - **Enrichment prompt** - custom prompt template sent to the agent. Use `$filePath` (vault-relative path, e.g. `2 - Areas/Tasks/todo/my-task.md`) or `$absoluteFilePath` (absolute filesystem path, e.g. `/Users/you/vault/2 - Areas/Tasks/todo/my-task.md`) as placeholders for the task file path. The built-in default uses `$absoluteFilePath` because the agent typically needs to `cd` into the folder and read the file directly. Leave blank to use the built-in default; the full default prompt is shown in a collapsible "View default prompt" block below the textarea so you can read it before deciding whether to override.
 - **Retry enrichment prompt** - separate prompt used when retrying via the context menu. Same placeholders and default-preview treatment as the enrichment prompt.
-- **Enrichment agent profile** - which agent profile to use (defaults to core Claude settings)
-- **Retry enrichment profile** - which agent profile to launch for the **Retry Enrichment** context-menu action. Lists Claude-family profiles only. Default: reuse the enrichment profile above if it is set to a Claude-family profile; if the enrichment profile is unset or is a non-Claude profile, it is ignored and Retry Enrichment falls back to the built-in Claude (ctx) profile.
+- **Enrichment agent profile** - which agent profile to use. Defaults to Claude (ctx), then the first available profile.
+- **Enrichment model** and **Enrichment reasoning effort** - optional typed overrides for this action. They replace matching profile arguments without changing the profile.
+- **Retry enrichment profile** - which agent profile to launch for the **Retry Enrichment** context-menu action. Defaults to the enrichment profile, then Claude (ctx), then the first available profile.
+- **Retry enrichment model** and **Retry enrichment reasoning effort** - optional overrides used only by retry sessions.
 - **Enrichment timeout** - maximum time in seconds before a background enrichment process is killed (default: 300s / 5 minutes). Foreground enrichment sessions are visible terminal sessions and are not killed by this timeout.
 - **Preview resolved prompt** - pick either prompt and click **Preview** to see the template with placeholders substituted using example paths (`$filePath` -> `2 - Areas/Tasks/todo/example.md`, `$absoluteFilePath` -> `/Users/you/vault/2 - Areas/Tasks/todo/example.md`). Useful for sanity-checking a customised prompt without creating a real task. The paths shown are illustrative; the actual paths used at launch time are derived from your real vault location and the created task file.
 
@@ -618,7 +620,7 @@ parent:
 
 Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the parent is pinned, a newly created sub-task is pinned immediately as well so it appears in the same visible group, nested directly underneath. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
 
-New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and explicit parent/sub-task frontmatter. The initial child title and filename are intentionally placeholders; the scoping session turns your requested focus into the final title, goal, and task content. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. The scoping session launched after creation uses the same agent-profile binding as Split Task, and agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
+New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and explicit parent/sub-task frontmatter. The initial child title and filename are intentionally placeholders; the scoping session turns your requested focus into the final title, goal, and task content. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. Create Sub-task has its own agent profile, model, and reasoning-effort settings. Agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
 
 ### Task splitting
 
@@ -636,19 +638,17 @@ The Claude session launched by Split Task runs through the same agent-profile pi
 
 When background enrichment for a newly created task fails, the card shows a warning and a **Retry Enrichment** context menu entry. Running it opens a Claude session that picks up where background enrichment left off.
 
-The retry session also runs through a resolvable agent profile. By default it follows the **enrichment profile** (so the retry matches what automated enrichment would have used) when that profile is Claude-family; if the enrichment profile is unset or is a non-Claude profile, it falls back to the built-in Claude (ctx) profile. You can override this to any Claude-family profile via the **Retry enrichment profile** dropdown in the [Task enrichment](#task-enrichment) **Configure enrichment...** dialog.
+The retry session also runs through a resolvable agent profile. By default it follows the **enrichment profile**, then falls back to Claude (ctx) or the first available profile. You can set a separate profile, model, and reasoning effort in the [Task enrichment](#task-enrichment) **Configure enrichment...** dialog.
 
 ### Agent actions settings
 
-Profile binding for the task-scoping adapter actions lives behind the **Configure agent actions...** button under **Settings > Agents**. The dialog exposes one dropdown:
+Profile and model controls for task-scoping actions live behind **Configure agent actions...** under **Settings > Agents**. Split Task and Create Sub-task each have separate profile, model, and reasoning-effort settings. Profile dropdowns list every configured agent profile.
 
-- **Split task profile** - which agent profile to launch for both **Split Task** and **Create Sub-task...**. Default: the built-in Claude (ctx) profile.
+Select **Default (see description)** to use Claude (ctx), then Claude, then the first available profile. Leave model and effort blank to keep profile arguments. Changes persist immediately.
 
-The dropdown lists configured Claude-family agent profiles only. Select **Default (see description)** to restore the fallback chain described above. Changes persist immediately; no save button is required.
+Typed overrides require CLI flag support. Claude uses `--model` and `--effort`; Copilot and OpenCode use `--model`. For custom profiles such as Pi, set **Model override flag** and **Reasoning effort override flag** in Profile Manager, for example `--model` and `--thinking`. Empty flags disable that override.
 
-The **Retry Enrichment** profile binding lives in the [Task enrichment](#task-enrichment) dialog instead, so all enrichment-related settings (launch mode, prompts, profile, retry profile, timeout) are configurable in one place.
-
-The fallback chain ensures new users get sensible, profile-aware behaviour without touching the dialog, while power users can bind a dedicated profile (e.g. one with `--dangerously-skip-permissions` pre-configured) to any agent-driven action.
+Retry Enrichment controls remain in [Task enrichment](#task-enrichment), alongside its launch mode, prompts, profile, and timeout.
 
 ### Guided tour
 

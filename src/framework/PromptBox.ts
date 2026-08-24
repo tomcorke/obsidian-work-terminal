@@ -6,6 +6,8 @@
 import type { Plugin } from "obsidian";
 import { getProfileLaunchConfig, type AgentProfile } from "../core/agents/AgentProfile";
 import type { AdapterBundle, ItemCreationResult } from "../core/interfaces";
+import { applyActionOverrides, getActionOverrides } from "./actionProfileOverrides";
+import { resolveActionProfile } from "./splitTaskProfile";
 
 export class PromptBox {
   private containerEl: HTMLElement;
@@ -150,23 +152,26 @@ export class PromptBox {
           _columnId: columnId,
           _placeholderPath: placeholderPath,
         };
-        const profileId = settings["adapter.enrichmentProfile"];
-        if (profileId) {
-          const profileMgr = (this.plugin as any).profileManager;
-          const profile = profileMgr?.getProfile?.(profileId);
-          if (profile) {
-            const launchConfig = getProfileLaunchConfig(profile as AgentProfile);
-            const promptMode =
-              profile.agentType === "claude" ? "claude" : launchConfig.promptInjectionMode;
-            enrichmentSettings._enrichmentProfile = {
-              command: profile.command,
-              args: profile.arguments,
-              cwd: profile.defaultCwd,
-              agentName: profile.name,
-              promptMode,
-              promptFlag: launchConfig.promptFlag,
-            };
-          }
+        const profileMgr = (this.plugin as any).profileManager;
+        const storedProfile = profileMgr
+          ? resolveActionProfile(settings, profileMgr.getProfiles(), "adapter.enrichmentProfile")
+          : undefined;
+        if (storedProfile) {
+          const profile = applyActionOverrides(
+            storedProfile as AgentProfile,
+            getActionOverrides(settings, "adapter.enrichment"),
+          );
+          const launchConfig = getProfileLaunchConfig(profile);
+          const promptMode =
+            profile.agentType === "claude" ? "claude" : launchConfig.promptInjectionMode;
+          enrichmentSettings._enrichmentProfile = {
+            command: profileMgr.resolveCommand(profile, settings),
+            args: profileMgr.resolveArguments(profile, settings),
+            cwd: profileMgr.resolveCwd(profile, settings),
+            agentName: profile.name,
+            promptMode,
+            promptFlag: launchConfig.promptFlag,
+          };
         }
         const result = await this.adapter.onItemCreated(title, enrichmentSettings);
         if (result && result.id) {

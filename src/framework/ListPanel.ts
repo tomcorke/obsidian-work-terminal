@@ -20,7 +20,12 @@ import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
 import { DangerConfirm } from "./DangerConfirm";
 import { electronRequire, slugify, titleCase } from "../core/utils";
-import { resolveRetryEnrichmentProfile, resolveSplitTaskProfile } from "./splitTaskProfile";
+import {
+  resolveCreateSubTaskProfile,
+  resolveRetryEnrichmentProfile,
+  resolveSplitTaskProfile,
+} from "./splitTaskProfile";
+import { applyActionOverrides, getActionOverrides } from "./actionProfileOverrides";
 import {
   type ActivityTracker,
   type ViewMode,
@@ -965,7 +970,7 @@ export class ListPanel {
       new Notice(`Created sub-task: ${result.title}`);
 
       const prompt = this.buildSubTaskScopePrompt(parentItem, newItem, focus);
-      this.launchTaskScopingSession(prompt, "Sub-task scope");
+      this.launchTaskScopingSession(prompt, "Sub-task scope", "createSubTask");
     } catch (err) {
       console.error("[work-terminal] createSubTask failed:", err);
       new Notice("Failed to create sub-task. See console for details.");
@@ -1022,7 +1027,7 @@ export class ListPanel {
       // the user's Claude profile settings (command, args, cwd, login shell wrap).
       // resolveOverride returns null when no profile manager is wired, in which
       // case spawnClaudeWithPrompt falls back to the pre-448 non-profile path.
-      this.launchTaskScopingSession(prompt, "Split scope");
+      this.launchTaskScopingSession(prompt, "Split scope", "splitTask");
     } catch (err) {
       console.error("[work-terminal] splitTask failed:", err);
     }
@@ -1086,8 +1091,12 @@ export class ListPanel {
     await this.pinStore.reorder(nextOrder);
   }
 
-  private launchTaskScopingSession(prompt: string, label: string): void {
-    const override = this.resolveTaskScopingLaunchOverride();
+  private launchTaskScopingSession(
+    prompt: string,
+    label: string,
+    action: "splitTask" | "createSubTask",
+  ): void {
+    const override = this.resolveTaskScopingLaunchOverride(action);
     void this.terminalPanel
       .spawnClaudeWithPrompt(prompt, label, override ?? undefined)
       .catch((err) => {
@@ -1106,13 +1115,21 @@ export class ListPanel {
    * (profile.defaultCwd -> core.defaultTerminalCwd -> "~"). See issue #504
    * for why the task file's parent directory is deliberately NOT considered.
    */
-  private resolveTaskScopingLaunchOverride(): {
+  private resolveTaskScopingLaunchOverride(action: "splitTask" | "createSubTask"): {
     profile: AgentProfile;
     cwdOverride: string;
   } | null {
     if (!this.profileManager) return null;
-    const profile = resolveSplitTaskProfile(this.settings, this.profileManager.getProfiles());
-    if (!profile) return null;
+    const profiles = this.profileManager.getProfiles();
+    const storedProfile =
+      action === "createSubTask"
+        ? resolveCreateSubTaskProfile(this.settings, profiles)
+        : resolveSplitTaskProfile(this.settings, profiles);
+    if (!storedProfile) return null;
+    const profile = applyActionOverrides(
+      storedProfile,
+      getActionOverrides(this.settings, `adapter.${action}`),
+    );
     const cwdOverride = this.profileManager.resolveCwd(profile, this.settings);
     return { profile, cwdOverride };
   }
@@ -1122,8 +1139,15 @@ export class ListPanel {
     cwdOverride: string;
   } | null {
     if (!this.profileManager) return null;
-    const profile = resolveRetryEnrichmentProfile(this.settings, this.profileManager.getProfiles());
-    if (!profile) return null;
+    const storedProfile = resolveRetryEnrichmentProfile(
+      this.settings,
+      this.profileManager.getProfiles(),
+    );
+    if (!storedProfile) return null;
+    const profile = applyActionOverrides(
+      storedProfile,
+      getActionOverrides(this.settings, "adapter.retryEnrichment"),
+    );
     const cwdOverride = this.profileManager.resolveCwd(profile, this.settings);
     return { profile, cwdOverride };
   }
