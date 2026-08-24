@@ -15,6 +15,35 @@ export class TaskMover implements WorkItemMover {
     this.stateResolver = stateResolver ?? null;
   }
 
+  async setParent(
+    file: TFile,
+    parent: { id: string; title: string; path: string } | null,
+  ): Promise<boolean> {
+    try {
+      const content = await this.app.vault.read(file);
+      const parentBlock = parent
+        ? `sub-task: true\nparent:\n  id: ${yamlQuoteValue(parent.id)}\n  title: ${yamlQuoteValue(parent.title)}\n  path: ${yamlQuoteValue(parent.path)}\n`
+        : "sub-task: false\n";
+      let updated = content;
+      updated = updated.replace(/^sub-task:\s*.+\n?/m, "");
+      updated = updated.replace(/^parent:\n(?:  .*\n?)*/m, "");
+      const frontmatter = updated.match(/^(---\r?\n)([\s\S]*?)(^---(?:\r?\n|$))/m);
+      if (!frontmatter) return false;
+      const eol = frontmatter[1].includes("\r\n") ? "\r\n" : "\n";
+      const body = frontmatter[2].replace(/\n$/, "");
+      const insertion = parentBlock.replace(/\n/g, eol);
+      updated = updated.replace(
+        frontmatter[0],
+        `${frontmatter[1]}${body}${eol}${insertion}${frontmatter[3]}`,
+      );
+      await this.app.vault.modify(file, updated);
+      return true;
+    } catch (err) {
+      console.error("[work-terminal] TaskMover.setParent failed:", err);
+      return false;
+    }
+  }
+
   async move(file: TFile, targetColumnId: string): Promise<boolean> {
     const newColumn = targetColumnId;
     // Read basePath at call time so runtime changes to adapter.taskBasePath

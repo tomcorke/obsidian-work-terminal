@@ -188,6 +188,8 @@ export interface WorkItemParser {
 export interface WorkItemMover {
   /** Move an item file to the target column, updating state/tags/timestamps. Returns true on success, false on failure. */
   move(file: TFile, targetColumnId: string): Promise<boolean>;
+  /** Change hierarchy without changing the item's state, content, or identity. */
+  setParent?(file: TFile, parent: WorkItem | null): Promise<boolean>;
 }
 
 /**
