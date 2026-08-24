@@ -158,6 +158,7 @@ export class ListPanel {
   private dragSourceId: string | null = null;
   private dragSourceColumn: string | null = null;
   private parentDropTarget: HTMLElement | null = null;
+  private parentDropTargetId: string | null = null;
 
   constructor(
     parentEl: HTMLElement,
@@ -1244,9 +1245,8 @@ export class ListPanel {
         .querySelectorAll(".wt-card-drop-parent")
         .forEach((el) => el.removeClass("wt-card-drop-parent"));
 
-      const target = this.parentDropTarget;
-      const targetItem = target
-        ? this.items.find((i) => i.id === target.dataset.itemId)
+      const targetItem = this.parentDropTargetId
+        ? this.items.find((i) => i.id === this.parentDropTargetId)
         : undefined;
       const sourceItem = this.items.find((i) => i.id === this.dragSourceId);
       if (targetItem) {
@@ -1359,8 +1359,8 @@ export class ListPanel {
   private async setItemParent(source: WorkItem, parent: WorkItem | null): Promise<void> {
     if (!this.mover.setParent) return;
     const file = this.app.vault.getAbstractFileByPath(source.path);
-    if (!(file instanceof TFile)) return;
-    if (!(await this.mover.setParent(file, parent))) return;
+    if (!file || typeof file !== "object" || !("path" in file)) return;
+    if (!(await this.mover.setParent(file as TFile, parent))) return;
     const metadata = { ...source.metadata } as Record<string, unknown>;
     if (parent) {
       metadata.parent = { id: parent.id, title: parent.title, path: parent.path };
@@ -1388,11 +1388,13 @@ export class ListPanel {
     }
     card.addClass("wt-card-drop-parent");
     this.parentDropTarget = card;
+    this.parentDropTargetId = card.dataset.itemId ?? null;
   }
 
   private clearParentDropTarget(): void {
     this.parentDropTarget?.removeClass("wt-card-drop-parent");
     this.parentDropTarget = null;
+    this.parentDropTargetId = null;
   }
 
   private positionDropIndicator(cardsEl: HTMLElement, clientY: number): void {
