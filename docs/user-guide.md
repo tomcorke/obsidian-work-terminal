@@ -406,6 +406,10 @@ Each profile includes:
 - **Tab bar button** - optionally add a quick-launch button to the tab bar
 - **Context prompt** - a prompt template injected when launching with task context
 
+**Where profiles are stored**: profiles live in `~/.config/obsidian-work-terminal/profiles.json` as a plain JSON array, not in the plugin's `data.json`. The path is shown at the top of the Profile Manager. Edit the file directly for bulk changes (retargeting several CWDs, renaming a flag across profiles), keep it in a dotfile repo, or copy it between machines. After editing outside Obsidian, press **Reload from file** in the Profile Manager to pick the changes up without restarting.
+
+The file is shared by every vault using the plugin. On first run it is created from your existing profiles in `data.json`; the old `agentProfiles` key is left in place, so an older plugin version still finds its profiles. If the file is unreadable or not a JSON array, the plugin logs a warning, leaves the file alone, and falls back to built-in defaults for that session - fix the file and reload.
+
 The per-profile **Context prompt** field is the place to configure additional context that used to live in the removed **Additional agent context prompt** setting (issue #472). Set it on each profile that should inject task context on top of the adapter prompt.
 
 **OpenCode** is available as a first-party agent type. Leave its executable blank to use `opencode`; Work Terminal resolves it through the same augmented PATH and optional login-shell flow as other agents. Contextual OpenCode profiles pass the complete prompt as `--prompt <value>` with the value kept as one argv entry, while non-context launches add no prompt flag. If the CLI is missing, install it with `brew install anomalyco/tap/opencode` or follow the [OpenCode documentation](https://opencode.ai/docs). The branded OpenCode icon is available in the profile icon picker.

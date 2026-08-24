@@ -1,6 +1,7 @@
 /**
  * AgentProfileManagerModal - settings modal listing all agent profiles.
- * Supports add, edit, delete, reorder, import, and export.
+ * Supports add, edit, delete, reorder, import, export, and reloading the
+ * profiles file after hand edits.
  */
 import { App, Modal, Notice } from "obsidian";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
@@ -71,6 +72,10 @@ export class AgentProfileManagerModal extends Modal {
       cls: "wt-profile-manager-help",
     });
 
+    const pathEl = contentEl.createEl("p", { cls: "wt-profile-manager-help" });
+    pathEl.createSpan({ text: "Profiles file: " });
+    pathEl.createEl("code", { text: this.manager.profilesPath });
+
     const profiles = this.manager.getProfiles();
 
     // Profile list
@@ -98,8 +103,7 @@ export class AgentProfileManagerModal extends Modal {
         async (saved) => {
           const maxOrder = profiles.reduce((max, p) => Math.max(max, p.sortOrder), -1);
           saved.sortOrder = maxOrder + 1;
-          await this.manager.addProfile(saved);
-          this.render();
+          await this.mutate(() => this.manager.addProfile(saved));
         },
         undefined,
         this.adapterPromptDescription,
@@ -113,6 +117,9 @@ export class AgentProfileManagerModal extends Modal {
 
     const exportBtn = actions.createEl("button", { text: "Export" });
     exportBtn.addEventListener("click", () => this.handleExport());
+
+    const reloadBtn = actions.createEl("button", { text: "Reload from file" });
+    reloadBtn.addEventListener("click", () => this.handleReload());
 
     // Close button
     const closeActions = contentEl.createDiv({ cls: "wt-profile-manager-close" });
@@ -137,8 +144,7 @@ export class AgentProfileManagerModal extends Modal {
       const ids = allProfiles.map((p) => p.id);
       if (currentIndex > 0) {
         [ids[currentIndex - 1], ids[currentIndex]] = [ids[currentIndex], ids[currentIndex - 1]];
-        await this.manager.reorderProfiles(ids);
-        this.render();
+        await this.mutate(() => this.manager.reorderProfiles(ids));
       }
     });
 
@@ -148,8 +154,7 @@ export class AgentProfileManagerModal extends Modal {
       const ids = allProfiles.map((p) => p.id);
       if (currentIndex < ids.length - 1) {
         [ids[currentIndex], ids[currentIndex + 1]] = [ids[currentIndex + 1], ids[currentIndex]];
-        await this.manager.reorderProfiles(ids);
-        this.render();
+        await this.mutate(() => this.manager.reorderProfiles(ids));
       }
     });
 
@@ -188,12 +193,10 @@ export class AgentProfileManagerModal extends Modal {
         this.app,
         profile,
         async (saved) => {
-          await this.manager.updateProfile(saved.id, saved);
-          this.render();
+          await this.mutate(() => this.manager.updateProfile(saved.id, saved));
         },
         async (id) => {
-          await this.manager.deleteProfile(id);
-          this.render();
+          await this.mutate(() => this.manager.deleteProfile(id));
         },
         this.adapterPromptDescription,
         // Evaluate against the current profile list so a user who has just
@@ -202,6 +205,31 @@ export class AgentProfileManagerModal extends Modal {
         this.previewResolver,
       ).open();
     });
+  }
+
+  /**
+   * Run a profile mutation and re-render. Write failures reach the user instead
+   * of vanishing into an unhandled rejection - the profiles file may be
+   * read-only or on an unwritable path.
+   */
+  private async mutate(action: () => Promise<void>): Promise<void> {
+    try {
+      await action();
+    } catch (err) {
+      console.error("[work-terminal] Saving profiles failed:", err);
+      new Notice(`Saving profiles failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    this.render();
+  }
+
+  private async handleReload(): Promise<void> {
+    try {
+      await this.manager.reload();
+      new Notice("Profiles reloaded from file");
+    } catch (err) {
+      new Notice(`Reload failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    this.render();
   }
 
   private async handleImport(): Promise<void> {
