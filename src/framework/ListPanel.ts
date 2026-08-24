@@ -157,6 +157,7 @@ export class ListPanel {
   // Drag state
   private dragSourceId: string | null = null;
   private dragSourceColumn: string | null = null;
+  private parentDropTarget: HTMLElement | null = null;
 
   constructor(
     parentEl: HTMLElement,
@@ -1187,6 +1188,7 @@ export class ListPanel {
       cardEl.removeClass("wt-card-dragging");
       // Remove all drop indicators
       this.listEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+      this.clearParentDropTarget();
     });
   }
 
@@ -1208,17 +1210,7 @@ export class ListPanel {
     cardsEl.addEventListener("dragover", (e: DragEvent) => {
       e.preventDefault();
       if (!this.dragSourceId) return;
-      const target = (e.target as HTMLElement).closest<HTMLElement>(".wt-card-wrapper");
-      const source = this.items.find((i) => i.id === this.dragSourceId);
-      const targetItem = target
-        ? this.items.find((i) => i.id === target.dataset.itemId)
-        : undefined;
-      if (targetItem && source && this.canNest(source, targetItem)) {
-        target.addClass("wt-card-drop-parent");
-      }
-      if (targetItem && source && !this.canNest(source, targetItem)) {
-        target.removeClass("wt-card-drop-parent");
-      }
+      this.updateParentDropTarget(e);
 
       // Auto-expand if collapsed
       if (this.collapsedSections.has(columnId)) {
@@ -1235,6 +1227,7 @@ export class ListPanel {
       const related = e.relatedTarget as Node | null;
       if (!related || !cardsEl.contains(related)) {
         cardsEl.querySelectorAll(".wt-drop-indicator").forEach((el) => el.remove());
+        this.clearParentDropTarget();
       }
     });
 
@@ -1251,7 +1244,7 @@ export class ListPanel {
         .querySelectorAll(".wt-card-drop-parent")
         .forEach((el) => el.removeClass("wt-card-drop-parent"));
 
-      const target = (e.target as HTMLElement).closest<HTMLElement>(".wt-card-wrapper");
+      const target = this.parentDropTarget;
       const targetItem = target
         ? this.items.find((i) => i.id === target.dataset.itemId)
         : undefined;
@@ -1377,6 +1370,27 @@ export class ListPanel {
     this.items = this.items.map((item) => (item.id === source.id ? { ...item, metadata } : item));
     this.groups = this.adapter.parser.groupByColumn(this.items);
     this.render(this.groups, this.customOrder);
+  }
+
+  private updateParentDropTarget(e: DragEvent): void {
+    this.clearParentDropTarget();
+    const card = (e.target as HTMLElement).closest<HTMLElement>(".wt-card-wrapper");
+    if (!card || card.dataset.itemId === this.dragSourceId) return;
+    const source = this.items.find((item) => item.id === this.dragSourceId);
+    const target = this.items.find((item) => item.id === card.dataset.itemId);
+    if (!source || !target || !this.canNest(source, target)) return;
+    const rect = card.getBoundingClientRect();
+    // Card centre = explicit nesting. Edges and gaps stay reorder zones.
+    if (e.clientY < rect.top + rect.height * 0.25 || e.clientY > rect.bottom - rect.height * 0.25) {
+      return;
+    }
+    card.addClass("wt-card-drop-parent");
+    this.parentDropTarget = card;
+  }
+
+  private clearParentDropTarget(): void {
+    this.parentDropTarget?.removeClass("wt-card-drop-parent");
+    this.parentDropTarget = null;
   }
 
   private positionDropIndicator(cardsEl: HTMLElement, clientY: number): void {

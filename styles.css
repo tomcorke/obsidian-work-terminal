@@ -160,7 +160,7 @@
   --wt-card-padding-y: 8px;
   position: relative;
   padding: var(--wt-card-padding-y) var(--wt-card-padding-x);
-  margin: 3px 0;
+  margin: 6px 0;
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
@@ -171,6 +171,13 @@
 
 .wt-card-wrapper:hover {
   background: var(--background-modifier-hover);
+}
+
+/* Center-drop target: distinct from the line used for reordering. */
+.wt-card-wrapper.wt-card-drop-parent {
+  background: color-mix(in srgb, var(--interactive-accent) 18%, var(--background-secondary));
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
 }
 
 .wt-card-selected {
@@ -2222,8 +2229,8 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-compact .wt-card-wrapper {
   --wt-card-padding-x: 6px;
   --wt-card-padding-y: 2px;
-  margin-top: 1px;
-  margin-bottom: 1px;
+  margin-top: 3px;
+  margin-bottom: 3px;
   border-radius: 3px;
 }
 
@@ -2370,8 +2377,8 @@ button.wt-spawn-claude-ctx:hover svg {
 .wt-comfortable .wt-card-wrapper {
   --wt-card-padding-x: 8px;
   --wt-card-padding-y: 4px;
-  margin-top: 2px;
-  margin-bottom: 2px;
+  margin-top: 4px;
+  margin-bottom: 4px;
   border-radius: 4px;
 }
 
