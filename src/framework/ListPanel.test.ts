@@ -95,7 +95,7 @@ function createListPanel(
   options: {
     columns?: { id: string; label: string; folderName: string }[];
     creationColumns?: { id: string; label: string; default?: boolean }[];
-    mover?: { move: ReturnType<typeof vi.fn> };
+    mover?: { move: ReturnType<typeof vi.fn>; setParent?: ReturnType<typeof vi.fn> };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
     onSessionFilterChange?: ReturnType<typeof vi.fn>;
     onCreateSubTask?: ReturnType<typeof vi.fn>;
@@ -124,6 +124,7 @@ function createListPanel(
       creationColumns,
     },
     onCreateSubTask: options.onCreateSubTask,
+    parser: { groupByColumn: (items: WorkItem[]) => ({ todo: items }) },
   };
 
   const cardRenderer = {
@@ -697,6 +698,25 @@ describe("ListPanel", () => {
         el.getAttribute("data-item-id"),
       ),
     ).toEqual(["task-1"]);
+  });
+
+  it("resolves parent drop by ID and accepts file-like objects from another realm", async () => {
+    const setParent = vi.fn().mockResolvedValue(true);
+    const file = Object.create(null) as { path: string };
+    file.path = "Tasks/task-1.md";
+    const mover = { move: vi.fn(), setParent };
+    const { panel, plugin } = createListPanel({ mover });
+    const source = makeItem("task-1");
+    const parent = makeItem("task-2");
+    (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(file);
+    panel.render({ todo: [source, parent] }, {});
+
+    (panel as any).dragSourceId = "task-1";
+    (panel as any).parentDropTarget = null;
+    (panel as any).parentDropTargetId = "task-2";
+    await (panel as any).setItemParent(source, parent);
+
+    expect(setParent).toHaveBeenCalledWith(file, parent);
   });
 
   it("can preselect an item before its card is rendered", () => {
