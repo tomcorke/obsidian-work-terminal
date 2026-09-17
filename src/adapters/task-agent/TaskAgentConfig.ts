@@ -49,6 +49,14 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
       },
     },
     {
+      key: "subTasksInheritParentState",
+      name: "Keep sub-tasks with top-level parent",
+      description:
+        "Keep every non-done sub-task in its highest-level parent's state. Done sub-tasks remain independent.",
+      type: "toggle",
+      default: false,
+    },
+    {
       key: "jiraBaseUrl",
       name: "Jira base URL",
       description:
@@ -160,6 +168,7 @@ export const TASK_AGENT_CONFIG: PluginConfig = {
   defaultSettings: {
     taskBasePath: "2 - Areas/Tasks",
     stateStrategy: "folder",
+    subTasksInheritParentState: false,
     columnOrder: "",
     creationColumnIds: "",
     pinnedCustomStates: "[]",

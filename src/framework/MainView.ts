@@ -809,7 +809,8 @@ export class MainView extends ItemView {
 
   private async refreshList(): Promise<WorkItem[]> {
     if (!this.listPanel || !this.parser) return [];
-    const items = await this.parser.loadAll();
+    let items = await this.parser.loadAll();
+    items = (await this.listPanel.syncInheritedSubTaskStates?.(items)) ?? items;
     this.allItems = items;
     const groups = this.parser.groupByColumn(items);
     this.seedActivityTimestamps(items);

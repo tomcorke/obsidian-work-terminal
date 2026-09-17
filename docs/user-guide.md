@@ -382,7 +382,7 @@ The settings page is organised into five top-level sections. Use this map to jum
 
 | Section | What lives here |
 |---------|-----------------|
-| **General** | Running plugin version display, task base path, state resolution strategy, view mode (kanban/activity), recent activity threshold, card display mode (standard/comfortable/compact), card indicator toggles, task card icons, automatic icon mode, Jira base URL, show version in tab title, keep sessions alive, enrichment failure logs, expose debug API, reset guided tour. |
+| **General** | Running plugin version display, task base path, state resolution strategy, sub-task state inheritance, view mode (kanban/activity), recent activity threshold, card display mode (standard/comfortable/compact), card indicator toggles, task card icons, automatic icon mode, Jira base URL, show version in tab title, keep sessions alive, enrichment failure logs, expose debug API, reset guided tour. |
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
 | **Detail view** | Placement dropdown (split / tab / navigate / preview / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
@@ -576,6 +576,7 @@ The **General** section covers board-wide preferences and utility toggles. The m
 |---------|-------------|
 | **Task base path** | Vault path containing task folders (adapter setting, shown first because it is typically set once at install time). |
 | **State resolution strategy** | How task state is determined: folder (default), frontmatter, or composite. See [State resolution strategies](#state-resolution-strategies). |
+| **Keep sub-tasks with top-level parent** | Forces every non-done descendant to use its highest-level parent's state. Done descendants remain independent. |
 | **View mode** | Choose between **Kanban** (group by state columns) and **Activity** (group by recency). See [Activity view](#activity-view). |
 | **Recent activity threshold** | How far back the "Recent" section extends in activity view: Last hour, Last 3 hours (default), or Last 24 hours. |
 | **Card display mode** | Choose between **Standard** (full multi-line card details), **Compact** (single-line cards with indicator dots), and **Comfortable** (single-line like Compact but with more padding). See [Card display modes](#card-display-modes). |
@@ -618,7 +619,11 @@ parent:
   link: "[[TASK-parent|Parent task title]]"
 ```
 
-Sub-tasks are normal tasks: they can be selected, moved between states, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the parent is pinned, a newly created sub-task is pinned immediately as well so it appears in the same visible group, nested directly underneath. If the child is in a different state (or only the child matches the current filter/view), it appears as a normal top-level card in that section so its workflow remains independent.
+Sub-tasks can be selected, pinned, reordered, filtered, enriched, and given terminal sessions like any other task. Dragging a task onto a new parent moves it to that parent's state. By default, a child can later move to another state independently.
+
+Enable **Keep sub-tasks with top-level parent** under **Settings > General** to make every non-done descendant inherit the highest-level parent's state. Moving the top-level task then moves its nested descendants recursively. Moving a child to another non-done column returns it to the top-level state. A child can still move to **Done** independently, where it appears outside its parent's category.
+
+When a parent and child appear in the same rendered section, the child is shown indented under the parent. If the parent is pinned, a newly created sub-task is pinned immediately as well so it appears in the same visible group, nested directly underneath.
 
 New sub-tasks inherit useful context from their parent at creation time: non-state tags, source metadata, deadline/impact/blocker fields, and explicit parent/sub-task frontmatter. The initial child title and filename are intentionally placeholders; the scoping session turns your requested focus into the final title, goal, and task content. When created from Activity view, the sub-task uses the parent's real task state rather than the activity recency bucket. Create Sub-task has its own agent profile, model, and reasoning-effort settings. Agent profile templates can use `$parentTitle`, `$parentId`, `$parentFilePath`, and `$parentAbsoluteFilePath` to include parent context when launching sessions for sub-tasks.
 
@@ -757,6 +762,7 @@ These settings are specific to the task-agent adapter. Adapter-level fields now 
 |---------|-------------|---------|
 | Task base path | Vault path containing task folders | `2 - Areas/Tasks` |
 | State resolution strategy | How task state is determined (folder/frontmatter/composite) | `folder` |
+| Keep sub-tasks with top-level parent | Keep every non-done descendant in its highest-level parent's state | `false` |
 | Jira base URL | URL prefix for turning Jira keys into links (e.g. `https://your-org.atlassian.net/browse`) | (empty) |
 | Enable enrichment | Auto-enrich new tasks using the selected launch mode (edited via **Configure enrichment...**) | `true` |
 | Enrichment launch mode | Background headless enrichment or foreground visible-session enrichment (edited via **Configure enrichment...**) | `background` |

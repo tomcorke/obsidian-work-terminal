@@ -822,16 +822,97 @@ export class ListPanel {
     }
   }
 
+  private inheritsTopLevelParentState(): boolean {
+    return this.settings["adapter.subTasksInheritParentState"] === true;
+  }
+
+  private findTopLevelParent(item: WorkItem, items: WorkItem[] = this.items): WorkItem {
+    const byId = new Map(items.map((candidate) => [candidate.id, candidate]));
+    const seen = new Set<string>();
+    let current = item;
+    while (!seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = byId.get(this.getParentId(current));
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  }
+
+  private findDescendants(parentId: string, items: WorkItem[] = this.items): WorkItem[] {
+    const descendants: WorkItem[] = [];
+    const pending = [parentId];
+    const seen = new Set(pending);
+    while (pending.length > 0) {
+      const currentId = pending.shift()!;
+      for (const item of items) {
+        if (this.getParentId(item) !== currentId || seen.has(item.id)) continue;
+        seen.add(item.id);
+        descendants.push(item);
+        pending.push(item.id);
+      }
+    }
+    return descendants;
+  }
+
+  private async moveItemState(item: WorkItem, targetColumnId: string): Promise<WorkItem | null> {
+    if (item.state === targetColumnId) return item;
+    const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
+    if (!file) return null;
+    if (!(await this.mover.move(file, targetColumnId))) {
+      new Notice(`Failed to move "${item.title}" to ${targetColumnId}`);
+      return null;
+    }
+    return { ...item, path: file.path, state: targetColumnId };
+  }
+
+  private async moveDescendantsToState(
+    parentId: string,
+    targetColumnId: string,
+    items: WorkItem[],
+  ): Promise<WorkItem[]> {
+    let updated = [...items];
+    for (const descendant of this.findDescendants(parentId, items)) {
+      if (descendant.state === "done") continue;
+      const moved = await this.moveItemState(descendant, targetColumnId);
+      if (moved) {
+        updated = updated.map((item) => (item.id === moved.id ? moved : item));
+      }
+    }
+    return updated;
+  }
+
+  async syncInheritedSubTaskStates(items: WorkItem[]): Promise<WorkItem[]> {
+    if (!this.inheritsTopLevelParentState()) return items;
+    let updated = [...items];
+    for (const item of items) {
+      if (!this.getParentId(item) || item.state === "done") continue;
+      const targetState = this.findTopLevelParent(item, updated).state;
+      const current = updated.find((candidate) => candidate.id === item.id) ?? item;
+      const moved = await this.moveItemState(current, targetState);
+      if (moved) {
+        updated = updated.map((candidate) => (candidate.id === moved.id ? moved : candidate));
+      }
+    }
+    return updated;
+  }
+
   private async moveToColumn(item: WorkItem, targetColumnId: string): Promise<boolean> {
     // Guard: the pinned column is virtual - never pass it to the mover
     if (targetColumnId === PINNED_COLUMN_ID) return false;
-    const file = this.app.vault.getAbstractFileByPath(item.path) as TFile;
-    if (!file) return false;
-    const success = await this.mover.move(file, targetColumnId);
-    if (!success) {
-      new Notice(`Failed to move "${item.title}" to ${targetColumnId}`);
-      return false;
+    const parentId = this.getParentId(item);
+    const effectiveTarget =
+      this.inheritsTopLevelParentState() && parentId && targetColumnId !== "done"
+        ? this.findTopLevelParent(item).state
+        : targetColumnId;
+    const moved = await this.moveItemState(item, effectiveTarget);
+    if (!moved) return false;
+
+    this.items = this.items.map((candidate) => (candidate.id === moved.id ? moved : candidate));
+    if (this.inheritsTopLevelParentState() && (!parentId || effectiveTarget !== "done")) {
+      this.items = await this.moveDescendantsToState(item.id, effectiveTarget, this.items);
     }
+
     // Wait for metadata cache update
     setTimeout(() => {
       this.onCustomOrderChange(this.customOrder);
@@ -1360,8 +1441,22 @@ export class ListPanel {
     if (!this.mover.setParent) return;
     const file = this.app.vault.getAbstractFileByPath(source.path);
     if (!file || typeof file !== "object" || !("path" in file)) return;
-    if (!(await this.mover.setParent(file as TFile, parent))) return;
-    const metadata = { ...source.metadata } as Record<string, unknown>;
+
+    const targetState = parent
+      ? this.inheritsTopLevelParentState()
+        ? this.findTopLevelParent(parent).state
+        : parent.state
+      : null;
+    const movedSource = targetState ? await this.moveItemState(source, targetState) : source;
+    if (!movedSource) return;
+    if (!(await this.mover.setParent(file as TFile, parent))) {
+      if (movedSource.state !== source.state) {
+        await this.moveItemState(movedSource, source.state);
+      }
+      return;
+    }
+
+    const metadata = { ...movedSource.metadata } as Record<string, unknown>;
     if (parent) {
       metadata.parent = { id: parent.id, title: parent.title, path: parent.path };
       metadata.isSubTask = true;
@@ -1369,7 +1464,11 @@ export class ListPanel {
       delete metadata.parent;
       metadata.isSubTask = false;
     }
-    this.items = this.items.map((item) => (item.id === source.id ? { ...item, metadata } : item));
+    const updatedSource = { ...movedSource, metadata };
+    this.items = this.items.map((item) => (item.id === source.id ? updatedSource : item));
+    if (parent && this.inheritsTopLevelParentState() && targetState) {
+      this.items = await this.moveDescendantsToState(source.id, targetState, this.items);
+    }
     this.groups = this.adapter.parser.groupByColumn(this.items);
     this.render(this.groups, this.customOrder);
   }

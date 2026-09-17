@@ -8,6 +8,10 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ### Improvements
 - Agent profiles are stored in `~/.config/obsidian-work-terminal/profiles.json` instead of the plugin `data.json`, so they can be hand-edited, bulk-edited, backed up, and version-controlled. The Profile Manager shows the path and gains a **Reload from file** button. Existing profiles migrate on first load and the old `agentProfiles` key is left in place for downgrades. (#550)
+- **Keep sub-tasks with top-level parent** can keep every non-done descendant in its highest-level parent's state. Done descendants remain independent. (#561)
+
+### Fixes
+- Re-parenting a task now moves it to the new parent's state. (#561)
 
 ## [0.7.1] - 2026-08-07
 

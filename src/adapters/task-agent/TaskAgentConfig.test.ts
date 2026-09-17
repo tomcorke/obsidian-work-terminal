@@ -229,10 +229,17 @@ describe("TaskAgentConfig column helpers", () => {
   });
 
   describe("TASK_AGENT_CONFIG defaults", () => {
-    it("has columnOrder, creationColumnIds, and pinnedCustomStates in defaultSettings", () => {
+    it("has columnOrder, creationColumnIds, pinnedCustomStates, and parent-state inheritance in defaultSettings", () => {
       expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("columnOrder", "");
       expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("creationColumnIds", "");
       expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("pinnedCustomStates", "[]");
+      expect(TASK_AGENT_CONFIG.defaultSettings).toHaveProperty("subTasksInheritParentState", false);
+    });
+
+    it("exposes parent-state inheritance as a toggle", () => {
+      expect(TASK_AGENT_CONFIG.settingsSchema).toContainEqual(
+        expect.objectContaining({ key: "subTasksInheritParentState", type: "toggle" }),
+      );
     });
 
     it("does not expose columnOrder, creationColumnIds, or pinnedCustomStates in settingsSchema", () => {
