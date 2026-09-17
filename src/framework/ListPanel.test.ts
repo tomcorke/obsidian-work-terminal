@@ -719,6 +719,99 @@ describe("ListPanel", () => {
     expect(setParent).toHaveBeenCalledWith(file, parent);
   });
 
+  it("moves a re-parented task to its new parent's state", async () => {
+    const file = { path: "Tasks/task-1.md" };
+    const mover = {
+      move: vi.fn().mockResolvedValue(true),
+      setParent: vi.fn().mockResolvedValue(true),
+    };
+    const { panel, plugin } = createListPanel({ mover });
+    const source = makeItem("task-1");
+    const parent = { ...makeItem("task-2"), state: "active" };
+    (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(file);
+    panel.render({ todo: [source], active: [parent] }, {});
+
+    await (panel as any).setItemParent(source, parent);
+
+    expect(mover.setParent).toHaveBeenCalledWith(file, parent);
+    expect(mover.move).toHaveBeenCalledWith(file, "active");
+  });
+
+  it("recursively moves non-done descendants with their top-level parent when enabled", async () => {
+    const mover = { move: vi.fn().mockResolvedValue(true) };
+    const { panel, plugin } = createListPanel({
+      mover,
+      settings: { "adapter.subTasksInheritParentState": true },
+    });
+    const parent = makeItem("parent");
+    const child = {
+      ...makeItem("child"),
+      metadata: { parent: { id: "parent", title: "Parent", path: parent.path } },
+    };
+    const grandchild = {
+      ...makeItem("grandchild"),
+      metadata: { parent: { id: "child", title: "Child", path: child.path } },
+    };
+    const doneChild = {
+      ...makeItem("done-child"),
+      state: "done",
+      metadata: { parent: { id: "parent", title: "Parent", path: parent.path } },
+    };
+    (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => ({ path }),
+    );
+    panel.render({ todo: [parent, child, grandchild], done: [doneChild] }, {});
+
+    await (panel as any).moveToColumn(parent, "active");
+
+    expect(mover.move).toHaveBeenCalledTimes(3);
+    expect(mover.move).toHaveBeenCalledWith({ path: parent.path }, "active");
+    expect(mover.move).toHaveBeenCalledWith({ path: child.path }, "active");
+    expect(mover.move).toHaveBeenCalledWith({ path: grandchild.path }, "active");
+    expect(mover.move).not.toHaveBeenCalledWith({ path: doneChild.path }, "active");
+  });
+
+  it("restores non-done sub-tasks to their highest-level parent's state when enabled", async () => {
+    const mover = { move: vi.fn().mockResolvedValue(true) };
+    const { panel, plugin } = createListPanel({
+      mover,
+      settings: { "adapter.subTasksInheritParentState": true },
+    });
+    const parent = { ...makeItem("parent"), state: "active" };
+    const child = {
+      ...makeItem("child"),
+      metadata: { parent: { id: "parent", title: "Parent", path: parent.path } },
+    };
+    const grandchild = {
+      ...makeItem("grandchild"),
+      state: "priority",
+      metadata: { parent: { id: "child", title: "Child", path: child.path } },
+    };
+    const doneChild = {
+      ...makeItem("done-child"),
+      state: "done",
+      metadata: { parent: { id: "parent", title: "Parent", path: parent.path } },
+    };
+    (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: string) => ({ path }),
+    );
+
+    const items = await (panel as any).syncInheritedSubTaskStates([
+      parent,
+      child,
+      grandchild,
+      doneChild,
+    ]);
+
+    expect(items.map((item: WorkItem) => [item.id, item.state])).toEqual([
+      ["parent", "active"],
+      ["child", "active"],
+      ["grandchild", "active"],
+      ["done-child", "done"],
+    ]);
+    expect(mover.move).toHaveBeenCalledTimes(2);
+  });
+
   it("can preselect an item before its card is rendered", () => {
     const { panel, onSelect } = createListPanel();
     const item = makeItem("new-task", "New task");
