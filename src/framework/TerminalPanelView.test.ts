@@ -754,6 +754,26 @@ describe("TerminalPanelView", () => {
     errorSpy.mockRestore();
   });
 
+  it("launches OpenCode Web from the tab bar", async () => {
+    const { panelEl, view } = createView();
+    await flushAsync();
+    const spawn = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue({});
+    const button = Array.from(panelEl.querySelectorAll(".wt-spawn-btn")).find(
+      (candidate) => candidate.textContent === "+ OpenCode Web",
+    ) as HTMLButtonElement | undefined;
+
+    expect(button).toBeDefined();
+    button!.click();
+    await flushAsync();
+
+    expect(spawn).toHaveBeenCalledWith({
+      agentType: "opencode",
+      sessionType: "opencode-web",
+      extraArgs: "web",
+      label: "OpenCode Web",
+    });
+  });
+
   it("shows a notice instead of launching Claude when the CLI is unavailable", async () => {
     const { view } = createView({
       "core.claudeCommand": "definitely-not-a-real-command-issue-158",

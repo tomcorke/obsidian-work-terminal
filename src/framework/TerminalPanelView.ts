@@ -547,6 +547,14 @@ export class TerminalPanelView {
       this.launchAction("shell", () => this.spawnShell());
     });
 
+    const openCodeWebBtn = buttonsContainer.createEl("button", {
+      cls: "wt-spawn-btn",
+      text: "+ OpenCode Web",
+    });
+    openCodeWebBtn.addEventListener("click", () => {
+      this.launchAction("OpenCode Web", () => this.spawnOpenCodeWeb());
+    });
+
     // Profile-driven agent buttons
     const buttonProfiles = this.profileManager?.getButtonProfiles() ?? [];
     for (const profile of buttonProfiles) {
@@ -1011,6 +1019,15 @@ export class TerminalPanelView {
     const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
     this.tabManager.createTab(shell, cwd, "Shell", "shell");
     this.renderTabBar();
+  }
+
+  private async spawnOpenCodeWeb(): Promise<void> {
+    await this.spawnAgentSession({
+      agentType: "opencode",
+      sessionType: "opencode-web",
+      extraArgs: "web",
+      label: "OpenCode Web",
+    });
   }
 
   private async spawnClaude(): Promise<void> {

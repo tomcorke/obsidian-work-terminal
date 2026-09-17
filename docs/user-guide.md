@@ -22,6 +22,7 @@ Work Terminal turns your Obsidian vault into a work item board with per-item tab
   - [Activity view](#activity-view)
 - [Terminal and agent sessions](#terminal-and-agent-sessions)
   - [Shell tabs](#shell-tabs)
+  - [OpenCode Web tabs](#opencode-web-tabs)
   - [Agent sessions](#agent-sessions)
   - [Tab management](#tab-management)
   - [Session persistence](#session-persistence)
@@ -329,6 +330,12 @@ Shell sessions:
 The terminal panel is resizable - drag the divider between the kanban board and the terminal area to adjust the split.
 
 **File-path links**: Terminal output containing file paths (e.g. stack traces, compiler errors) is automatically detected and made clickable. Cmd+click a file path to open it in VS Code at the referenced line and column (`code --goto`). If VS Code is not available, the file opens with the system default handler instead.
+
+### OpenCode Web tabs
+
+Click **"+ OpenCode Web"** to run `opencode web` for the selected task. The tab shows startup output until OpenCode prints its loopback URL, then replaces the terminal with the embedded web interface.
+
+OpenCode must be installed and available on your `PATH`. Closing the tab stops its OpenCode server. For safety, the plugin only embeds URLs hosted on `localhost`, `127.0.0.1`, or `::1`.
 
 ### Agent sessions
 

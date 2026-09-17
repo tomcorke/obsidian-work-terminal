@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { spawn } from "child_process";
+import { mkdtemp, readFile, rm } from "fs/promises";
+import { tmpdir } from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
@@ -42,6 +44,27 @@ function spawnAndCloseStdin(
   });
 }
 
+async function waitForPid(file: string): Promise<number> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      return Number((await readFile(file, "utf8")).trim());
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+  throw new Error("Timed out waiting for PTY child PID");
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe("pty-wrapper.py", () => {
   it("should exit promptly when stdin is closed (not busy-loop)", async () => {
     // Use `cat` as the child command - it reads stdin and exits on EOF.
@@ -64,6 +87,39 @@ describe("pty-wrapper.py", () => {
 
     expect(result.timedOut).toBe(false);
     expect(result.exitCode).toBe(0);
+  }, 10000);
+
+  it("terminates the PTY child process group when the wrapper receives SIGTERM", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "work-terminal-pty-"));
+    const pidFile = path.join(directory, "child.pid");
+    const wrapper = spawn(
+      "python3",
+      [
+        PTY_WRAPPER,
+        "80",
+        "24",
+        "--resolved",
+        "--",
+        "/bin/sh",
+        "-c",
+        'echo $$ > "$1"; trap "" TERM; while :; do sleep 1; done',
+        "sh",
+        pidFile,
+      ],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+
+    try {
+      const childPid = await waitForPid(pidFile);
+      const closed = new Promise<void>((resolve) => wrapper.on("close", () => resolve()));
+      wrapper.kill("SIGTERM");
+      await closed;
+
+      expect(isRunning(childPid)).toBe(false);
+    } finally {
+      if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill("SIGKILL");
+      await rm(directory, { recursive: true, force: true });
+    }
   }, 10000);
 
   it("should exit with child exit code when child terminates", async () => {

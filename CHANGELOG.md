@@ -7,6 +7,7 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 ## [Unreleased]
 
 ### Improvements
+- **OpenCode Web tabs embed the local web interface inside Work Terminal.** The new launch button runs `opencode web`, shows startup output until its loopback URL appears, then loads that URL in the tab. Closing the tab stops the server. (#559)
 - Agent profiles are stored in `~/.config/obsidian-work-terminal/profiles.json` instead of the plugin `data.json`, so they can be hand-edited, bulk-edited, backed up, and version-controlled. The Profile Manager shows the path and gains a **Reload from file** button. Existing profiles migrate on first load and the old `agentProfiles` key is left in place for downgrades. (#550)
 
 ## [0.7.1] - 2026-08-07

@@ -386,6 +386,7 @@ export function sessionTypeToAgentType(sessionType: SessionType): {
     case "copilot-with-context":
       return { agentType: "copilot", withContext: true };
     case "opencode":
+    case "opencode-web":
       return { agentType: "opencode", withContext: false };
     case "opencode-with-context":
       return { agentType: "opencode", withContext: true };

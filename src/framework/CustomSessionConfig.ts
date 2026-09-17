@@ -49,6 +49,7 @@ export function sanitizeCustomSessionConfig(
 }
 
 export function getDefaultSessionLabel(sessionType: SessionType): string {
+  if (sessionType === "opencode-web") return "OpenCode Web";
   const { agentType, withContext } = sessionTypeToAgentType(sessionType);
   const config = getLaunchConfig(agentType);
   return withContext ? `${config.displayLabel} (ctx)` : config.displayLabel;

@@ -15,6 +15,7 @@ import struct
 import fcntl
 import termios
 import shlex
+import time
 
 
 def set_winsize(fd, rows, cols):
@@ -75,6 +76,14 @@ def main():
 
         # Buffer for detecting resize escape sequences in stdin
         stdin_buf = b""
+        terminate_requested = False
+
+        def request_termination(_signum, _frame):
+            nonlocal terminate_requested
+            terminate_requested = True
+
+        signal.signal(signal.SIGTERM, request_termination)
+        signal.signal(signal.SIGHUP, request_termination)
         # Pattern: ESC ] 777 ; resize ; COLS ; ROWS BEL
         resize_pattern = re.compile(rb"\x1b\]777;resize;(\d+);(\d+)\x07")
 
@@ -124,7 +133,7 @@ def main():
                 stdin_buf = stdin_buf[flush_up_to:]
 
         try:
-            while True:
+            while not terminate_requested:
                 try:
                     rfds, _, _ = select.select([master_fd, 0], [], [], 0.05)
                 except (ValueError, OSError):
@@ -176,8 +185,24 @@ def main():
             except OSError:
                 pass
             try:
-                os.kill(pid, signal.SIGTERM)
+                os.killpg(pid, signal.SIGTERM)
             except (ProcessLookupError, OSError):
+                return
+
+            deadline = time.monotonic() + 0.75
+            while time.monotonic() < deadline:
+                try:
+                    child_pid, _ = os.waitpid(pid, os.WNOHANG)
+                    if child_pid:
+                        return
+                except ChildProcessError:
+                    return
+                time.sleep(0.05)
+
+            try:
+                os.killpg(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+            except (ChildProcessError, ProcessLookupError, OSError):
                 pass
 
 

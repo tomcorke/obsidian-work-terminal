@@ -18,6 +18,7 @@ export const KNOWN_SESSION_TYPES = [
   "copilot-with-context",
   "opencode",
   "opencode-with-context",
+  "opencode-web",
   "strands",
   "strands-with-context",
   "custom",

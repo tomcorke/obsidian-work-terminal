@@ -506,6 +506,43 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(order).toEqual(["resize-observer", "link-provider", "terminal", "container"]);
   });
 
+  it("escalates to SIGKILL when the PTY wrapper has not exited after SIGTERM", () => {
+    vi.useFakeTimers();
+    const process = {
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+      kill: vi.fn(function (this: { killed: boolean }) {
+        this.killed = true;
+        return true;
+      }),
+    };
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _stateTimer: null,
+      _resizeDebounce: null,
+      _spawnTimeout: null,
+      _documentCleanups: [],
+      resizeObserver: { disconnect: vi.fn() },
+      process,
+      fitAddon: undefined,
+      searchAddon: undefined,
+      webLinksAddon: undefined,
+      linkProviderDisposable: null,
+      unicode11Addon: undefined,
+      webglAddon: null,
+      webglContextLossListener: null,
+      terminal: { dispose: vi.fn() },
+      containerEl: { parentElement: null },
+    }) as TerminalTab;
+
+    tab.dispose();
+    expect(process.kill).toHaveBeenNthCalledWith(1, "SIGTERM");
+
+    vi.advanceTimersByTime(1000);
+    expect(process.kill).toHaveBeenNthCalledWith(2, "SIGKILL");
+    vi.useRealTimers();
+  });
+
   it("clears legacy link providers for restored sessions created before tracking them", () => {
     const linkProviders = [{ id: "custom-provider" }];
     const terminalDispose = vi.fn();

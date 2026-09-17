@@ -34,6 +34,7 @@ import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/Age
 import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
 import { buildPtyLaunchPlan, resolvePtyWrapperPath } from "./PtyLaunch";
+import { OpenCodeWebUrlParser } from "./OpenCodeWebUrlParser";
 
 export { resolvePtyWrapperPath } from "./PtyLaunch";
 
@@ -142,6 +143,7 @@ export class TerminalTab {
   private _searchBarEl: HTMLElement | null = null;
   private _resizeDebounce: ReturnType<typeof setTimeout> | null = null;
   private _spawnTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _openCodeWebUrlParser: OpenCodeWebUrlParser | null = null;
   private _isDisposed = false;
   /** True when WebGL was intentionally suspended for a background tab. */
   private _webglSuspended = false;
@@ -196,6 +198,9 @@ export class TerminalTab {
     this.taskPath = taskPath;
     this.label = label;
     this.sessionType = sessionType;
+    if (sessionType === "opencode-web") {
+      this._openCodeWebUrlParser = new OpenCodeWebUrlParser();
+    }
 
     // Expand ~ in cwd
     this.cwd = expandTilde(cwd);
@@ -450,7 +455,7 @@ export class TerminalTab {
    * Called when the tab becomes the visible/active tab.
    */
   resumeWebGl(): void {
-    if (this._isDisposed || !this._webglSuspended) return;
+    if (this._isDisposed || this.hasEmbeddedWebView || !this._webglSuspended) return;
 
     this.loadWebglAddon();
 
@@ -552,6 +557,7 @@ export class TerminalTab {
     proc.stdout?.on("data", (data: Buffer) => {
       if (this._isDisposed) return;
       this._checkRename(data);
+      this._embedOpenCodeWebUrl(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
       writeWithAutoScroll(data);
@@ -560,6 +566,7 @@ export class TerminalTab {
     proc.stderr?.on("data", (data: Buffer) => {
       if (this._isDisposed) return;
       this._checkRename(data);
+      this._embedOpenCodeWebUrl(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
       writeWithAutoScroll(data);
@@ -678,7 +685,7 @@ export class TerminalTab {
    *  good dimensions and content doesn't reflow. */
   private safeFit(): void {
     try {
-      if (this._isDisposed) return;
+      if (this._isDisposed || this.hasEmbeddedWebView) return;
       const width = this.containerEl.clientWidth;
       if (width < TerminalTab.MIN_FIT_WIDTH) return;
       this.fitAddon?.fit();
@@ -895,6 +902,7 @@ export class TerminalTab {
       LINES: String(rows),
       PATH: getFullPath(),
     };
+    if (this.sessionType === "opencode-web") spawnEnv.BROWSER = "none";
     const proc = cp.spawn(plan.python.executable, args, {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
@@ -903,6 +911,25 @@ export class TerminalTab {
 
     console.log("[work-terminal] spawn pid:", proc.pid);
     return proc;
+  }
+
+  private get hasEmbeddedWebView(): boolean {
+    return this.containerEl.hasClass("wt-web-embedded");
+  }
+
+  private _embedOpenCodeWebUrl(data: Buffer | string): void {
+    if (!this._openCodeWebUrlParser || this.hasEmbeddedWebView) return;
+    const url = this._openCodeWebUrlParser.push(data);
+    if (!url) return;
+
+    const frame = document.createElement("iframe");
+    frame.className = "wt-opencode-web-frame";
+    frame.src = url;
+    frame.title = "OpenCode Web";
+    frame.setAttribute("allow", "clipboard-read; clipboard-write");
+    this.containerEl.appendChild(frame);
+    this.containerEl.addClass("wt-web-embedded");
+    this.suspendWebGl();
   }
 
   // ---------------------------------------------------------------------------
@@ -965,6 +992,9 @@ export class TerminalTab {
   }
 
   show(): void {
+    this.containerEl.removeClass("hidden");
+    if (this.hasEmbeddedWebView) return;
+
     // Backfill linkHandler for already-live terminals that were created before
     // the Electron openExternal handler was added (pre-#156 fix). Without this,
     // OSC 8 link clicks fall through to xterm's confirm() + window.open() no-op.
@@ -975,7 +1005,6 @@ export class TerminalTab {
         },
       };
     }
-    this.containerEl.removeClass("hidden");
     // Double-rAF: first frame makes the element visible and triggers layout,
     // second frame has correct dimensions for fitAddon to measure.
     requestAnimationFrame(() => {
@@ -1003,7 +1032,7 @@ export class TerminalTab {
   }
 
   refit(): void {
-    if (this.containerEl.hasClass("hidden")) return;
+    if (this.containerEl.hasClass("hidden") || this.hasEmbeddedWebView) return;
     requestAnimationFrame(() => {
       this.safeFit();
     });
@@ -1063,7 +1092,7 @@ export class TerminalTab {
     );
     const canvasCount = this.getRendererCanvasCount();
     const hasRenderableContent = this.hasRenderableSessionContent();
-    const hasBlankRenderSurface = canvasCount === 0;
+    const hasBlankRenderSurface = !this.hasEmbeddedWebView && canvasCount === 0;
     const blankButLiveRenderer =
       processStatus === "alive" && hasRenderableContent && hasBlankRenderSurface;
     return {
@@ -1316,6 +1345,8 @@ export class TerminalTab {
     tab.label = stored.label;
     tab.taskPath = stored.taskPath;
     tab.sessionType = stored.sessionType;
+    tab._openCodeWebUrlParser =
+      stored.sessionType === "opencode-web" ? new OpenCodeWebUrlParser() : null;
     tab.profileId = stored.profileId;
     tab.profileColor = stored.profileColor;
     tab.activityPatterns = stored.activityPatterns;
@@ -1536,12 +1567,12 @@ export class TerminalTab {
     }
     this._documentCleanups = [];
     this.resizeObserver.disconnect();
-    if (this.process && !this.process.killed) {
+    if (this.process && this.process.exitCode === null && this.process.signalCode === null) {
       this.process.kill("SIGTERM");
-      // Force kill after 1s if not exited
+      // Force kill after 1s if the wrapper has not exited.
       const procRef = this.process;
       setTimeout(() => {
-        if (procRef && !procRef.killed) {
+        if (procRef.exitCode === null && procRef.signalCode === null) {
           procRef.kill("SIGKILL");
         }
       }, 1000);

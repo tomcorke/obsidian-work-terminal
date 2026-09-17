@@ -48,6 +48,7 @@
 | TC-16 | ResizeObserver skips fit when hidden | Have multiple tabs, resize while a tab is hidden | Hidden tabs should not attempt fit (avoids zero-dimension errors). Fit deferred via rAF. | | |
 | TC-17 | SIGTERM then SIGKILL on dispose | Close a tab with a running process | Process receives SIGTERM. If still running after 1s, SIGKILL sent. No orphan processes. | | |
 | TC-18 | Timestamp + counter terminal IDs | Rapidly open multiple terminals | Each terminal has a unique ID (no collision from Date.now() alone). | | |
+| TC-19 | OpenCode Web embed | Click "+ OpenCode Web" and wait for startup | Startup output appears first. Once `opencode web` prints its loopback URL, the tab shows the embedded page at full size. Closing the tab stops the server. | | |
 
 ## 2. Tab Management
 

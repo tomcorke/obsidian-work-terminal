@@ -23,7 +23,7 @@ See the **[User Guide](docs/user-guide.md)** for more screenshots covering every
 ## Features
 
 - **Kanban board** with collapsible sections, drag-drop reordering, custom sort order, and dynamic columns for custom states
-- **Tabbed terminals** per work item - Shell, Claude, contextual Claude, and custom agent profiles (Copilot, Strands, or any CLI)
+- **Tabbed terminals** per work item - Shell, Claude, contextual Claude, embedded OpenCode Web, and custom agent profiles (Copilot, Strands, or any CLI)
 - **Agent integration** - reusable profiles with the Profile Manager, agent state detection (active/waiting/idle), background or foreground task enrichment with retry and failure logging
 - **Multiple view modes** - standard kanban columns, compact single-line cards with indicator dots, comfortable density, or activity view grouped by recency
 - **Task card customisation** - custom icons (Lucide or emoji), card indicator rules for visual flags, pinned tasks section, configurable badges
@@ -65,7 +65,7 @@ If `work-terminal` already exists in `.obsidian/plugins`, remove that directory 
 
 ## Process spawning & security
 
-This plugin spawns external processes to provide terminal and AI agent functionality. All commands are user-configured and resolved against `$PATH` (augmented with login shell and version-manager paths). Arguments are passed as arrays via `child_process.spawn()` (no shell interpretation, with one exception: Cmd+clicking a file path in terminal output runs `code --goto` via `exec()` to open the file in VS Code). The plugin makes zero outbound network requests. Vault files are modified through the Obsidian API (`app.vault.*` and `app.vault.adapter.*`), not raw `fs.*` writes.
+This plugin spawns external processes to provide terminal and AI agent functionality. All commands are user-configured and resolved against `$PATH` (augmented with login shell and version-manager paths). Arguments are passed as arrays via `child_process.spawn()` (no shell interpretation, with one exception: Cmd+clicking a file path in terminal output runs `code --goto` via `exec()` to open the file in VS Code). The plugin makes no external network requests itself; the OpenCode Web iframe connects only to the loopback URL printed by its local process. Vault files are modified through the Obsidian API (`app.vault.*` and `app.vault.adapter.*`), not raw `fs.*` writes.
 
 For a complete, source-verified inventory of every process spawned, every file read or written, and all security properties, see **[Process Spawning & Filesystem Disclosure](docs/process-spawning.md)**.
 

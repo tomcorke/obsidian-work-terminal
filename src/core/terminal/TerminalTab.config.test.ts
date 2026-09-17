@@ -127,10 +127,18 @@ describe("TerminalTab keyboard configuration", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
-    Object.defineProperty(HTMLElement.prototype, "addClass", {
-      configurable: true,
-      value(this: HTMLElement, cls: string) {
-        this.classList.add(cls);
+    Object.defineProperties(HTMLElement.prototype, {
+      addClass: {
+        configurable: true,
+        value(this: HTMLElement, cls: string) {
+          this.classList.add(cls);
+        },
+      },
+      hasClass: {
+        configurable: true,
+        value(this: HTMLElement, cls: string) {
+          return this.classList.contains(cls);
+        },
       },
     });
     vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
@@ -182,6 +190,29 @@ describe("TerminalTab keyboard configuration", () => {
       }),
     );
     expect(terminal?.options.macOptionIsMeta).toBe(true);
+  });
+
+  it("replaces startup output with the embedded OpenCode web page", () => {
+    const parentEl = document.createElement("div");
+    const suspendWebGl = vi
+      .spyOn(TerminalTab.prototype, "suspendWebGl")
+      .mockImplementation(() => {});
+    const tab = new TerminalTab(
+      parentEl,
+      "opencode",
+      "~/repo",
+      "OpenCode Web",
+      null,
+      "opencode-web",
+    );
+
+    (tab as any)._embedOpenCodeWebUrl("\u001b[94mWeb interface: http://127.0.0.1:4096/\u001b[0m");
+
+    const frame = parentEl.querySelector(".wt-opencode-web-frame") as HTMLIFrameElement;
+    expect(frame.src).toBe("http://127.0.0.1:4096/");
+    expect(frame.title).toBe("OpenCode Web");
+    expect(tab.containerEl.classList.contains("wt-web-embedded")).toBe(true);
+    expect(suspendWebGl).toHaveBeenCalledOnce();
   });
 
   it("re-applies the same Option handling to restored terminals", () => {

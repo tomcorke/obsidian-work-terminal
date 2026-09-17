@@ -759,6 +759,51 @@ function defineTests({ host, port, timeoutMs, vaultDir }) {
       },
     },
     {
+      id: "TC-19",
+      description: "OpenCode Web output becomes an embedded page",
+      run: async () => {
+        await activateFirstTaskForTerminal(host, port, timeoutMs);
+        await cdpEval(host, port, `
+          (() => {
+            const panel = globalThis.app?.workspace
+              ?.getLeavesOfType('work-terminal-view')?.[0]?.view?.terminalPanel;
+            const manager = panel?.tabManager;
+            if (!manager) throw new Error('Terminal manager unavailable');
+            manager.createTab(
+              '/bin/echo',
+              '/tmp',
+              'OpenCode Web smoke',
+              'opencode-web',
+              undefined,
+              ['/bin/echo', 'Web interface: http://127.0.0.1:1/'],
+            );
+            panel.renderTabBar();
+            return true;
+          })()
+        `, timeoutMs);
+        await cdpWaitFor(host, port, ".wt-opencode-web-frame", timeoutMs);
+        const state = await cdpEval(host, port, `
+          (() => {
+            const frame = document.querySelector('.wt-opencode-web-frame');
+            const container = frame?.closest('.wt-terminal-instance');
+            const rect = frame?.getBoundingClientRect();
+            return {
+              src: frame?.getAttribute('src'),
+              embedded: container?.classList.contains('wt-web-embedded'),
+              width: rect?.width || 0,
+              height: rect?.height || 0,
+            };
+          })()
+        `, timeoutMs);
+        if (state.src !== "http://127.0.0.1:1/" || !state.embedded) {
+          throw new Error(`OpenCode Web frame was not embedded: ${JSON.stringify(state)}`);
+        }
+        if (state.width <= 0 || state.height <= 0) {
+          throw new Error(`OpenCode Web frame has invalid size: ${JSON.stringify(state)}`);
+        }
+      },
+    },
+    {
       id: "TM-01",
       description: "Tab bar layout",
       run: async () => {

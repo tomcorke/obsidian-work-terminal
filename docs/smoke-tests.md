@@ -39,6 +39,7 @@ These regression tests can be driven entirely through CDP commands and filesyste
 | TC-01 | PTY wrapper spawns shell | CDP: check terminal element exists after clicking Shell button |
 | TC-02 | Tilde expansion | CDP: read terminal content after `pwd` command |
 | TC-12 | xterm.js CSS injection | CDP: query DOM for xterm styles |
+| TC-19 | OpenCode Web embed | CDP: feed a loopback URL through a short-lived PTY, then check iframe URL and dimensions |
 | TM-01 | Tab bar layout | CDP: query tab elements, check count |
 | TL-01 | Collapsible sections | CDP: check section elements exist with correct classes |
 | TL-21 | Filter input | CDP: type in filter, check visible cards |
