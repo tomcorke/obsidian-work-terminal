@@ -533,11 +533,12 @@ function findObsidianPageTarget(targets) {
     return null;
   }
 
-  return targets.find(
-    (candidate) =>
-      candidate?.type === "page" &&
-      candidate.webSocketDebuggerUrl &&
-      (!candidate.title || candidate.title.includes("Obsidian")),
+  const pages = targets.filter(
+    (candidate) => candidate?.type === "page" && candidate.webSocketDebuggerUrl,
+  );
+  return (
+    pages.find((candidate) => candidate.url?.startsWith("app://obsidian.md/")) ??
+    pages.find((candidate) => !candidate.title || candidate.title.includes("Obsidian"))
   );
 }
 
