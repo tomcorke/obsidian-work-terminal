@@ -754,10 +754,24 @@ describe("TerminalPanelView", () => {
     errorSpy.mockRestore();
   });
 
-  it("launches OpenCode Web from the tab bar", async () => {
-    const { panelEl, view } = createView();
+  it("launches OpenCode Web with the active item's context prompt", async () => {
+    mockState.activeItemId = "task-1";
+    const configureOpenCodeWebSession = vi.fn();
+    const promptBuilder = { buildPrompt: vi.fn(() => "Task context") };
+    const { panelEl, view } = createView({}, {}, promptBuilder);
+    view.setItems([
+      {
+        id: "task-1",
+        path: "Tasks/task-1.md",
+        title: "Task 1",
+        state: "active",
+        metadata: {},
+      },
+    ] as any);
     await flushAsync();
-    const spawn = vi.spyOn(view as any, "spawnAgentSession").mockResolvedValue({});
+    const spawn = vi
+      .spyOn(view as any, "spawnAgentSession")
+      .mockResolvedValue({ configureOpenCodeWebSession });
     const button = Array.from(panelEl.querySelectorAll(".wt-spawn-btn")).find(
       (candidate) => candidate.textContent === "+ OpenCode Web",
     ) as HTMLButtonElement | undefined;
@@ -769,9 +783,11 @@ describe("TerminalPanelView", () => {
     expect(spawn).toHaveBeenCalledWith({
       agentType: "opencode",
       sessionType: "opencode-web",
-      extraArgs: "web",
+      extraArgs: "web --cors app://obsidian.md",
       label: "OpenCode Web",
+      freshSettings: {},
     });
+    expect(configureOpenCodeWebSession).toHaveBeenCalledWith("Task 1", "Task context");
   });
 
   it("shows a notice instead of launching Claude when the CLI is unavailable", async () => {

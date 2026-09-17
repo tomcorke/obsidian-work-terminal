@@ -32,7 +32,7 @@ User-configured command (default: `copilot`) with optional `-i <prompt>`.
 
 ### 4. OpenCode CLI
 
-Profile-configured command (default: `opencode`) with optional `--prompt <prompt>`. The prompt is passed as one argv value. The dedicated OpenCode Web button runs `opencode web`, suppresses its external browser launch with `BROWSER=none`, and embeds the loopback URL printed by the process.
+Profile-configured command (default: `opencode`) with optional `--prompt <prompt>`. The prompt is passed as one argv value. The dedicated OpenCode Web button runs `opencode web --cors app://obsidian.md`, suppresses its external browser launch with `BROWSER=none`, and embeds the loopback URL printed by the process. It then creates a session through the loopback API and asynchronously submits the selected task's context prompt.
 
 - **Trigger**: User launches an OpenCode session via profile launch modal or clicks "+ OpenCode Web"
 - **Source**: `src/core/agents/AgentProfile.ts`, `src/framework/TerminalPanelView.ts`, and `src/core/terminal/TerminalTab.ts`
@@ -129,7 +129,7 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 
 - **External commands are profile-configurable** - Shell and agent commands can be overridden in profiles or settings; built-in types provide defaults including `claude`, `copilot`, and `opencode`. The plugin resolves them via `resolveCommandInfo()`, which searches an augmented PATH that includes `$PATH`, the user's login shell PATH (via `$SHELL -lc 'echo $PATH'`), and nvm/fnm version-manager directories as a fallback. It validates commands exist before spawning. (`src/core/agents/AgentLauncher.ts`)
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
-- **No external network requests from the plugin itself** - The OpenCode Web iframe connects only to a parsed loopback URL. Other network activity comes from spawned processes such as agent CLIs.
+- **No external network requests from the plugin itself** - OpenCode Web uses only its parsed loopback URL for the iframe and session bootstrap API. Other network activity comes from spawned processes such as agent CLIs.
 - **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()` / `app.vault.trash()`, never direct `fs.*` writes to vault files. Enrichment logs use the lower-level `app.vault.adapter.write()` but this is still within the Obsidian API surface.
 - **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
 - **Plugin data via Obsidian API** - Settings use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.

@@ -35,6 +35,7 @@ import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
 import { buildPtyLaunchPlan, resolvePtyWrapperPath } from "./PtyLaunch";
 import { OpenCodeWebUrlParser } from "./OpenCodeWebUrlParser";
+import { startOpenCodeWebSession } from "./OpenCodeWebSession";
 
 export { resolvePtyWrapperPath } from "./PtyLaunch";
 
@@ -144,6 +145,8 @@ export class TerminalTab {
   private _resizeDebounce: ReturnType<typeof setTimeout> | null = null;
   private _spawnTimeout: ReturnType<typeof setTimeout> | null = null;
   private _openCodeWebUrlParser: OpenCodeWebUrlParser | null = null;
+  private _openCodeWebSession: { title: string; prompt: string } | null = null;
+  private _openCodeWebAbortController: AbortController | null = null;
   private _isDisposed = false;
   /** True when WebGL was intentionally suspended for a background tab. */
   private _webglSuspended = false;
@@ -930,6 +933,38 @@ export class TerminalTab {
     this.containerEl.appendChild(frame);
     this.containerEl.addClass("wt-web-embedded");
     this.suspendWebGl();
+    if (this._openCodeWebSession) {
+      void this._startOpenCodeWebSession(url, frame);
+    }
+  }
+
+  private async _startOpenCodeWebSession(
+    serverUrl: string,
+    frame: HTMLIFrameElement,
+  ): Promise<void> {
+    const config = this._openCodeWebSession;
+    if (!config) return;
+
+    const controller = new AbortController();
+    this._openCodeWebAbortController = controller;
+    try {
+      const session = await startOpenCodeWebSession({
+        serverUrl,
+        cwd: this.cwd,
+        title: config.title,
+        prompt: config.prompt,
+        signal: controller.signal,
+      });
+      if (!this._isDisposed) frame.src = session.pageUrl;
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      console.error("[work-terminal] Failed to start OpenCode Web session:", err);
+      new Notice(`Failed to start OpenCode Web session: ${errorMessage(err)}`);
+    } finally {
+      if (this._openCodeWebAbortController === controller) {
+        this._openCodeWebAbortController = null;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -989,6 +1024,10 @@ export class TerminalTab {
 
   get launchCommandArgs(): string[] | undefined {
     return this.commandArgs ? [...this.commandArgs] : undefined;
+  }
+
+  configureOpenCodeWebSession(title: string, prompt: string): void {
+    this._openCodeWebSession = { title, prompt };
   }
 
   show(): void {
@@ -1315,6 +1354,7 @@ export class TerminalTab {
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
+      openCodeWebAbortController: this._openCodeWebAbortController ?? undefined,
       terminal: this.terminal,
       fitAddon: this.fitAddon!,
       searchAddon: this.searchAddon!,
@@ -1353,6 +1393,8 @@ export class TerminalTab {
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
+    tab._openCodeWebSession = null;
+    tab._openCodeWebAbortController = stored.openCodeWebAbortController ?? null;
     tab.terminal = stored.terminal;
     // Ensure linkHandler is set on restored terminals - older sessions or
     // terminals from prior plugin versions may not have this option, causing
@@ -1561,6 +1603,8 @@ export class TerminalTab {
       clearTimeout(this._spawnTimeout);
       this._spawnTimeout = null;
     }
+    this._openCodeWebAbortController?.abort();
+    this._openCodeWebAbortController = null;
     // Remove document-level keyboard listeners
     for (const cleanup of this._documentCleanups) {
       cleanup();

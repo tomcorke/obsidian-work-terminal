@@ -1022,12 +1022,26 @@ export class TerminalPanelView {
   }
 
   private async spawnOpenCodeWeb(): Promise<void> {
-    await this.spawnAgentSession({
+    const item = this.getActiveItem();
+    if (!item) {
+      new Notice(`Select a ${this.adapter.config.itemName} first to launch OpenCode Web`);
+      return;
+    }
+    const fresh = await this.loadFreshSettings();
+    const prompt = await this.getAgentContextPrompt(item, fresh);
+    if (!prompt) {
+      new Notice("Could not build a contextual prompt for this item");
+      return;
+    }
+
+    const tab = await this.spawnAgentSession({
       agentType: "opencode",
       sessionType: "opencode-web",
-      extraArgs: "web",
+      extraArgs: "web --cors app://obsidian.md",
       label: "OpenCode Web",
+      freshSettings: fresh,
     });
+    tab?.configureOpenCodeWebSession(item.title, prompt);
   }
 
   private async spawnClaude(): Promise<void> {

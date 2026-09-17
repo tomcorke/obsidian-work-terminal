@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => {
     attachCapturePhase: vi.fn(() => vi.fn()),
     attachInputCapture: vi.fn(() => vi.fn()),
     electronShell: { openExternal: vi.fn() },
+    startOpenCodeWebSession: vi.fn(),
   };
 });
 
@@ -114,6 +115,10 @@ vi.mock("@xterm/addon-unicode11", () => ({
   Unicode11Addon: class {},
 }));
 
+vi.mock("./OpenCodeWebSession", () => ({
+  startOpenCodeWebSession: mocks.startOpenCodeWebSession,
+}));
+
 import { TerminalTab } from "./TerminalTab";
 
 class MockResizeObserver {
@@ -141,6 +146,7 @@ describe("TerminalTab keyboard configuration", () => {
         },
       },
     });
+    mocks.startOpenCodeWebSession.mockReset();
     vi.spyOn(TerminalTab.prototype as never, "startStateTracking").mockImplementation(() => {});
   });
 
@@ -192,7 +198,7 @@ describe("TerminalTab keyboard configuration", () => {
     expect(terminal?.options.macOptionIsMeta).toBe(true);
   });
 
-  it("replaces startup output with the embedded OpenCode web page", () => {
+  it("starts a contextual session and opens its embedded OpenCode web page", async () => {
     const parentEl = document.createElement("div");
     const suspendWebGl = vi
       .spyOn(TerminalTab.prototype, "suspendWebGl")
@@ -200,16 +206,30 @@ describe("TerminalTab keyboard configuration", () => {
     const tab = new TerminalTab(
       parentEl,
       "opencode",
-      "~/repo",
+      "/tmp/repo",
       "OpenCode Web",
       null,
       "opencode-web",
     );
+    mocks.startOpenCodeWebSession.mockResolvedValue({
+      sessionId: "ses_test123",
+      pageUrl: "http://127.0.0.1:4096/server/session/ses_test123",
+    });
+    tab.configureOpenCodeWebSession("Task title", "Task context");
 
     (tab as any)._embedOpenCodeWebUrl("\u001b[94mWeb interface: http://127.0.0.1:4096/\u001b[0m");
+    await Promise.resolve();
+    await Promise.resolve();
 
     const frame = parentEl.querySelector(".wt-opencode-web-frame") as HTMLIFrameElement;
-    expect(frame.src).toBe("http://127.0.0.1:4096/");
+    expect(mocks.startOpenCodeWebSession).toHaveBeenCalledWith({
+      serverUrl: "http://127.0.0.1:4096/",
+      cwd: "/tmp/repo",
+      title: "Task title",
+      prompt: "Task context",
+      signal: expect.anything(),
+    });
+    expect(frame.src).toBe("http://127.0.0.1:4096/server/session/ses_test123");
     expect(frame.title).toBe("OpenCode Web");
     expect(tab.containerEl.classList.contains("wt-web-embedded")).toBe(true);
     expect(suspendWebGl).toHaveBeenCalledOnce();

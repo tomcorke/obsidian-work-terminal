@@ -333,9 +333,9 @@ The terminal panel is resizable - drag the divider between the kanban board and 
 
 ### OpenCode Web tabs
 
-Click **"+ OpenCode Web"** to run `opencode web` for the selected task. The tab shows startup output until OpenCode prints its loopback URL, then replaces the terminal with the embedded web interface.
+Click **"+ OpenCode Web"** to run `opencode web` for the selected task. The tab shows startup output until OpenCode prints its loopback URL, then creates a session, submits the task's context prompt, and opens that session in the embedded web interface.
 
-OpenCode must be installed and available on your `PATH`. Closing the tab stops its OpenCode server. For safety, the plugin only embeds URLs hosted on `localhost`, `127.0.0.1`, or `::1`.
+OpenCode must be installed and available on your `PATH`. Closing the tab stops its OpenCode server. For safety, the plugin only embeds and sends session requests to URLs hosted on `localhost`, `127.0.0.1`, or `::1`.
 
 ### Agent sessions
 

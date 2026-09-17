@@ -54,6 +54,7 @@ export interface StoredSession {
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
+  openCodeWebAbortController?: AbortController;
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
