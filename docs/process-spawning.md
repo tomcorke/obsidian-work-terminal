@@ -11,7 +11,7 @@ This plugin spawns external processes and performs filesystem operations to prov
 Terminal tabs use one of two PTY backends:
 
 - macOS/Linux: `python3 pty-wrapper.py <cols> <rows> -- <shell>`, where `<shell>` is the configured shell (defaults to `$SHELL` or `/bin/zsh`).
-- Windows: bundled `node-pty` ConPTY artifacts for x64 and arm64, with `cmd.exe` as the default shell when `ComSpec` is set.
+- Windows: a bundled helper process hosts `node-pty` ConPTY with x64 and arm64 artifacts, with `cmd.exe` as the default shell when `ComSpec` is set.
 
 - **Trigger**: User clicks "+ Shell" button
 - **Source**: `src/core/terminal/TerminalTab.ts` - `spawnPty()`
@@ -73,7 +73,7 @@ One-shot `claude -p <prompt> --output-format text` (or the configured enrichment
 - **Source**: `src/core/terminal/TerminalTab.ts` - link provider `activate` callback
 - **Mechanism**: `child_process.exec()` (string form, with shell interpretation)
 
-**Note**: macOS and Linux use `pty-wrapper.py` because Electron's sandbox blocks direct PTY access. Windows uses node-pty's ConPTY implementation and its bundled native helper artifacts. Both backends expose the same input, output, resize, exit, and cleanup surface to xterm.js.
+**Note**: macOS and Linux use `pty-wrapper.py` because Electron's sandbox blocks direct PTY access. Windows uses a bundled utility process to host node-pty's ConPTY implementation. Both backends expose the same input, output, resize, exit, and cleanup surface to xterm.js.
 
 ## Filesystem access
 
@@ -126,7 +126,7 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 | Path | Operation | Trigger | Source file |
 |------|-----------|---------|-------------|
 | `pty-wrapper.py` | Read-only existence check on macOS/Linux | POSIX terminal tab spawn | `src/core/terminal/TerminalTab.ts` - `resolvePtyWrapperPath()` |
-| node-pty ConPTY artifacts | Loaded from the bundled native backend on Windows | Windows terminal tab spawn | `src/core/terminal/PtyBackend.ts` |
+| node-pty ConPTY artifacts and helper | Extracted lazily into the plugin directory and loaded by the Windows PTY helper | Windows terminal tab spawn | `src/core/terminal/WindowsPtyAssetsLoader.ts`, `src/core/terminal/WindowsPtyHelper.ts` |
 | Command binary paths | Read-only existence + executable check | Terminal tab spawn, headless agent spawn | `src/core/agents/AgentLauncher.ts` - `resolveCommandInfo()` |
 
 ## Security properties
@@ -135,5 +135,5 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
 - **Zero outbound network requests from the plugin itself** - The plugin makes no network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
 - **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()` / `app.vault.trash()`, never direct `fs.*` writes to vault files. Enrichment logs use the lower-level `app.vault.adapter.write()` but this is still within the Obsidian API surface.
-- **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
+- **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths, plus lazy extraction of bundled Windows PTY assets into the plugin directory. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
 - **Plugin data via Obsidian API** - Settings use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.

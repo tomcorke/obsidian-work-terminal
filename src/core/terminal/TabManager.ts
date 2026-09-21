@@ -43,7 +43,7 @@ export class TabManager {
       for (const [itemId, storedSessions] of stored.sessions) {
         const tabs: TerminalTab[] = [];
         for (const ss of storedSessions) {
-          const tab = TerminalTab.fromStored(ss, this.terminalWrapperEl);
+          const tab = TerminalTab.fromStored(ss, this.terminalWrapperEl, this.pluginDir);
           tab.onLabelChange = () => {
             if (this.activeItemId === itemId) this._notifyLabelChange();
           };

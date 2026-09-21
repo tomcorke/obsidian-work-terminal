@@ -2,6 +2,11 @@ node_modules/
 dist/
 main.js
 data.json
+# Extracted at runtime by the bundled Windows ConPTY backend.
+/node-pty-helper.cjs
+/prebuilds/
+/shared/
+/worker/
 coverage/
 package-lock.json
 .claude/testing/

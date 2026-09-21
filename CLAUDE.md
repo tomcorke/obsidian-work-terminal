@@ -135,7 +135,7 @@ All new placeholder variables must use the `$name` form (camelCase, dollar prefi
 
 ## Known constraints
 
-- **PTY**: Electron sandbox blocks direct native PTY access. POSIX uses Python `pty.fork()` via `pty-wrapper.py`; Windows uses bundled node-pty ConPTY artifacts. Both implementations sit behind `src/core/terminal/PtyBackend.ts`.
+- **PTY**: Electron sandbox blocks direct native PTY access. POSIX uses Python `pty.fork()` via `pty-wrapper.py`; Windows uses a bundled utility process hosting node-pty ConPTY. Both implementations sit behind `src/core/terminal/PtyBackend.ts`.
 - **xterm.js CSS**: `require.resolve` unavailable in bundle. Full CSS embedded inline at runtime via `XtermCss.ts`.
 - **Tilde expansion**: Always expand `~` via `process.env.HOME` or `process.env.USERPROFILE` before passing to spawn.
 - **Node builtins**: Use `window.require` for `child_process`, `fs`, `path`, `os` in Electron. Externalized in esbuild.

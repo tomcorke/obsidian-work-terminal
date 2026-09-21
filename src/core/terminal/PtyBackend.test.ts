@@ -69,6 +69,16 @@ describe("PtyBackend", () => {
     expect(process.pid).toBe(1234);
   });
 
+  it("passes the plugin directory to the Windows native loader", () => {
+    const fake = createFakePty();
+    const loadNodePty = vi.fn(() => ({ spawn: () => fake.pty }));
+    const backend = createPtyBackend("win32", { loadNodePty });
+
+    backend.spawn({ ...spawnOptions, pluginDir: "C:\\plugin" });
+
+    expect(loadNodePty).toHaveBeenCalledWith("C:\\plugin");
+  });
+
   it("runs Windows command shims through ComSpec", () => {
     const fake = createFakePty();
     const spawn = vi.fn(() => fake.pty);

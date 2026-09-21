@@ -12,6 +12,18 @@ const require = createRequire(import.meta.url);
 
 const WINDOWS_PTY_FILES = ["conpty.node", "conpty/conpty.dll", "conpty/OpenConsole.exe"];
 
+function generateWindowsPtyHelper() {
+  const result = esbuild.buildSync({
+    entryPoints: [path.resolve("src/core/terminal/WindowsPtyHelper.ts")],
+    bundle: true,
+    format: "cjs",
+    minify: isProduction,
+    platform: "node",
+    write: false,
+  });
+  return result.outputFiles[0].text;
+}
+
 function generateWindowsPtyAssetsModule() {
   const packageRoot = path.dirname(require.resolve("node-pty/package.json"));
   const assets = [];
@@ -36,6 +48,10 @@ function generateWindowsPtyAssetsModule() {
       base64: readFileSync(path.join(packageRoot, source)).toString("base64"),
     });
   }
+  assets.push({
+    path: "node-pty-helper.cjs",
+    base64: Buffer.from(generateWindowsPtyHelper()).toString("base64"),
+  });
   return `export const WINDOWS_PTY_ASSETS = ${JSON.stringify(assets)};`;
 }
 

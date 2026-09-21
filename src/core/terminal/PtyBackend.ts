@@ -35,6 +35,7 @@ export interface PtySpawnOptions {
   env: NodeJS.ProcessEnv;
   python3Path?: string;
   wrapperPath?: string;
+  pluginDir?: string;
   loginShellWrap?: boolean;
 }
 
@@ -99,7 +100,7 @@ interface ChildSpawnOptions {
 
 export interface PtyBackendDependencies {
   spawnChild?: (command: string, args: string[], options: ChildSpawnOptions) => ChildProcessSource;
-  loadNodePty?: () => NodePtyModule;
+  loadNodePty?: (pluginDir?: string) => NodePtyModule;
 }
 
 export class PtyBackendUnavailableError extends Error {
@@ -323,11 +324,11 @@ class ConptyBackend implements PtyBackend {
   readonly kind = "conpty" as const;
   private nodePty: NodePtyModule | null = null;
 
-  constructor(private readonly loadNodePty: () => NodePtyModule) {}
+  constructor(private readonly loadNodePty: (pluginDir?: string) => NodePtyModule) {}
 
   spawn(options: PtySpawnOptions): TerminalProcess {
     try {
-      this.nodePty ??= this.loadNodePty();
+      this.nodePty ??= this.loadNodePty(options.pluginDir);
       const { file, args } = resolveConptyCommand(options);
       const pty = this.nodePty.spawn(file, args, {
         name: "xterm-256color",
@@ -359,8 +360,8 @@ function defaultChildSpawner(
   return childProcess.spawn(command, args, options);
 }
 
-function defaultNodePtyLoader(): NodePtyModule {
-  return loadBundledNodePty();
+function defaultNodePtyLoader(pluginDir?: string): NodePtyModule {
+  return loadBundledNodePty(pluginDir);
 }
 
 export function createPtyBackend(

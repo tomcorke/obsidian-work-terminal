@@ -885,6 +885,7 @@ export class TerminalTab {
       python3Path,
       wrapperPath:
         getPtyBackendKind() === "python" ? resolvePtyWrapperPath(this.pluginDir) : undefined,
+      ...(this.pluginDir ? { pluginDir: this.pluginDir } : {}),
       loginShellWrap: this.loginShellWrap,
     });
 
@@ -1296,7 +1297,7 @@ export class TerminalTab {
    * Create a TerminalTab wrapping an existing stored session (after reload).
    * Re-attaches DOM, re-registers keyboard listeners, but does NOT re-spawn a process.
    */
-  static fromStored(stored: StoredSession, parentEl: HTMLElement): TerminalTab {
+  static fromStored(stored: StoredSession, parentEl: HTMLElement, pluginDir?: string): TerminalTab {
     injectXtermCss();
 
     const tab = Object.create(TerminalTab.prototype) as TerminalTab;
@@ -1310,6 +1311,7 @@ export class TerminalTab {
     tab.shell = stored.shell || getDefaultShell();
     tab.cwd = resolveTerminalCwd(stored.cwd || "~");
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
+    tab.pluginDir = pluginDir;
     tab.terminal = stored.terminal;
     // Ensure linkHandler is set on restored terminals - older sessions or
     // terminals from prior plugin versions may not have this option, causing
