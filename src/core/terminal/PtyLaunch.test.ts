@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildPtyLaunchPlan, quoteShellArg } from "./PtyLaunch";
+import {
+  buildConptyLaunchPlan,
+  buildPtyLaunchPlan,
+  getDefaultShell,
+  getInteractiveShellCommand,
+  quoteShellArg,
+  resolveTerminalCwd,
+} from "./PtyLaunch";
 
 describe("PTY launch planning", () => {
   it("builds the exact Python wrapper and fully quoted login-shell argv", () => {
@@ -58,5 +65,36 @@ describe("PTY launch planning", () => {
     expect(quoteShellArg("")).toBe("''");
     expect(quoteShellArg("--safe=value/path")).toBe("--safe=value/path");
     expect(quoteShellArg("it's spaced")).toBe(`'it'"'"'s spaced'`);
+  });
+
+  it("uses ComSpec and native Windows shell argv", () => {
+    const env = { ComSpec: "C:\\Windows\\System32\\cmd.exe" };
+
+    expect(getDefaultShell("win32", env)).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(getInteractiveShellCommand("cmd.exe", "win32")).toEqual(["cmd.exe"]);
+    expect(getInteractiveShellCommand("/bin/zsh", "linux")).toEqual(["/bin/zsh", "-i"]);
+    expect(
+      buildConptyLaunchPlan({
+        cols: 80,
+        rows: 24,
+        command: ["cmd.exe"],
+      }),
+    ).toEqual({
+      backend: "conpty",
+      command: { executable: "cmd.exe", argv: ["cmd.exe"] },
+      cols: 80,
+      rows: 24,
+    });
+  });
+
+  it("resolves Windows home-relative CWD without POSIX path joining", () => {
+    expect(
+      resolveTerminalCwd("~\\projects", "win32", {
+        USERPROFILE: "C:\\Users\\me",
+      }),
+    ).toBe("C:\\Users\\me\\projects");
+    expect(resolveTerminalCwd("C:\\work", "win32", { USERPROFILE: "C:\\Users\\me" })).toBe(
+      "C:\\work",
+    );
   });
 });

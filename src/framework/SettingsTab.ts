@@ -80,7 +80,8 @@ import { resolveDetailViewOptions } from "../core/detailViewPlacement";
 import { formatVersionForSettings } from "./version";
 import { resolvePluginDir as resolveSharedPluginDir } from "../core/workspace/pluginPaths";
 import { checkPython3Available } from "../core/terminal/PythonCheck";
-import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
+import { getPtyBackendKind } from "../core/terminal/PtyBackend";
+import { getDefaultShell, resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -126,7 +127,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.copilotExtraArgs": "",
   "core.strandsCommand": "strands",
   "core.strandsExtraArgs": "",
-  "core.defaultShell": process.env.SHELL || "/bin/zsh",
+  "core.defaultShell": getDefaultShell(),
   "core.defaultTerminalCwd": "~",
   "core.exposeDebugApi": false,
   "core.keepSessionsAlive": true,
@@ -482,8 +483,15 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
                   sessionId: PROFILE_PREVIEW_EXAMPLE_SESSION_ID,
                   sourceLabel: "Clearly labelled example values (no selected work item)",
                   pty: {
-                    python3Path: checkPython3Available() ?? "python3 (not found)",
-                    wrapperPath: resolvePtyWrapperPath(this.resolvePluginDir()),
+                    backend: getPtyBackendKind(),
+                    python3Path:
+                      getPtyBackendKind() === "python"
+                        ? (checkPython3Available() ?? "python3 (not found)")
+                        : "not used on Windows",
+                    wrapperPath:
+                      getPtyBackendKind() === "python"
+                        ? resolvePtyWrapperPath(this.resolvePluginDir())
+                        : "not used on Windows",
                   },
                 }),
             ).open();

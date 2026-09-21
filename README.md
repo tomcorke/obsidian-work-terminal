@@ -34,7 +34,7 @@ See the **[User Guide](docs/user-guide.md)** for more screenshots covering every
 
 ## Installation
 
-**Requirements**: Node.js 20.19.0+ and Python 3 (for PTY-backed terminal tabs).
+**Requirements**: Node.js 20.19.0+. macOS and Linux terminal tabs require Python 3. Windows terminal tabs use the bundled ConPTY backend and do not require Python.
 
 Run these commands from the directory where you want to keep the plugin source:
 

@@ -8,11 +8,14 @@ This plugin spawns external processes and performs filesystem operations to prov
 
 ### 1. Shell tabs
 
-`python3 pty-wrapper.py <cols> <rows> -- <shell>` where `<shell>` is the user's configured shell (defaults to `$SHELL` or `/bin/zsh`).
+Terminal tabs use one of two PTY backends:
+
+- macOS/Linux: `python3 pty-wrapper.py <cols> <rows> -- <shell>`, where `<shell>` is the configured shell (defaults to `$SHELL` or `/bin/zsh`).
+- Windows: a bundled helper process hosts `node-pty` ConPTY with x64 and arm64 artifacts, with `cmd.exe` as the default shell when `ComSpec` is set.
 
 - **Trigger**: User clicks "+ Shell" button
 - **Source**: `src/core/terminal/TerminalTab.ts` - `spawnPty()`
-- **Mechanism**: `child_process.spawn()` with array args (no shell interpretation)
+- **Mechanism**: Spawned by the selected PTY backend via `TerminalTab.spawnPty()`
 
 ### 2. Claude CLI
 
@@ -20,7 +23,7 @@ User-configured command (default: `claude`) with `--session-id <uuid>` and optio
 
 - **Trigger**: User clicks "Claude" or "Claude (ctx)" button, or launches a Claude-type agent profile
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildClaudeArgs()`
-- **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
+- **Mechanism**: Spawned by the selected PTY backend via `TerminalTab.spawnPty()`
 
 ### 3. GitHub Copilot CLI
 
@@ -28,7 +31,7 @@ User-configured command (default: `copilot`) with optional `-i <prompt>`.
 
 - **Trigger**: User launches a Copilot session via profile launch modal or tab bar button
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildCopilotArgs()`
-- **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
+- **Mechanism**: Spawned by the selected PTY backend via `TerminalTab.spawnPty()`
 
 ### 4. OpenCode CLI
 
@@ -36,7 +39,7 @@ Profile-configured command (default: `opencode`) with optional `--prompt <prompt
 
 - **Trigger**: User launches an OpenCode session via profile launch modal or tab bar button
 - **Source**: `src/core/agents/AgentProfile.ts` launch configuration and the shared `src/core/agents/AgentLauncher.ts` pipeline
-- **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
+- **Mechanism**: Spawned by the selected PTY backend via `TerminalTab.spawnPty()`
 
 ### 5. AWS Strands
 
@@ -44,7 +47,7 @@ User-configured command with optional positional prompt argument. Extra args fro
 
 - **Trigger**: User launches a Strands session via profile launch modal or tab bar button
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildStrandsArgs()`
-- **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
+- **Mechanism**: Spawned by the selected PTY backend via `TerminalTab.spawnPty()`
 
 ### 6. Custom agent profiles
 
@@ -52,7 +55,7 @@ User-configured command with user-configured arguments. Any executable can be la
 
 - **Trigger**: User launches a custom-type agent profile via profile launch modal or tab bar button
 - **Source**: `src/core/agents/AgentLauncher.ts` - `buildCustomArgs()`
-- **Mechanism**: Spawned inside `pty-wrapper.py` via `TerminalTab.spawnPty()`
+- **Mechanism**: Spawned by the selected PTY backend via `TerminalTab.spawnPty()`
 
 ### 7. Headless agent (background enrichment)
 
@@ -70,7 +73,7 @@ One-shot `claude -p <prompt> --output-format text` (or the configured enrichment
 - **Source**: `src/core/terminal/TerminalTab.ts` - link provider `activate` callback
 - **Mechanism**: `child_process.exec()` (string form, with shell interpretation)
 
-**Note**: All terminal processes (Shell, Claude, Copilot, OpenCode, Strands, custom agents) run inside `pty-wrapper.py`, a Python script that uses `pty.fork()` to provide a real pseudo-terminal. Electron's sandbox blocks native PTY access, so this Python wrapper is the necessary bridge between xterm.js and the child process.
+**Note**: macOS and Linux use `pty-wrapper.py` because Electron's sandbox blocks direct PTY access. Windows uses a bundled utility process to host node-pty's ConPTY implementation. Both backends expose the same input, output, resize, exit, and cleanup surface to xterm.js.
 
 ## Filesystem access
 
@@ -122,7 +125,8 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 
 | Path | Operation | Trigger | Source file |
 |------|-----------|---------|-------------|
-| `pty-wrapper.py` | Read-only existence check | Terminal tab spawn | `src/core/terminal/TerminalTab.ts` - `resolvePtyWrapperPath()` |
+| `pty-wrapper.py` | Read-only existence check on macOS/Linux | POSIX terminal tab spawn | `src/core/terminal/TerminalTab.ts` - `resolvePtyWrapperPath()` |
+| node-pty ConPTY artifacts and helper | Extracted lazily into the plugin directory and loaded by the Windows PTY helper | Windows terminal tab spawn | `src/core/terminal/WindowsPtyAssetsLoader.ts`, `src/core/terminal/WindowsPtyHelper.ts` |
 | Command binary paths | Read-only existence + executable check | Terminal tab spawn, headless agent spawn | `src/core/agents/AgentLauncher.ts` - `resolveCommandInfo()` |
 
 ## Security properties
@@ -131,5 +135,5 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
 - **Zero outbound network requests from the plugin itself** - The plugin makes no network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
 - **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()` / `app.vault.trash()`, never direct `fs.*` writes to vault files. Enrichment logs use the lower-level `app.vault.adapter.write()` but this is still within the Obsidian API surface.
-- **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
+- **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths, plus lazy extraction of bundled Windows PTY assets into the plugin directory. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
 - **Plugin data via Obsidian API** - Settings use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.

@@ -9,7 +9,7 @@
  * (capture phase) before Obsidian sees them. Synthesizes terminal escape
  * sequences directly to PTY stdin, then kills the event entirely.
  */
-import type { ChildProcess } from "child_process";
+import type { TerminalProcess } from "./PtyBackend";
 
 /**
  * Attach bubble-phase keyboard interception on a container element.
@@ -79,7 +79,7 @@ export function attachInputCapture(containerEl: HTMLElement): () => void {
  */
 export function attachCapturePhase(
   containerEl: HTMLElement,
-  getProcess: () => ChildProcess | null,
+  getProcess: () => Pick<TerminalProcess, "stdin"> | null,
   onSearch?: () => void,
 ): () => void {
   const textareaEl = containerEl.querySelector(

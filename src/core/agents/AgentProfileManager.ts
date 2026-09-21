@@ -7,6 +7,7 @@
  * "agentProfiles" or, failing that, from the legacy per-agent settings keys.
  */
 import type { PluginDataStore } from "../PluginDataStore";
+import { getDefaultShell } from "../terminal/PtyLaunch";
 import { createProfileFileStore, type ProfileFileStore } from "./ProfileFileStore";
 import {
   type AgentProfile,
@@ -293,7 +294,7 @@ export class AgentProfileManager {
     }
     // Fall back to global settings via AgentResumeConfig
     const config = getLaunchConfig(profile.agentType);
-    const shellFallback = profile.agentType === "shell" ? process.env.SHELL || "/bin/zsh" : "";
+    const shellFallback = profile.agentType === "shell" ? getDefaultShell() : "";
     return String(settings[config.commandSettingKey] || config.defaultCommand || shellFallback);
   }
 

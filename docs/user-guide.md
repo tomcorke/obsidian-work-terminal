@@ -321,7 +321,7 @@ Click **"+ Shell"** in the tab bar to open a new shell terminal for the currentl
 ![Tab bar showing session launch buttons](screenshots/kanban-board.png)
 
 Shell sessions:
-- Use the configured default shell (defaults to your system shell, e.g. `/bin/zsh`)
+- Use the configured default shell (your system shell; `cmd.exe` via `ComSpec` on Windows)
 - Start in the configured default working directory (defaults to `~`)
 - Support full terminal emulation via xterm.js
 - Handle keyboard shortcuts including Option+Arrow for word navigation, Option+B/F/D for readline, and Shift+Enter
@@ -436,7 +436,7 @@ For example, an argument string like `--file $absoluteFilePath --task $title` wo
 
 **Login shell wrapping**: Each profile has an optional **Login shell wrap** toggle. When enabled, the agent command is launched through a login shell (`$SHELL -lc ...`), which ensures shell startup files (`~/.zshrc`, `~/.bash_profile`, etc.) are sourced before the command runs. This is important when your agent binary is managed by a version manager like nvm or fnm - without login shell wrapping, the agent command may not be found because the version manager's PATH entries are not loaded. The toggle defaults to off for new profiles.
 
-**Resolved launch preview**: The profile editor shows the resolved executable, working directory, and indexed argument list handed to the PTY launcher. Context uses the selected work item when the editor is opened from the terminal; the settings-page editor uses clearly labelled example values. JSON quoting keeps spaces, quotes, backslashes, and newlines unambiguous. The preview identifies positional or flag-based prompt placement, shows the Python PTY wrapper and exact direct or login-shell child argv, and updates as launch or context fields change. This makes a trailing prompt that a CLI might mistake for a directory visible before launch.
+**Resolved launch preview**: The profile editor shows the resolved executable, working directory, and indexed argument list handed to the PTY launcher. Context uses the selected work item when the editor is opened from the terminal; the settings-page editor uses clearly labelled example values. JSON quoting keeps spaces, quotes, backslashes, and newlines unambiguous. The preview identifies positional or flag-based prompt placement, shows the POSIX Python wrapper or Windows ConPTY layer, and updates as launch or context fields change. This makes a trailing prompt that a CLI might mistake for a directory visible before launch.
 
 **Import/Export**: Profiles can be exported as JSON for sharing or backup, and imported from JSON to quickly set up a new installation.
 
@@ -505,7 +505,7 @@ Type a lowercase identifier with hyphens (e.g. `review`, `blocked-upstream`, `te
 
 Terminal-launch configuration lives in a dedicated dialog opened by the **Configure terminal...** button under **Settings > Terminal**. The dialog currently exposes:
 
-- **Default shell** - shell used for new terminal tabs. Defaults to `$SHELL` at plugin load time (typically `/bin/zsh` on macOS).
+- **Default shell** - shell used for new terminal tabs. Defaults to `$SHELL` on macOS/Linux and `ComSpec` (normally `cmd.exe`) on Windows.
 - **Default terminal CWD** - working directory for new terminal tabs. Supports `~`, which expands to your home directory.
 
 Existing tabs keep whatever shell and CWD they were opened with - changing these settings only affects terminals opened after the change. The dialog persists changes as you type; close it with **Done** when finished.

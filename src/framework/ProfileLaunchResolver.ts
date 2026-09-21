@@ -12,8 +12,12 @@ import {
   resolveAgentInvocation,
   type ResolvedAgentInvocation,
 } from "../core/agents/AgentLauncher";
-import { expandTilde } from "../core/utils";
-import { buildPtyLaunchPlan, type PtyLaunchPlan } from "../core/terminal/PtyLaunch";
+import {
+  buildConptyLaunchPlan,
+  buildPtyLaunchPlan,
+  type TerminalLaunchPlan,
+} from "../core/terminal/PtyLaunch";
+import type { PtyBackendKind } from "../core/terminal/PtyBackend";
 import { expandProfilePlaceholders } from "./AgentContextPrompt";
 
 export const PROFILE_PREVIEW_EXAMPLE_ITEM: WorkItem = {
@@ -43,7 +47,7 @@ export interface ResolvedProfileLaunch {
   prompt?: string;
   launchConfig: AgentLaunchConfig;
   invocation: ResolvedAgentInvocation;
-  pty: PtyLaunchPlan;
+  pty: TerminalLaunchPlan;
   promptPlacement: ProfilePromptPlacement;
   error?:
     | "context-item-required"
@@ -118,6 +122,7 @@ export function resolveProfileLaunch(options: {
     cols?: number;
     rows?: number;
     shell?: string;
+    backend?: PtyBackendKind;
   };
 }): ResolvedProfileLaunch {
   const { profile, settings, profileManager } = options;
@@ -201,21 +206,29 @@ export function resolveProfileLaunch(options: {
     loginShellWrap: profile.loginShellWrap,
   });
 
-  const pty = buildPtyLaunchPlan({
-    python3Path: options.pty?.python3Path ?? "python3",
-    wrapperPath: options.pty?.wrapperPath ?? "pty-wrapper.py",
-    cols: options.pty?.cols ?? 80,
-    rows: options.pty?.rows ?? 24,
-    command: invocation.argv,
-    loginShellWrap: invocation.loginShellWrap,
-    shell: options.pty?.shell,
-  });
+  const pty =
+    (options.pty?.backend ?? "python") === "conpty"
+      ? buildConptyLaunchPlan({
+          cols: options.pty?.cols ?? 80,
+          rows: options.pty?.rows ?? 24,
+          command: invocation.argv,
+          shell: options.pty?.shell,
+        })
+      : buildPtyLaunchPlan({
+          python3Path: options.pty?.python3Path ?? "python3",
+          wrapperPath: options.pty?.wrapperPath ?? "pty-wrapper.py",
+          cols: options.pty?.cols ?? 80,
+          rows: options.pty?.rows ?? 24,
+          command: invocation.argv,
+          loginShellWrap: invocation.loginShellWrap,
+          shell: options.pty?.shell,
+        });
 
   return {
     sourceLabel,
     sessionType,
     command,
-    cwd: expandTilde(cwd),
+    cwd: invocation.cwd,
     extraArgs,
     prompt,
     launchConfig,
@@ -264,14 +277,23 @@ export function formatProfileLaunchPreview(resolved: ResolvedProfileLaunch): str
     lines.push("Prompt placement: not injected");
   }
 
-  lines.push("", "PTY Python wrapper layer:");
-  resolved.pty.python.argv.forEach((arg, index) => lines.push(`  argv[${index}]: ${quoted(arg)}`));
+  if ("backend" in resolved.pty) {
+    lines.push("", "Windows ConPTY layer:");
+    resolved.pty.command.argv.forEach((arg, index) =>
+      lines.push(`  argv[${index}]: ${quoted(arg)}`),
+    );
+  } else {
+    lines.push("", "PTY Python wrapper layer:");
+    resolved.pty.python.argv.forEach((arg, index) =>
+      lines.push(`  argv[${index}]: ${quoted(arg)}`),
+    );
 
-  lines.push(
-    "",
-    resolved.pty.loginShellWrapped ? "Login-shell child layer:" : "Direct child layer:",
-  );
-  resolved.pty.child.argv.forEach((arg, index) => lines.push(`  argv[${index}]: ${quoted(arg)}`));
+    lines.push(
+      "",
+      resolved.pty.loginShellWrapped ? "Login-shell child layer:" : "Direct child layer:",
+    );
+    resolved.pty.child.argv.forEach((arg, index) => lines.push(`  argv[${index}]: ${quoted(arg)}`));
+  }
 
   if (!invocation.command.found) {
     lines.push("", `Warning: executable was not found; launch would be blocked.`);

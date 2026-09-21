@@ -1477,24 +1477,21 @@ describe("TerminalTab auto-scroll on write", () => {
   }
 
   function createMockProcess() {
-    const stdoutHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
-    const procHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+    const dataHandlers: Array<(data: Buffer) => void> = [];
     return {
-      stdout: {
-        on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-          (stdoutHandlers[event] ??= []).push(handler);
-        }),
-      },
-      stderr: { on: vi.fn() },
       stdin: { write: vi.fn(), destroyed: false },
-      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        (procHandlers[event] ??= []).push(handler);
+      onData: vi.fn((handler: (data: Buffer) => void) => {
+        dataHandlers.push(handler);
       }),
+      onError: vi.fn(),
+      onExit: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
       killed: false,
       exitCode: null,
       signalCode: null,
       emitStdout(data: Buffer) {
-        for (const handler of stdoutHandlers["data"] ?? []) handler(data);
+        for (const handler of dataHandlers) handler(data);
       },
     };
   }
