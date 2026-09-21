@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../core/agents/AgentProfile";
-import { buildPtyLaunchPlan } from "../core/terminal/PtyLaunch";
+import { buildPtyLaunchPlan, type PtyLaunchPlan } from "../core/terminal/PtyLaunch";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -208,16 +208,17 @@ describe("profile launch resolution and preview", () => {
       },
     });
 
+    const pty = resolved.pty as PtyLaunchPlan;
     expect(resolved.invocation.argv.slice(-2)).toEqual(["--prompt", resolved.prompt]);
-    expect(resolved.pty.loginShellWrapped).toBe(true);
-    expect(resolved.pty.child.argv).toEqual([
+    expect(pty.loginShellWrapped).toBe(true);
+    expect(pty.child.argv).toEqual([
       "/bin/zsh",
       "-l",
       "-i",
       "-c",
       expect.stringContaining("--prompt"),
     ]);
-    expect(resolved.pty.child.argv[4]).toContain("'\"'\"'");
+    expect(pty.child.argv[4]).toContain("'\"'\"'");
   });
 
   it("reports the missing manual prompt placeholder before launch", () => {
@@ -304,7 +305,8 @@ describe("profile launch resolution and preview", () => {
       }),
     );
     const preview = formatProfileLaunchPreview(resolved);
-    resolved.pty.python.argv.forEach((arg, index) => {
+    const pty = resolved.pty as PtyLaunchPlan;
+    pty.python.argv.forEach((arg, index) => {
       expect(preview).toContain(`argv[${index}]: ${JSON.stringify(arg)}`);
     });
     expect(preview).not.toContain("<shell-quoted");

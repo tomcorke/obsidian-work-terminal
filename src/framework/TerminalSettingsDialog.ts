@@ -20,6 +20,7 @@ import { App, Modal, Setting } from "obsidian";
 import type { Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
 import { mergeAndSavePluginData } from "../core/PluginDataStore";
+import { getDefaultShell } from "../core/terminal/PtyLaunch";
 import { SETTINGS_CHANGED_EVENT, loadAllSettings } from "./SettingsTab";
 
 export class TerminalSettingsDialog extends Modal {
@@ -69,11 +70,9 @@ export class TerminalSettingsDialog extends Modal {
     this.renderTextField(
       containerEl,
       "Default shell",
-      "Shell used for new terminal tabs. Defaults to $SHELL at plugin load time.",
+      "Shell used for new terminal tabs. Defaults to the system shell.",
       "core.defaultShell",
-      (settings["core.defaultShell"] as string | null | undefined) ??
-        process.env.SHELL ??
-        "/bin/zsh",
+      (settings["core.defaultShell"] as string | null | undefined) ?? getDefaultShell(),
     );
     this.renderTextField(
       containerEl,

@@ -1,7 +1,7 @@
 /**
- * TerminalTab - xterm.js terminal + Python PTY wrapper spawn.
+ * TerminalTab - xterm.js terminal + OS-specific PTY backend.
  *
- * Each tab owns a Terminal instance, FitAddon, ResizeObserver, PTY child process,
+ * Each tab owns a Terminal instance, FitAddon, ResizeObserver, PTY process,
  * and agent state detection. Supports stash/restore for hot-reload persistence.
  */
 import { Terminal, type IDisposable } from "@xterm/xterm";
@@ -10,10 +10,9 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
-import type { ChildProcess } from "child_process";
 import { StringDecoder } from "string_decoder";
 import { Notice } from "obsidian";
-import { expandTilde, stripAnsi, electronRequire } from "../utils";
+import { stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase, attachInputCapture } from "./KeyboardCapture";
@@ -33,7 +32,18 @@ import {
 import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/AgentStateDetector";
 import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
-import { buildPtyLaunchPlan, resolvePtyWrapperPath } from "./PtyLaunch";
+import {
+  getDefaultShell,
+  getInteractiveShellCommand,
+  resolveTerminalCwd,
+  resolvePtyWrapperPath,
+} from "./PtyLaunch";
+import {
+  createPtyBackend,
+  getPtyBackendKind,
+  PtyBackendUnavailableError,
+  type TerminalProcess,
+} from "./PtyBackend";
 
 export { resolvePtyWrapperPath } from "./PtyLaunch";
 
@@ -123,7 +133,7 @@ export class TerminalTab {
 
   terminal: Terminal;
   containerEl: HTMLElement;
-  process: ChildProcess | null = null;
+  process: TerminalProcess | null = null;
 
   onOutputData?: (data: Buffer | string) => void;
   onLabelChange?: () => void;
@@ -197,12 +207,7 @@ export class TerminalTab {
     this.label = label;
     this.sessionType = sessionType;
 
-    // Expand ~ in cwd
-    this.cwd = expandTilde(cwd);
-    if (!this.cwd.startsWith("/")) {
-      const home = process.env.HOME || process.env.USERPROFILE || "";
-      if (home) this.cwd = home + "/" + this.cwd;
-    }
+    this.cwd = resolveTerminalCwd(cwd);
 
     injectXtermCss();
 
@@ -312,8 +317,9 @@ export class TerminalTab {
       const cols = this.terminal.cols || 80;
       const rows = this.terminal.rows || 24;
       try {
-        const python3Path = checkPython3Available();
-        if (!python3Path) {
+        const backendKind = getPtyBackendKind();
+        const python3Path = backendKind === "python" ? checkPython3Available() : undefined;
+        if (backendKind === "python" && !python3Path) {
           console.error("[work-terminal] python3 not found - cannot spawn PTY");
           this.terminal.write(`\r\n[${PYTHON3_MISSING_MESSAGE}]\r\n`);
           if (!hasPython3BeenNotified()) {
@@ -323,15 +329,19 @@ export class TerminalTab {
           return;
         }
         this.spawnTime = Date.now();
-        const proc = this.spawnPty(cols, rows, command, python3Path);
+        const proc = this.spawnPty(cols, rows, command, python3Path ?? undefined);
         console.log("[work-terminal] Spawned pid:", proc.pid, "cols:", cols, "rows:", rows);
         this.process = proc;
         this.wireProcess(proc);
         this.startStateTracking();
         this.terminal.scrollToBottom();
       } catch (err) {
+        const message = errorMessage(err);
         console.error("[work-terminal] Failed to spawn:", err);
-        this.terminal.write(`\r\n[Failed to spawn: ${err}]\r\n`);
+        this.terminal.write(`\r\n[Failed to spawn: ${message}]\r\n`);
+        if (err instanceof PtyBackendUnavailableError) {
+          new Notice(message, 10_000);
+        }
       }
     };
 
@@ -342,14 +352,9 @@ export class TerminalTab {
       spawnWithFit();
     }, 150);
 
-    // Send resize control sequence to PTY wrapper on terminal resize
     this.terminal.onResize(({ cols, rows }) => {
-      if (this._isDisposed) return;
-      if (this.process?.stdin && !this.process.stdin.destroyed) {
-        // Custom OSC sequence that pty-wrapper.py intercepts
-        const resizeCmd = `\x1b]777;resize;${cols};${rows}\x07`;
-        this.process.stdin.write(resizeCmd);
-      }
+      if (this._isDisposed || !this.process || this.process.killed) return;
+      this.process.resize(cols, rows);
     });
 
     // Resize observer - debounced to avoid fitting during tab transition
@@ -518,12 +523,10 @@ export class TerminalTab {
   // Process wiring
   // ---------------------------------------------------------------------------
 
-  private wireProcess(proc: ChildProcess): void {
+  private wireProcess(proc: TerminalProcess): void {
     this.terminal.onData((data) => {
       if (this._isDisposed) return;
-      if (proc.stdin && !proc.stdin.destroyed) {
-        proc.stdin.write(data);
-      }
+      if (!proc.stdin.destroyed) proc.stdin.write(data);
     });
 
     // Auto-scroll: always scroll to bottom after each write UNLESS the user
@@ -549,29 +552,22 @@ export class TerminalTab {
       });
     };
 
-    proc.stdout?.on("data", (data: Buffer) => {
+    proc.onData((data) => {
       if (this._isDisposed) return;
-      this._checkRename(data);
+      const buffer = typeof data === "string" ? Buffer.from(data) : data;
+      this._checkRename(buffer);
       this._trackOutput(data);
       this.onOutputData?.(data);
       writeWithAutoScroll(data);
     });
 
-    proc.stderr?.on("data", (data: Buffer) => {
-      if (this._isDisposed) return;
-      this._checkRename(data);
-      this._trackOutput(data);
-      this.onOutputData?.(data);
-      writeWithAutoScroll(data);
-    });
-
-    proc.on("error", (err) => {
+    proc.onError((err) => {
       if (this._isDisposed) return;
       console.error("[work-terminal] Process error:", err);
       writeWithAutoScroll(`\r\n[Process error: ${err.message}]\r\n`);
     });
 
-    proc.on("exit", (code, signal) => {
+    proc.onExit((code, signal) => {
       if (this._isDisposed) return;
       writeWithAutoScroll(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
@@ -670,7 +666,7 @@ export class TerminalTab {
   }
 
   // ---------------------------------------------------------------------------
-  // PTY spawn
+  // PTY backend
   // ---------------------------------------------------------------------------
 
   /** Call fitAddon.fit() only if the container is wide enough.
@@ -861,46 +857,38 @@ export class TerminalTab {
   }
 
   // ---------------------------------------------------------------------------
-  // PTY spawn
+  // PTY backend
   // ---------------------------------------------------------------------------
 
   private spawnPty(
     cols: number,
     rows: number,
     command?: string[],
-    python3Path = "python3",
-  ): ChildProcess {
-    const cp = electronRequire("child_process") as typeof import("child_process");
-    const plan = buildPtyLaunchPlan({
-      python3Path,
-      wrapperPath: resolvePtyWrapperPath(this.pluginDir),
-      cols,
-      rows,
-      command: command || [this.shell, "-i"],
-      loginShellWrap: this.loginShellWrap,
-    });
-    const args = plan.python.argv.slice(1);
-
-    console.log(
-      "[work-terminal] Spawning via pty-wrapper:",
-      plan.python.executable,
-      args.join(" "),
-    );
-    console.log("[work-terminal] cwd:", this.cwd);
-
-    const spawnEnv: Record<string, string | undefined> = {
+    python3Path?: string,
+  ): TerminalProcess {
+    const backend = createPtyBackend();
+    const spawnCommand = command ?? getInteractiveShellCommand(this.shell);
+    const spawnEnv: NodeJS.ProcessEnv = {
       ...process.env,
       TERM: "xterm-256color",
       COLUMNS: String(cols),
       LINES: String(rows),
       PATH: getFullPath(),
     };
-    const proc = cp.spawn(plan.python.executable, args, {
+    const proc = backend.spawn({
+      shell: this.shell,
       cwd: this.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
+      cols,
+      rows,
+      command: spawnCommand,
       env: spawnEnv,
+      python3Path,
+      wrapperPath:
+        getPtyBackendKind() === "python" ? resolvePtyWrapperPath(this.pluginDir) : undefined,
+      loginShellWrap: this.loginShellWrap,
     });
 
+    console.log("[work-terminal] backend:", backend.kind, "cwd:", this.cwd);
     console.log("[work-terminal] spawn pid:", proc.pid);
     return proc;
   }
@@ -1319,8 +1307,8 @@ export class TerminalTab {
     tab.profileId = stored.profileId;
     tab.profileColor = stored.profileColor;
     tab.activityPatterns = stored.activityPatterns;
-    tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
-    tab.cwd = stored.cwd || process.env.HOME || "~";
+    tab.shell = stored.shell || getDefaultShell();
+    tab.cwd = resolveTerminalCwd(stored.cwd || "~");
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
     tab.terminal = stored.terminal;
     // Ensure linkHandler is set on restored terminals - older sessions or
@@ -1537,12 +1525,12 @@ export class TerminalTab {
     this._documentCleanups = [];
     this.resizeObserver.disconnect();
     if (this.process && !this.process.killed) {
-      this.process.kill("SIGTERM");
+      this.process.kill();
       // Force kill after 1s if not exited
       const procRef = this.process;
       setTimeout(() => {
         if (procRef && !procRef.killed) {
-          procRef.kill("SIGKILL");
+          procRef.kill(true);
         }
       }, 1000);
     }

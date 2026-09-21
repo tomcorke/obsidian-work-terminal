@@ -25,7 +25,7 @@ import type {
   SessionType,
   TabDiagnostics,
 } from "../core/session/types";
-import { electronRequire, expandTilde } from "../core/utils";
+import { electronRequire } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
@@ -48,7 +48,8 @@ import {
   resolveVaultBasePath,
 } from "../core/workspace/pluginPaths";
 import { checkPython3Available } from "../core/terminal/PythonCheck";
-import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
+import { getPtyBackendKind } from "../core/terminal/PtyBackend";
+import { getDefaultShell, resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -954,6 +955,17 @@ export class TerminalPanelView {
       promptBuilder: this.promptBuilder,
       item: item ?? undefined,
       absoluteFilePath: item ? this.resolveWorkItemPath(item.path) : undefined,
+      pty: {
+        backend: getPtyBackendKind(),
+        python3Path:
+          getPtyBackendKind() === "python"
+            ? (checkPython3Available() ?? "python3 (not found)")
+            : "not used on Windows",
+        wrapperPath:
+          getPtyBackendKind() === "python"
+            ? resolvePtyWrapperPath(this.resolvePluginDir())
+            : "not used on Windows",
+      },
     });
 
     if (resolved.error === "context-item-required") {
@@ -1003,12 +1015,8 @@ export class TerminalPanelView {
   private async spawnShell(): Promise<void> {
     this.exitDetailView();
     const fresh = await this.loadFreshSettings();
-    const shell = this.getStringSetting(
-      fresh,
-      "core.defaultShell",
-      process.env.SHELL || "/bin/zsh",
-    );
-    const cwd = expandTilde(this.getStringSetting(fresh, "core.defaultTerminalCwd", "~"));
+    const shell = this.getStringSetting(fresh, "core.defaultShell", getDefaultShell());
+    const cwd = this.getStringSetting(fresh, "core.defaultTerminalCwd", "~");
     this.tabManager.createTab(shell, cwd, "Shell", "shell");
     this.renderTabBar();
   }
@@ -1469,8 +1477,15 @@ export class TerminalPanelView {
                 ? `Selected work item: ${selectedItem.title}`
                 : "Clearly labelled example values (no selected work item)",
               pty: {
-                python3Path: checkPython3Available() ?? "python3 (not found)",
-                wrapperPath: resolvePtyWrapperPath(this.resolvePluginDir()),
+                backend: getPtyBackendKind(),
+                python3Path:
+                  getPtyBackendKind() === "python"
+                    ? (checkPython3Available() ?? "python3 (not found)")
+                    : "not used on Windows",
+                wrapperPath:
+                  getPtyBackendKind() === "python"
+                    ? resolvePtyWrapperPath(this.resolvePluginDir())
+                    : "not used on Windows",
               },
             });
           },

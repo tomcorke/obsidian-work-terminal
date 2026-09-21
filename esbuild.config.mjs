@@ -1,10 +1,57 @@
 import esbuild from "esbuild";
 import http from "http";
 import crypto from "crypto";
+import path from "path";
+import { createRequire } from "module";
+import { readFileSync, statSync } from "fs";
 import { execFileSync } from "child_process";
 
 const isProduction = process.argv.includes("--production");
 const isWatch = process.argv.includes("--watch");
+const require = createRequire(import.meta.url);
+
+const WINDOWS_PTY_FILES = ["conpty.node", "conpty/conpty.dll", "conpty/OpenConsole.exe"];
+
+function generateWindowsPtyAssetsModule() {
+  const packageRoot = path.dirname(require.resolve("node-pty/package.json"));
+  const assets = [];
+  for (const architecture of ["win32-x64", "win32-arm64"]) {
+    for (const file of WINDOWS_PTY_FILES) {
+      const source = path.join(packageRoot, "prebuilds", architecture, file);
+      if (!statSync(source).isFile()) {
+        throw new Error(`node-pty is missing prebuild ${architecture}/${file}`);
+      }
+      assets.push({
+        path: `prebuilds/${architecture}/${file}`,
+        base64: readFileSync(source).toString("base64"),
+      });
+    }
+  }
+  for (const [source, assetPath] of [
+    ["lib/shared/conout.js", "shared/conout.js"],
+    ["lib/worker/conoutSocketWorker.js", "worker/conoutSocketWorker.js"],
+  ]) {
+    assets.push({
+      path: assetPath,
+      base64: readFileSync(path.join(packageRoot, source)).toString("base64"),
+    });
+  }
+  return `export const WINDOWS_PTY_ASSETS = ${JSON.stringify(assets)};`;
+}
+
+const windowsPtyAssetsPlugin = {
+  name: "windows-pty-assets",
+  setup(build) {
+    build.onResolve({ filter: /WindowsPtyAssets$/ }, () => ({
+      path: "windows-pty-assets",
+      namespace: "windows-pty-assets",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "windows-pty-assets" }, () => ({
+      contents: generateWindowsPtyAssetsModule(),
+      loader: "ts",
+    }));
+  },
+};
 
 /**
  * Resolve the running plugin's version for build-time injection.
@@ -194,7 +241,7 @@ const ctx = await esbuild.context({
     __WT_IS_TAGGED__: JSON.stringify(buildVersion.isTagged),
     __WT_VERSION_TIMESTAMP__: JSON.stringify(buildVersion.timestamp),
   },
-  plugins: [hotReloadPlugin],
+  plugins: [windowsPtyAssetsPlugin, hotReloadPlugin],
 });
 
 if (isWatch) {

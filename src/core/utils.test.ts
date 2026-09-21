@@ -22,6 +22,12 @@ describe("expandTilde", () => {
     expect(expandTilde("~/Documents/notes")).toBe("/home/user/Documents/notes");
   });
 
+  it("expands Windows home-relative paths", () => {
+    process.env.HOME = "C:\\Users\\user";
+    expect(expandTilde("~/Documents/notes")).toBe("C:\\Users\\user/Documents/notes");
+    expect(expandTilde("~\\Documents\\notes")).toBe("C:\\Users\\user\\Documents\\notes");
+  });
+
   it("expands bare tilde", () => {
     process.env.HOME = "/home/user";
     expect(expandTilde("~")).toBe("/home/user");

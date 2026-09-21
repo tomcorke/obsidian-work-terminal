@@ -135,10 +135,10 @@ All new placeholder variables must use the `$name` form (camelCase, dollar prefi
 
 ## Known constraints
 
-- **PTY**: Electron sandbox blocks pty.spawn. Python `pty.fork()` via `pty-wrapper.py` is the workaround. Non-negotiable.
+- **PTY**: Electron sandbox blocks direct native PTY access. POSIX uses Python `pty.fork()` via `pty-wrapper.py`; Windows uses bundled node-pty ConPTY artifacts. Both implementations sit behind `src/core/terminal/PtyBackend.ts`.
 - **xterm.js CSS**: `require.resolve` unavailable in bundle. Full CSS embedded inline at runtime via `XtermCss.ts`.
-- **Tilde expansion**: Always expand `~` via `process.env.HOME` before passing to spawn.
+- **Tilde expansion**: Always expand `~` via `process.env.HOME` or `process.env.USERPROFILE` before passing to spawn.
 - **Node builtins**: Use `window.require` for `child_process`, `fs`, `path`, `os` in Electron. Externalized in esbuild.
-- **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
+- **Resize protocol**: POSIX sends `ESC]777;resize;COLS;ROWS BEL` through stdin; ConPTY calls its native resize API.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Option+B/F/D, Shift+Enter, Option+Backspace, Cmd+Left/Right. xterm keeps Meta behavior by default, while Option+digit printable combos are preserved for layout-specific characters.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Reads last 30 buffer lines and pattern-matches the tail for waiting/active detection. Handles narrow terminal wrapping via joined-tail fallback.

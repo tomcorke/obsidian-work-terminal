@@ -28,7 +28,7 @@
 
 | ID | Description | Steps | Expected Result | Status | Notes |
 |----|-------------|-------|-----------------|--------|-------|
-| TC-01 | Python PTY wrapper spawns shell | Click "+ Shell" button in tab bar | pty-wrapper.py spawns a login interactive shell (`-l -i`). Terminal shows shell prompt. `ps` shows python3 pty-wrapper.py process. | | |
+| TC-01 | Platform PTY backend spawns shell | Click "+ Shell" button in tab bar | macOS/Linux use pty-wrapper.py for a login interactive shell (`-l -i`); Windows uses bundled node-pty ConPTY. Terminal shows a shell prompt. | | |
 | TC-02 | Tilde expansion in cwd | Check spawned shell's working directory (`pwd`) | Should be expanded home directory, not literal `~` | | |
 | TC-03 | Keyboard: Option+Arrow | Focus terminal, press Option+Right Arrow | Cursor moves forward one word (escape sequence sent, not Obsidian shortcut) | | |
 | TC-04 | Keyboard: Shift+Enter | Focus terminal, press Shift+Enter | Newline sent to terminal (not Obsidian's default behaviour) | | |
@@ -36,7 +36,7 @@
 | TC-06 | Keyboard: Option+B / Option+F / Option+D | Focus terminal, press Option+B / Option+F / Option+D | Word navigation/delete works via explicit escape-sequence handling. Option+B / Option+F / Option+D are reserved for terminal editing even on layouts where they would otherwise be printable. | | |
 | TC-06a | Keyboard: Option+3 on macOS UK | Focus terminal, press Option+3 | `#` is inserted into the terminal input instead of being swallowed, while other non-digit Option shortcuts still follow terminal Meta handling. | | |
 | TC-06b | Keyboard: restored terminal Option handling | Hot-reload with an existing terminal tab, then press Option+3 and Option+T | Restored tabs match fresh tabs: Option+3 inserts the printable character, while Option+T still follows terminal Meta behavior. | | |
-| TC-07 | Resize protocol | Drag the divider to resize the terminal panel | Terminal re-fits to new dimensions. No truncated lines. OSC `ESC]777;resize;COLS;ROWS BEL` sent to pty-wrapper.py (check pty-wrapper.py handles it). | | |
+| TC-07 | Resize protocol | Drag the divider to resize the terminal panel | Terminal re-fits to new dimensions with no truncated lines. POSIX sends OSC `ESC]777;resize;COLS;ROWS BEL` to pty-wrapper.py; Windows calls the ConPTY resize API. | | |
 | TC-08 | Double-rAF on tab show | Switch between tabs, observe terminal rendering | No blank/misrendered terminal. fitAddon measurements correct (double requestAnimationFrame ensures layout). | | |
 | TC-09 | Screen reading via cursor position | Run a command with short output (e.g. `echo hello`) in a tall terminal | State detector reads content at `baseY + cursorY`, not buffer bottom. Should find the prompt correctly. | | |
 | TC-10 | Scroll-to-bottom button | Run a long command (e.g. `seq 1000`), scroll up | Scroll-to-bottom overlay button appears. Clicking it scrolls to bottom. Button disappears when at bottom. | | |
@@ -46,7 +46,7 @@
 | TC-14 | 150ms spawn delay | Open a new terminal tab, observe timing | Brief delay before shell prompt appears (150ms for CSS layout to complete). Initial terminal dimensions should be correct (not 80x24 default). | | |
 | TC-15 | Silent fitAddon.fit() errors | Rapidly resize, switch tabs, or trigger lifecycle transitions | No uncaught exceptions from fitAddon.fit(). Errors silently caught. | | |
 | TC-16 | ResizeObserver skips fit when hidden | Have multiple tabs, resize while a tab is hidden | Hidden tabs should not attempt fit (avoids zero-dimension errors). Fit deferred via rAF. | | |
-| TC-17 | SIGTERM then SIGKILL on dispose | Close a tab with a running process | Process receives SIGTERM. If still running after 1s, SIGKILL sent. No orphan processes. | | |
+| TC-17 | Backend cleanup on dispose | Close a tab with a running process | The selected PTY backend terminates the process and leaves no orphan process. | | |
 | TC-18 | Timestamp + counter terminal IDs | Rapidly open multiple terminals | Each terminal has a unique ID (no collision from Date.now() alone). | | |
 
 ## 2. Tab Management

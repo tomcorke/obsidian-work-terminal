@@ -5,7 +5,9 @@ export function expandTilde(p: string): string {
   const home = process.env.HOME || process.env.USERPROFILE || "";
   if (!home) return p;
   if (p === "~") return home;
-  if (p.startsWith("~/")) return home + p.slice(1);
+  if (p.startsWith("~/") || p.startsWith("~\\")) {
+    return home + p.slice(1);
+  }
   return p;
 }
 

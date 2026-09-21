@@ -534,7 +534,7 @@ export function buildAgentArgs(
   return args;
 }
 
-/** The exact command model handed to TerminalTab and, ultimately, pty-wrapper.py. */
+/** The exact command model handed to TerminalTab and its selected PTY backend. */
 export interface ResolvedAgentInvocation {
   command: ResolvedCommand;
   cwd: string;
