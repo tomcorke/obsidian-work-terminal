@@ -1085,6 +1085,23 @@ describe("ListPanel", () => {
     expect(pinnedCards.map((el) => el.getAttribute("data-item-id"))).toEqual(["task-2", "task-1"]);
   });
 
+  it("exposes the rendered pinned, custom, and nested item order", () => {
+    const { panel } = createListPanel();
+    const pinStore = createMockPinStore(["pinned"]);
+    panel.setPinStore(pinStore as any);
+    const pinned = makeItem("pinned", "Pinned");
+    const parent = makeItem("parent", "Parent");
+    const child = makeItem("child", "Child", { parent: { id: "parent" } });
+    const sibling = makeItem("sibling", "Sibling");
+
+    panel.render(
+      { todo: [child, sibling, parent, pinned] },
+      { todo: ["sibling", "parent", "child"] },
+    );
+
+    expect(panel.getDisplayedItemOrder()).toEqual(["pinned", "sibling", "parent", "child"]);
+  });
+
   it("works without a pin store (backward-compatible)", () => {
     const { panel } = createListPanel();
     // No pinStore set - should render normally without errors
