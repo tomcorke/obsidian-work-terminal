@@ -267,6 +267,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         label: "Claude",
         agentSessionId: "session-1",
         sessionType: "claude",
+        autoRenameSawActive: true,
         terminal: terminal as any,
         fitAddon: fitAddon as any,
         searchAddon: searchAddon as any,
@@ -289,6 +290,8 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect((restored as any).linkProviderDisposable).toBe(linkProviderDisposable);
     expect((restored as any).unicode11Addon).toBe(unicode11Addon);
     expect((restored as any).webglAddon).toBe(webglAddon);
+    expect((restored as any).autoRenameSawActive).toBe(true);
+    expect(TerminalTab.prototype.startStateTracking).toHaveBeenCalledWith(true);
     expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
     expect(scrollToBottom).toHaveBeenCalled();
   });

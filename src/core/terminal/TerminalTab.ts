@@ -1125,14 +1125,14 @@ export class TerminalTab {
   }
 
   /** Start state tracking for agent sessions. Call after label is known. */
-  startStateTracking(): void {
+  startStateTracking(preserveObservedWork = false): void {
     this._isAgentTab = this._detectAgentTab();
     if (!this._isAgentTab || this._stateTimer) return;
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
     this._agentState = this._suppressActiveUntil > 0 ? "idle" : "active";
-    this.autoRenameSawActive = false;
+    if (!preserveObservedWork) this.autoRenameSawActive = false;
     if (!this._recentCleanLines) this._recentCleanLines = [];
 
     // Check state every 2 seconds
@@ -1459,7 +1459,7 @@ export class TerminalTab {
     // Suppress "active" detection for 2s to prevent stale xterm buffer
     // content from causing a false active flash on all cards after reload.
     tab._suppressActiveUntil = Date.now() + 2000;
-    tab.startStateTracking();
+    tab.startStateTracking(true);
 
     // Scroll to bottom after recovery - terminal buffer is preserved but
     // viewport resets to top during the DOM re-attach.
