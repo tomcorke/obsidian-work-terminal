@@ -267,6 +267,7 @@ describe("TerminalTab hot-reload addon handling", () => {
         label: "Claude",
         agentSessionId: "session-1",
         sessionType: "claude",
+        autoRenameSawActive: true,
         terminal: terminal as any,
         fitAddon: fitAddon as any,
         searchAddon: searchAddon as any,
@@ -289,6 +290,9 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect((restored as any).linkProviderDisposable).toBe(linkProviderDisposable);
     expect((restored as any).unicode11Addon).toBe(unicode11Addon);
     expect((restored as any).webglAddon).toBe(webglAddon);
+    expect((restored as any).autoRenameSawActive).toBe(true);
+    expect((restored as any)._suppressActiveUntil - Date.now()).toBeGreaterThanOrEqual(3_900);
+    expect(TerminalTab.prototype.startStateTracking).toHaveBeenCalledWith(true);
     expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
     expect(scrollToBottom).toHaveBeenCalled();
   });
@@ -1735,6 +1739,27 @@ describe("TerminalTab auto-scroll on write", () => {
     clearGuard?.(0);
 
     expect(tab._userScrolledUp).toBe(false);
+  });
+});
+
+describe("TerminalTab automatic title cycle", () => {
+  it("requires an observed active state before requesting a title", () => {
+    const requestTitle = vi.fn();
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _agentState: "active",
+      autoRenameSawActive: false,
+      outputDataBridge: { requestTitle },
+    }) as TerminalTab;
+
+    (tab as any)._setAgentState("idle");
+    expect(requestTitle).not.toHaveBeenCalled();
+
+    (tab as any)._setAgentState("active");
+    (tab as any)._setAgentState("idle", false);
+    expect(requestTitle).not.toHaveBeenCalled();
+
+    (tab as any)._setAgentState("idle");
+    expect(requestTitle).toHaveBeenCalledOnce();
   });
 });
 

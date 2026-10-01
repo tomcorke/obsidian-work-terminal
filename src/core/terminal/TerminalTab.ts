@@ -43,6 +43,8 @@ export type ClaudeState = AgentState;
 let sessionCounter = 0;
 let hasWarnedViewportResync = false;
 const TERMINAL_SCROLLBACK = 5000;
+const STATE_POLL_INTERVAL_MS = 2000;
+const RESTORE_ACTIVE_GRACE_MS = STATE_POLL_INTERVAL_MS * 2;
 
 type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
@@ -1125,18 +1127,18 @@ export class TerminalTab {
   }
 
   /** Start state tracking for agent sessions. Call after label is known. */
-  startStateTracking(): void {
+  startStateTracking(preserveObservedWork = false): void {
     this._isAgentTab = this._detectAgentTab();
     if (!this._isAgentTab || this._stateTimer) return;
 
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
     this._agentState = this._suppressActiveUntil > 0 ? "idle" : "active";
-    this.autoRenameSawActive = this._agentState === "active";
+    if (!preserveObservedWork) this.autoRenameSawActive = false;
     if (!this._recentCleanLines) this._recentCleanLines = [];
 
     // Check state every 2 seconds
-    this._stateTimer = setInterval(() => this._checkState(), 2000);
+    this._stateTimer = setInterval(() => this._checkState(), STATE_POLL_INTERVAL_MS);
   }
 
   /** Check whether this tab is an agent session that should have state tracking. */
@@ -1220,7 +1222,7 @@ export class TerminalTab {
       const hasActiveIndicator = hasAgentActiveIndicator(screenLines, this.activityPatterns);
       if (hasActiveIndicator) {
         if (Date.now() < this._suppressActiveUntil) {
-          this._setAgentState("idle");
+          this._setAgentState("idle", false);
         } else {
           this._setAgentState("active");
         }
@@ -1242,7 +1244,7 @@ export class TerminalTab {
     if (hasActiveIndicator || screenChanged) {
       // During post-reload grace period, treat "active" as "idle"
       if (Date.now() < this._suppressActiveUntil) {
-        this._setAgentState("idle");
+        this._setAgentState("idle", false);
       } else {
         this._setAgentState("active");
       }
@@ -1278,14 +1280,14 @@ export class TerminalTab {
     }
   }
 
-  private _setAgentState(state: AgentState): void {
-    if (this._agentState === state) return;
-    this._agentState = state;
+  private _setAgentState(state: AgentState, completesWork = true): void {
     if (state === "active") this.autoRenameSawActive = true;
-    if ((state === "idle" || state === "waiting") && this.autoRenameSawActive) {
+    if (completesWork && (state === "idle" || state === "waiting") && this.autoRenameSawActive) {
       this.autoRenameSawActive = false;
       this.outputDataBridge?.requestTitle?.();
     }
+    if (this._agentState === state) return;
+    this._agentState = state;
     this.onStateChange?.(state);
   }
 
@@ -1458,8 +1460,8 @@ export class TerminalTab {
     // Resume state tracking for Claude sessions.
     // Suppress "active" detection for 2s to prevent stale xterm buffer
     // content from causing a false active flash on all cards after reload.
-    tab._suppressActiveUntil = Date.now() + 2000;
-    tab.startStateTracking();
+    tab._suppressActiveUntil = Date.now() + RESTORE_ACTIVE_GRACE_MS;
+    tab.startStateTracking(true);
 
     // Scroll to bottom after recovery - terminal buffer is preserved but
     // viewport resets to top during the DOM re-attach.
