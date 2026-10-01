@@ -28,6 +28,7 @@ const mockState = vi.hoisted(() => ({
   tabDiagnostics: [] as TabDiagnostics[],
   idleSinceByItem: new Map<string, number>(),
   menuTitles: [] as string[],
+  menuPaths: [] as string[],
   menuActions: new Map<string, () => void>(),
   notices: [] as string[],
   clipboardWriteText: vi.fn(),
@@ -88,19 +89,23 @@ vi.mock("obsidian", () => ({
     }
   },
   Menu: class {
+    constructor(private path = "") {}
     addSeparator() {}
     addItem(
       callback: (item: {
         setTitle: (title: string) => any;
         onClick: (handler: (evt: MouseEvent | KeyboardEvent) => any) => any;
         setDisabled: (disabled: boolean) => any;
+        setSubmenu: () => any;
       }) => void,
     ) {
       let currentTitle = "";
+      const menuPath = this.path;
       callback({
         setTitle(title: string) {
           currentTitle = title;
           mockState.menuTitles.push(title);
+          mockState.menuPaths.push(menuPath ? `${menuPath} > ${title}` : title);
           return this;
         },
         onClick(handler: (evt: MouseEvent | KeyboardEvent) => any) {
@@ -112,6 +117,10 @@ vi.mock("obsidian", () => ({
         setDisabled() {
           return this;
         },
+        setSubmenu: () =>
+          new (this.constructor as new (path: string) => unknown)(
+            this.path ? `${this.path} > ${currentTitle}` : currentTitle,
+          ),
       });
     }
     showAtMouseEvent() {}
@@ -437,6 +446,7 @@ describe("TerminalPanelView", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
@@ -456,6 +466,49 @@ describe("TerminalPanelView", () => {
     }
     vi.unstubAllGlobals();
     dom.window.close();
+  });
+
+  it("re-enables and immediately requests automatic naming from the tab menu", () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    const requestTitle = vi.fn();
+    const tab = {
+      sessionType: "claude",
+      manuallyRenamed: true,
+      autoRenameLastAt: 123,
+      autoRenameLastTranscript: "old",
+      outputDataBridge: { requestTitle },
+    } as any;
+    (view as any).manuallyRenamedTabs.add(tab);
+    mockState.latestTabManager!.onPersistRequest = vi.fn();
+
+    (view as any).showTabContextMenu(tab, 0, {} as MouseEvent);
+    mockState.menuActions.get("Rename automatically now")?.();
+
+    expect(tab.manuallyRenamed).toBe(false);
+    expect(tab.autoRenameLastAt).toBe(0);
+    expect(tab.autoRenameLastTranscript).toBe("");
+    expect(requestTitle).toHaveBeenCalledOnce();
+    expect(mockState.latestTabManager!.onPersistRequest).toHaveBeenCalledOnce();
+  });
+
+  it("nests move targets by category", () => {
+    const { view } = createView({}, {}, { buildPrompt: () => "" });
+    (view as any).adapter.config.columns = [
+      { id: "todo", label: "Todo" },
+      { id: "active", label: "Active" },
+    ];
+    (view as any).allItems = [
+      { id: "task-1", title: "Current", state: "todo" },
+      { id: "task-2", title: "Second task", state: "todo" },
+      { id: "task-3", title: "Third task", state: "active" },
+    ];
+    mockState.activeItemId = "task-1";
+
+    (view as any).showTabContextMenu({ sessionType: "shell" }, 0, {} as MouseEvent);
+
+    expect(mockState.menuPaths).toContain("Move to task > Todo > Second task");
+    expect(mockState.menuPaths).toContain("Move to task > Active > Third task");
+    expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
   });
 
   it("keeps automatic tab renaming disabled by default", () => {
@@ -1703,6 +1756,7 @@ describe("embedded detail placement", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
@@ -1885,6 +1939,7 @@ describe("preview detail placement", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
@@ -2083,6 +2138,7 @@ describe("profile launch", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();

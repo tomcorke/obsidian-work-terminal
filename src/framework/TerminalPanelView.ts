@@ -869,7 +869,20 @@ export class TerminalPanelView {
       });
     });
 
-    // Move to Item submenu - grouped by column with headers
+    if (this.settings["core.autoRenameAgentTabs"] === true && tab.sessionType !== "shell") {
+      menu.addItem((item) => {
+        item.setTitle("Rename automatically now").onClick(() => {
+          tab.manuallyRenamed = false;
+          this.manuallyRenamedTabs.delete(tab);
+          tab.autoRenameLastAt = 0;
+          tab.autoRenameLastTranscript = "";
+          tab.outputDataBridge?.requestTitle?.();
+          this.tabManager.onPersistRequest?.();
+        });
+      });
+    }
+
+    // Move to Item submenu - grouped by column
     if (this.allItems.length > 0) {
       menu.addSeparator();
       const activeItemId = this.tabManager.getActiveItemId();
@@ -879,23 +892,29 @@ export class TerminalPanelView {
       );
 
       const columns = this.adapter.config.columns;
-      for (const col of columns) {
-        if (excludedStates.has(col.id)) continue;
-        const inColumn = available.filter((wi) => wi.state === col.id);
-        if (inColumn.length === 0) continue;
+      menu.addItem((moveItem) => {
+        const moveMenu = (
+          moveItem.setTitle("Move to task") as typeof moveItem & { setSubmenu(): Menu }
+        ).setSubmenu();
+        for (const col of columns) {
+          if (excludedStates.has(col.id)) continue;
+          const inColumn = available.filter((wi) => wi.state === col.id);
+          if (inColumn.length === 0) continue;
 
-        // Section header (disabled item acts as label)
-        menu.addItem((item) => {
-          item.setTitle(`Move to ${col.label}`).setDisabled(true);
-        });
-        for (const workItem of inColumn) {
-          menu.addItem((item) => {
-            item.setTitle(workItem.title).onClick(() => {
-              this.moveTabToItem(tab, index, workItem.id);
-            });
+          moveMenu.addItem((categoryItem) => {
+            const categoryMenu = (
+              categoryItem.setTitle(col.label) as typeof categoryItem & { setSubmenu(): Menu }
+            ).setSubmenu();
+            for (const workItem of inColumn) {
+              categoryMenu.addItem((item) => {
+                item.setTitle(workItem.title).onClick(() => {
+                  this.moveTabToItem(tab, index, workItem.id);
+                });
+              });
+            }
           });
         }
-      }
+      });
     }
 
     menu.showAtMouseEvent(e);
