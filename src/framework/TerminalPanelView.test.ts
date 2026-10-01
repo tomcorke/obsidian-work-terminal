@@ -501,6 +501,7 @@ describe("TerminalPanelView", () => {
       { id: "task-1", title: "Current", state: "todo" },
       { id: "task-2", title: "Second task", state: "todo" },
       { id: "task-3", title: "Third task", state: "active" },
+      { id: "task-4", title: "Custom task", state: "needs-review" },
     ];
     mockState.activeItemId = "task-1";
 
@@ -508,6 +509,7 @@ describe("TerminalPanelView", () => {
 
     expect(mockState.menuPaths).toContain("Move to task > Todo > Second task");
     expect(mockState.menuPaths).toContain("Move to task > Active > Third task");
+    expect(mockState.menuPaths).toContain("Move to task > Needs Review > Custom task");
     expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
   });
 

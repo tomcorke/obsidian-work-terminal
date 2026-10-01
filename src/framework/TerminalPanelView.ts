@@ -25,7 +25,7 @@ import type {
   SessionType,
   TabDiagnostics,
 } from "../core/session/types";
-import { electronRequire, expandTilde } from "../core/utils";
+import { electronRequire, expandTilde, titleCase } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
@@ -891,20 +891,31 @@ export class TerminalPanelView {
         (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
       );
 
-      const columns = this.adapter.config.columns;
+      const configured = this.adapter.config.columns.filter(
+        (column) => !excludedStates.has(column.id),
+      );
+      const configuredIds = new Set(configured.map((column) => column.id));
+      const columns = [
+        ...configured,
+        ...Array.from(new Set(available.map((item) => item.state)))
+          .filter((state) => !configuredIds.has(state))
+          .map((state) => ({ id: state, label: titleCase(state) })),
+      ];
+      let submenuSupported = false;
       menu.addItem((moveItem) => {
-        const moveMenu = (
-          moveItem.setTitle("Move to task") as typeof moveItem & { setSubmenu(): Menu }
-        ).setSubmenu();
+        const withSubmenu = moveItem.setTitle("Move to task") as typeof moveItem & {
+          setSubmenu?: () => Menu;
+        };
+        const moveMenu = withSubmenu.setSubmenu?.();
+        if (!moveMenu) return;
+        submenuSupported = true;
         for (const col of columns) {
-          if (excludedStates.has(col.id)) continue;
           const inColumn = available.filter((wi) => wi.state === col.id);
           if (inColumn.length === 0) continue;
-
           moveMenu.addItem((categoryItem) => {
-            const categoryMenu = (
-              categoryItem.setTitle(col.label) as typeof categoryItem & { setSubmenu(): Menu }
-            ).setSubmenu();
+            const categoryMenu = (categoryItem as typeof categoryItem & { setSubmenu: () => Menu })
+              .setTitle(col.label)
+              .setSubmenu();
             for (const workItem of inColumn) {
               categoryMenu.addItem((item) => {
                 item.setTitle(workItem.title).onClick(() => {
@@ -915,6 +926,17 @@ export class TerminalPanelView {
           });
         }
       });
+      if (!submenuSupported) {
+        for (const col of columns) {
+          for (const workItem of available.filter((wi) => wi.state === col.id)) {
+            menu.addItem((item) => {
+              item.setTitle(`Move to task / ${col.label} / ${workItem.title}`).onClick(() => {
+                this.moveTabToItem(tab, index, workItem.id);
+              });
+            });
+          }
+        }
+      }
     }
 
     menu.showAtMouseEvent(e);
