@@ -126,6 +126,13 @@ export class TerminalTab {
   process: ChildProcess | null = null;
 
   onOutputData?: (data: Buffer | string) => void;
+  outputDataBridge: {
+    callback?: (data: Buffer | string) => void;
+    applyTitle?: (title: string, originalLabel: string) => void;
+  } = {};
+  autoRenameOutput = "";
+  autoRenameAttempted = false;
+  manuallyRenamed = false;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: string | null) => void;
   onStateChange?: (state: AgentState) => void;
@@ -554,6 +561,7 @@ export class TerminalTab {
       this._checkRename(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
+      this.outputDataBridge?.callback?.(data);
       writeWithAutoScroll(data);
     });
 
@@ -562,6 +570,7 @@ export class TerminalTab {
       this._checkRename(data);
       this._trackOutput(data);
       this.onOutputData?.(data);
+      this.outputDataBridge?.callback?.(data);
       writeWithAutoScroll(data);
     });
 
@@ -1286,6 +1295,10 @@ export class TerminalTab {
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
+      outputDataBridge: this.outputDataBridge,
+      autoRenameOutput: this.autoRenameOutput,
+      autoRenameAttempted: this.autoRenameAttempted,
+      manuallyRenamed: this.manuallyRenamed,
       terminal: this.terminal,
       fitAddon: this.fitAddon!,
       searchAddon: this.searchAddon!,
@@ -1322,6 +1335,10 @@ export class TerminalTab {
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
+    tab.outputDataBridge = stored.outputDataBridge ?? {};
+    tab.autoRenameOutput = stored.autoRenameOutput ?? "";
+    tab.autoRenameAttempted = stored.autoRenameAttempted ?? false;
+    tab.manuallyRenamed = stored.manuallyRenamed ?? false;
     tab.terminal = stored.terminal;
     // Ensure linkHandler is set on restored terminals - older sessions or
     // terminals from prior plugin versions may not have this option, causing

@@ -53,6 +53,13 @@ export interface StoredSession {
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
+  outputDataBridge?: {
+    callback?: (data: Buffer | string) => void;
+    applyTitle?: (title: string, originalLabel: string) => void;
+  };
+  autoRenameOutput?: string;
+  autoRenameAttempted?: boolean;
+  manuallyRenamed?: boolean;
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;

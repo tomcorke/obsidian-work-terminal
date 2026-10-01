@@ -481,8 +481,8 @@ describe("TerminalPanelView", () => {
     mockState.latestTabManager!.onPersistRequest = vi.fn();
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
-    tab.onOutputData(Buffer.from("output"));
-    tab.onOutputData(Buffer.from("more output"));
+    tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.callback(Buffer.from("more output"));
     await flushAsync();
 
     expect(piTitleMocks.generate).toHaveBeenCalledOnce();
@@ -502,7 +502,7 @@ describe("TerminalPanelView", () => {
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
     (view as any).settings["core.autoRenameAgentTabs"] = false;
-    tab.onOutputData(Buffer.from("output"));
+    tab.outputDataBridge.callback(Buffer.from("output"));
 
     expect(piTitleMocks.prepare).not.toHaveBeenCalled();
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
@@ -519,7 +519,7 @@ describe("TerminalPanelView", () => {
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
     (view as any).manuallyRenamedTabs.add(tab);
-    tab.onOutputData(Buffer.from("output"));
+    tab.outputDataBridge.callback(Buffer.from("output"));
 
     expect(piTitleMocks.prepare).not.toHaveBeenCalled();
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
@@ -542,7 +542,7 @@ describe("TerminalPanelView", () => {
     } as any;
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
-    tab.onOutputData(Buffer.from("output"));
+    tab.outputDataBridge.callback(Buffer.from("output"));
     (view as any).manuallyRenamedTabs.add(tab);
     tab.label = "My title";
     resolveTitle("Generated title");
@@ -568,7 +568,7 @@ describe("TerminalPanelView", () => {
     } as any;
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
-    tab.onOutputData(Buffer.from("output"));
+    tab.outputDataBridge.callback(Buffer.from("output"));
     view.stashAll();
     resolveTitle("Generated title");
     await flushAsync();
