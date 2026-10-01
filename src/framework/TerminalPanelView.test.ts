@@ -30,6 +30,7 @@ const mockState = vi.hoisted(() => ({
   menuTitles: [] as string[],
   menuPaths: [] as string[],
   menuActions: new Map<string, () => void>(),
+  menuSubmenusSupported: true,
   notices: [] as string[],
   clipboardWriteText: vi.fn(),
   latestCreateTabArgs: null as unknown[] | null,
@@ -96,12 +97,12 @@ vi.mock("obsidian", () => ({
         setTitle: (title: string) => any;
         onClick: (handler: (evt: MouseEvent | KeyboardEvent) => any) => any;
         setDisabled: (disabled: boolean) => any;
-        setSubmenu: () => any;
+        setSubmenu?: () => any;
       }) => void,
     ) {
       let currentTitle = "";
       const menuPath = this.path;
-      callback({
+      const menuItem = {
         setTitle(title: string) {
           currentTitle = title;
           mockState.menuTitles.push(title);
@@ -117,11 +118,14 @@ vi.mock("obsidian", () => ({
         setDisabled() {
           return this;
         },
-        setSubmenu: () =>
+      } as any;
+      if (mockState.menuSubmenusSupported) {
+        menuItem.setSubmenu = () =>
           new (this.constructor as new (path: string) => unknown)(
             this.path ? `${this.path} > ${currentTitle}` : currentTitle,
-          ),
-      });
+          );
+      }
+      callback(menuItem);
     }
     showAtMouseEvent() {}
   },
@@ -448,6 +452,7 @@ describe("TerminalPanelView", () => {
     mockState.menuTitles = [];
     mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
@@ -511,6 +516,21 @@ describe("TerminalPanelView", () => {
     expect(mockState.menuPaths).toContain("Move to task > Active > Third task");
     expect(mockState.menuPaths).toContain("Move to task > Needs Review > Custom task");
     expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
+  });
+
+  it("falls back to flattened move targets when submenus are unavailable", () => {
+    const { view } = createView();
+    (view as any).adapter.config.columns = [{ id: "todo", label: "Todo" }];
+    (view as any).allItems = [{ id: "task-2", title: "Second task", state: "todo" }];
+    mockState.menuSubmenusSupported = false;
+    const move = vi.spyOn(view as any, "moveTabToItem");
+    const tab = { sessionType: "shell" } as any;
+
+    (view as any).showTabContextMenu(tab, 3, {} as MouseEvent);
+    mockState.menuActions.get("Move to task / Todo / Second task")?.();
+
+    expect(mockState.menuTitles).toContain("Move to task / Todo / Second task");
+    expect(move).toHaveBeenCalledWith(tab, 3, "task-2");
   });
 
   it("keeps automatic tab renaming disabled by default", () => {
@@ -1760,6 +1780,7 @@ describe("embedded detail placement", () => {
     mockState.menuTitles = [];
     mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
@@ -1943,6 +1964,7 @@ describe("preview detail placement", () => {
     mockState.menuTitles = [];
     mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
@@ -2142,6 +2164,7 @@ describe("profile launch", () => {
     mockState.menuTitles = [];
     mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
