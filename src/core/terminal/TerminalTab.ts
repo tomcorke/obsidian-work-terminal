@@ -1033,6 +1033,16 @@ export class TerminalTab {
     return this.agentState;
   }
 
+  getRecentBufferText(maxLines = 100): string {
+    const buffer = this.terminal.buffer.active;
+    const firstLine = Math.max(0, buffer.length - maxLines);
+    const lines: string[] = [];
+    for (let i = firstLine; i < buffer.length; i++) {
+      lines.push(buffer.getLine(i)?.translateToString(true) ?? "");
+    }
+    return lines.join("\n");
+  }
+
   /** Whether this tab has an agent session with state tracking active. */
   get isAgentTab(): boolean {
     return this._isAgentTab;

@@ -28,9 +28,11 @@ import {
 function processStub() {
   const proc = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter;
+    stderr: EventEmitter;
     kill: ReturnType<typeof vi.fn>;
   };
   proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
   proc.kill = vi.fn();
   return proc;
 }
@@ -67,6 +69,22 @@ describe("PiTabTitle", () => {
     });
 
     await expect(generateTabTitleWithPi("x".repeat(300), "/repo")).resolves.toBeNull();
+  });
+
+  it("logs bounded stderr for non-zero exits without repeating terminal output", async () => {
+    resolveCommandInfoMock.mockReturnValue({ found: true, resolved: "/test/bin/pi" });
+    const proc = processStub();
+    spawnMock.mockReturnValue(proc);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const transcript = "private terminal output ".repeat(20);
+    const result = generateTabTitleWithPi(transcript, "/repo");
+    proc.stderr.emit("data", Buffer.from(`provider failed ${transcript}`));
+    proc.emit("exit", 1);
+
+    await expect(result).resolves.toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("exited with code 1"));
+    expect(warn.mock.calls.flat().join(" ")).not.toContain(transcript);
+    warn.mockRestore();
   });
 
   it("passes editable arguments before fixed headless safety arguments", async () => {

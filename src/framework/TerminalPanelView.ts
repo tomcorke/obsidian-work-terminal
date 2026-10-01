@@ -1679,8 +1679,17 @@ export class TerminalPanelView {
         Date.now() - tab.autoRenameLastAt < 5 * 60_000
       )
         return;
-      const transcript = prepareTabTitleTranscript(tab.autoRenameOutput);
-      if (!transcript || transcript === tab.autoRenameLastTranscript) return;
+      const transcript =
+        prepareTabTitleTranscript(tab.autoRenameOutput) ??
+        prepareTabTitleTranscript(tab.getRecentBufferText?.() || "");
+      if (!transcript) {
+        console.info("[work-terminal] Automatic tab title skipped: insufficient output");
+        return;
+      }
+      if (transcript === tab.autoRenameLastTranscript) {
+        console.info("[work-terminal] Automatic tab title skipped: output unchanged");
+        return;
+      }
       tab.autoRenameLastTranscript = transcript;
       tab.autoRenameLastAt = Date.now();
       const expectedLabel = tab.label;
@@ -1689,11 +1698,18 @@ export class TerminalPanelView {
           ? this.settings["core.autoRenamePiArguments"]
           : "";
       const applyTitle = tab.outputDataBridge.applyTitle;
+      console.info("[work-terminal] Requesting automatic tab title");
       void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments)
         .then((title) => {
-          if (title && title !== expectedLabel) applyTitle?.(title, expectedLabel);
+          if (!title) {
+            console.warn("[work-terminal] Automatic tab title request returned no title");
+          } else if (title !== expectedLabel) {
+            applyTitle?.(title, expectedLabel);
+          } else {
+            console.info("[work-terminal] Automatic tab title unchanged");
+          }
         })
-        .catch(() => undefined);
+        .catch((error) => console.error("[work-terminal] Automatic tab title failed", error));
     };
   }
 
