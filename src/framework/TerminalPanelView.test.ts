@@ -525,6 +525,26 @@ describe("TerminalPanelView", () => {
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
   });
 
+  it("configures an existing agent tab when automatic renaming is enabled", () => {
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+    } as any;
+    mockState.tabDiagnostics = [{ itemId: "task-1" } as any];
+    mockState.tabsByItem.set("task-1", [tab]);
+    createView();
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: { "core.autoRenameAgentTabs": true },
+      }),
+    );
+
+    expect(tab.outputDataBridge.callback).toBeTypeOf("function");
+  });
+
   it("does not apply an automatic title after manual rename", async () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
     let resolveTitle!: (title: string) => void;
