@@ -946,31 +946,10 @@ export class TerminalPanelView {
     const currentItemId = this.tabManager.getActiveItemId();
     if (!currentItemId) return;
 
-    const currentTabs = this.tabManager.getTabs(currentItemId);
-    if (index < 0 || index >= currentTabs.length) return;
-
-    // Re-key the tab
-    tab.taskPath = targetItemId;
-
-    // Move tab between groups using TabManager internals
-    currentTabs.splice(index, 1);
-    const targetTabs = this.tabManager.getTabs(targetItemId);
-    targetTabs.push(tab);
-    tab.hide();
-    tab.suspendWebGl();
-
-    // Adjust active tab
-    if (currentTabs.length > 0) {
-      const newIdx = Math.min(index, currentTabs.length - 1);
-      this.tabManager.switchToTab(newIdx);
-    }
+    if (!this.tabManager.moveTabToItem(currentItemId, index, targetItemId)) return;
 
     this.renderTabBar();
     this.onSessionChange();
-
-    // Notify both source and destination for badge updates
-    this.onAgentStateChange(currentItemId, this.tabManager.getAgentState(currentItemId));
-    this.onAgentStateChange(targetItemId, this.tabManager.getAgentState(targetItemId));
   }
 
   // ---------------------------------------------------------------------------

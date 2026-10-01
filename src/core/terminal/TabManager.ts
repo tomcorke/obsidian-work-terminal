@@ -283,6 +283,36 @@ export class TabManager {
     this.onPersistRequest?.();
   }
 
+  moveTabToItem(sourceItemId: string, index: number, targetItemId: string): TerminalTab | null {
+    const sourceTabs = this.sessions.get(sourceItemId);
+    if (!sourceTabs || index < 0 || index >= sourceTabs.length) return null;
+
+    const activeTab = this.activeItemId === sourceItemId ? sourceTabs[this.activeTabIndex] : null;
+    const [tab] = sourceTabs.splice(index, 1);
+    const targetTabs = this.sessions.get(targetItemId) ?? [];
+    targetTabs.push(tab);
+    this.sessions.set(targetItemId, targetTabs);
+    tab.taskPath = targetItemId;
+    tab.hide();
+    tab.suspendWebGl();
+
+    if (sourceTabs.length === 0) {
+      this.sessions.delete(sourceItemId);
+      this.lastActiveTab.delete(sourceItemId);
+      if (this.activeItemId === sourceItemId) this.activeTabIndex = 0;
+    } else if (activeTab) {
+      this.activeTabIndex = Math.max(0, sourceTabs.indexOf(activeTab));
+      sourceTabs[this.activeTabIndex].resumeWebGl();
+      sourceTabs[this.activeTabIndex].show();
+    }
+
+    this.onSessionChange?.();
+    this.onPersistRequest?.();
+    this.onAgentStateChange?.(sourceItemId, this.getAgentState(sourceItemId));
+    this.onAgentStateChange?.(targetItemId, this.getAgentState(targetItemId));
+    return tab;
+  }
+
   /**
    * Move a tab from its current position to a target index within the same item.
    * Used by restart to place the replacement tab where the old one was.

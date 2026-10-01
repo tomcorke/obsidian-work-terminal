@@ -332,6 +332,25 @@ describe("TabManager - closeAllSessions", () => {
   });
 });
 
+describe("TabManager - moveTabToItem", () => {
+  it("creates an empty destination group and preserves the active background tab", () => {
+    const tabs = [makeStubTab(), makeStubTab(), makeStubTab()];
+    const mgr = makeTabManagerWithSessions("item-1", tabs);
+    (mgr as any).activeTabIndex = 0;
+
+    const activeTab = tabs[0];
+    const movedTab = tabs[1];
+    const remainingTab = tabs[2];
+    const moved = mgr.moveTabToItem("item-1", 1, "item-2");
+
+    expect(moved).toBe(movedTab);
+    expect(mgr.getTabs("item-2")).toEqual([movedTab]);
+    expect(mgr.getTabs("item-1")).toEqual([activeTab, remainingTab]);
+    expect(mgr.getActiveTab()).toBe(activeTab);
+    expect(movedTab.taskPath).toBe("item-2");
+  });
+});
+
 describe("TabManager - moveTabToIndex", () => {
   it("moves a tab forward correctly (no off-by-one)", () => {
     const tabs = [makeStubTab(), makeStubTab(), makeStubTab(), makeStubTab()];
