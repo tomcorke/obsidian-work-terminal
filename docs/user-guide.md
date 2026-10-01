@@ -349,10 +349,11 @@ The **"..."** button in the tab bar opens additional options including custom pr
 - Hover over a tab to see the full session label
 - Close a tab by clicking its close button (x) or using the keyboard shortcut
 - Tabs persist across plugin hot-reloads (see [Session persistence](#session-persistence))
+- Right-click a tab to rename it, move it via **Move to task > category > task**, or re-enable automatic naming
 
 When a task has multiple sessions, the tab bar shows all of them. Tabs are labelled with the session type (Shell, Claude, etc.) and may be renamed when agent session detection identifies a new session name.
 
-**Automatic agent tab titles**: Enable **Settings > General > Automatically rename agent tabs** to let Work Terminal update an agent tab's title after a work cycle completes. It uses recent bounded output, waits at least five minutes between requests, and skips unchanged output. This option is disabled by default. **Automatic tab title Pi arguments** is visible and editable beside it: set model, provider, and thinking flags there, or leave it blank to use your Pi defaults. Work Terminal always adds non-interactive, no-tools, and no-session flags. If `pi` is not available on the executable path, the tab keeps its existing label without an error. A manual tab rename permanently stops automatic updates for that tab. Generated titles use existing session persistence.
+**Automatic agent tab titles**: Enable **Settings > General > Automatically rename agent tabs** to let Work Terminal update an agent tab's title after a work cycle completes. It uses recent bounded output, waits at least five minutes between requests, and skips unchanged output. This option is disabled by default. **Automatic tab title Pi arguments** is visible and editable beside it: set model, provider, and thinking flags there, or leave it blank to use your Pi defaults. Work Terminal always adds non-interactive, no-tools, and no-session flags. If `pi` is not available on the executable path, the tab keeps its existing label without an error. A manual tab rename stops automatic updates for that tab. To resume and immediately request a new title from current output, right-click the tab and choose **Rename automatically now**. Generated titles use existing session persistence.
 
 ### Session persistence
 

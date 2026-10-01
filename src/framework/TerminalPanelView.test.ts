@@ -28,7 +28,9 @@ const mockState = vi.hoisted(() => ({
   tabDiagnostics: [] as TabDiagnostics[],
   idleSinceByItem: new Map<string, number>(),
   menuTitles: [] as string[],
+  menuPaths: [] as string[],
   menuActions: new Map<string, () => void>(),
+  menuSubmenusSupported: true,
   notices: [] as string[],
   clipboardWriteText: vi.fn(),
   latestCreateTabArgs: null as unknown[] | null,
@@ -88,19 +90,23 @@ vi.mock("obsidian", () => ({
     }
   },
   Menu: class {
+    constructor(private path = "") {}
     addSeparator() {}
     addItem(
       callback: (item: {
         setTitle: (title: string) => any;
         onClick: (handler: (evt: MouseEvent | KeyboardEvent) => any) => any;
         setDisabled: (disabled: boolean) => any;
+        setSubmenu?: () => any;
       }) => void,
     ) {
       let currentTitle = "";
-      callback({
+      const menuPath = this.path;
+      const menuItem = {
         setTitle(title: string) {
           currentTitle = title;
           mockState.menuTitles.push(title);
+          mockState.menuPaths.push(menuPath ? `${menuPath} > ${title}` : title);
           return this;
         },
         onClick(handler: (evt: MouseEvent | KeyboardEvent) => any) {
@@ -112,7 +118,14 @@ vi.mock("obsidian", () => ({
         setDisabled() {
           return this;
         },
-      });
+      } as any;
+      if (mockState.menuSubmenusSupported) {
+        menuItem.setSubmenu = () =>
+          new (this.constructor as new (path: string) => unknown)(
+            this.path ? `${this.path} > ${currentTitle}` : currentTitle,
+          );
+      }
+      callback(menuItem);
     }
     showAtMouseEvent() {}
   },
@@ -437,7 +450,9 @@ describe("TerminalPanelView", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
@@ -456,6 +471,77 @@ describe("TerminalPanelView", () => {
     }
     vi.unstubAllGlobals();
     dom.window.close();
+  });
+
+  it("re-enables and immediately requests automatic naming from the tab menu", () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    const requestTitle = vi.fn();
+    const tab = {
+      sessionType: "claude",
+      manuallyRenamed: true,
+      autoRenameLastAt: 123,
+      autoRenameLastTranscript: "old",
+      outputDataBridge: { requestTitle },
+    } as any;
+    (view as any).manuallyRenamedTabs.add(tab);
+    mockState.latestTabManager!.onPersistRequest = vi.fn();
+
+    (view as any).showTabContextMenu(tab, 0, {} as MouseEvent);
+    mockState.menuActions.get("Rename automatically now")?.();
+
+    expect(tab.manuallyRenamed).toBe(false);
+    expect(tab.autoRenameLastAt).toBe(0);
+    expect(tab.autoRenameLastTranscript).toBe("");
+    expect(requestTitle).toHaveBeenCalledOnce();
+    expect(mockState.latestTabManager!.onPersistRequest).toHaveBeenCalledOnce();
+  });
+
+  it("nests move targets by category", () => {
+    const { view } = createView({}, {}, { buildPrompt: () => "" });
+    (view as any).adapter.config.columns = [
+      { id: "todo", label: "Todo" },
+      { id: "active", label: "Active" },
+    ];
+    (view as any).allItems = [
+      { id: "task-1", title: "Current", state: "todo" },
+      { id: "task-2", title: "Second task", state: "todo" },
+      { id: "task-3", title: "Third task", state: "active" },
+      { id: "task-4", title: "Custom task", state: "needs-review" },
+    ];
+    mockState.activeItemId = "task-1";
+
+    (view as any).showTabContextMenu({ sessionType: "shell" }, 0, {} as MouseEvent);
+
+    expect(mockState.menuPaths).toContain("Move to task > Todo > Second task");
+    expect(mockState.menuPaths).toContain("Move to task > Active > Third task");
+    expect(mockState.menuPaths).toContain("Move to task > Needs Review > Custom task");
+    expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
+  });
+
+  it("hides move menu when no destination remains after filtering", () => {
+    const { view } = createView();
+    (view as any).adapter.config.columns = [{ id: "todo", label: "Todo" }];
+    (view as any).allItems = [{ id: "task-1", title: "Current", state: "todo" }];
+    mockState.activeItemId = "task-1";
+
+    (view as any).showTabContextMenu({ sessionType: "shell" }, 0, {} as MouseEvent);
+
+    expect(mockState.menuTitles).not.toContain("Move to task");
+  });
+
+  it("falls back to flattened move targets when submenus are unavailable", () => {
+    const { view } = createView();
+    (view as any).adapter.config.columns = [{ id: "todo", label: "Todo" }];
+    (view as any).allItems = [{ id: "task-2", title: "Second task", state: "todo" }];
+    mockState.menuSubmenusSupported = false;
+    const move = vi.spyOn(view as any, "moveTabToItem");
+    const tab = { sessionType: "shell" } as any;
+
+    (view as any).showTabContextMenu(tab, 3, {} as MouseEvent);
+    mockState.menuActions.get("Move to task / Todo / Second task")?.();
+
+    expect(mockState.menuTitles).toContain("Move to task / Todo / Second task");
+    expect(move).toHaveBeenCalledWith(tab, 3, "task-2");
   });
 
   it("keeps automatic tab renaming disabled by default", () => {
@@ -510,7 +596,7 @@ describe("TerminalPanelView", () => {
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
   });
 
-  it("does not send output after manual rename", () => {
+  it("keeps collecting output after manual rename for explicit re-enable", () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
     const tab = {
       sessionType: "claude",
@@ -523,6 +609,7 @@ describe("TerminalPanelView", () => {
     (view as any).manuallyRenamedTabs.add(tab);
     tab.outputDataBridge.callback(Buffer.from("output"));
 
+    expect(tab.autoRenameOutput).toBe("output");
     expect(piTitleMocks.prepare).not.toHaveBeenCalled();
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
   });
@@ -545,6 +632,26 @@ describe("TerminalPanelView", () => {
     );
 
     expect(tab.outputDataBridge.callback).toBeTypeOf("function");
+  });
+
+  it("handles a rejected automatic title request", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    piTitleMocks.prepare.mockReturnValue("meaningful transcript");
+    piTitleMocks.generate.mockRejectedValue(new Error("failed"));
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+      autoRenameLastAt: 0,
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.requestTitle();
+    await flushAsync();
+
+    expect(tab.label).toBe("Claude");
   });
 
   it("does not apply an automatic title after manual rename", async () => {
@@ -1703,7 +1810,9 @@ describe("embedded detail placement", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
@@ -1885,7 +1994,9 @@ describe("preview detail placement", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;
@@ -2083,7 +2194,9 @@ describe("profile launch", () => {
     mockState.tabDiagnostics = [];
     mockState.idleSinceByItem = new Map();
     mockState.menuTitles = [];
+    mockState.menuPaths = [];
     mockState.menuActions = new Map();
+    mockState.menuSubmenusSupported = true;
     mockState.notices = [];
     mockState.clipboardWriteText.mockClear();
     mockState.latestCreateTabArgs = null;

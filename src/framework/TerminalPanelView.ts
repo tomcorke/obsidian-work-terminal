@@ -25,7 +25,7 @@ import type {
   SessionType,
   TabDiagnostics,
 } from "../core/session/types";
-import { electronRequire, expandTilde } from "../core/utils";
+import { electronRequire, expandTilde, titleCase } from "../core/utils";
 import type { AdapterBundle, WorkItem, WorkItemPromptBuilder } from "../core/interfaces";
 import { ProfileLaunchModal, type ProfileLaunchOverrides } from "./ProfileLaunchModal";
 import { AgentProfileManagerModal } from "./AgentProfileManagerModal";
@@ -869,31 +869,71 @@ export class TerminalPanelView {
       });
     });
 
-    // Move to Item submenu - grouped by column with headers
-    if (this.allItems.length > 0) {
-      menu.addSeparator();
-      const activeItemId = this.tabManager.getActiveItemId();
-      const excludedStates = new Set(this.adapter.config.terminalStates ?? []);
-      const available = this.allItems.filter(
-        (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
-      );
-
-      const columns = this.adapter.config.columns;
-      for (const col of columns) {
-        if (excludedStates.has(col.id)) continue;
-        const inColumn = available.filter((wi) => wi.state === col.id);
-        if (inColumn.length === 0) continue;
-
-        // Section header (disabled item acts as label)
-        menu.addItem((item) => {
-          item.setTitle(`Move to ${col.label}`).setDisabled(true);
+    if (this.settings["core.autoRenameAgentTabs"] === true && tab.sessionType !== "shell") {
+      menu.addItem((item) => {
+        item.setTitle("Rename automatically now").onClick(() => {
+          tab.manuallyRenamed = false;
+          this.manuallyRenamedTabs.delete(tab);
+          tab.autoRenameLastAt = 0;
+          tab.autoRenameLastTranscript = "";
+          tab.outputDataBridge?.requestTitle?.();
+          this.tabManager.onPersistRequest?.();
         });
-        for (const workItem of inColumn) {
-          menu.addItem((item) => {
-            item.setTitle(workItem.title).onClick(() => {
-              this.moveTabToItem(tab, index, workItem.id);
-            });
+      });
+    }
+
+    // Move to Item submenu - grouped by column
+    const activeItemId = this.tabManager.getActiveItemId();
+    const excludedStates = new Set(this.adapter.config.terminalStates ?? []);
+    const available = this.allItems.filter(
+      (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
+    );
+    if (available.length > 0) {
+      menu.addSeparator();
+      const configured = this.adapter.config.columns.filter(
+        (column) => !excludedStates.has(column.id),
+      );
+      const configuredIds = new Set(configured.map((column) => column.id));
+      const columns = [
+        ...configured,
+        ...Array.from(new Set(available.map((item) => item.state)))
+          .filter((state) => !configuredIds.has(state))
+          .map((state) => ({ id: state, label: titleCase(state) })),
+      ];
+      let submenuSupported = false;
+      menu.addItem((moveItem) => {
+        const withSubmenu = moveItem.setTitle("Move to task") as typeof moveItem & {
+          setSubmenu?: () => Menu;
+        };
+        const moveMenu = withSubmenu.setSubmenu?.();
+        if (!moveMenu) return;
+        submenuSupported = true;
+        for (const col of columns) {
+          const inColumn = available.filter((wi) => wi.state === col.id);
+          if (inColumn.length === 0) continue;
+          moveMenu.addItem((categoryItem) => {
+            const categoryMenu = (categoryItem as typeof categoryItem & { setSubmenu: () => Menu })
+              .setTitle(col.label)
+              .setSubmenu();
+            for (const workItem of inColumn) {
+              categoryMenu.addItem((item) => {
+                item.setTitle(workItem.title).onClick(() => {
+                  this.moveTabToItem(tab, index, workItem.id);
+                });
+              });
+            }
           });
+        }
+      });
+      if (!submenuSupported) {
+        for (const col of columns) {
+          for (const workItem of available.filter((wi) => wi.state === col.id)) {
+            menu.addItem((item) => {
+              item.setTitle(`Move to task / ${col.label} / ${workItem.title}`).onClick(() => {
+                this.moveTabToItem(tab, index, workItem.id);
+              });
+            });
+          }
         }
       }
     }
@@ -906,31 +946,7 @@ export class TerminalPanelView {
     const currentItemId = this.tabManager.getActiveItemId();
     if (!currentItemId) return;
 
-    const currentTabs = this.tabManager.getTabs(currentItemId);
-    if (index < 0 || index >= currentTabs.length) return;
-
-    // Re-key the tab
-    tab.taskPath = targetItemId;
-
-    // Move tab between groups using TabManager internals
-    currentTabs.splice(index, 1);
-    const targetTabs = this.tabManager.getTabs(targetItemId);
-    targetTabs.push(tab);
-    tab.hide();
-    tab.suspendWebGl();
-
-    // Adjust active tab
-    if (currentTabs.length > 0) {
-      const newIdx = Math.min(index, currentTabs.length - 1);
-      this.tabManager.switchToTab(newIdx);
-    }
-
-    this.renderTabBar();
-    this.onSessionChange();
-
-    // Notify both source and destination for badge updates
-    this.onAgentStateChange(currentItemId, this.tabManager.getAgentState(currentItemId));
-    this.onAgentStateChange(targetItemId, this.tabManager.getAgentState(targetItemId));
+    this.tabManager.moveTabToItem(currentItemId, index, targetItemId);
   }
 
   // ---------------------------------------------------------------------------
@@ -1651,14 +1667,8 @@ export class TerminalPanelView {
       this.tabManager.onPersistRequest?.();
     };
     tab.outputDataBridge.callback = (data) => {
-      if (
-        this.isDisposed ||
-        this.settings["core.autoRenameAgentTabs"] !== true ||
-        tab.manuallyRenamed ||
-        this.manuallyRenamedTabs.has(tab)
-      )
-        return;
-      tab.autoRenameOutput = (tab.autoRenameOutput + data.toString()).slice(-8_000);
+      if (this.isDisposed || this.settings["core.autoRenameAgentTabs"] !== true) return;
+      tab.autoRenameOutput = ((tab.autoRenameOutput ?? "") + data.toString()).slice(-8_000);
     };
     tab.outputDataBridge.requestTitle = () => {
       if (
@@ -1679,9 +1689,11 @@ export class TerminalPanelView {
           ? this.settings["core.autoRenamePiArguments"]
           : "";
       const applyTitle = tab.outputDataBridge.applyTitle;
-      void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments).then((title) => {
-        if (title && title !== expectedLabel) applyTitle?.(title, expectedLabel);
-      });
+      void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments)
+        .then((title) => {
+          if (title && title !== expectedLabel) applyTitle?.(title, expectedLabel);
+        })
+        .catch(() => undefined);
     };
   }
 

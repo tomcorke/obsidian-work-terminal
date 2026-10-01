@@ -941,7 +941,7 @@ export class TerminalTab {
   private _processRenameLine(line: string): void {
     const clean = stripAnsi(line);
     const match = clean.match(this._renamePattern);
-    if (match) {
+    if (match && !this.manuallyRenamed) {
       let newLabel = match[1].trim();
       console.log("[work-terminal] Rename detected:", newLabel);
       if (this.transformLabel) {
@@ -1571,7 +1571,7 @@ export class TerminalTab {
       // Force kill after 1s if not exited
       const procRef = this.process;
       setTimeout(() => {
-        if (procRef && !procRef.killed) {
+        if (procRef?.exitCode === null) {
           procRef.kill("SIGKILL");
         }
       }, 1000);

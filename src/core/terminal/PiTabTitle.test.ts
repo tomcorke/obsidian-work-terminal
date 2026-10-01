@@ -60,6 +60,15 @@ describe("PiTabTitle", () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  it("returns null when process startup throws", async () => {
+    resolveCommandInfoMock.mockReturnValue({ found: true, resolved: "/test/bin/pi" });
+    spawnMock.mockImplementation(() => {
+      throw new Error("spawn failed");
+    });
+
+    await expect(generateTabTitleWithPi("x".repeat(300), "/repo")).resolves.toBeNull();
+  });
+
   it("passes editable arguments before fixed headless safety arguments", async () => {
     resolveCommandInfoMock.mockReturnValue({ found: true, resolved: "/test/bin/pi" });
     const proc = processStub();

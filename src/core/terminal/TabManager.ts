@@ -44,12 +44,7 @@ export class TabManager {
         const tabs: TerminalTab[] = [];
         for (const ss of storedSessions) {
           const tab = TerminalTab.fromStored(ss, this.terminalWrapperEl);
-          tab.onLabelChange = () => {
-            if (this.activeItemId === itemId) this._notifyLabelChange();
-          };
-          tab.onStateChange = () => {
-            this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
-          };
+          this.bindTabCallbacks(tab);
           tab.hide();
           tab.suspendWebGl();
           tabs.push(tab);
@@ -199,24 +194,7 @@ export class TabManager {
       this.pluginDir,
     );
 
-    tab.onLabelChange = () => {
-      if (this.activeItemId === itemId) this._notifyLabelChange();
-    };
-    tab.onProcessExit = (code, _signal) => {
-      const idx = tabs.indexOf(tab);
-      if (idx === -1) return;
-      const lived = Date.now() - spawnTime;
-      // Short-lived processes (under 30s): always keep the tab open so the
-      // user can see startup errors or unexpected early exits.
-      if (lived < 30_000) return;
-      // Long-lived processes: only auto-close on a clean exit (code 0).
-      // Non-zero exit codes keep the tab open so the user can read the error.
-      if (code !== 0) return;
-      this.closeTabForItem(itemId, idx);
-    };
-    tab.onStateChange = () => {
-      this.onAgentStateChange?.(itemId, this.getAgentState(itemId));
-    };
+    this.bindTabCallbacks(tab, spawnTime);
 
     if (isActiveItem) {
       // Hide existing tabs before pushing the new one, so only old tabs get
@@ -281,6 +259,53 @@ export class TabManager {
 
     this.onSessionChange?.();
     this.onPersistRequest?.();
+  }
+
+  private bindTabCallbacks(tab: TerminalTab, spawnTime = 0): void {
+    tab.onLabelChange = () => {
+      if (this.activeItemId === tab.taskPath) this._notifyLabelChange();
+    };
+    tab.onProcessExit = (code) => {
+      const itemId = tab.taskPath;
+      const tabs = this.sessions.get(itemId) ?? [];
+      const index = tabs.indexOf(tab);
+      if (index === -1 || Date.now() - spawnTime < 30_000 || code !== 0) return;
+      this.closeTabForItem(itemId, index);
+    };
+    tab.onStateChange = () => {
+      this.onAgentStateChange?.(tab.taskPath, this.getAgentState(tab.taskPath));
+    };
+  }
+
+  moveTabToItem(sourceItemId: string, index: number, targetItemId: string): TerminalTab | null {
+    const sourceTabs = this.sessions.get(sourceItemId);
+    if (!sourceTabs || index < 0 || index >= sourceTabs.length) return null;
+
+    const activeTab = this.activeItemId === sourceItemId ? sourceTabs[this.activeTabIndex] : null;
+    const [tab] = sourceTabs.splice(index, 1);
+    const targetTabs = this.sessions.get(targetItemId) ?? [];
+    targetTabs.push(tab);
+    this.sessions.set(targetItemId, targetTabs);
+    tab.taskPath = targetItemId;
+    this.bindTabCallbacks(tab);
+    tab.hide();
+    tab.suspendWebGl();
+
+    if (sourceTabs.length === 0) {
+      this.sessions.delete(sourceItemId);
+      this.lastActiveTab.delete(sourceItemId);
+      if (this.activeItemId === sourceItemId) this.activeTabIndex = 0;
+    } else if (activeTab) {
+      this.activeTabIndex = Math.max(0, sourceTabs.indexOf(activeTab));
+      sourceTabs[this.activeTabIndex].resumeWebGl();
+      sourceTabs[this.activeTabIndex].show();
+    }
+
+    this.onSessionChange?.();
+    this.onPersistRequest?.();
+    this.onAgentStateChange?.(sourceItemId, this.getAgentState(sourceItemId));
+    this.onAgentStateChange?.(targetItemId, this.getAgentState(targetItemId));
+    return tab;
   }
 
   /**
