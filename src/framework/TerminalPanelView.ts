@@ -946,10 +946,7 @@ export class TerminalPanelView {
     const currentItemId = this.tabManager.getActiveItemId();
     if (!currentItemId) return;
 
-    if (!this.tabManager.moveTabToItem(currentItemId, index, targetItemId)) return;
-
-    this.renderTabBar();
-    this.onSessionChange();
+    this.tabManager.moveTabToItem(currentItemId, index, targetItemId);
   }
 
   // ---------------------------------------------------------------------------
