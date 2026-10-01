@@ -352,7 +352,7 @@ The **"..."** button in the tab bar opens additional options including custom pr
 
 When a task has multiple sessions, the tab bar shows all of them. Tabs are labelled with the session type (Shell, Claude, etc.) and may be renamed when agent session detection identifies a new session name.
 
-**Automatic agent tab titles**: Enable **Settings > General > Automatically rename agent tabs** to let Work Terminal generate one short title from each agent tab's initial meaningful output. This option is disabled by default. It invokes the `pi` executable directly with `portkey/gpt-5.6-luna`, low reasoning, no tools, and no saved Pi session. If `pi` is not available on the executable path, the tab keeps its existing label without an error. Generation is attempted at most once per tab, and a manual tab rename always wins. Generated titles use existing session persistence.
+**Automatic agent tab titles**: Enable **Settings > General > Automatically rename agent tabs** to let Work Terminal update an agent tab's title after a work cycle completes. It uses recent bounded output, waits at least five minutes between requests, and skips unchanged output. This option is disabled by default. **Automatic tab title Pi arguments** is visible and editable beside it: set model, provider, and thinking flags there, or leave it blank to use your Pi defaults. Work Terminal always adds non-interactive, no-tools, and no-session flags. If `pi` is not available on the executable path, the tab keeps its existing label without an error. A manual tab rename permanently stops automatic updates for that tab. Generated titles use existing session persistence.
 
 ### Session persistence
 

@@ -128,10 +128,13 @@ export class TerminalTab {
   onOutputData?: (data: Buffer | string) => void;
   outputDataBridge: {
     callback?: (data: Buffer | string) => void;
+    requestTitle?: () => void;
     applyTitle?: (title: string, originalLabel: string) => void;
   } = {};
   autoRenameOutput = "";
-  autoRenameAttempted = false;
+  autoRenameLastTranscript = "";
+  autoRenameLastAt = 0;
+  autoRenameSawActive = false;
   manuallyRenamed = false;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: string | null) => void;
@@ -1267,6 +1270,11 @@ export class TerminalTab {
   private _setAgentState(state: AgentState): void {
     if (this._agentState === state) return;
     this._agentState = state;
+    if (state === "active") this.autoRenameSawActive = true;
+    if ((state === "idle" || state === "waiting") && this.autoRenameSawActive) {
+      this.autoRenameSawActive = false;
+      this.outputDataBridge?.requestTitle?.();
+    }
     this.onStateChange?.(state);
   }
 
@@ -1297,7 +1305,9 @@ export class TerminalTab {
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
       outputDataBridge: this.outputDataBridge,
       autoRenameOutput: this.autoRenameOutput,
-      autoRenameAttempted: this.autoRenameAttempted,
+      autoRenameLastTranscript: this.autoRenameLastTranscript,
+      autoRenameLastAt: this.autoRenameLastAt,
+      autoRenameSawActive: this.autoRenameSawActive,
       manuallyRenamed: this.manuallyRenamed,
       terminal: this.terminal,
       fitAddon: this.fitAddon!,
@@ -1337,7 +1347,9 @@ export class TerminalTab {
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
     tab.outputDataBridge = stored.outputDataBridge ?? {};
     tab.autoRenameOutput = stored.autoRenameOutput ?? "";
-    tab.autoRenameAttempted = stored.autoRenameAttempted ?? false;
+    tab.autoRenameLastTranscript = stored.autoRenameLastTranscript ?? "";
+    tab.autoRenameLastAt = stored.autoRenameLastAt ?? 0;
+    tab.autoRenameSawActive = stored.autoRenameSawActive ?? false;
     tab.manuallyRenamed = stored.manuallyRenamed ?? false;
     tab.terminal = stored.terminal;
     // Ensure linkHandler is set on restored terminals - older sessions or

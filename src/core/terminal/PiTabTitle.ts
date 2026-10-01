@@ -1,5 +1,5 @@
 import type { ChildProcess } from "child_process";
-import { resolveCommandInfo, getFullPath } from "../agents/AgentLauncher";
+import { resolveCommandInfo, getFullPath, parseExtraArgs } from "../agents/AgentLauncher";
 import { electronRequire, stripAnsi } from "../utils";
 
 const MIN_TRANSCRIPT_LENGTH = 200;
@@ -39,6 +39,7 @@ export function prepareTabTitleTranscript(output: string): string | null {
 export async function generateTabTitleWithPi(
   transcript: string,
   cwd: string,
+  extraArgs = "",
 ): Promise<string | null> {
   const resolution = resolveCommandInfo("pi", cwd);
   if (!resolution.found) return null;
@@ -48,10 +49,7 @@ export async function generateTabTitleWithPi(
     const proc: ChildProcess = cp.spawn(
       resolution.resolved,
       [
-        "--model",
-        "portkey/gpt-5.6-luna",
-        "--thinking",
-        "low",
+        ...parseExtraArgs(extraArgs),
         "--print",
         "--no-session",
         "--no-tools",

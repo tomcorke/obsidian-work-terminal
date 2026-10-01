@@ -467,7 +467,7 @@ describe("TerminalPanelView", () => {
     expect(tab.onOutputData).toBeUndefined();
   });
 
-  it("generates at most one automatic title and persists it", async () => {
+  it("generates a title after a completed work cycle and persists it", async () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
     const tab = {
       sessionType: "claude",
@@ -483,8 +483,10 @@ describe("TerminalPanelView", () => {
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
     tab.outputDataBridge.callback(Buffer.from("output"));
     tab.outputDataBridge.callback(Buffer.from("more output"));
+    tab.outputDataBridge.requestTitle();
     await flushAsync();
 
+    expect(piTitleMocks.generate).toHaveBeenCalledWith("meaningful transcript", "/repo", "");
     expect(piTitleMocks.generate).toHaveBeenCalledOnce();
     expect(tab.label).toBe("Fix session restore");
     expect(tab.onLabelChange).toHaveBeenCalledOnce();
@@ -563,6 +565,7 @@ describe("TerminalPanelView", () => {
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
     tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.requestTitle();
     (view as any).manuallyRenamedTabs.add(tab);
     tab.label = "My title";
     resolveTitle("Generated title");
@@ -589,6 +592,7 @@ describe("TerminalPanelView", () => {
 
     (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
     tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.requestTitle();
     view.stashAll();
     resolveTitle("Generated title");
     await flushAsync();

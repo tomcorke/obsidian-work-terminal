@@ -1635,7 +1635,6 @@ export class TerminalPanelView {
   private configureAutomaticTabRename(tab: TerminalTab, settings: Record<string, unknown>): void {
     if (settings["core.autoRenameAgentTabs"] !== true || tab.sessionType === "shell") return;
 
-    const originalLabel = tab.label;
     tab.outputDataBridge ??= {};
     tab.outputDataBridge.applyTitle = (title, expectedLabel) => {
       if (
@@ -1653,7 +1652,6 @@ export class TerminalPanelView {
     };
     tab.outputDataBridge.callback = (data) => {
       if (
-        tab.autoRenameAttempted ||
         this.isDisposed ||
         this.settings["core.autoRenameAgentTabs"] !== true ||
         tab.manuallyRenamed ||
@@ -1661,11 +1659,29 @@ export class TerminalPanelView {
       )
         return;
       tab.autoRenameOutput = (tab.autoRenameOutput + data.toString()).slice(-8_000);
+    };
+    tab.outputDataBridge.requestTitle = () => {
+      if (
+        this.isDisposed ||
+        this.settings["core.autoRenameAgentTabs"] !== true ||
+        tab.manuallyRenamed ||
+        this.manuallyRenamedTabs.has(tab) ||
+        Date.now() - tab.autoRenameLastAt < 5 * 60_000
+      )
+        return;
       const transcript = prepareTabTitleTranscript(tab.autoRenameOutput);
-      if (!transcript) return;
-      tab.autoRenameAttempted = true;
-      void generateTabTitleWithPi(transcript, tab.launchCwd).then((title) => {
-        if (title) tab.outputDataBridge.applyTitle?.(title, originalLabel);
+      if (!transcript || transcript === tab.autoRenameLastTranscript) return;
+      tab.autoRenameLastTranscript = transcript;
+      tab.autoRenameLastAt = Date.now();
+      const expectedLabel = tab.label;
+      const piArguments =
+        typeof this.settings["core.autoRenamePiArguments"] === "string"
+          ? this.settings["core.autoRenamePiArguments"]
+          : "";
+      void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments).then((title) => {
+        if (title && title !== expectedLabel) {
+          tab.outputDataBridge.applyTitle?.(title, expectedLabel);
+        }
       });
     };
   }

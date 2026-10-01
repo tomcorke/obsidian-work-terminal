@@ -9,6 +9,7 @@ const { resolveCommandInfoMock, spawnMock } = vi.hoisted(() => ({
 vi.mock("../agents/AgentLauncher", () => ({
   resolveCommandInfo: resolveCommandInfoMock,
   getFullPath: () => "/test/bin",
+  parseExtraArgs: (value: string) => value.split(" ").filter(Boolean),
 }));
 vi.mock("../utils", async (importOriginal) => {
   const original = await importOriginal<typeof import("../utils")>();
@@ -59,11 +60,15 @@ describe("PiTabTitle", () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("invokes pi directly in cheap headless mode", async () => {
+  it("passes editable arguments before fixed headless safety arguments", async () => {
     resolveCommandInfoMock.mockReturnValue({ found: true, resolved: "/test/bin/pi" });
     const proc = processStub();
     spawnMock.mockReturnValue(proc);
-    const result = generateTabTitleWithPi("x".repeat(300), "/repo");
+    const result = generateTabTitleWithPi(
+      "x".repeat(300),
+      "/repo",
+      "--model github-copilot/gpt-5.6-luna --thinking off",
+    );
     proc.stdout.emit("data", Buffer.from("Fix session restore\n"));
     proc.emit("exit", 0);
 
@@ -72,9 +77,9 @@ describe("PiTabTitle", () => {
       "/test/bin/pi",
       expect.arrayContaining([
         "--model",
-        "portkey/gpt-5.6-luna",
+        "github-copilot/gpt-5.6-luna",
         "--thinking",
-        "low",
+        "off",
         "--print",
         "--no-session",
         "--no-tools",

@@ -109,6 +109,7 @@ interface CoreSettings {
   "core.detailViewSplitDirection": DetailViewSplitDirection;
   "core.showVersionInTabTitle": boolean;
   "core.autoRenameAgentTabs": boolean;
+  "core.autoRenamePiArguments": string;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -141,6 +142,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.detailViewSplitDirection": "vertical",
   "core.showVersionInTabTitle": true,
   "core.autoRenameAgentTabs": false,
+  "core.autoRenamePiArguments": "",
 };
 
 /**
@@ -332,7 +334,15 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       settings,
       "core.autoRenameAgentTabs",
       "Automatically rename agent tabs",
-      "Use the Pi CLI with portkey/gpt-5.6-luna to generate one short title from each agent tab's initial output. Disabled by default; does nothing when Pi is unavailable. Terminal output is sent to the configured Pi model provider.",
+      "Use the Pi CLI to update an agent tab's title after completed work cycles. Disabled by default; does nothing when Pi is unavailable. Terminal output is sent to the selected Pi model provider. Manual renaming stops automatic updates for that tab.",
+    );
+    this.addCoreText(
+      containerEl,
+      settings,
+      "core.autoRenamePiArguments",
+      "Automatic tab title Pi arguments",
+      "Optional editable arguments passed to Pi, such as --model portkey/gpt-5.6-luna --thinking low. Leave blank to use your Pi defaults. Non-interactive safety arguments are added automatically.",
+      "--model provider/model --thinking low",
     );
 
     // Session/lifecycle toggles.
@@ -623,6 +633,30 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
     if (tourId) {
       setting.settingEl.setAttribute("data-wt-tour", tourId);
     }
+  }
+
+  private addCoreText(
+    containerEl: HTMLElement,
+    settings: SettingsSnapshot,
+    key: keyof CoreSettings,
+    name: string,
+    description: string,
+    placeholder: string,
+  ): void {
+    const value = settings[key] ?? CORE_DEFAULTS[key];
+
+    new Setting(containerEl)
+      .setName(name)
+      .setDesc(description)
+      .addText((text) => {
+        text.inputEl.placeholder = placeholder;
+        text.setValue(String(value || ""));
+        text.inputEl.addEventListener("change", () => {
+          void this.saveSettings((s) => {
+            s[key] = text.inputEl.value.trim();
+          });
+        });
+      });
   }
 
   /**
