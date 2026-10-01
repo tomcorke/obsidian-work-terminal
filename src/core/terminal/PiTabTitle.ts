@@ -5,9 +5,11 @@ import { electronRequire, stripAnsi } from "../utils";
 const MIN_TRANSCRIPT_LENGTH = 200;
 const MAX_TRANSCRIPT_LENGTH = 8_000;
 const TITLE_TIMEOUT_MS = 30_000;
+const MAX_TITLE_LENGTH = 22;
 
 const TITLE_PROMPT = `Generate a short, stable title for this coding-agent terminal session.
-Use 3-6 plain words describing the main task, not the current step.
+Use 2-4 plain words and at most ${MAX_TITLE_LENGTH} characters including spaces.
+Describe the main task, not the current step.
 Return only the title: no quotes, markdown, punctuation, or explanation.
 
 Terminal output:
@@ -21,7 +23,7 @@ export function cleanGeneratedTabTitle(output: string): string | null {
     .replace(/[.!:;,]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!title || title.length > 60 || title.split(" ").length > 8) return null;
+  if (!title || title.length > MAX_TITLE_LENGTH || title.split(" ").length > 4) return null;
   return title;
 }
 

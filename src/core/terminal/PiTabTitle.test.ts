@@ -50,10 +50,10 @@ describe("PiTabTitle", () => {
   });
 
   it("rejects verbose titles and normalizes a short title", () => {
-    expect(cleanGeneratedTabTitle('"Investigate session restore."\nextra')).toBe(
-      "Investigate session restore",
-    );
-    expect(cleanGeneratedTabTitle("one two three four five six seven eight nine")).toBeNull();
+    expect(cleanGeneratedTabTitle('"Fix session restore."\nextra')).toBe("Fix session restore");
+    expect(cleanGeneratedTabTitle("one two three four five")).toBeNull();
+    expect(cleanGeneratedTabTitle("Explore coding agent workflows")).toBeNull();
+    expect(cleanGeneratedTabTitle("Fix menu ordering")).toBe("Fix menu ordering");
   });
 
   it("does not spawn when pi is unavailable", async () => {

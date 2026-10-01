@@ -1738,6 +1738,24 @@ describe("TerminalTab auto-scroll on write", () => {
   });
 });
 
+describe("TerminalTab automatic title cycle", () => {
+  it("requires an observed active state before requesting a title", () => {
+    const requestTitle = vi.fn();
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _agentState: "active",
+      autoRenameSawActive: false,
+      outputDataBridge: { requestTitle },
+    }) as TerminalTab;
+
+    (tab as any)._setAgentState("idle");
+    expect(requestTitle).not.toHaveBeenCalled();
+
+    (tab as any)._setAgentState("active");
+    (tab as any)._setAgentState("idle");
+    expect(requestTitle).toHaveBeenCalledOnce();
+  });
+});
+
 describe("TerminalTab rename detection", () => {
   it("does not overwrite a manual rename", () => {
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
