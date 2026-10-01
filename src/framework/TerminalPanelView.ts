@@ -1705,6 +1705,8 @@ export class TerminalPanelView {
             console.warn("[work-terminal] Automatic tab title request returned no title");
           } else if (title !== expectedLabel) {
             applyTitle?.(title, expectedLabel);
+          } else {
+            console.info("[work-terminal] Automatic tab title unchanged");
           }
         })
         .catch((error) => console.error("[work-terminal] Automatic tab title failed", error));

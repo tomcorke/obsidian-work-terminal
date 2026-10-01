@@ -68,6 +68,7 @@ export async function generateTabTitleWithPi(
       );
 
       const chunks: Buffer[] = [];
+      const errorChunks: Buffer[] = [];
       let settled = false;
       const finish = (title: string | null) => {
         if (settled) return;
@@ -76,13 +77,23 @@ export async function generateTabTitleWithPi(
         resolve(title);
       };
       proc.stdout?.on("data", (data: Buffer) => chunks.push(data));
+      proc.stderr?.on("data", (data: Buffer) => errorChunks.push(data));
       proc.on("error", (error) => {
         console.error("[work-terminal] Automatic tab title process failed", error);
         finish(null);
       });
-      proc.on("exit", (code) =>
-        finish(code === 0 ? cleanGeneratedTabTitle(Buffer.concat(chunks).toString("utf8")) : null),
-      );
+      proc.on("exit", (code) => {
+        if (code !== 0) {
+          const error = stripAnsi(Buffer.concat(errorChunks).toString("utf8"))
+            .replace(transcript, "[terminal output redacted]")
+            .trim()
+            .slice(-1_000);
+          console.warn(
+            `[work-terminal] Automatic tab title process exited with code ${code}${error ? `: ${error}` : ""}`,
+          );
+        }
+        finish(code === 0 ? cleanGeneratedTabTitle(Buffer.concat(chunks).toString("utf8")) : null);
+      });
       const timeout = setTimeout(() => {
         console.warn("[work-terminal] Automatic tab title request timed out");
         try {
