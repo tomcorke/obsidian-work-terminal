@@ -634,6 +634,29 @@ describe("TerminalPanelView", () => {
     expect(tab.outputDataBridge.callback).toBeTypeOf("function");
   });
 
+  it("uses current terminal buffer when no output was captured", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    piTitleMocks.prepare.mockReturnValue("buffer transcript");
+    piTitleMocks.generate.mockResolvedValue("Current work");
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+      autoRenameOutput: "",
+      autoRenameLastAt: 0,
+      getRecentBufferText: vi.fn(() => "current buffer"),
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.requestTitle();
+    await flushAsync();
+
+    expect(tab.getRecentBufferText).toHaveBeenCalledOnce();
+    expect(piTitleMocks.prepare).toHaveBeenCalledWith("current buffer");
+    expect(tab.label).toBe("Current work");
+  });
+
   it("handles a rejected automatic title request", async () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
     piTitleMocks.prepare.mockReturnValue("meaningful transcript");

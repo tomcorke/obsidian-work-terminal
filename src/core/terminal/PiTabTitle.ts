@@ -43,7 +43,10 @@ export async function generateTabTitleWithPi(
 ): Promise<string | null> {
   try {
     const resolution = resolveCommandInfo("pi", cwd);
-    if (!resolution.found) return null;
+    if (!resolution.found) {
+      console.warn("[work-terminal] Automatic tab title skipped: Pi executable unavailable");
+      return null;
+    }
 
     return await new Promise((resolve) => {
       const cp = electronRequire("child_process") as typeof import("child_process");
@@ -73,11 +76,15 @@ export async function generateTabTitleWithPi(
         resolve(title);
       };
       proc.stdout?.on("data", (data: Buffer) => chunks.push(data));
-      proc.on("error", () => finish(null));
+      proc.on("error", (error) => {
+        console.error("[work-terminal] Automatic tab title process failed", error);
+        finish(null);
+      });
       proc.on("exit", (code) =>
         finish(code === 0 ? cleanGeneratedTabTitle(Buffer.concat(chunks).toString("utf8")) : null),
       );
       const timeout = setTimeout(() => {
+        console.warn("[work-terminal] Automatic tab title request timed out");
         try {
           proc.kill("SIGTERM");
           setTimeout(() => {
@@ -89,7 +96,8 @@ export async function generateTabTitleWithPi(
         finish(null);
       }, TITLE_TIMEOUT_MS);
     });
-  } catch {
+  } catch (error) {
+    console.error("[work-terminal] Automatic tab title failed to start", error);
     return null;
   }
 }
