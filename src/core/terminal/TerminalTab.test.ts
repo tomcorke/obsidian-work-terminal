@@ -291,6 +291,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect((restored as any).unicode11Addon).toBe(unicode11Addon);
     expect((restored as any).webglAddon).toBe(webglAddon);
     expect((restored as any).autoRenameSawActive).toBe(true);
+    expect((restored as any)._suppressActiveUntil - Date.now()).toBeGreaterThanOrEqual(3_900);
     expect(TerminalTab.prototype.startStateTracking).toHaveBeenCalledWith(true);
     expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
     expect(scrollToBottom).toHaveBeenCalled();

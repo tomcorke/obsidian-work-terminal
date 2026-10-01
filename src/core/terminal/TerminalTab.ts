@@ -43,6 +43,8 @@ export type ClaudeState = AgentState;
 let sessionCounter = 0;
 let hasWarnedViewportResync = false;
 const TERMINAL_SCROLLBACK = 5000;
+const STATE_POLL_INTERVAL_MS = 2000;
+const RESTORE_ACTIVE_GRACE_MS = STATE_POLL_INTERVAL_MS * 2;
 
 type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
@@ -1136,7 +1138,7 @@ export class TerminalTab {
     if (!this._recentCleanLines) this._recentCleanLines = [];
 
     // Check state every 2 seconds
-    this._stateTimer = setInterval(() => this._checkState(), 2000);
+    this._stateTimer = setInterval(() => this._checkState(), STATE_POLL_INTERVAL_MS);
   }
 
   /** Check whether this tab is an agent session that should have state tracking. */
@@ -1458,7 +1460,7 @@ export class TerminalTab {
     // Resume state tracking for Claude sessions.
     // Suppress "active" detection for 2s to prevent stale xterm buffer
     // content from causing a false active flash on all cards after reload.
-    tab._suppressActiveUntil = Date.now() + 2000;
+    tab._suppressActiveUntil = Date.now() + RESTORE_ACTIVE_GRACE_MS;
     tab.startStateTracking(true);
 
     // Scroll to bottom after recovery - terminal buffer is preserved but
