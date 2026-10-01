@@ -1122,6 +1122,7 @@ export class TerminalTab {
     // On fresh spawn, assume active. After reload, start as idle to avoid
     // false active flash from stale buffer content.
     this._agentState = this._suppressActiveUntil > 0 ? "idle" : "active";
+    this.autoRenameSawActive = this._agentState === "active";
     if (!this._recentCleanLines) this._recentCleanLines = [];
 
     // Check state every 2 seconds
