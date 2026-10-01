@@ -1679,9 +1679,9 @@ export class TerminalPanelView {
         Date.now() - tab.autoRenameLastAt < 5 * 60_000
       )
         return;
-      const transcript = prepareTabTitleTranscript(
-        tab.autoRenameOutput || tab.getRecentBufferText?.() || "",
-      );
+      const transcript =
+        prepareTabTitleTranscript(tab.autoRenameOutput) ??
+        prepareTabTitleTranscript(tab.getRecentBufferText?.() || "");
       if (!transcript) {
         console.info("[work-terminal] Automatic tab title skipped: insufficient output");
         return;

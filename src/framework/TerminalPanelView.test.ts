@@ -636,14 +636,16 @@ describe("TerminalPanelView", () => {
 
   it("uses current terminal buffer when no output was captured", async () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
-    piTitleMocks.prepare.mockReturnValue("buffer transcript");
+    piTitleMocks.prepare.mockImplementation((output: string) =>
+      output === "current buffer" ? "buffer transcript" : null,
+    );
     piTitleMocks.generate.mockResolvedValue("Current work");
     const tab = {
       sessionType: "claude",
       launchCwd: "/repo",
       label: "Claude",
       isDisposed: false,
-      autoRenameOutput: "",
+      autoRenameOutput: "short",
       autoRenameLastAt: 0,
       getRecentBufferText: vi.fn(() => "current buffer"),
     } as any;
