@@ -883,14 +883,13 @@ export class TerminalPanelView {
     }
 
     // Move to Item submenu - grouped by column
-    if (this.allItems.length > 0) {
+    const activeItemId = this.tabManager.getActiveItemId();
+    const excludedStates = new Set(this.adapter.config.terminalStates ?? []);
+    const available = this.allItems.filter(
+      (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
+    );
+    if (available.length > 0) {
       menu.addSeparator();
-      const activeItemId = this.tabManager.getActiveItemId();
-      const excludedStates = new Set(this.adapter.config.terminalStates ?? []);
-      const available = this.allItems.filter(
-        (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
-      );
-
       const configured = this.adapter.config.columns.filter(
         (column) => !excludedStates.has(column.id),
       );
@@ -1692,14 +1691,8 @@ export class TerminalPanelView {
       this.tabManager.onPersistRequest?.();
     };
     tab.outputDataBridge.callback = (data) => {
-      if (
-        this.isDisposed ||
-        this.settings["core.autoRenameAgentTabs"] !== true ||
-        tab.manuallyRenamed ||
-        this.manuallyRenamedTabs.has(tab)
-      )
-        return;
-      tab.autoRenameOutput = (tab.autoRenameOutput + data.toString()).slice(-8_000);
+      if (this.isDisposed || this.settings["core.autoRenameAgentTabs"] !== true) return;
+      tab.autoRenameOutput = ((tab.autoRenameOutput ?? "") + data.toString()).slice(-8_000);
     };
     tab.outputDataBridge.requestTitle = () => {
       if (

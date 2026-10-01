@@ -1738,6 +1738,22 @@ describe("TerminalTab auto-scroll on write", () => {
   });
 });
 
+describe("TerminalTab rename detection", () => {
+  it("does not overwrite a manual rename", () => {
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      label: "My title",
+      manuallyRenamed: true,
+      _renamePattern: /^Session renamed to:\s*(.+?)\s*$/,
+      onLabelChange: vi.fn(),
+    }) as TerminalTab;
+
+    (tab as any)._processRenameLine("Session renamed to: Agent title");
+
+    expect(tab.label).toBe("My title");
+    expect(tab.onLabelChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("TerminalTab user scroll detection", () => {
   beforeEach(() => {
     vi.stubGlobal("requestAnimationFrame", ((cb: FrameRequestCallback) => {

@@ -518,6 +518,17 @@ describe("TerminalPanelView", () => {
     expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
   });
 
+  it("hides move menu when no destination remains after filtering", () => {
+    const { view } = createView();
+    (view as any).adapter.config.columns = [{ id: "todo", label: "Todo" }];
+    (view as any).allItems = [{ id: "task-1", title: "Current", state: "todo" }];
+    mockState.activeItemId = "task-1";
+
+    (view as any).showTabContextMenu({ sessionType: "shell" }, 0, {} as MouseEvent);
+
+    expect(mockState.menuTitles).not.toContain("Move to task");
+  });
+
   it("falls back to flattened move targets when submenus are unavailable", () => {
     const { view } = createView();
     (view as any).adapter.config.columns = [{ id: "todo", label: "Todo" }];
@@ -585,7 +596,7 @@ describe("TerminalPanelView", () => {
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
   });
 
-  it("does not send output after manual rename", () => {
+  it("keeps collecting output after manual rename for explicit re-enable", () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
     const tab = {
       sessionType: "claude",
@@ -598,6 +609,7 @@ describe("TerminalPanelView", () => {
     (view as any).manuallyRenamedTabs.add(tab);
     tab.outputDataBridge.callback(Buffer.from("output"));
 
+    expect(tab.autoRenameOutput).toBe("output");
     expect(piTitleMocks.prepare).not.toHaveBeenCalled();
     expect(piTitleMocks.generate).not.toHaveBeenCalled();
   });

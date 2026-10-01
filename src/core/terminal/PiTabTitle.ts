@@ -41,48 +41,55 @@ export async function generateTabTitleWithPi(
   cwd: string,
   extraArgs = "",
 ): Promise<string | null> {
-  const resolution = resolveCommandInfo("pi", cwd);
-  if (!resolution.found) return null;
+  try {
+    const resolution = resolveCommandInfo("pi", cwd);
+    if (!resolution.found) return null;
 
-  return new Promise((resolve) => {
-    const cp = electronRequire("child_process") as typeof import("child_process");
-    const proc: ChildProcess = cp.spawn(
-      resolution.resolved,
-      [
-        ...parseExtraArgs(extraArgs),
-        "--print",
-        "--no-session",
-        "--no-tools",
-        "--no-context-files",
-        `${TITLE_PROMPT}${transcript}`,
-      ],
-      {
-        cwd,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, PATH: getFullPath(), TERM: "dumb" },
-      },
-    );
+    return await new Promise((resolve) => {
+      const cp = electronRequire("child_process") as typeof import("child_process");
+      const proc: ChildProcess = cp.spawn(
+        resolution.resolved,
+        [
+          ...parseExtraArgs(extraArgs),
+          "--print",
+          "--no-session",
+          "--no-tools",
+          "--no-context-files",
+          `${TITLE_PROMPT}${transcript}`,
+        ],
+        {
+          cwd,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, PATH: getFullPath(), TERM: "dumb" },
+        },
+      );
 
-    const chunks: Buffer[] = [];
-    let settled = false;
-    const finish = (title: string | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve(title);
-    };
-    proc.stdout?.on("data", (data: Buffer) => chunks.push(data));
-    proc.on("error", () => finish(null));
-    proc.on("exit", (code) =>
-      finish(code === 0 ? cleanGeneratedTabTitle(Buffer.concat(chunks).toString("utf8")) : null),
-    );
-    const timeout = setTimeout(() => {
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        // Process already exited.
-      }
-      finish(null);
-    }, TITLE_TIMEOUT_MS);
-  });
+      const chunks: Buffer[] = [];
+      let settled = false;
+      const finish = (title: string | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(title);
+      };
+      proc.stdout?.on("data", (data: Buffer) => chunks.push(data));
+      proc.on("error", () => finish(null));
+      proc.on("exit", (code) =>
+        finish(code === 0 ? cleanGeneratedTabTitle(Buffer.concat(chunks).toString("utf8")) : null),
+      );
+      const timeout = setTimeout(() => {
+        try {
+          proc.kill("SIGTERM");
+          setTimeout(() => {
+            if (proc.exitCode === null) proc.kill("SIGKILL");
+          }, 1_000).unref();
+        } catch {
+          // Process already exited.
+        }
+        finish(null);
+      }, TITLE_TIMEOUT_MS);
+    });
+  } catch {
+    return null;
+  }
 }
