@@ -174,6 +174,13 @@ export class TerminalPanelView {
     // directly from plugin.loadData() at the moment of spawn, avoiding any
     // race between a settings change and an in-flight UI event.
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    if (this.settings["core.autoRenameAgentTabs"] === true) {
+      for (const itemId of this.tabManager.getSessionItemIds()) {
+        for (const tab of this.tabManager.getTabs(itemId)) {
+          this.configureAutomaticTabRename(tab, this.settings);
+        }
+      }
+    }
     // If the user was viewing the embedded detail and then switched the
     // placement away from "embedded", restore terminal wrapper visibility so
     // they're not left staring at a hidden wrapper with no way back.
