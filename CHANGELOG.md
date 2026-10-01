@@ -7,6 +7,7 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 ## [Unreleased]
 
 ### Improvements
+- Agent tabs can optionally update their title after completed work cycles using the Pi CLI. The feature is disabled by default, exposes editable Pi arguments for model/provider selection, skips generation when Pi is unavailable, and stops updating after a manual rename. (#566)
 - Agent profiles are stored in `~/.config/obsidian-work-terminal/profiles.json` instead of the plugin `data.json`, so they can be hand-edited, bulk-edited, backed up, and version-controlled. The Profile Manager shows the path and gains a **Reload from file** button. Existing profiles migrate on first load and the old `agentProfiles` key is left in place for downgrades. (#550)
 - **Keep sub-tasks with top-level parent** can keep every non-done descendant in its highest-level parent's state. Done descendants remain independent. (#561)
 

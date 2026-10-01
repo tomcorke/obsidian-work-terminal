@@ -62,7 +62,15 @@ One-shot `claude -p <prompt> --output-format text` (or the configured enrichment
 - **Source**: `src/core/claude/HeadlessClaude.ts` - `spawnHeadlessClaude()`
 - **Mechanism**: `child_process.spawn()` with array args (no shell interpretation)
 
-### 8. VS Code
+### 8. Pi automatic tab title generation
+
+One-shot `pi [user-configured arguments] --print --no-session --no-tools --no-context-files <prompt>` generates a short title from recent agent terminal output. Model, provider, and thinking arguments are visible and editable in settings; blank uses the user's Pi defaults.
+
+- **Trigger**: An active agent work cycle becomes idle or waiting while "Automatically rename agent tabs" is enabled (disabled by default); unchanged output and requests within the five-minute cooldown are skipped
+- **Source**: `src/core/terminal/PiTabTitle.ts` - `generateTabTitleWithPi()`
+- **Mechanism**: `child_process.spawn()` with array args (no shell interpretation); skipped when `pi` cannot be resolved
+
+### 9. VS Code
 
 `code --goto "{file}:{line}"` on terminal file-link clicks (Cmd+click on file paths in terminal output). Falls back to `shell.openPath()` if VS Code is not available.
 

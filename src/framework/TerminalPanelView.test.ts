@@ -9,6 +9,16 @@ import { TerminalPanelView } from "./TerminalPanelView";
 
 const createdViews: TerminalPanelView[] = [];
 
+const piTitleMocks = vi.hoisted(() => ({
+  generate: vi.fn(),
+  prepare: vi.fn(),
+}));
+
+vi.mock("../core/terminal/PiTabTitle", () => ({
+  generateTabTitleWithPi: piTitleMocks.generate,
+  prepareTabTitleTranscript: piTitleMocks.prepare,
+}));
+
 const mockState = vi.hoisted(() => ({
   activeSessions: new Map<string, Array<{ sessionType: string }>>(),
   activeTabs: [] as ActiveTabInfo[],
@@ -436,6 +446,8 @@ describe("TerminalPanelView", () => {
     mockState.openExternal.mockClear();
     mockState.latestTabManager = null;
     mockState.latestTabManagerCtorArgs = null;
+    piTitleMocks.generate.mockReset();
+    piTitleMocks.prepare.mockReset();
   });
 
   afterEach(() => {
@@ -444,6 +456,148 @@ describe("TerminalPanelView", () => {
     }
     vi.unstubAllGlobals();
     dom.window.close();
+  });
+
+  it("keeps automatic tab renaming disabled by default", () => {
+    const { view } = createView();
+    const tab = { sessionType: "claude", onOutputData: undefined } as any;
+
+    (view as any).configureAutomaticTabRename(tab, {});
+
+    expect(tab.onOutputData).toBeUndefined();
+  });
+
+  it("generates a title after a completed work cycle and persists it", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+      onLabelChange: vi.fn(),
+    } as any;
+    piTitleMocks.prepare.mockReturnValue("meaningful transcript");
+    piTitleMocks.generate.mockResolvedValue("Fix session restore");
+    mockState.latestTabManager!.onPersistRequest = vi.fn();
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.callback(Buffer.from("more output"));
+    tab.outputDataBridge.requestTitle();
+    await flushAsync();
+
+    expect(piTitleMocks.generate).toHaveBeenCalledWith("meaningful transcript", "/repo", "");
+    expect(piTitleMocks.generate).toHaveBeenCalledOnce();
+    expect(tab.label).toBe("Fix session restore");
+    expect(tab.onLabelChange).toHaveBeenCalledOnce();
+    expect(mockState.latestTabManager!.onPersistRequest).toHaveBeenCalledOnce();
+  });
+
+  it("does not send output after automatic renaming is disabled", () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    (view as any).settings["core.autoRenameAgentTabs"] = false;
+    tab.outputDataBridge.callback(Buffer.from("output"));
+
+    expect(piTitleMocks.prepare).not.toHaveBeenCalled();
+    expect(piTitleMocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("does not send output after manual rename", () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    (view as any).manuallyRenamedTabs.add(tab);
+    tab.outputDataBridge.callback(Buffer.from("output"));
+
+    expect(piTitleMocks.prepare).not.toHaveBeenCalled();
+    expect(piTitleMocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("configures an existing agent tab when automatic renaming is enabled", () => {
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+    } as any;
+    mockState.tabDiagnostics = [{ itemId: "task-1" } as any];
+    mockState.tabsByItem.set("task-1", [tab]);
+    createView();
+
+    window.dispatchEvent(
+      new window.CustomEvent("work-terminal:settings-changed", {
+        detail: { "core.autoRenameAgentTabs": true },
+      }),
+    );
+
+    expect(tab.outputDataBridge.callback).toBeTypeOf("function");
+  });
+
+  it("does not apply an automatic title after manual rename", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    let resolveTitle!: (title: string) => void;
+    piTitleMocks.prepare.mockReturnValue("meaningful transcript");
+    piTitleMocks.generate.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveTitle = resolve;
+      }),
+    );
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.requestTitle();
+    (view as any).manuallyRenamedTabs.add(tab);
+    tab.label = "My title";
+    resolveTitle("Generated title");
+    await flushAsync();
+
+    expect(tab.label).toBe("My title");
+  });
+
+  it("does not apply an automatic title after the view is stashed", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    let resolveTitle!: (title: string) => void;
+    piTitleMocks.prepare.mockReturnValue("meaningful transcript");
+    piTitleMocks.generate.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveTitle = resolve;
+      }),
+    );
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.requestTitle();
+    view.stashAll();
+    resolveTitle("Generated title");
+    await flushAsync();
+
+    expect(tab.label).toBe("Claude");
   });
 
   it("keeps the debug global disabled by default", async () => {

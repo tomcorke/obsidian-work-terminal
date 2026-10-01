@@ -49,6 +49,7 @@ import {
 } from "../core/workspace/pluginPaths";
 import { checkPython3Available } from "../core/terminal/PythonCheck";
 import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
+import { generateTabTitleWithPi, prepareTabTitleTranscript } from "../core/terminal/PiTabTitle";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -156,6 +157,7 @@ export class TerminalPanelView {
 
   // Active inline rename input, if any
   private activeRenameInput: HTMLInputElement | null = null;
+  private manuallyRenamedTabs = new WeakSet<TerminalTab>();
 
   // Delayed click timer for tab switching (cancelled on double-click)
   private tabClickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -172,6 +174,13 @@ export class TerminalPanelView {
     // directly from plugin.loadData() at the moment of spawn, avoiding any
     // race between a settings change and an in-flight UI event.
     this.settings = { ...(event as CustomEvent<Record<string, any>>).detail };
+    if (this.settings["core.autoRenameAgentTabs"] === true) {
+      for (const itemId of this.tabManager.getSessionItemIds()) {
+        for (const tab of this.tabManager.getTabs(itemId)) {
+          this.configureAutomaticTabRename(tab, this.settings);
+        }
+      }
+    }
     // If the user was viewing the embedded detail and then switched the
     // placement away from "embedded", restore terminal wrapper visibility so
     // they're not left staring at a hidden wrapper with no way back.
@@ -250,6 +259,11 @@ export class TerminalPanelView {
       this.onAgentStateChange(itemId, state);
       this.updateTabStateClasses();
     };
+    for (const itemId of this.tabManager.getSessionItemIds()) {
+      for (const tab of this.tabManager.getTabs(itemId)) {
+        this.configureAutomaticTabRename(tab, this.settings);
+      }
+    }
 
     // Initial tab bar render
     this.renderTabBar();
@@ -815,6 +829,8 @@ export class TerminalPanelView {
       if (!armed) return;
       const newLabel = input.value.trim() || tab.label;
       tab.label = newLabel;
+      tab.manuallyRenamed = true;
+      this.manuallyRenamedTabs.add(tab);
       if (this.activeRenameInput === input) {
         this.activeRenameInput = null;
       }
@@ -1610,9 +1626,63 @@ export class TerminalPanelView {
       if (this.adapter.transformSessionLabel) {
         tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
       }
+      this.configureAutomaticTabRename(tab, fresh);
     }
     this.renderTabBar();
     return tab;
+  }
+
+  private configureAutomaticTabRename(tab: TerminalTab, settings: Record<string, unknown>): void {
+    if (settings["core.autoRenameAgentTabs"] !== true || tab.sessionType === "shell") return;
+
+    tab.outputDataBridge ??= {};
+    tab.outputDataBridge.applyTitle = (title, expectedLabel) => {
+      if (
+        this.isDisposed ||
+        this.settings["core.autoRenameAgentTabs"] !== true ||
+        tab.isDisposed ||
+        tab.label !== expectedLabel ||
+        tab.manuallyRenamed ||
+        this.manuallyRenamedTabs.has(tab)
+      )
+        return;
+      tab.label = title;
+      tab.onLabelChange?.();
+      this.tabManager.onPersistRequest?.();
+    };
+    tab.outputDataBridge.callback = (data) => {
+      if (
+        this.isDisposed ||
+        this.settings["core.autoRenameAgentTabs"] !== true ||
+        tab.manuallyRenamed ||
+        this.manuallyRenamedTabs.has(tab)
+      )
+        return;
+      tab.autoRenameOutput = (tab.autoRenameOutput + data.toString()).slice(-8_000);
+    };
+    tab.outputDataBridge.requestTitle = () => {
+      if (
+        this.isDisposed ||
+        this.settings["core.autoRenameAgentTabs"] !== true ||
+        tab.manuallyRenamed ||
+        this.manuallyRenamedTabs.has(tab) ||
+        Date.now() - tab.autoRenameLastAt < 5 * 60_000
+      )
+        return;
+      const transcript = prepareTabTitleTranscript(tab.autoRenameOutput);
+      if (!transcript || transcript === tab.autoRenameLastTranscript) return;
+      tab.autoRenameLastTranscript = transcript;
+      tab.autoRenameLastAt = Date.now();
+      const expectedLabel = tab.label;
+      const piArguments =
+        typeof this.settings["core.autoRenamePiArguments"] === "string"
+          ? this.settings["core.autoRenamePiArguments"]
+          : "";
+      const applyTitle = tab.outputDataBridge.applyTitle;
+      void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments).then((title) => {
+        if (title && title !== expectedLabel) applyTitle?.(title, expectedLabel);
+      });
+    };
   }
 
   /**
