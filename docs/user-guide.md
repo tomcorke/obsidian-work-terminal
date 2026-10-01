@@ -349,7 +349,7 @@ The **"..."** button in the tab bar opens additional options including custom pr
 - Hover over a tab to see the full session label
 - Close a tab by clicking its close button (x) or using the keyboard shortcut
 - Tabs persist across plugin hot-reloads (see [Session persistence](#session-persistence))
-- Right-click a tab to rename it, move it via **Move to task > category > task**, or re-enable automatic naming
+- Right-click a tab to rename it, move it via **Move to task > category > task**, or re-enable automatic naming. Pinned tasks appear in a **Pinned** category first and are omitted from their status category.
 
 When a task has multiple sessions, the tab bar shows all of them. Tabs are labelled with the session type (Shell, Claude, etc.) and may be renamed when agent session detection identifies a new session name.
 
