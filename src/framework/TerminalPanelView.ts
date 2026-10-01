@@ -126,6 +126,7 @@ export class TerminalPanelView {
   private promptBuilder: WorkItemPromptBuilder;
   private onAgentStateChange: (itemId: string, state: string) => void;
   private onSessionChange: () => void;
+  private isItemPinned: (itemId: string) => boolean;
 
   // DOM elements
   private panelEl: HTMLElement;
@@ -222,6 +223,7 @@ export class TerminalPanelView {
     onAgentStateChange: (itemId: string, state: string) => void,
     onSessionChange: () => void,
     profileManager?: AgentProfileManager,
+    isItemPinned: (itemId: string) => boolean = () => false,
   ) {
     this.panelEl = panelEl;
     this.terminalWrapperEl = terminalWrapperEl;
@@ -232,6 +234,7 @@ export class TerminalPanelView {
     this.onAgentStateChange = onAgentStateChange;
     this.onSessionChange = onSessionChange;
     this.profileManager = profileManager ?? null;
+    this.isItemPinned = isItemPinned;
     liveTerminalViews.add(this);
     window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
     window.addEventListener(PROFILES_CHANGED_EVENT, this.handleProfilesChanged as EventListener);
@@ -890,16 +893,25 @@ export class TerminalPanelView {
     );
     if (available.length > 0) {
       menu.addSeparator();
+      const pinned = available.filter((item) => this.isItemPinned(item.id));
+      const unpinned = available.filter((item) => !this.isItemPinned(item.id));
       const configured = this.adapter.config.columns.filter(
         (column) => !excludedStates.has(column.id),
       );
       const configuredIds = new Set(configured.map((column) => column.id));
       const columns = [
         ...configured,
-        ...Array.from(new Set(available.map((item) => item.state)))
+        ...Array.from(new Set(unpinned.map((item) => item.state)))
           .filter((state) => !configuredIds.has(state))
           .map((state) => ({ id: state, label: titleCase(state) })),
       ];
+      const groups = [
+        ...(pinned.length > 0 ? [{ id: "__pinned", label: "Pinned", items: pinned }] : []),
+        ...columns.map((column) => ({
+          ...column,
+          items: unpinned.filter((item) => item.state === column.id),
+        })),
+      ].filter((group) => group.items.length > 0);
       let submenuSupported = false;
       menu.addItem((moveItem) => {
         const withSubmenu = moveItem.setTitle("Move to task") as typeof moveItem & {
@@ -908,14 +920,12 @@ export class TerminalPanelView {
         const moveMenu = withSubmenu.setSubmenu?.();
         if (!moveMenu) return;
         submenuSupported = true;
-        for (const col of columns) {
-          const inColumn = available.filter((wi) => wi.state === col.id);
-          if (inColumn.length === 0) continue;
+        for (const group of groups) {
           moveMenu.addItem((categoryItem) => {
             const categoryMenu = (categoryItem as typeof categoryItem & { setSubmenu: () => Menu })
-              .setTitle(col.label)
+              .setTitle(group.label)
               .setSubmenu();
-            for (const workItem of inColumn) {
+            for (const workItem of group.items) {
               categoryMenu.addItem((item) => {
                 item.setTitle(workItem.title).onClick(() => {
                   this.moveTabToItem(tab, index, workItem.id);
@@ -926,10 +936,10 @@ export class TerminalPanelView {
         }
       });
       if (!submenuSupported) {
-        for (const col of columns) {
-          for (const workItem of available.filter((wi) => wi.state === col.id)) {
+        for (const group of groups) {
+          for (const workItem of group.items) {
             menu.addItem((item) => {
-              item.setTitle(`Move to task / ${col.label} / ${workItem.title}`).onClick(() => {
+              item.setTitle(`Move to task / ${group.label} / ${workItem.title}`).onClick(() => {
                 this.moveTabToItem(tab, index, workItem.id);
               });
             });

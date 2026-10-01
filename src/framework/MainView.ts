@@ -72,6 +72,7 @@ export class MainView extends ItemView {
   // Activity tracking
   private activityTracker: ActivityTracker = new ActivityTracker();
   private lastActiveStore: LastActiveStore;
+  private pinStore: PinStore | null = null;
 
   // Adapter-contributed style element
   private adapterStyleEl: HTMLStyleElement | null = null;
@@ -449,6 +450,7 @@ export class MainView extends ItemView {
       },
       // profileManager
       this.profileManager,
+      (itemId) => this.pinStore?.isPinned(itemId) ?? false,
     );
 
     // ListPanel
@@ -514,9 +516,9 @@ export class MainView extends ItemView {
     );
 
     // Initialize PinStore and inject into ListPanel
-    const pinStore = new PinStore(this.pluginRef);
-    await pinStore.load();
-    this.listPanel.setPinStore(pinStore);
+    this.pinStore = new PinStore(this.pluginRef);
+    await this.pinStore.load();
+    this.listPanel.setPinStore(this.pinStore);
 
     // Initialize ActivityTracker and inject into ListPanel
     this.activityTracker.setFlushCallback(async (itemId: string, isoTimestamp: string) => {

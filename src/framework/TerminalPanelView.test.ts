@@ -381,6 +381,7 @@ function createView(
   settings: Record<string, unknown> = {},
   pluginOverrides: Partial<ReturnType<typeof createPlugin>> = {},
   promptBuilder: WorkItemPromptBuilder = { buildPrompt: () => "" },
+  isItemPinned: (itemId: string) => boolean = () => false,
 ) {
   const panelEl = document.createElement("div") as HTMLElement & {
     createDiv: HTMLElement["createDiv"];
@@ -404,6 +405,8 @@ function createView(
     promptBuilder,
     vi.fn(),
     vi.fn(),
+    undefined,
+    isItemPinned,
   );
   createdViews.push(view);
 
@@ -516,6 +519,26 @@ describe("TerminalPanelView", () => {
     expect(mockState.menuPaths).toContain("Move to task > Active > Third task");
     expect(mockState.menuPaths).toContain("Move to task > Needs Review > Custom task");
     expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
+  });
+
+  it("lists pinned tasks first and excludes them from status categories", () => {
+    const { view } = createView({}, {}, { buildPrompt: () => "" }, (id) => id === "task-3");
+    (view as any).adapter.config.columns = [
+      { id: "todo", label: "Todo" },
+      { id: "active", label: "Active" },
+    ];
+    (view as any).allItems = [
+      { id: "task-2", title: "Todo task", state: "todo" },
+      { id: "task-3", title: "Pinned active task", state: "active" },
+    ];
+
+    (view as any).showTabContextMenu({ sessionType: "shell" }, 0, {} as MouseEvent);
+
+    const pinned = mockState.menuPaths.indexOf("Move to task > Pinned > Pinned active task");
+    const todo = mockState.menuPaths.indexOf("Move to task > Todo > Todo task");
+    expect(pinned).toBeGreaterThan(-1);
+    expect(pinned).toBeLessThan(todo);
+    expect(mockState.menuPaths).not.toContain("Move to task > Active > Pinned active task");
   });
 
   it("hides move menu when no destination remains after filtering", () => {
