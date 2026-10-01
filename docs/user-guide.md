@@ -350,7 +350,9 @@ The **"..."** button in the tab bar opens additional options including custom pr
 - Close a tab by clicking its close button (x) or using the keyboard shortcut
 - Tabs persist across plugin hot-reloads (see [Session persistence](#session-persistence))
 
-When a task has multiple sessions, the tab bar shows all of them. Tabs are labelled with the session type (Shell, Claude, etc.) and may be automatically renamed when agent session detection identifies a new session name.
+When a task has multiple sessions, the tab bar shows all of them. Tabs are labelled with the session type (Shell, Claude, etc.) and may be renamed when agent session detection identifies a new session name.
+
+**Automatic agent tab titles**: Enable **Settings > General > Automatically rename agent tabs** to let Work Terminal generate one short title from each agent tab's initial meaningful output. This option is disabled by default. It invokes the `pi` executable directly with `portkey/gpt-5.6-luna`, low reasoning, no tools, and no saved Pi session. If `pi` is not available on the executable path, the tab keeps its existing label without an error. Generation is attempted at most once per tab, and a manual tab rename always wins. Generated titles use existing session persistence.
 
 ### Session persistence
 

@@ -222,7 +222,7 @@ vi.mock("../core/PluginDataStore", () => ({
   },
 }));
 
-import { WorkTerminalSettingsTab } from "./SettingsTab";
+import { loadSetting, WorkTerminalSettingsTab } from "./SettingsTab";
 
 type CreateChildOptions = {
   cls?: string;
@@ -329,6 +329,12 @@ describe("WorkTerminalSettingsTab", () => {
   afterEach(() => {
     process.env.HOME = originalHome;
     vi.clearAllMocks();
+  });
+
+  it("defaults automatic tab renaming to disabled", async () => {
+    const plugin = makePlugin({});
+
+    await expect(loadSetting(plugin as any, "core.autoRenameAgentTabs")).resolves.toBe(false);
   });
 
   it("does not render legacy agent command settings", async () => {

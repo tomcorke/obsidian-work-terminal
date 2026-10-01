@@ -108,6 +108,7 @@ interface CoreSettings {
   "core.detailViewAutoClose": boolean;
   "core.detailViewSplitDirection": DetailViewSplitDirection;
   "core.showVersionInTabTitle": boolean;
+  "core.autoRenameAgentTabs": boolean;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -139,6 +140,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.detailViewAutoClose": false,
   "core.detailViewSplitDirection": "vertical",
   "core.showVersionInTabTitle": true,
+  "core.autoRenameAgentTabs": false,
 };
 
 /**
@@ -323,6 +325,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
       "core.showVersionInTabTitle",
       "Show version in tab title",
       "Append the running plugin version (or short commit SHA for untagged builds) to the Work Terminal tab title. Helps quickly confirm which build is running when reporting issues.",
+    );
+
+    this.addCoreToggle(
+      containerEl,
+      settings,
+      "core.autoRenameAgentTabs",
+      "Automatically rename agent tabs",
+      "Use the Pi CLI with portkey/gpt-5.6-luna to generate one short title from each agent tab's initial output. Disabled by default; does nothing when Pi is unavailable. Terminal output is sent to the configured Pi model provider.",
     );
 
     // Session/lifecycle toggles.

@@ -49,6 +49,7 @@ import {
 } from "../core/workspace/pluginPaths";
 import { checkPython3Available } from "../core/terminal/PythonCheck";
 import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
+import { generateTabTitleWithPi, prepareTabTitleTranscript } from "../core/terminal/PiTabTitle";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -156,6 +157,7 @@ export class TerminalPanelView {
 
   // Active inline rename input, if any
   private activeRenameInput: HTMLInputElement | null = null;
+  private manuallyRenamedTabs = new WeakSet<TerminalTab>();
 
   // Delayed click timer for tab switching (cancelled on double-click)
   private tabClickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -815,6 +817,7 @@ export class TerminalPanelView {
       if (!armed) return;
       const newLabel = input.value.trim() || tab.label;
       tab.label = newLabel;
+      this.manuallyRenamedTabs.add(tab);
       if (this.activeRenameInput === input) {
         this.activeRenameInput = null;
       }
@@ -1610,9 +1613,46 @@ export class TerminalPanelView {
       if (this.adapter.transformSessionLabel) {
         tab.transformLabel = (old, detected) => this.adapter.transformSessionLabel!(old, detected);
       }
+      this.configureAutomaticTabRename(tab, fresh);
     }
     this.renderTabBar();
     return tab;
+  }
+
+  private configureAutomaticTabRename(tab: TerminalTab, settings: Record<string, unknown>): void {
+    if (settings["core.autoRenameAgentTabs"] !== true || tab.sessionType === "shell") return;
+
+    const originalLabel = tab.label;
+    const previousOutputHandler = tab.onOutputData;
+    let output = "";
+    let attempted = false;
+    tab.onOutputData = (data) => {
+      previousOutputHandler?.(data);
+      if (
+        attempted ||
+        this.isDisposed ||
+        this.settings["core.autoRenameAgentTabs"] !== true ||
+        this.manuallyRenamedTabs.has(tab)
+      )
+        return;
+      output = (output + data.toString()).slice(-8_000);
+      const transcript = prepareTabTitleTranscript(output);
+      if (!transcript) return;
+      attempted = true;
+      void generateTabTitleWithPi(transcript, tab.launchCwd).then((title) => {
+        if (
+          !title ||
+          this.isDisposed ||
+          tab.isDisposed ||
+          tab.label !== originalLabel ||
+          this.manuallyRenamedTabs.has(tab)
+        )
+          return;
+        tab.label = title;
+        tab.onLabelChange?.();
+        this.tabManager.onPersistRequest?.();
+      });
+    };
   }
 
   /**
