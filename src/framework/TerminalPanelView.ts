@@ -1713,9 +1713,11 @@ export class TerminalPanelView {
           ? this.settings["core.autoRenamePiArguments"]
           : "";
       const applyTitle = tab.outputDataBridge.applyTitle;
-      void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments).then((title) => {
-        if (title && title !== expectedLabel) applyTitle?.(title, expectedLabel);
-      });
+      void generateTabTitleWithPi(transcript, tab.launchCwd, piArguments)
+        .then((title) => {
+          if (title && title !== expectedLabel) applyTitle?.(title, expectedLabel);
+        })
+        .catch(() => undefined);
     };
   }
 

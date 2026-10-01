@@ -1571,7 +1571,7 @@ export class TerminalTab {
       // Force kill after 1s if not exited
       const procRef = this.process;
       setTimeout(() => {
-        if (procRef && !procRef.killed) {
+        if (procRef?.exitCode === null) {
           procRef.kill("SIGKILL");
         }
       }, 1000);

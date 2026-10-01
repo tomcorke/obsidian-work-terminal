@@ -634,6 +634,26 @@ describe("TerminalPanelView", () => {
     expect(tab.outputDataBridge.callback).toBeTypeOf("function");
   });
 
+  it("handles a rejected automatic title request", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    piTitleMocks.prepare.mockReturnValue("meaningful transcript");
+    piTitleMocks.generate.mockRejectedValue(new Error("failed"));
+    const tab = {
+      sessionType: "claude",
+      launchCwd: "/repo",
+      label: "Claude",
+      isDisposed: false,
+      autoRenameLastAt: 0,
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.callback(Buffer.from("output"));
+    tab.outputDataBridge.requestTitle();
+    await flushAsync();
+
+    expect(tab.label).toBe("Claude");
+  });
+
   it("does not apply an automatic title after manual rename", async () => {
     const { view } = createView({ "core.autoRenameAgentTabs": true });
     let resolveTitle!: (title: string) => void;
