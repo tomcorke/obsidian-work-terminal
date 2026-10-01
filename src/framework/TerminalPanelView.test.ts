@@ -382,6 +382,7 @@ function createView(
   pluginOverrides: Partial<ReturnType<typeof createPlugin>> = {},
   promptBuilder: WorkItemPromptBuilder = { buildPrompt: () => "" },
   isItemPinned: (itemId: string) => boolean = () => false,
+  getVisibleItemOrder: () => string[] = () => [],
 ) {
   const panelEl = document.createElement("div") as HTMLElement & {
     createDiv: HTMLElement["createDiv"];
@@ -407,6 +408,7 @@ function createView(
     vi.fn(),
     undefined,
     isItemPinned,
+    getVisibleItemOrder,
   );
   createdViews.push(view);
 
@@ -519,6 +521,28 @@ describe("TerminalPanelView", () => {
     expect(mockState.menuPaths).toContain("Move to task > Active > Third task");
     expect(mockState.menuPaths).toContain("Move to task > Needs Review > Custom task");
     expect(mockState.menuPaths).not.toContain("Move to task > Todo > Current");
+  });
+
+  it("orders move targets like the visible task list", () => {
+    const { view } = createView(
+      {},
+      {},
+      { buildPrompt: () => "" },
+      () => false,
+      () => ["task-3", "task-2"],
+    );
+    (view as any).adapter.config.columns = [{ id: "todo", label: "Todo" }];
+    (view as any).allItems = [
+      { id: "task-2", title: "Second in list", state: "todo" },
+      { id: "task-3", title: "First in list", state: "todo" },
+    ];
+
+    (view as any).showTabContextMenu({ sessionType: "shell" }, 0, {} as MouseEvent);
+
+    const first = mockState.menuPaths.indexOf("Move to task > Todo > First in list");
+    const second = mockState.menuPaths.indexOf("Move to task > Todo > Second in list");
+    expect(first).toBeGreaterThan(-1);
+    expect(first).toBeLessThan(second);
   });
 
   it("lists pinned tasks first and excludes them from status categories", () => {

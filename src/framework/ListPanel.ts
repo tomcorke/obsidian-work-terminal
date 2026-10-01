@@ -248,6 +248,12 @@ export class ListPanel {
     return null; // Parser is owned by MainView, not ListPanel
   }
 
+  getDisplayedItemOrder(): string[] {
+    return Array.from(this.listEl.querySelectorAll<HTMLElement>(".wt-card-wrapper[data-item-id]"))
+      .map((card) => card.dataset.itemId!)
+      .filter(Boolean);
+  }
+
   /** Inject a PinStore after construction (created by MainView). */
   setPinStore(pinStore: PinStore): void {
     this.pinStore = pinStore;

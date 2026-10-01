@@ -451,6 +451,7 @@ export class MainView extends ItemView {
       // profileManager
       this.profileManager,
       (itemId) => this.pinStore?.isPinned(itemId) ?? false,
+      () => this.listPanel?.getDisplayedItemOrder() ?? [],
     );
 
     // ListPanel

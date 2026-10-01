@@ -127,6 +127,7 @@ export class TerminalPanelView {
   private onAgentStateChange: (itemId: string, state: string) => void;
   private onSessionChange: () => void;
   private isItemPinned: (itemId: string) => boolean;
+  private getVisibleItemOrder: () => string[];
 
   // DOM elements
   private panelEl: HTMLElement;
@@ -224,6 +225,7 @@ export class TerminalPanelView {
     onSessionChange: () => void,
     profileManager?: AgentProfileManager,
     isItemPinned: (itemId: string) => boolean = () => false,
+    getVisibleItemOrder: () => string[] = () => [],
   ) {
     this.panelEl = panelEl;
     this.terminalWrapperEl = terminalWrapperEl;
@@ -235,6 +237,7 @@ export class TerminalPanelView {
     this.onSessionChange = onSessionChange;
     this.profileManager = profileManager ?? null;
     this.isItemPinned = isItemPinned;
+    this.getVisibleItemOrder = getVisibleItemOrder;
     liveTerminalViews.add(this);
     window.addEventListener(SETTINGS_CHANGED_EVENT, this.handleSettingsChanged as EventListener);
     window.addEventListener(PROFILES_CHANGED_EVENT, this.handleProfilesChanged as EventListener);
@@ -888,9 +891,14 @@ export class TerminalPanelView {
     // Move to Item submenu - grouped by column
     const activeItemId = this.tabManager.getActiveItemId();
     const excludedStates = new Set(this.adapter.config.terminalStates ?? []);
-    const available = this.allItems.filter(
-      (wi) => wi.id !== activeItemId && !excludedStates.has(wi.state),
-    );
+    const displayOrder = new Map(this.getVisibleItemOrder().map((id, index) => [id, index]));
+    const available = this.allItems
+      .filter((wi) => wi.id !== activeItemId && !excludedStates.has(wi.state))
+      .sort(
+        (a, b) =>
+          (displayOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+          (displayOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+      );
     if (available.length > 0) {
       menu.addSeparator();
       const pinned = available.filter((item) => this.isItemPinned(item.id));
