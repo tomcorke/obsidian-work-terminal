@@ -1220,7 +1220,7 @@ export class TerminalTab {
       const hasActiveIndicator = hasAgentActiveIndicator(screenLines, this.activityPatterns);
       if (hasActiveIndicator) {
         if (Date.now() < this._suppressActiveUntil) {
-          this._setAgentState("idle");
+          this._setAgentState("idle", false);
         } else {
           this._setAgentState("active");
         }
@@ -1242,7 +1242,7 @@ export class TerminalTab {
     if (hasActiveIndicator || screenChanged) {
       // During post-reload grace period, treat "active" as "idle"
       if (Date.now() < this._suppressActiveUntil) {
-        this._setAgentState("idle");
+        this._setAgentState("idle", false);
       } else {
         this._setAgentState("active");
       }
@@ -1278,14 +1278,14 @@ export class TerminalTab {
     }
   }
 
-  private _setAgentState(state: AgentState): void {
+  private _setAgentState(state: AgentState, completesWork = true): void {
     if (state === "active") this.autoRenameSawActive = true;
-    if (this._agentState === state) return;
-    this._agentState = state;
-    if ((state === "idle" || state === "waiting") && this.autoRenameSawActive) {
+    if (completesWork && (state === "idle" || state === "waiting") && this.autoRenameSawActive) {
       this.autoRenameSawActive = false;
       this.outputDataBridge?.requestTitle?.();
     }
+    if (this._agentState === state) return;
+    this._agentState = state;
     this.onStateChange?.(state);
   }
 

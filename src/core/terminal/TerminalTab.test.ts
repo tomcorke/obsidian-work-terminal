@@ -1754,6 +1754,9 @@ describe("TerminalTab automatic title cycle", () => {
     expect(requestTitle).not.toHaveBeenCalled();
 
     (tab as any)._setAgentState("active");
+    (tab as any)._setAgentState("idle", false);
+    expect(requestTitle).not.toHaveBeenCalled();
+
     (tab as any)._setAgentState("idle");
     expect(requestTitle).toHaveBeenCalledOnce();
   });
