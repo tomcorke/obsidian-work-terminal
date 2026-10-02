@@ -37,3 +37,4 @@ jobs:
             manifest.json
             styles.css
             pty-wrapper.py
+            pi-session-hook.ts
