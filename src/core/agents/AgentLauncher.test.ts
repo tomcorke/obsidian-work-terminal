@@ -4,6 +4,7 @@ import {
   buildMissingCliNotice,
   mergeExtraArgs,
   parseExtraArgs,
+  isPiCommand,
   resolveCommand,
   resolveCommandInfo,
   _resetLoginShellPathCache,
@@ -47,6 +48,16 @@ describe("AgentLauncher", () => {
           --verbose`,
       ),
     ).toBe("--dangerously-skip-permissions --plugin-dir /path/a --plugin-dir /path/b --verbose");
+  });
+
+  it("recognizes only pi executable basenames", () => {
+    expect(isPiCommand({ requested: "pi", resolved: "/usr/local/bin/pi", found: true })).toBe(true);
+    expect(isPiCommand({ requested: "custom", resolved: "C:\\Tools\\pi.cmd", found: true })).toBe(
+      true,
+    );
+    expect(isPiCommand({ requested: "pi-wrapper", resolved: "/bin/pi-wrapper", found: true })).toBe(
+      false,
+    );
   });
 
   // ---- buildAgentArgs (unified) ----

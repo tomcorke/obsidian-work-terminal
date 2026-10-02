@@ -87,6 +87,26 @@ describe("PiTabTitle", () => {
     warn.mockRestore();
   });
 
+  it("retries one content-filter failure", async () => {
+    resolveCommandInfoMock.mockReturnValue({ found: true, resolved: "/test/bin/pi" });
+    const first = processStub();
+    const second = processStub();
+    spawnMock.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = generateTabTitleWithPi("x".repeat(300), "/repo");
+    first.stderr.emit("data", Buffer.from("Provider content_filter rejection"));
+    first.emit("exit", 1);
+    second.stdout.emit("data", Buffer.from("Improve cache skills\n"));
+    second.emit("exit", 0);
+
+    await expect(result).resolves.toBe("Improve cache skills");
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
   it("passes editable arguments before fixed headless safety arguments", async () => {
     resolveCommandInfoMock.mockReturnValue({ found: true, resolved: "/test/bin/pi" });
     const proc = processStub();

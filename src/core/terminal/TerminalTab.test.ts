@@ -1755,10 +1755,28 @@ describe("TerminalTab automatic title cycle", () => {
     expect(requestTitle).not.toHaveBeenCalled();
 
     (tab as any)._setAgentState("active");
+    expect(requestTitle).toHaveBeenCalledOnce();
+    requestTitle.mockClear();
+
     (tab as any)._setAgentState("idle", false);
     expect(requestTitle).not.toHaveBeenCalled();
 
     (tab as any)._setAgentState("idle");
+    expect(requestTitle).toHaveBeenCalledOnce();
+  });
+
+  it("requests bounded refreshes while agent remains active", () => {
+    const requestTitle = vi.fn();
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      _agentState: "active",
+      autoRenameLastAt: Date.now() - 5 * 60_000,
+      autoRenameActiveSince: Date.now() - 5 * 60_000,
+      autoRenameSawActive: true,
+      outputDataBridge: { requestTitle },
+    }) as TerminalTab;
+
+    (tab as any)._setAgentState("active");
+
     expect(requestTitle).toHaveBeenCalledOnce();
   });
 });
