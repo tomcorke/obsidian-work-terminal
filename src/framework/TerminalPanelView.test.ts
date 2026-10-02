@@ -12,11 +12,17 @@ const createdViews: TerminalPanelView[] = [];
 const piTitleMocks = vi.hoisted(() => ({
   generate: vi.fn(),
   prepare: vi.fn(),
+  readSession: vi.fn(),
+  pruneSessions: vi.fn(),
 }));
 
 vi.mock("../core/terminal/PiTabTitle", () => ({
   generateTabTitleWithPi: piTitleMocks.generate,
   prepareTabTitleTranscript: piTitleMocks.prepare,
+}));
+vi.mock("../core/terminal/PiSessionTranscript", () => ({
+  readPiSessionTranscript: piTitleMocks.readSession,
+  prunePiSessionMappings: piTitleMocks.pruneSessions,
 }));
 
 const mockState = vi.hoisted(() => ({
@@ -468,6 +474,8 @@ describe("TerminalPanelView", () => {
     mockState.latestTabManagerCtorArgs = null;
     piTitleMocks.generate.mockReset();
     piTitleMocks.prepare.mockReset();
+    piTitleMocks.readSession.mockReset();
+    piTitleMocks.pruneSessions.mockReset();
   });
 
   afterEach(() => {
@@ -679,6 +687,33 @@ describe("TerminalPanelView", () => {
     );
 
     expect(tab.outputDataBridge.callback).toBeTypeOf("function");
+  });
+
+  it("prefers a mapped Pi session transcript", async () => {
+    const { view } = createView({ "core.autoRenameAgentTabs": true });
+    piTitleMocks.readSession.mockReturnValue("structured session");
+    piTitleMocks.prepare.mockImplementation((output: string) =>
+      output === "structured session" ? "prepared session" : null,
+    );
+    piTitleMocks.generate.mockResolvedValue("Current Pi work");
+    const tab = {
+      sessionType: "custom",
+      launchCwd: "/repo",
+      label: "Pi",
+      isDisposed: false,
+      piSessionMappingPath: "/tmp/map",
+      piSessionLaunchToken: "token",
+      autoRenameOutput: "terminal fallback",
+      getRecentBufferText: vi.fn(() => "buffer fallback"),
+    } as any;
+
+    (view as any).configureAutomaticTabRename(tab, { "core.autoRenameAgentTabs": true });
+    tab.outputDataBridge.requestTitle(true);
+    await flushAsync();
+
+    expect(piTitleMocks.readSession).toHaveBeenCalledWith("/tmp/map", "token");
+    expect(piTitleMocks.generate).toHaveBeenCalledWith("prepared session", "/repo", "");
+    expect(tab.getRecentBufferText).not.toHaveBeenCalled();
   });
 
   it("uses current terminal buffer when no output was captured", async () => {
@@ -2883,6 +2918,14 @@ describe("profile launch", () => {
     // commandArgs[0] should be the unresolved name, not the absolute path
     expect(commandArgs[0]).toBe("pi");
     expect(commandArgs[0]).not.toBe("/usr/local/bin/pi");
+    expect(commandArgs.slice(1, 3)).toEqual([
+      "--extension",
+      expect.stringMatching(/pi-session-hook\.ts$/),
+    ]);
+    expect(mockState.latestCreateTabArgs?.[6]).toMatchObject({
+      piSessionMappingPath: expect.stringMatching(/work-terminal-pi-sessions/),
+      piSessionLaunchToken: expect.any(String),
+    });
 
     resolveStub.mockRestore();
   });

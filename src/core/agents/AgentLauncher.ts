@@ -421,6 +421,14 @@ export interface ResolvedCommand {
   found: boolean;
 }
 
+export function isPiCommand(command: ResolvedCommand): boolean {
+  const path = electronRequire("path") as PathModule;
+  return [command.requested, command.resolved].some((value) => {
+    const basename = path.win32.basename(path.basename(value)).replace(/\.(?:cmd|exe)$/i, "");
+    return basename === "pi";
+  });
+}
+
 export function resolveCommandInfo(
   cmd: string,
   cwd?: string,

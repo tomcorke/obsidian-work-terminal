@@ -15,6 +15,7 @@ import {
   buildMissingCliNotice,
   resolveCommandInfo,
   resolveAgentInvocation,
+  isPiCommand,
   mergeExtraArgs,
   type ResolvedAgentInvocation,
 } from "../core/agents/AgentLauncher";
@@ -50,6 +51,10 @@ import {
 import { checkPython3Available } from "../core/terminal/PythonCheck";
 import { resolvePtyWrapperPath } from "../core/terminal/PtyLaunch";
 import { generateTabTitleWithPi, prepareTabTitleTranscript } from "../core/terminal/PiTabTitle";
+import {
+  prunePiSessionMappings,
+  readPiSessionTranscript,
+} from "../core/terminal/PiSessionTranscript";
 import {
   PROFILE_PREVIEW_EXAMPLE_ABSOLUTE_PATH,
   PROFILE_PREVIEW_EXAMPLE_ITEM,
@@ -882,7 +887,7 @@ export class TerminalPanelView {
           this.manuallyRenamedTabs.delete(tab);
           tab.autoRenameLastAt = 0;
           tab.autoRenameLastTranscript = "";
-          tab.outputDataBridge?.requestTitle?.();
+          tab.outputDataBridge?.requestTitle?.(true);
           this.tabManager.onPersistRequest?.();
         });
       });
@@ -1634,6 +1639,23 @@ export class TerminalPanelView {
       return null;
     }
 
+    let piSessionMappingPath: string | undefined;
+    let piSessionLaunchToken: string | undefined;
+    if (isPiCommand(invocation.command)) {
+      const path = electronRequire("path") as typeof import("path");
+      const os = electronRequire("os") as typeof import("os");
+      piSessionLaunchToken = crypto.randomUUID();
+      const mappingDirectory = path.join(os.tmpdir(), "work-terminal-pi-sessions");
+      prunePiSessionMappings(mappingDirectory);
+      piSessionMappingPath = path.join(mappingDirectory, `${piSessionLaunchToken}.json`);
+      invocation.argv.splice(
+        1,
+        0,
+        "--extension",
+        path.join(this.resolvePluginDir(), "pi-session-hook.ts"),
+      );
+    }
+
     const label = options.label || getDefaultSessionLabel(options.sessionType);
     const tab = options.targetItemId
       ? this.tabManager.createTabForItem(
@@ -1644,6 +1666,9 @@ export class TerminalPanelView {
           options.sessionType,
           undefined,
           invocation.argv,
+          ...(piSessionMappingPath && piSessionLaunchToken
+            ? [{ piSessionMappingPath, piSessionLaunchToken }]
+            : []),
         )
       : this.tabManager.createTab(
           invocation.executable,
@@ -1652,6 +1677,9 @@ export class TerminalPanelView {
           options.sessionType,
           undefined,
           invocation.argv,
+          ...(piSessionMappingPath && piSessionLaunchToken
+            ? [{ piSessionMappingPath, piSessionLaunchToken }]
+            : []),
         );
     if (tab) {
       if (options.loginShellWrap) {
@@ -1688,16 +1716,27 @@ export class TerminalPanelView {
       if (this.isDisposed || this.settings["core.autoRenameAgentTabs"] !== true) return;
       tab.autoRenameOutput = ((tab.autoRenameOutput ?? "") + data.toString()).slice(-8_000);
     };
-    tab.outputDataBridge.requestTitle = () => {
+    tab.outputDataBridge.requestTitle = (force = false) => {
+      if (tab.autoRenameInFlight) {
+        tab.autoRenameQueuedForce ||= force;
+        return;
+      }
+      const now = Date.now();
       if (
         this.isDisposed ||
         this.settings["core.autoRenameAgentTabs"] !== true ||
         tab.manuallyRenamed ||
         this.manuallyRenamedTabs.has(tab) ||
-        Date.now() - tab.autoRenameLastAt < 5 * 60_000
+        (!force && now - tab.autoRenameLastAt < 5 * 60_000) ||
+        (!force && now - tab.autoRenameActiveSince < 5 * 60_000)
       )
         return;
+      const piTranscript =
+        tab.piSessionMappingPath && tab.piSessionLaunchToken
+          ? readPiSessionTranscript(tab.piSessionMappingPath, tab.piSessionLaunchToken)
+          : null;
       const transcript =
+        prepareTabTitleTranscript(piTranscript ?? "") ??
         prepareTabTitleTranscript(tab.autoRenameOutput) ??
         prepareTabTitleTranscript(tab.getRecentBufferText?.() || "");
       if (!transcript) {
@@ -1709,7 +1748,8 @@ export class TerminalPanelView {
         return;
       }
       tab.autoRenameLastTranscript = transcript;
-      tab.autoRenameLastAt = Date.now();
+      tab.autoRenameLastAt = now;
+      tab.autoRenameInFlight = true;
       const expectedLabel = tab.label;
       const piArguments =
         typeof this.settings["core.autoRenamePiArguments"] === "string"
@@ -1727,7 +1767,15 @@ export class TerminalPanelView {
             console.info("[work-terminal] Automatic tab title unchanged");
           }
         })
-        .catch((error) => console.error("[work-terminal] Automatic tab title failed", error));
+        .catch((error) => console.error("[work-terminal] Automatic tab title failed", error))
+        .finally(() => {
+          tab.autoRenameInFlight = false;
+          if (tab.autoRenameQueuedForce) {
+            tab.autoRenameQueuedForce = false;
+            tab.autoRenameLastAt = 0;
+            tab.outputDataBridge.requestTitle?.(true);
+          }
+        });
     };
   }
 

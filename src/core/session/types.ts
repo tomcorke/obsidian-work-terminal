@@ -53,15 +53,18 @@ export interface StoredSession {
   shell?: string;
   cwd?: string;
   commandArgs?: string[];
+  piSessionMappingPath?: string;
+  piSessionLaunchToken?: string;
   outputDataBridge?: {
     callback?: (data: Buffer | string) => void;
-    requestTitle?: () => void;
+    requestTitle?: (force?: boolean) => void;
     applyTitle?: (title: string, originalLabel: string) => void;
   };
   autoRenameOutput?: string;
   autoRenameLastTranscript?: string;
   autoRenameLastAt?: number;
   autoRenameSawActive?: boolean;
+  autoRenameActiveSince?: number;
   manuallyRenamed?: boolean;
   terminal: Terminal;
   fitAddon: FitAddon;

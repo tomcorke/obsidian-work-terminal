@@ -126,17 +126,23 @@ export class TerminalTab {
   terminal: Terminal;
   containerEl: HTMLElement;
   process: ChildProcess | null = null;
+  piSessionMappingPath?: string;
+  piSessionLaunchToken?: string;
+  launchEnv?: NodeJS.ProcessEnv;
 
   onOutputData?: (data: Buffer | string) => void;
   outputDataBridge: {
     callback?: (data: Buffer | string) => void;
-    requestTitle?: () => void;
+    requestTitle?: (force?: boolean) => void;
     applyTitle?: (title: string, originalLabel: string) => void;
   } = {};
   autoRenameOutput = "";
   autoRenameLastTranscript = "";
   autoRenameLastAt = 0;
   autoRenameSawActive = false;
+  autoRenameActiveSince = 0;
+  autoRenameInFlight = false;
+  autoRenameQueuedForce = false;
   manuallyRenamed = false;
   onLabelChange?: () => void;
   onProcessExit?: (code: number | null, signal: string | null) => void;
@@ -203,11 +209,23 @@ export class TerminalTab {
     sessionType: SessionType,
     preCommand?: string,
     private commandArgs?: string[],
+    launchMetadata?: {
+      piSessionMappingPath: string;
+      piSessionLaunchToken: string;
+    },
     private pluginDir?: string,
   ) {
     this.taskPath = taskPath;
     this.label = label;
     this.sessionType = sessionType;
+    this.piSessionMappingPath = launchMetadata?.piSessionMappingPath;
+    this.piSessionLaunchToken = launchMetadata?.piSessionLaunchToken;
+    this.launchEnv = launchMetadata
+      ? {
+          WORK_TERMINAL_PI_SESSION_MAP: launchMetadata.piSessionMappingPath,
+          WORK_TERMINAL_PI_LAUNCH_TOKEN: launchMetadata.piSessionLaunchToken,
+        }
+      : undefined;
 
     // Expand ~ in cwd
     this.cwd = expandTilde(cwd);
@@ -586,6 +604,7 @@ export class TerminalTab {
     });
 
     proc.on("exit", (code, signal) => {
+      this.removePiSessionMapping();
       if (this._isDisposed) return;
       writeWithAutoScroll(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
@@ -904,6 +923,7 @@ export class TerminalTab {
 
     const spawnEnv: Record<string, string | undefined> = {
       ...process.env,
+      ...this.launchEnv,
       TERM: "xterm-256color",
       COLUMNS: String(cols),
       LINES: String(rows),
@@ -1281,10 +1301,15 @@ export class TerminalTab {
   }
 
   private _setAgentState(state: AgentState, completesWork = true): void {
-    if (state === "active") this.autoRenameSawActive = true;
+    if (state === "active") {
+      this.autoRenameSawActive = true;
+      this.autoRenameActiveSince ||= Date.now();
+      this.outputDataBridge?.requestTitle?.();
+    }
     if (completesWork && (state === "idle" || state === "waiting") && this.autoRenameSawActive) {
       this.autoRenameSawActive = false;
-      this.outputDataBridge?.requestTitle?.();
+      this.autoRenameActiveSince = 0;
+      this.outputDataBridge?.requestTitle?.(true);
     }
     if (this._agentState === state) return;
     this._agentState = state;
@@ -1316,11 +1341,14 @@ export class TerminalTab {
       shell: this.shell,
       cwd: this.cwd,
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
+      piSessionMappingPath: this.piSessionMappingPath,
+      piSessionLaunchToken: this.piSessionLaunchToken,
       outputDataBridge: this.outputDataBridge,
       autoRenameOutput: this.autoRenameOutput,
       autoRenameLastTranscript: this.autoRenameLastTranscript,
       autoRenameLastAt: this.autoRenameLastAt,
       autoRenameSawActive: this.autoRenameSawActive,
+      autoRenameActiveSince: this.autoRenameActiveSince,
       manuallyRenamed: this.manuallyRenamed,
       terminal: this.terminal,
       fitAddon: this.fitAddon!,
@@ -1358,11 +1386,16 @@ export class TerminalTab {
     tab.shell = stored.shell || process.env.SHELL || "/bin/zsh";
     tab.cwd = stored.cwd || process.env.HOME || "~";
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
+    tab.piSessionMappingPath = stored.piSessionMappingPath;
+    tab.piSessionLaunchToken = stored.piSessionLaunchToken;
     tab.outputDataBridge = stored.outputDataBridge ?? {};
     tab.autoRenameOutput = stored.autoRenameOutput ?? "";
     tab.autoRenameLastTranscript = stored.autoRenameLastTranscript ?? "";
     tab.autoRenameLastAt = stored.autoRenameLastAt ?? 0;
     tab.autoRenameSawActive = stored.autoRenameSawActive ?? false;
+    tab.autoRenameActiveSince = stored.autoRenameActiveSince ?? 0;
+    tab.autoRenameInFlight = false;
+    tab.autoRenameQueuedForce = false;
     tab.manuallyRenamed = stored.manuallyRenamed ?? false;
     tab.terminal = stored.terminal;
     // Ensure linkHandler is set on restored terminals - older sessions or
@@ -1556,9 +1589,20 @@ export class TerminalTab {
   // Cleanup
   // ---------------------------------------------------------------------------
 
+  private removePiSessionMapping(): void {
+    if (!this.piSessionMappingPath) return;
+    try {
+      const fs = electronRequire("fs") as typeof import("fs");
+      fs.rmSync(this.piSessionMappingPath, { force: true });
+    } catch {
+      // Stale mappings are also pruned by PID and age during lookup.
+    }
+  }
+
   dispose(): void {
     if (this._isDisposed) return;
     this._isDisposed = true;
+    this.removePiSessionMapping();
     // Stop state tracking
     if (this._stateTimer) {
       clearInterval(this._stateTimer);

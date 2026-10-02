@@ -154,6 +154,7 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
+    launchMetadata?: { piSessionMappingPath: string; piSessionLaunchToken: string },
   ): TerminalTab | null {
     if (!this.activeItemId) return null;
 
@@ -165,6 +166,7 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
+      launchMetadata,
     );
   }
 
@@ -176,6 +178,7 @@ export class TabManager {
     sessionType: SessionType,
     preCommand?: string,
     commandArgs?: string[],
+    launchMetadata?: { piSessionMappingPath: string; piSessionLaunchToken: string },
   ): TerminalTab {
     const isActiveItem = this.activeItemId === itemId;
 
@@ -191,6 +194,7 @@ export class TabManager {
       sessionType,
       preCommand,
       commandArgs,
+      launchMetadata,
       this.pluginDir,
     );
 

@@ -6,6 +6,7 @@ const MIN_TRANSCRIPT_LENGTH = 200;
 const MAX_TRANSCRIPT_LENGTH = 8_000;
 const TITLE_TIMEOUT_MS = 30_000;
 const MAX_TITLE_LENGTH = 22;
+const MAX_PROCESS_OUTPUT_LENGTH = 8_000;
 
 const TITLE_PROMPT = `Generate a short, stable title for this coding-agent terminal session.
 Use 2-4 plain words and at most ${MAX_TITLE_LENGTH} characters including spaces.
@@ -50,65 +51,89 @@ export async function generateTabTitleWithPi(
       return null;
     }
 
-    return await new Promise((resolve) => {
-      const cp = electronRequire("child_process") as typeof import("child_process");
-      const proc: ChildProcess = cp.spawn(
-        resolution.resolved,
-        [
-          ...parseExtraArgs(extraArgs),
-          "--print",
-          "--no-session",
-          "--no-tools",
-          "--no-context-files",
-          `${TITLE_PROMPT}${transcript}`,
-        ],
-        {
-          cwd,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, PATH: getFullPath(), TERM: "dumb" },
-        },
-      );
-
-      const chunks: Buffer[] = [];
-      const errorChunks: Buffer[] = [];
-      let settled = false;
-      const finish = (title: string | null) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        resolve(title);
-      };
-      proc.stdout?.on("data", (data: Buffer) => chunks.push(data));
-      proc.stderr?.on("data", (data: Buffer) => errorChunks.push(data));
-      proc.on("error", (error) => {
-        console.error("[work-terminal] Automatic tab title process failed", error);
-        finish(null);
-      });
-      proc.on("exit", (code) => {
-        if (code !== 0) {
-          const error = stripAnsi(Buffer.concat(errorChunks).toString("utf8"))
-            .replace(transcript, "[terminal output redacted]")
-            .trim()
-            .slice(-1_000);
-          console.warn(
-            `[work-terminal] Automatic tab title process exited with code ${code}${error ? `: ${error}` : ""}`,
-          );
-        }
-        finish(code === 0 ? cleanGeneratedTabTitle(Buffer.concat(chunks).toString("utf8")) : null);
-      });
-      const timeout = setTimeout(() => {
-        console.warn("[work-terminal] Automatic tab title request timed out");
+    const cp = electronRequire("child_process") as typeof import("child_process");
+    const run = (retryContentFilter: boolean): Promise<string | null> =>
+      new Promise((resolve) => {
+        let proc: ChildProcess;
         try {
-          proc.kill("SIGTERM");
-          setTimeout(() => {
-            if (proc.exitCode === null) proc.kill("SIGKILL");
-          }, 1_000).unref();
-        } catch {
-          // Process already exited.
+          proc = cp.spawn(
+            resolution.resolved,
+            [
+              ...parseExtraArgs(extraArgs),
+              "--print",
+              "--no-session",
+              "--no-tools",
+              "--no-context-files",
+              `${TITLE_PROMPT}${transcript}`,
+            ],
+            {
+              cwd,
+              stdio: ["ignore", "pipe", "pipe"],
+              env: { ...process.env, PATH: getFullPath(), TERM: "dumb" },
+            },
+          );
+        } catch (error) {
+          console.error("[work-terminal] Automatic tab title process failed", error);
+          resolve(null);
+          return;
         }
-        finish(null);
-      }, TITLE_TIMEOUT_MS);
-    });
+
+        let output = "";
+        let errorOutput = "";
+        let settled = false;
+        const finish = (title: string | null) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          resolve(title);
+        };
+        proc.stdout?.on("data", (data: Buffer) => {
+          output = (output + data.toString("utf8")).slice(-MAX_PROCESS_OUTPUT_LENGTH);
+        });
+        proc.stderr?.on("data", (data: Buffer) => {
+          errorOutput = (errorOutput + data.toString("utf8")).slice(-MAX_PROCESS_OUTPUT_LENGTH);
+        });
+        proc.on("error", (error) => {
+          console.error("[work-terminal] Automatic tab title process failed", error);
+          finish(null);
+        });
+        proc.on("exit", (code) => {
+          if (settled) return;
+          const rawError = stripAnsi(errorOutput);
+          if (code !== 0) {
+            const error = rawError
+              .replace(transcript, "[terminal output redacted]")
+              .trim()
+              .slice(-1_000);
+            console.warn(
+              `[work-terminal] Automatic tab title process exited with code ${code}${error ? `: ${error}` : ""}`,
+            );
+            if (retryContentFilter && /content[ _-]?filter|content moderation/i.test(rawError)) {
+              settled = true;
+              clearTimeout(timeout);
+              console.info(
+                "[work-terminal] Retrying automatic tab title after content filter error",
+              );
+              void run(false).then(resolve, () => resolve(null));
+              return;
+            }
+          }
+          finish(code === 0 ? cleanGeneratedTabTitle(output) : null);
+        });
+        const timeout = setTimeout(() => {
+          console.warn("[work-terminal] Automatic tab title request timed out");
+          try {
+            proc.kill("SIGTERM");
+            setTimeout(() => {
+              if (proc.exitCode === null) proc.kill("SIGKILL");
+            }, 1_000).unref();
+          } catch {
+            // Process already exited.
+          }
+          finish(null);
+        }, TITLE_TIMEOUT_MS);
+      });
+    return await run(true);
   } catch (error) {
     console.error("[work-terminal] Automatic tab title failed to start", error);
     return null;
