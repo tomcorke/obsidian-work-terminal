@@ -1976,6 +1976,24 @@ describe("TerminalTab broker host primitives", () => {
     expect(sequences).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
   });
 
+  it("emits a final closed lifecycle event and clears listeners", () => {
+    const bridge = new TerminalHostBridge();
+    const events: unknown[] = [];
+    bridge.setTarget({ taskId: "task-1", tabId: "tab-1", generation: 2 });
+    bridge.subscribe((event) => events.push(event));
+
+    bridge.emitClosed();
+    bridge.emitState("active");
+
+    expect(events).toEqual([
+      {
+        type: "closed",
+        target: { taskId: "task-1", tabId: "tab-1", generation: 2 },
+        sequence: "1",
+      },
+    ]);
+  });
+
   it("emits state and process-exit lifecycle events in sequence order", () => {
     const { tab, emitExit } = createHostTab();
     const events: unknown[] = [];

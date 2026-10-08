@@ -20,7 +20,7 @@ interface ConnectionState {
   buffer: Buffer;
   token?: string;
   callerKey?: string;
-  inFlight: Set<string>;
+  inFlight: Map<string, AbortController>;
   closing: boolean;
 }
 
@@ -87,8 +87,9 @@ export class TaskTabBrokerTransport {
     const server = this.server;
     this.server = null;
     for (const connection of this.connections) {
+      connection.closing = true;
+      for (const controller of connection.inFlight.values()) controller.abort();
       if (options.reloading) {
-        connection.closing = true;
         connection.socket.end(
           `${JSON.stringify({
             v: 1,
@@ -143,7 +144,7 @@ export class TaskTabBrokerTransport {
     const state: ConnectionState = {
       socket,
       buffer: Buffer.alloc(0),
-      inFlight: new Set(),
+      inFlight: new Map(),
       closing: false,
     };
     this.connections.add(state);
@@ -225,16 +226,21 @@ export class TaskTabBrokerTransport {
       return;
     }
 
-    state.inFlight.add(id);
+    const controller = new AbortController();
+    state.inFlight.set(id, controller);
     void this.broker
-      .dispatch(state.token, envelope as unknown as BrokerRequest)
-      .then((response) => this.writeBoundedResponse(state, response))
-      .catch(() =>
-        this.writeBoundedResponse(
-          state,
-          transportFailure(id, "INTERNAL", "The broker could not complete the request"),
-        ),
-      )
+      .dispatch(state.token, envelope as unknown as BrokerRequest, controller.signal)
+      .then((response) => {
+        if (!state.closing) this.writeBoundedResponse(state, response);
+      })
+      .catch(() => {
+        if (!state.closing) {
+          this.writeBoundedResponse(
+            state,
+            transportFailure(id, "INTERNAL", "The broker could not complete the request"),
+          );
+        }
+      })
       .finally(() => state.inFlight.delete(id));
   }
 
@@ -309,6 +315,9 @@ export class TaskTabBrokerTransport {
 
   private close(state: ConnectionState): void {
     if (!this.connections.delete(state)) return;
+    state.closing = true;
+    for (const controller of state.inFlight.values()) controller.abort();
+    state.inFlight.clear();
     if (state.callerKey) {
       const count = (this.callerConnections.get(state.callerKey) ?? 1) - 1;
       if (count > 0) this.callerConnections.set(state.callerKey, count);

@@ -26,6 +26,62 @@ describe("bundled task tab broker helper", () => {
     expect(result.stdout).toBe("");
   });
 
+  it("does not replay a wait across broker reload", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wt-broker-helper-"));
+    const endpoint =
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\wt-broker-helper-${process.pid}-${Date.now()}`
+        : join(directory, "broker.sock");
+    let connections = 0;
+    const server = createServer((socket) => {
+      connections++;
+      let frames = 0;
+      socket.on("data", () => {
+        frames++;
+        if (frames === 1) {
+          socket.write(
+            `${JSON.stringify({ v: 1, type: "response", id: "hello", ok: true, result: {} })}\n`,
+          );
+        } else {
+          socket.end(
+            `${JSON.stringify({ v: 1, type: "event", event: "broker.reloading", sequence: "0", data: {} })}\n`,
+          );
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(endpoint, resolve));
+
+    try {
+      const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
+        const child = spawn(
+          process.execPath,
+          [join(process.cwd(), "task-tab-broker.js"), "waitForTab", "{}"],
+          {
+            env: {
+              ...process.env,
+              WORK_TERMINAL_BROKER_PROTOCOL: "1",
+              WORK_TERMINAL_BROKER_ENDPOINT: endpoint,
+              WORK_TERMINAL_TASK_ID: "task-a",
+              WORK_TERMINAL_TAB_ID: "tab-a",
+              WORK_TERMINAL_TAB_GENERATION: "1",
+              WORK_TERMINAL_BROKER_TOKEN: "token",
+            },
+          },
+        );
+        let stderr = "";
+        child.stderr.on("data", (chunk) => (stderr += chunk));
+        child.on("close", (code) => resolve({ code, stderr }));
+      });
+
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("list tabs again before starting a new wait");
+      expect(connections).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("handles multiple broker frames delivered in one chunk", async () => {
     const directory = mkdtempSync(join(tmpdir(), "wt-broker-helper-"));
     const endpoint =

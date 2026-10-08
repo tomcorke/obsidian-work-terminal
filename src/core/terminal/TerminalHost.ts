@@ -44,6 +44,11 @@ export type TerminalLifecycleEvent =
       exitCode: number | null;
       signal: string | null;
       sequence: string;
+    }>
+  | Readonly<{
+      type: "closed";
+      target: TerminalTabTarget;
+      sequence: string;
     }>;
 
 export type TerminalLifecycleListener = (event: TerminalLifecycleEvent) => void;
@@ -150,6 +155,13 @@ export class TerminalHostBridge {
       signal,
       sequence: this.nextSequence(),
     });
+  }
+
+  emitClosed(): void {
+    if (this.target) {
+      this.emit({ type: "closed", target: this.target, sequence: this.nextSequence() });
+    }
+    this.clearListeners();
   }
 
   private enforceBounds(): void {

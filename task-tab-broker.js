@@ -83,7 +83,10 @@ function run(attempt = 0) {
       }
       if (response.type === "event" && response.event === "broker.reloading") {
         socket.destroy();
-        if (attempt < 4) setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
+        if (method === "waitForTab" && greeted) {
+          console.error("Broker reloaded during wait; list tabs again before starting a new wait.");
+          process.exitCode = 1;
+        } else if (attempt < 4) setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
         else {
           console.error("Work Terminal broker remained unavailable after reload.");
           process.exitCode = 1;
@@ -115,6 +118,11 @@ function run(attempt = 0) {
     }
   });
   socket.on("error", (error) => {
+    if (method === "waitForTab" && greeted) {
+      console.error("Broker disconnected during wait; list tabs again before starting a new wait.");
+      process.exitCode = 1;
+      return;
+    }
     if (attempt < 4 && ["ECONNREFUSED", "ENOENT", "ECONNRESET"].includes(error.code)) {
       setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
       return;

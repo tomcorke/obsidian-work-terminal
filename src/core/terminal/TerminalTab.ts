@@ -1715,6 +1715,7 @@ export class TerminalTab {
 
   dispose(): void {
     if (this._isDisposed) return;
+    this.ensureTerminalHostBridge().emitClosed();
     this._isDisposed = true;
     this.removePiSessionMapping();
     // Stop state tracking
