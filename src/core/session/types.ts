@@ -10,6 +10,7 @@ import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 import { isProfileSessionType } from "../agents/AgentProfile";
 import type { TerminalHostBridge } from "../terminal/TerminalHost";
+import type { TerminalTab } from "../terminal/TerminalTab";
 
 export const KNOWN_SESSION_TYPES = [
   "shell",
@@ -37,6 +38,14 @@ export type ProfileSessionType = `profile:${string}`;
 export type SessionType = KnownSessionType | ProfileSessionType;
 
 export type AgentRuntimeState = "inactive" | "active" | "idle" | "waiting";
+
+export interface TerminalProcessBridge {
+  owner: TerminalTab;
+  writesInFlight: number;
+  hiddenWriteTimer: ReturnType<typeof setTimeout> | null;
+  hiddenWriteChunks: Buffer[];
+  hiddenWriteBytes: number;
+}
 
 /**
  * State extracted from a TerminalTab that can survive a plugin hot-reload.
@@ -78,6 +87,7 @@ export interface StoredSession {
   webglContextLossListener?: IDisposable | null;
   containerEl: HTMLElement;
   process: ChildProcess | null;
+  processBridge?: TerminalProcessBridge;
   documentListeners: { event: string; handler: EventListener }[];
   resizeObserver: ResizeObserver;
   terminalHostBridge?: TerminalHostBridge;
