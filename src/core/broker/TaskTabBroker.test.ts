@@ -50,11 +50,15 @@ function setup(
     },
     createProfileTab: vi.fn(),
     promptTab: vi.fn(),
+    interruptTab: vi.fn(),
+    closeTab: vi.fn(),
     ...focusEffects,
   } as BrokerTerminalHost &
     typeof focusEffects & {
       createProfileTab: ReturnType<typeof vi.fn>;
       promptTab: ReturnType<typeof vi.fn>;
+      interruptTab: ReturnType<typeof vi.fn>;
+      closeTab: ReturnType<typeof vi.fn>;
     };
   const tasks = [
     {
@@ -479,6 +483,142 @@ describe("TaskTabBroker read-only dispatcher", () => {
     expect(focusEffects.activate).not.toHaveBeenCalled();
     expect(focusEffects.selectTask).not.toHaveBeenCalled();
     expect(focusEffects.focusTab).not.toHaveBeenCalled();
+  });
+
+  it("interrupts only an exact generation with its separate grant and no focus change", async () => {
+    const denied = setup(["prompt-tab"]);
+    await expect(
+      denied.broker.dispatch(denied.token, request("interruptTab", { target: caller })),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "CAPABILITY_DENIED",
+        details: { requiredCapability: "interrupt-tab" },
+      },
+    });
+    expect(denied.host.interruptTab).not.toHaveBeenCalled();
+
+    const { broker, token, host, tabs, focusEffects } = setup(["interrupt-tab"]);
+    const target: TerminalTabTarget = { taskId: "task-b", tabId: "tab-target", generation: 4 };
+    tabs.set("task-b", [
+      {
+        ...callerTab,
+        ...target,
+        processStatus: "running",
+      },
+    ]);
+    host.interruptTab.mockReturnValue("accepted");
+
+    await expect(broker.dispatch(token, request("interruptTab", { target }))).resolves.toEqual({
+      v: 1,
+      type: "response",
+      id: "r1",
+      ok: true,
+      result: { target, affectedGeneration: 4 },
+    });
+    expect(host.interruptTab).toHaveBeenCalledWith(target);
+    await expect(
+      broker.dispatch(
+        token,
+        request("interruptTab", { target: { ...target, taskId: "task-a" } }, "wrong-task"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "STALE_TARGET" } });
+    await expect(
+      broker.dispatch(
+        token,
+        request("interruptTab", { target: { ...target, tabId: "unknown" } }, "unknown-tab"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+
+    tabs.set("task-b", [{ ...tabs.get("task-b")![0], generation: 5 }]);
+    await expect(
+      broker.dispatch(token, request("interruptTab", { target }, "stale")),
+    ).resolves.toMatchObject({ ok: false, error: { code: "STALE_TARGET" } });
+    expect(host.interruptTab).toHaveBeenCalledOnce();
+    expect(focusEffects.activate).not.toHaveBeenCalled();
+    expect(focusEffects.selectTask).not.toHaveBeenCalled();
+    expect(focusEffects.focusTab).not.toHaveBeenCalled();
+  });
+
+  it("closes an exact generation only with the destructive grant and reports process state", async () => {
+    const denied = setup(["interrupt-tab"]);
+    await expect(
+      denied.broker.dispatch(denied.token, request("closeTab", { target: caller })),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "CAPABILITY_DENIED", details: { requiredCapability: "close-tab" } },
+    });
+    expect(denied.host.closeTab).not.toHaveBeenCalled();
+
+    const { broker, token, host, tabs, focusEffects } = setup(["close-tab"]);
+    const target: TerminalTabTarget = { taskId: "task-b", tabId: "tab-target", generation: 4 };
+    tabs.set("task-b", [
+      {
+        ...callerTab,
+        ...target,
+        processStatus: "running",
+      },
+    ]);
+    host.closeTab.mockImplementation(() => {
+      tabs.set("task-b", []);
+      return { processWasRunning: true };
+    });
+
+    await expect(broker.dispatch(token, request("closeTab", { target }))).resolves.toEqual({
+      v: 1,
+      type: "response",
+      id: "r1",
+      ok: true,
+      result: { target, affectedGeneration: 4, processWasRunning: true },
+    });
+    expect(host.closeTab).toHaveBeenCalledWith(target);
+
+    await expect(
+      broker.dispatch(token, request("closeTab", { target }, "closed")),
+    ).resolves.toMatchObject({ ok: false, error: { code: "STALE_TARGET" } });
+    await expect(
+      broker.dispatch(
+        token,
+        request("closeTab", { target, signal: "SIGKILL", keys: "ctrl-c" }, "unsafe"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARGUMENT", details: { argument: "signal" } },
+    });
+    expect(host.closeTab).toHaveBeenCalledOnce();
+    expect(focusEffects.activate).not.toHaveBeenCalled();
+    expect(focusEffects.selectTask).not.toHaveBeenCalled();
+    expect(focusEffects.focusTab).not.toHaveBeenCalled();
+  });
+
+  it("rate limits interrupt and destructive close independently", async () => {
+    const target = { taskId: "task-a", tabId: "missing", generation: 1 };
+    const interrupts = setup(["interrupt-tab"]);
+    for (let count = 0; count < 10; count++) {
+      const response = await interrupts.broker.dispatch(
+        interrupts.token,
+        request("interruptTab", { target }, `interrupt-${count}`),
+      );
+      expect(response).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    }
+    await expect(
+      interrupts.broker.dispatch(
+        interrupts.token,
+        request("interruptTab", { target }, "interrupt-limited"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
+
+    const closes = setup(["close-tab"]);
+    for (let count = 0; count < 5; count++) {
+      const response = await closes.broker.dispatch(
+        closes.token,
+        request("closeTab", { target }, `close-${count}`),
+      );
+      expect(response).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    }
+    await expect(
+      closes.broker.dispatch(closes.token, request("closeTab", { target }, "close-limited")),
+    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
   });
 
   it("reads bounded clean output and rejects closed or replacement generations as stale", async () => {

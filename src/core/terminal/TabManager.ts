@@ -383,7 +383,12 @@ export class TabManager {
     this.closeTabForItem(itemId, index);
   }
 
-  closeTabForItem(itemId: string, index: number): void {
+  closeTabForItem(
+    itemId: string,
+    index: number,
+    showReplacement = true,
+    focusReplacement = true,
+  ): void {
     const tabs = this.sessions.get(itemId) || [];
     if (index < 0 || index >= tabs.length) return;
 
@@ -400,9 +405,12 @@ export class TabManager {
       this.lastActiveTab.delete(itemId);
       if (isActiveItem) this.activeTabIndex = 0;
     } else if (isActiveItem) {
+      if (index < this.activeTabIndex) this.activeTabIndex--;
       this.activeTabIndex = Math.min(this.activeTabIndex, tabs.length - 1);
-      tabs[this.activeTabIndex].resumeWebGl();
-      tabs[this.activeTabIndex].show();
+      if (showReplacement) {
+        tabs[this.activeTabIndex].resumeWebGl();
+        tabs[this.activeTabIndex].show(focusReplacement);
+      }
     } else {
       const remembered = this.lastActiveTab.get(itemId) ?? 0;
       const adjusted = index < remembered ? remembered - 1 : remembered;
@@ -466,6 +474,16 @@ export class TabManager {
 
   interruptTab(target: TerminalTabTarget): TerminalHostCommandResult | null {
     return this.findHostTab(target)?.interrupt() ?? null;
+  }
+
+  closeHostTab(target: TerminalTabTarget): { processWasRunning: boolean } | null {
+    const tab = this.findHostTab(target);
+    if (!tab) return null;
+    const index = (this.sessions.get(target.taskId) ?? []).indexOf(tab);
+    const processWasRunning = tab.getHostSnapshot().processStatus === "running";
+    const wasSelected = this.activeItemId === target.taskId && this.activeTabIndex === index;
+    this.closeTabForItem(target.taskId, index, wasSelected, false);
+    return { processWasRunning };
   }
 
   onTabLifecycle(
