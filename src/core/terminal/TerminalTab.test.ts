@@ -155,13 +155,14 @@ vi.mock("./PythonCheck", () => ({
 import { __resetViewportResyncWarnOnce, resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
 
 class FakeElement {
+  private classes = new Set<string>();
   appendChild = vi.fn();
   addEventListener = vi.fn();
   removeEventListener = vi.fn();
   remove = vi.fn();
-  hasClass = vi.fn(() => false);
-  addClass = vi.fn();
-  removeClass = vi.fn();
+  hasClass = vi.fn((name: string) => this.classes.has(name));
+  addClass = vi.fn((name: string) => this.classes.add(name));
+  removeClass = vi.fn((name: string) => this.classes.delete(name));
   querySelector = vi.fn(() => null);
   querySelectorAll = vi.fn(() => []);
 }
@@ -1446,6 +1447,7 @@ describe("TerminalTab auto-scroll on write", () => {
             }),
             addEventListener: vi.fn(),
             removeEventListener: vi.fn(),
+            hasClass: vi.fn(() => false),
           }
         : new FakeElement(),
       process: null,
@@ -1513,6 +1515,53 @@ describe("TerminalTab auto-scroll on write", () => {
     proc.emitStdout(Buffer.from("hello"));
 
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes hidden output without scroll bookkeeping and catches up if shown", () => {
+    const requestFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    const { tab, terminal, scrollToBottom, flushCallbacks } = createTabWithMockTerminal({
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab.containerEl.addClass("hidden");
+    proc.emitStdout(Buffer.from("hidden"));
+
+    expect(terminal.write).toHaveBeenCalledTimes(1);
+    expect(tab._programmaticScrollGuards).toBe(0);
+    flushCallbacks();
+    expect(scrollToBottom).not.toHaveBeenCalled();
+    expect(requestFrame).not.toHaveBeenCalled();
+
+    proc.emitStdout(Buffer.from("shown-before-write-finishes"));
+    tab.containerEl.removeClass("hidden");
+    flushCallbacks();
+
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(tab._programmaticScrollGuards).toBe(0);
+    expect(requestFrame).not.toHaveBeenCalled();
+  });
+
+  it("skips visible-write scroll bookkeeping if hidden before completion", () => {
+    const requestFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    const { tab, scrollToBottom, flushCallbacks } = createTabWithMockTerminal({
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    proc.emitStdout(Buffer.from("visible"));
+    expect(tab._programmaticScrollGuards).toBe(1);
+
+    tab.containerEl.addClass("hidden");
+    flushCallbacks();
+
+    expect(scrollToBottom).not.toHaveBeenCalled();
+    expect(tab._programmaticScrollGuards).toBe(0);
+    expect(requestFrame).not.toHaveBeenCalled();
   });
 
   it("does not auto-scroll when _userScrolledUp flag is set", () => {
