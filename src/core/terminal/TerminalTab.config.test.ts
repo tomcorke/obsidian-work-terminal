@@ -157,6 +157,20 @@ describe("TerminalTab keyboard configuration", () => {
     expect(mocks.MockTerminal.lastInstance?.attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);
   });
 
+  it("assigns each fresh tab a stable UUID at generation one", () => {
+    const parentEl = document.createElement("div");
+
+    const first = new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Shell", "task-1", "shell");
+    const second = new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Shell", "task-1", "shell");
+
+    expect(first.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(second.id).not.toBe(first.id);
+    expect(first.generation).toBe(1);
+    expect(first.getHostSnapshot()).toMatchObject({ tabId: first.id, generation: 1 });
+  });
+
   it("allows printable Option+digit combinations without disabling other Meta shortcuts", () => {
     const parentEl = document.createElement("div");
 

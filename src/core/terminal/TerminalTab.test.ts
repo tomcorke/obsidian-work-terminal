@@ -153,6 +153,7 @@ vi.mock("./PythonCheck", () => ({
 }));
 
 import { __resetViewportResyncWarnOnce, resolvePtyWrapperPath, TerminalTab } from "./TerminalTab";
+import { TerminalHostBridge } from "./TerminalHost";
 
 class FakeElement {
   appendChild = vi.fn();
@@ -208,9 +209,11 @@ describe("TerminalTab hot-reload addon handling", () => {
     const unicode11Addon = { dispose: vi.fn() };
     const webglAddon = { dispose: vi.fn() };
     const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
+    const terminalHostBridge = new TerminalHostBridge();
 
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
       id: "term-1",
+      generation: 4,
       taskPath: "task.md",
       label: "Claude",
       agentSessionId: "session-1",
@@ -226,12 +229,15 @@ describe("TerminalTab hot-reload addon handling", () => {
       process: null,
       _documentCleanups: [],
       resizeObserver,
+      _terminalHostBridge: terminalHostBridge,
       _stateTimer: null,
       webglContextLossListener: null,
     }) as TerminalTab;
 
     const stored = tab.stash();
 
+    expect(stored.generation).toBe(4);
+    expect(stored.terminalHostBridge).toBe(terminalHostBridge);
     expect(stored.fitAddon).toBe(fitAddon);
     expect(stored.searchAddon).toBe(searchAddon);
     expect(stored.webLinksAddon).toBe(webLinksAddon);
@@ -251,6 +257,10 @@ describe("TerminalTab hot-reload addon handling", () => {
     const unicode11Addon = { dispose: vi.fn() };
     const webglAddon = { dispose: vi.fn(), onContextLoss: vi.fn(() => ({ dispose: vi.fn() })) };
     const resizeObserver = { disconnect: vi.fn(), observe: vi.fn() };
+    const terminalHostBridge = new TerminalHostBridge();
+    terminalHostBridge.appendOutput("preserved output");
+    terminalHostBridge.setTarget({ taskId: "task.md", tabId: "term-1", generation: 4 });
+    terminalHostBridge.emitState("active");
     const addEventListener = vi.fn();
     const containerEl = {
       addEventListener,
@@ -263,6 +273,7 @@ describe("TerminalTab hot-reload addon handling", () => {
     const restored = TerminalTab.fromStored(
       {
         id: "term-1",
+        generation: 4,
         taskPath: "task.md",
         label: "Claude",
         agentSessionId: "session-1",
@@ -280,10 +291,20 @@ describe("TerminalTab hot-reload addon handling", () => {
         process: null,
         documentListeners: [],
         resizeObserver: resizeObserver as any,
+        terminalHostBridge,
       },
       parentEl as any,
     );
 
+    expect(restored.getHostSnapshot()).toMatchObject({
+      taskId: "task.md",
+      tabId: "term-1",
+      generation: 4,
+      latestSequence: "1",
+    });
+    expect(restored.readCleanOutput({ maxLines: 50, maxBytes: 48 * 1024 }).text).toBe(
+      "preserved output",
+    );
     expect((restored as any).fitAddon).toBe(fitAddon);
     expect((restored as any).searchAddon).toBe(searchAddon);
     expect((restored as any).webLinksAddon).toBe(webLinksAddon);
@@ -1794,6 +1815,199 @@ describe("TerminalTab rename detection", () => {
 
     expect(tab.label).toBe("My title");
     expect(tab.onLabelChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("TerminalTab broker host primitives", () => {
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame);
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  function createHostTab() {
+    const handlers: Record<string, Array<(...args: any[]) => void>> = {};
+    const stdoutHandlers: Array<(data: Buffer) => void> = [];
+    const stdin = { destroyed: false, write: vi.fn() };
+    const process = {
+      stdout: {
+        on: (_event: string, handler: (data: Buffer) => void) => stdoutHandlers.push(handler),
+      },
+      stderr: { on: vi.fn() },
+      stdin,
+      on: (event: string, handler: (...args: any[]) => void) => {
+        (handlers[event] ??= []).push(handler);
+      },
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+    };
+    const terminal = {
+      onData: vi.fn(),
+      write: (_data: unknown, callback?: () => void) => callback?.(),
+      scrollToBottom: vi.fn(),
+    };
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      id: "7dbaf949-0b4f-4565-a6e1-69085f33499a",
+      generation: 1,
+      taskPath: "task-1",
+      label: "Claude",
+      sessionType: "claude",
+      profileId: "profile-1",
+      process,
+      terminal,
+      _agentState: "idle",
+      _isAgentTab: true,
+      _isDisposed: false,
+      _userScrolledUp: false,
+      _programmaticScrollGuards: 0,
+      _pendingBottomCheck: false,
+      _renameDecoder: { write: () => "" },
+      _renameLineBuffer: "",
+      _recentCleanLines: [],
+      outputDataBridge: {},
+    }) as TerminalTab;
+
+    (tab as any).wireProcess(process);
+    return {
+      tab,
+      stdin,
+      emitOutput: (data: string | Buffer) => {
+        for (const handler of stdoutHandlers)
+          handler(Buffer.isBuffer(data) ? data : Buffer.from(data));
+      },
+      emitExit: (code: number | null, signal: string | null) => {
+        process.exitCode = code as never;
+        process.signalCode = signal as never;
+        for (const handler of handlers.exit ?? []) handler(code, signal);
+      },
+    };
+  }
+
+  it("reads bounded clean output without consulting the xterm buffer", () => {
+    const { tab, emitOutput } = createHostTab();
+
+    emitOutput("\u001b[31mfirst\u001b[0m\nsecond\nthird");
+
+    expect(tab.readCleanOutput({ maxLines: 2, maxBytes: 48 * 1024 })).toEqual({
+      text: "second\nthird",
+      lineCount: 2,
+      byteCount: 12,
+      truncated: true,
+    });
+  });
+
+  it("evicts clean output oldest-first at the host line limit", () => {
+    const { tab, emitOutput } = createHostTab();
+
+    emitOutput(Array.from({ length: 2_001 }, (_, index) => `line-${index}`).join("\n"));
+
+    const output = tab.readCleanOutput({ maxLines: 2_000, maxBytes: 256 * 1024 });
+    expect(output.lineCount).toBe(2_000);
+    expect(output.text.startsWith("line-1\n")).toBe(true);
+    expect(output.text.endsWith("line-2000")).toBe(true);
+    expect(output.truncated).toBe(true);
+  });
+
+  it("keeps only the newest 256 KiB of a long output line", () => {
+    const { tab, emitOutput } = createHostTab();
+
+    emitOutput(`discarded-${"x".repeat(300 * 1024)}-tail`);
+
+    const output = tab.readCleanOutput({ maxLines: 2_000, maxBytes: 256 * 1024 });
+    expect(output.byteCount).toBe(256 * 1024);
+    expect(output.text.endsWith("-tail")).toBe(true);
+    expect(output.text.startsWith("discarded-")).toBe(false);
+    expect(output.truncated).toBe(true);
+  });
+
+  it("submits prompts and interrupts through explicit host commands", () => {
+    const { tab, stdin } = createHostTab();
+
+    expect(tab.submitPrompt("continue")).toBe("accepted");
+    expect(tab.interrupt()).toBe("accepted");
+    expect(stdin.write.mock.calls).toEqual([["continue\r"], ["\u0003"]]);
+  });
+
+  it("reports exited and unavailable host command targets", () => {
+    const { tab, stdin } = createHostTab();
+
+    tab.process!.exitCode = 0;
+    expect(tab.submitPrompt("late")).toBe("exited");
+    tab.process!.exitCode = null;
+    stdin.destroyed = true;
+    expect(tab.interrupt()).toBe("unavailable");
+    expect(stdin.write).not.toHaveBeenCalled();
+  });
+
+  it("returns frozen snapshots without terminal or process handles", () => {
+    const { tab } = createHostTab();
+
+    const snapshot = tab.getHostSnapshot();
+
+    expect(snapshot).toEqual({
+      taskId: "task-1",
+      tabId: "7dbaf949-0b4f-4565-a6e1-69085f33499a",
+      generation: 1,
+      label: "Claude",
+      sessionType: "claude",
+      profileId: "profile-1",
+      state: "idle",
+      processStatus: "running",
+      latestSequence: "0",
+    });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(snapshot).not.toHaveProperty("terminal");
+    expect(snapshot).not.toHaveProperty("process");
+  });
+
+  it("keeps lifecycle sequence ordering across decimal digit boundaries", () => {
+    const { tab } = createHostTab();
+    const sequences: string[] = [];
+    tab.onLifecycleEvent((event) => sequences.push(event.sequence));
+
+    for (let index = 0; index < 10; index++) {
+      (tab as any)._setAgentState(index % 2 === 0 ? "active" : "idle");
+    }
+
+    expect(sequences).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  });
+
+  it("emits state and process-exit lifecycle events in sequence order", () => {
+    const { tab, emitExit } = createHostTab();
+    const events: unknown[] = [];
+    tab.onLifecycleEvent((event) => events.push(event));
+
+    (tab as any)._setAgentState("active");
+    emitExit(0, null);
+
+    expect(events).toEqual([
+      {
+        type: "state",
+        target: {
+          taskId: "task-1",
+          tabId: "7dbaf949-0b4f-4565-a6e1-69085f33499a",
+          generation: 1,
+        },
+        state: "active",
+        sequence: "1",
+      },
+      {
+        type: "exit",
+        target: {
+          taskId: "task-1",
+          tabId: "7dbaf949-0b4f-4565-a6e1-69085f33499a",
+          generation: 1,
+        },
+        exitCode: 0,
+        signal: null,
+        sequence: "2",
+      },
+    ]);
+    expect(events.every(Object.isFrozen)).toBe(true);
   });
 });
 
