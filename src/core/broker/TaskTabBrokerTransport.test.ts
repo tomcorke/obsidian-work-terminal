@@ -49,6 +49,35 @@ function makeBroker() {
   return { broker, token };
 }
 
+function readFrame(socket: ReturnType<typeof connect>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let buffer = Buffer.alloc(0);
+    const onData = (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const newline = buffer.indexOf(0x0a);
+      if (newline === -1) return;
+      cleanup();
+      resolve(JSON.parse(buffer.subarray(0, newline).toString("utf8")));
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("Connection closed before a frame arrived"));
+    };
+    const cleanup = () => {
+      socket.off("data", onData);
+      socket.off("close", onClose);
+      socket.off("error", onError);
+    };
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    socket.on("data", onData);
+    socket.once("close", onClose);
+    socket.once("error", onError);
+  });
+}
+
 function exchange(
   endpoint: string,
   frames: Array<Record<string, unknown> | Buffer>,
@@ -130,7 +159,19 @@ describe("TaskTabBrokerTransport", () => {
     const firstEpoch = (broker.hello(token, "before") as any).result.brokerEpoch;
     const first = new TaskTabBrokerTransport(broker, endpoint);
     await first.start();
+    const reloadSocket = connect(endpoint);
+    await new Promise<void>((resolve, reject) => {
+      reloadSocket.once("connect", resolve);
+      reloadSocket.once("error", reject);
+    });
+    reloadSocket.write(`${JSON.stringify({ v: 1, type: "hello", id: "reload", token })}\n`);
+    await expect(readFrame(reloadSocket)).resolves.toMatchObject({ ok: true });
+    const reloadEvent = readFrame(reloadSocket);
     await first.stop({ reloading: true });
+    await expect(reloadEvent).resolves.toMatchObject({
+      type: "event",
+      event: "broker.reloading",
+    });
 
     const replacementBroker = new TaskTabBroker({
       vaultId: "vault-a",

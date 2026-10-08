@@ -88,15 +88,20 @@ export class TaskTabBrokerTransport {
     this.server = null;
     for (const connection of this.connections) {
       if (options.reloading) {
-        this.write(connection.socket, {
-          v: 1,
-          type: "event",
-          event: "broker.reloading",
-          sequence: "0",
-          data: {},
-        });
+        connection.closing = true;
+        connection.socket.end(
+          `${JSON.stringify({
+            v: 1,
+            type: "event",
+            event: "broker.reloading",
+            sequence: "0",
+            data: {},
+          })}\n`,
+          () => connection.socket.destroy(),
+        );
+      } else {
+        connection.socket.destroy();
       }
-      connection.socket.destroy();
     }
     this.connections.clear();
     this.callerConnections.clear();
