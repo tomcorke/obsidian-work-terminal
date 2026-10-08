@@ -18,6 +18,12 @@ export interface WorkItem {
   metadata: Record<string, unknown>;
 }
 
+/** Adapter-owned direct relationships for a work item. */
+export interface WorkItemRelationships {
+  parentIds: string[];
+  childIds: string[];
+}
+
 /** A column in the kanban list panel. Optionally maps to a folder on disk. */
 export interface ListColumn {
   /** Column identifier used as group key. */
@@ -293,6 +299,8 @@ export interface AdapterBundle {
   createCardRenderer(): CardRenderer;
   /** Create a prompt builder for Claude context sessions. */
   createPromptBuilder(): WorkItemPromptBuilder;
+  /** Return direct catalogue relationships without exposing adapter metadata. */
+  getWorkItemRelationships?(item: WorkItem): WorkItemRelationships;
   /**
    * Open a detail view for the selected item. The adapter manages its own
    * Obsidian workspace leaf via `app.workspace.createLeafBySplit(ownerLeaf)`.
