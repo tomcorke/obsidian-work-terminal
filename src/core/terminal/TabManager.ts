@@ -12,6 +12,13 @@ import { TerminalTab, type AgentState } from "./TerminalTab";
 import { aggregateState } from "../agents/AgentStateDetector";
 import { SessionStore } from "../session/SessionStore";
 import type { ActiveTabInfo, StoredSession, SessionType, TabDiagnostics } from "../session/types";
+import type {
+  CleanOutputRead,
+  TerminalHostCommandResult,
+  TerminalLifecycleListener,
+  TerminalTabHostSnapshot,
+  TerminalTabTarget,
+} from "./TerminalHost";
 
 export class TabManager {
   private sessions: Map<string, TerminalTab[]> = new Map();
@@ -179,8 +186,9 @@ export class TabManager {
     preCommand?: string,
     commandArgs?: string[],
     launchMetadata?: { piSessionMappingPath: string; piSessionLaunchToken: string },
+    activate = true,
   ): TerminalTab {
-    const isActiveItem = this.activeItemId === itemId;
+    const isActiveItem = activate && this.activeItemId === itemId;
 
     const tabs = this.sessions.get(itemId) || [];
     const spawnTime = Date.now();
@@ -291,6 +299,7 @@ export class TabManager {
     targetTabs.push(tab);
     this.sessions.set(targetItemId, targetTabs);
     tab.taskPath = targetItemId;
+    tab.refreshHostTarget();
     this.bindTabCallbacks(tab);
     tab.hide();
     tab.suspendWebGl();
@@ -374,7 +383,12 @@ export class TabManager {
     this.closeTabForItem(itemId, index);
   }
 
-  closeTabForItem(itemId: string, index: number): void {
+  closeTabForItem(
+    itemId: string,
+    index: number,
+    showReplacement = true,
+    focusReplacement = true,
+  ): void {
     const tabs = this.sessions.get(itemId) || [];
     if (index < 0 || index >= tabs.length) return;
 
@@ -391,9 +405,12 @@ export class TabManager {
       this.lastActiveTab.delete(itemId);
       if (isActiveItem) this.activeTabIndex = 0;
     } else if (isActiveItem) {
+      if (index < this.activeTabIndex) this.activeTabIndex--;
       this.activeTabIndex = Math.min(this.activeTabIndex, tabs.length - 1);
-      tabs[this.activeTabIndex].resumeWebGl();
-      tabs[this.activeTabIndex].show();
+      if (showReplacement) {
+        tabs[this.activeTabIndex].resumeWebGl();
+        tabs[this.activeTabIndex].show(focusReplacement);
+      }
     } else {
       const remembered = this.lastActiveTab.get(itemId) ?? 0;
       const adjusted = index < remembered ? remembered - 1 : remembered;
@@ -430,6 +447,50 @@ export class TabManager {
   /** Get tabs for an item. */
   getTabs(itemId: string): TerminalTab[] {
     return this.sessions.get(itemId) || [];
+  }
+
+  /** Return handle-free snapshots for broker discovery. */
+  getTabHostSnapshots(itemId: string): readonly TerminalTabHostSnapshot[] {
+    return Object.freeze((this.sessions.get(itemId) ?? []).map((tab) => tab.getHostSnapshot()));
+  }
+
+  /** Return handle-free snapshots across tasks for caller re-binding after a tab move. */
+  getAllTabHostSnapshots(): readonly TerminalTabHostSnapshot[] {
+    return Object.freeze(
+      [...this.sessions.values()].flatMap((tabs) => tabs.map((tab) => tab.getHostSnapshot())),
+    );
+  }
+
+  readTabOutput(
+    target: TerminalTabTarget,
+    options: { maxLines: number; maxBytes: number },
+  ): CleanOutputRead | null {
+    return this.findHostTab(target)?.readCleanOutput(options) ?? null;
+  }
+
+  promptTab(target: TerminalTabTarget, prompt: string): TerminalHostCommandResult | null {
+    return this.findHostTab(target)?.submitPrompt(prompt) ?? null;
+  }
+
+  interruptTab(target: TerminalTabTarget): TerminalHostCommandResult | null {
+    return this.findHostTab(target)?.interrupt() ?? null;
+  }
+
+  closeHostTab(target: TerminalTabTarget): { processWasRunning: boolean } | null {
+    const tab = this.findHostTab(target);
+    if (!tab) return null;
+    const index = (this.sessions.get(target.taskId) ?? []).indexOf(tab);
+    const processWasRunning = tab.getHostSnapshot().processStatus === "running";
+    const wasSelected = this.activeItemId === target.taskId && this.activeTabIndex === index;
+    this.closeTabForItem(target.taskId, index, wasSelected, false);
+    return { processWasRunning };
+  }
+
+  onTabLifecycle(
+    target: TerminalTabTarget,
+    listener: TerminalLifecycleListener,
+  ): (() => void) | null {
+    return this.findHostTab(target)?.onLifecycleEvent(listener) ?? null;
   }
 
   /** Get the currently active tab, or null. */
@@ -570,6 +631,7 @@ export class TabManager {
 
     for (const tab of tabs) {
       tab.taskPath = newId;
+      tab.refreshHostTarget();
     }
 
     if (this.activeItemId === oldId) {
@@ -616,6 +678,13 @@ export class TabManager {
   // ---------------------------------------------------------------------------
   // Internal
   // ---------------------------------------------------------------------------
+
+  private findHostTab(target: TerminalTabTarget): TerminalTab | null {
+    const tab = (this.sessions.get(target.taskId) ?? []).find(
+      (candidate) => candidate.id === target.tabId && candidate.generation === target.generation,
+    );
+    return tab ?? null;
+  }
 
   private hideAllTerminals(): void {
     for (const tabs of this.sessions.values()) {

@@ -67,6 +67,8 @@ If `work-terminal` already exists in `.obsidian/plugins`, remove that directory 
 
 This plugin spawns external processes to provide terminal and AI agent functionality. All commands are user-configured and resolved against `$PATH` (augmented with login shell and version-manager paths). Arguments are passed as arrays via `child_process.spawn()` (no shell interpretation, with one exception: Cmd+clicking a file path in terminal output runs `code --goto` via `exec()` to open the file in VS Code). The plugin makes zero outbound network requests. Vault files are modified through the Obsidian API (`app.vault.*` and `app.vault.adapter.*`), not raw `fs.*` writes.
 
+The optional task tab broker is disabled by default. When enabled, only profiles with explicit capability grants receive an authenticated user-local Unix socket/named-pipe context; it never opens a network listener. See the user guide and process disclosure for capability and same-user security limits.
+
 For a complete, source-verified inventory of every process spawned, every file read or written, and all security properties, see **[Process Spawning & Filesystem Disclosure](docs/process-spawning.md)**.
 
 ## Documentation

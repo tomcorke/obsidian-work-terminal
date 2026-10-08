@@ -28,6 +28,7 @@ import { titleCase } from "../core/utils";
 import { GuidedTourController, shouldAutoStartGuidedTour } from "./GuidedTour";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import type { AgentProfile } from "../core/agents/AgentProfile";
+import type { BrokerTerminalHost } from "../core/broker/TaskTabBroker";
 import { applyActionOverrides, getActionOverrides } from "./actionProfileOverrides";
 import { resolveActionProfile } from "./splitTaskProfile";
 import { ActivityTracker } from "./ActivityTracker";
@@ -76,6 +77,7 @@ export class MainView extends ItemView {
 
   // Adapter-contributed style element
   private adapterStyleEl: HTMLStyleElement | null = null;
+  private unregisterBrokerHost: (() => void) | null = null;
 
   // Resize observer for terminal refit on view switch
   private containerObserver: ResizeObserver | null = null;
@@ -453,6 +455,17 @@ export class MainView extends ItemView {
       (itemId) => this.pinStore?.isPinned(itemId) ?? false,
       () => this.listPanel?.getDisplayedItemOrder() ?? [],
     );
+    const registerBrokerHost = (
+      this.pluginRef as Plugin & {
+        registerTaskTabBrokerHost?: (host: BrokerTerminalHost) => () => void;
+      }
+    ).registerTaskTabBrokerHost;
+    if (registerBrokerHost) {
+      this.unregisterBrokerHost = registerBrokerHost.call(
+        this.pluginRef,
+        this.terminalPanel.getBrokerHost(),
+      );
+    }
 
     // ListPanel
     this.listPanel = new ListPanel(
@@ -952,6 +965,8 @@ export class MainView extends ItemView {
       this.terminalPanel?.disposeAll();
     }
 
+    this.unregisterBrokerHost?.();
+    this.unregisterBrokerHost = null;
     this.listPanel?.dispose();
     this.activityTracker.dispose();
     try {

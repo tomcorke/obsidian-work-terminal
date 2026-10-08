@@ -10,6 +10,7 @@ const terminalTabMock = vi.hoisted(() => {
     static constructorArgs: any[][] = [];
 
     id = "mock-tab";
+    generation = 1;
     label = "Shell";
     agentState: AgentState = "inactive";
     sessionType: SessionType = "shell";
@@ -24,6 +25,23 @@ const terminalTabMock = vi.hoisted(() => {
     clearWaiting = vi.fn();
     suspendWebGl = vi.fn();
     resumeWebGl = vi.fn();
+    getHostSnapshot = vi.fn(() =>
+      Object.freeze({
+        taskId: this.taskPath,
+        tabId: this.id,
+        generation: this.generation,
+        label: this.label,
+        sessionType: this.sessionType,
+        state: "unknown",
+        processStatus: "running",
+        latestSequence: "0",
+      }),
+    );
+    readCleanOutput = vi.fn(() => ({ text: "", lineCount: 0, byteCount: 0, truncated: false }));
+    submitPrompt = vi.fn(() => "accepted");
+    interrupt = vi.fn(() => "accepted");
+    onLifecycleEvent = vi.fn(() => vi.fn());
+    refreshHostTarget = vi.fn();
     getDiagnostics = vi.fn(() => ({
       tabId: this.id,
       label: this.label,
@@ -94,12 +112,14 @@ function makeStubTab(
     sessionType?: SessionType;
     label?: string;
     id?: string;
+    generation?: number;
     taskPath?: string;
     isDisposed?: boolean;
     processStatus?: "alive" | "exited" | "killed" | "missing";
   } = {},
 ): {
   id: string;
+  generation: number;
   label: string;
   agentState: AgentState;
   sessionType: SessionType;
@@ -112,9 +132,16 @@ function makeStubTab(
   clearWaiting: ReturnType<typeof vi.fn>;
   suspendWebGl: ReturnType<typeof vi.fn>;
   resumeWebGl: ReturnType<typeof vi.fn>;
+  resetScreenFingerprint: ReturnType<typeof vi.fn>;
   taskPath: string;
   isDisposed: boolean;
   isAgentTab: boolean;
+  getHostSnapshot: ReturnType<typeof vi.fn>;
+  readCleanOutput: ReturnType<typeof vi.fn>;
+  submitPrompt: ReturnType<typeof vi.fn>;
+  interrupt: ReturnType<typeof vi.fn>;
+  onLifecycleEvent: ReturnType<typeof vi.fn>;
+  refreshHostTarget: ReturnType<typeof vi.fn>;
   getDiagnostics: ReturnType<typeof vi.fn>;
 } {
   const isDisposed = overrides.isDisposed ?? false;
@@ -122,6 +149,7 @@ function makeStubTab(
   const sessionType = overrides.sessionType ?? "shell";
   return {
     id: overrides.id ?? "tab-1",
+    generation: overrides.generation ?? 1,
     label: overrides.label ?? "Shell",
     agentState: overrides.agentState ?? "inactive",
     sessionType,
@@ -135,6 +163,28 @@ function makeStubTab(
     resetScreenFingerprint: vi.fn(),
     taskPath: overrides.taskPath ?? "item-1",
     isDisposed,
+    getHostSnapshot: vi.fn(() =>
+      Object.freeze({
+        taskId: overrides.taskPath ?? "item-1",
+        tabId: overrides.id ?? "tab-1",
+        generation: overrides.generation ?? 1,
+        label: overrides.label ?? "Shell",
+        sessionType,
+        state: sessionType === "shell" ? "unknown" : (overrides.agentState ?? "inactive"),
+        processStatus: processStatus === "alive" ? "running" : "exited",
+        latestSequence: "0",
+      }),
+    ),
+    readCleanOutput: vi.fn(() => ({
+      text: "recent output",
+      lineCount: 1,
+      byteCount: 13,
+      truncated: false,
+    })),
+    submitPrompt: vi.fn(() => "accepted"),
+    interrupt: vi.fn(() => "accepted"),
+    onLifecycleEvent: vi.fn(() => vi.fn()),
+    refreshHostTarget: vi.fn(),
     getDiagnostics: vi.fn(() => ({
       tabId: overrides.id ?? "tab-1",
       label: overrides.label ?? "Shell",
@@ -554,6 +604,78 @@ describe("TabManager - active tab discovery", () => {
         sessionType: "copilot",
       },
     ]);
+  });
+});
+
+describe("TabManager - broker host primitives", () => {
+  it("returns immutable safe snapshots without changing the selected tab", () => {
+    const tab = makeStubTab({
+      id: "tab-1",
+      generation: 3,
+      taskPath: "item-1",
+      sessionType: "claude",
+      agentState: "waiting",
+    });
+    const mgr = makeTabManagerWithSessions("item-1", [tab]);
+
+    const snapshots = mgr.getTabHostSnapshots("item-1");
+
+    expect(snapshots).toEqual([
+      {
+        taskId: "item-1",
+        tabId: "tab-1",
+        generation: 3,
+        label: "Shell",
+        sessionType: "claude",
+        state: "waiting",
+        processStatus: "running",
+        latestSequence: "0",
+      },
+    ]);
+    expect(mgr.getAllTabHostSnapshots()).toEqual(snapshots);
+    expect(Object.isFrozen(snapshots)).toBe(true);
+    expect(Object.isFrozen(mgr.getAllTabHostSnapshots())).toBe(true);
+    expect(tab.show).not.toHaveBeenCalled();
+    expect(tab.hide).not.toHaveBeenCalled();
+  });
+
+  it("routes output and commands only to an exact task, tab, and generation", () => {
+    const tab = makeStubTab({ id: "tab-1", generation: 3, taskPath: "item-1" });
+    const mgr = makeTabManagerWithSessions("item-1", [tab]);
+    const target = { taskId: "item-1", tabId: "tab-1", generation: 3 };
+
+    expect(mgr.readTabOutput(target, { maxLines: 50, maxBytes: 48 * 1024 })).toEqual({
+      text: "recent output",
+      lineCount: 1,
+      byteCount: 13,
+      truncated: false,
+    });
+    const listener = vi.fn();
+    expect(mgr.promptTab(target, "continue")).toBe("accepted");
+    expect(mgr.interruptTab(target)).toBe("accepted");
+    expect(mgr.onTabLifecycle(target, listener)).toBeTypeOf("function");
+    expect(mgr.promptTab({ ...target, generation: 2 }, "late")).toBeNull();
+    expect(mgr.onTabLifecycle({ ...target, generation: 2 }, listener)).toBeNull();
+    expect(mgr.interruptTab({ ...target, taskId: "item-2" })).toBeNull();
+    expect(tab.submitPrompt).toHaveBeenCalledOnce();
+    expect(tab.interrupt).toHaveBeenCalledOnce();
+    expect(tab.onLifecycleEvent).toHaveBeenCalledWith(listener);
+    expect(tab.show).not.toHaveBeenCalled();
+  });
+
+  it("closes only an exact generation and reveals its neighbour without focus", () => {
+    const targetTab = makeStubTab({ id: "tab-1", generation: 3, taskPath: "item-1" });
+    const neighbour = makeStubTab({ id: "tab-2", generation: 1, taskPath: "item-1" });
+    const mgr = makeTabManagerWithSessions("item-1", [targetTab, neighbour]);
+    const target = { taskId: "item-1", tabId: "tab-1", generation: 3 };
+
+    expect(mgr.closeHostTab({ ...target, generation: 2 })).toBeNull();
+    expect(mgr.closeHostTab(target)).toEqual({ processWasRunning: true });
+
+    expect(targetTab.dispose).toHaveBeenCalledOnce();
+    expect(mgr.getTabs("item-1")).toEqual([neighbour]);
+    expect(neighbour.resumeWebGl).toHaveBeenCalledOnce();
+    expect(neighbour.show).toHaveBeenCalledWith(false);
   });
 });
 

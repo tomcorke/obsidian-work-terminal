@@ -35,13 +35,21 @@ import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/Age
 import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
 import { buildPtyLaunchPlan, resolvePtyWrapperPath } from "./PtyLaunch";
+import {
+  TerminalHostBridge,
+  type CleanOutputRead,
+  type TerminalHostCommandResult,
+  type TerminalHostRuntimeState,
+  type TerminalLifecycleListener,
+  type TerminalTabHostSnapshot,
+  type TerminalTabTarget,
+} from "./TerminalHost";
 
 export { resolvePtyWrapperPath } from "./PtyLaunch";
 
 export type AgentState = AgentRuntimeState;
 export type ClaudeState = AgentState;
 
-let sessionCounter = 0;
 let hasWarnedViewportResync = false;
 const TERMINAL_SCROLLBACK = 5000;
 const STATE_POLL_INTERVAL_MS = 2000;
@@ -113,6 +121,7 @@ export function __resetViewportResyncWarnOnce(): void {
 
 export class TerminalTab {
   id: string;
+  generation: number;
   label: string;
   taskPath: string | null;
   sessionType: SessionType;
@@ -148,9 +157,8 @@ export class TerminalTab {
   autoRenameQueuedForce = false;
   manuallyRenamed = false;
   onLabelChange?: () => void;
-  onProcessExit?: (code: number | null, signal: string | null) => void;
-  onStateChange?: (state: AgentState) => void;
 
+  private _terminalHostBridge = new TerminalHostBridge();
   private fitAddon: FitAddon | undefined;
   private searchAddon: SearchAddon | undefined;
   private webLinksAddon: WebLinksAddon | undefined;
@@ -174,6 +182,7 @@ export class TerminalTab {
   private static MIN_FIT_WIDTH = 200;
   private cwd: string = "";
   private spawnTime = 0;
+  private _processStarted = false;
 
   // Agent state detection
   private _agentState: AgentState = "inactive";
@@ -248,7 +257,9 @@ export class TerminalTab {
 
     injectXtermCss();
 
-    this.id = `term-${Date.now()}-${++sessionCounter}`;
+    this.id = crypto.randomUUID();
+    this.generation = 1;
+    this.refreshHostTarget();
 
     this.containerEl = document.createElement("div");
     this.containerEl.addClass("wt-terminal-instance");
@@ -561,6 +572,7 @@ export class TerminalTab {
   // ---------------------------------------------------------------------------
 
   private wireProcess(proc: ChildProcess, wireInput = true): void {
+    this._processStarted = true;
     const bridge = this._processBridge;
 
     if (wireInput) {
@@ -584,6 +596,7 @@ export class TerminalTab {
     if (this._isDisposed) return;
     this._checkRename(data);
     this._trackOutput(data);
+    this.ensureTerminalHostBridge().appendOutput(data);
     this.onOutputData?.(data);
     this.outputDataBridge?.callback?.(data);
     this._writeProcessOutput(data);
@@ -599,7 +612,9 @@ export class TerminalTab {
     this.removePiSessionMapping();
     if (this._isDisposed) return;
     this._writeProcessOutput(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
-    this.onProcessExit?.(code, signal);
+    const hostBridge = this.ensureTerminalHostBridge();
+    hostBridge.emitExit(code, signal);
+    hostBridge.onProcessExit?.(code, signal);
   }
 
   private _writeProcessOutput(data: string | Uint8Array): void {
@@ -1060,6 +1075,98 @@ export class TerminalTab {
   }
 
   // ---------------------------------------------------------------------------
+  // Broker host primitives
+  // ---------------------------------------------------------------------------
+
+  get onProcessExit(): ((code: number | null, signal: string | null) => void) | undefined {
+    return this.ensureTerminalHostBridge().onProcessExit;
+  }
+
+  set onProcessExit(callback: ((code: number | null, signal: string | null) => void) | undefined) {
+    this.ensureTerminalHostBridge().onProcessExit = callback;
+  }
+
+  get onStateChange(): ((state: AgentState) => void) | undefined {
+    return this.ensureTerminalHostBridge().onStateChange;
+  }
+
+  set onStateChange(callback: ((state: AgentState) => void) | undefined) {
+    this.ensureTerminalHostBridge().onStateChange = callback;
+  }
+
+  getHostSnapshot(): TerminalTabHostSnapshot {
+    this.refreshHostTarget();
+    return Object.freeze({
+      ...this.getHostTarget(),
+      label: this.label,
+      sessionType: this.sessionType,
+      ...(this.profileId ? { profileId: this.profileId } : {}),
+      state: this.getHostRuntimeState(),
+      processStatus: !this._processStarted || this.isProcessRunning() ? "running" : "exited",
+      latestSequence: this.ensureTerminalHostBridge().latestSequence(),
+    });
+  }
+
+  readCleanOutput(options: { maxLines: number; maxBytes: number }): CleanOutputRead {
+    return this.ensureTerminalHostBridge().readOutput(options);
+  }
+
+  submitPrompt(prompt: string): TerminalHostCommandResult {
+    return this.writeHostInput(`${prompt}\r`);
+  }
+
+  interrupt(): TerminalHostCommandResult {
+    return this.writeHostInput("\x03");
+  }
+
+  onLifecycleEvent(listener: TerminalLifecycleListener): () => void {
+    this.refreshHostTarget();
+    return this.ensureTerminalHostBridge().subscribe(listener);
+  }
+
+  refreshHostTarget(): void {
+    this.ensureTerminalHostBridge().setTarget(this.getHostTarget());
+  }
+
+  private ensureTerminalHostBridge(): TerminalHostBridge {
+    return (this._terminalHostBridge ??= new TerminalHostBridge());
+  }
+
+  private getHostTarget(): TerminalTabTarget {
+    return Object.freeze({
+      taskId: this.taskPath ?? "",
+      tabId: this.id,
+      generation: this.generation,
+    });
+  }
+
+  private getHostRuntimeState(): TerminalHostRuntimeState {
+    return this._isAgentTab && this._agentState !== "inactive" ? this._agentState : "unknown";
+  }
+
+  private isProcessRunning(): boolean {
+    return Boolean(
+      this.process &&
+      !this.process.killed &&
+      this.process.exitCode === null &&
+      this.process.signalCode === null,
+    );
+  }
+
+  private writeHostInput(input: string): TerminalHostCommandResult {
+    if (this.process && !this.isProcessRunning()) return "exited";
+    if (this._isDisposed || !this.process?.stdin || this.process.stdin.destroyed) {
+      return "unavailable";
+    }
+    try {
+      this.process.stdin.write(input);
+      return "accepted";
+    } catch {
+      return "unavailable";
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Visibility & layout
   // ---------------------------------------------------------------------------
 
@@ -1083,7 +1190,7 @@ export class TerminalTab {
     return this.commandArgs ? [...this.commandArgs] : undefined;
   }
 
-  show(): void {
+  show(focus = true): void {
     this._flushHiddenWrites();
     // Backfill linkHandler for already-live terminals that were created before
     // the Electron openExternal handler was added (pre-#156 fix). Without this,
@@ -1107,9 +1214,9 @@ export class TerminalTab {
         // xterm may not have painted anything. Refreshing ensures the canvas
         // renderer draws the buffer content.
         this.terminal.refresh(0, this.terminal.rows - 1);
-        this.terminal.scrollToBottom();
+        if (focus) this.terminal.scrollToBottom();
         this.syncViewportScrollArea();
-        this.terminal.focus();
+        if (focus) this.terminal.focus();
         requestAnimationFrame(() => {
           if (this._isDisposed) return;
           this.recoverBlankRendererIfNeeded();
@@ -1418,7 +1525,9 @@ export class TerminalTab {
     }
     if (this._agentState === state) return;
     this._agentState = state;
-    this.onStateChange?.(state);
+    const hostBridge = this.ensureTerminalHostBridge();
+    hostBridge.emitState(this.getHostRuntimeState());
+    hostBridge.onStateChange?.(state);
   }
 
   // ---------------------------------------------------------------------------
@@ -1438,6 +1547,7 @@ export class TerminalTab {
     }
     return {
       id: this.id,
+      generation: this.generation,
       taskPath: this.taskPath,
       label: this.label,
       sessionType: this.sessionType,
@@ -1472,6 +1582,7 @@ export class TerminalTab {
         handler: fn as unknown as EventListener,
       })),
       resizeObserver: this.resizeObserver,
+      terminalHostBridge: this.ensureTerminalHostBridge(),
     };
   }
 
@@ -1484,6 +1595,7 @@ export class TerminalTab {
 
     const tab = Object.create(TerminalTab.prototype) as TerminalTab;
     tab.id = stored.id;
+    tab.generation = stored.generation ?? 1;
     tab.label = stored.label;
     tab.taskPath = stored.taskPath;
     tab.sessionType = stored.sessionType;
@@ -1524,6 +1636,10 @@ export class TerminalTab {
     tab.unicode11Addon = stored.unicode11Addon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
+    tab._processStarted = Boolean(stored.process);
+    tab._terminalHostBridge = stored.terminalHostBridge ?? new TerminalHostBridge();
+    tab._terminalHostBridge.clearListeners();
+    tab.refreshHostTarget();
     tab._processBridge = stored.processBridge ?? {
       owner: tab,
       writesInFlight: 0,
@@ -1736,6 +1852,7 @@ export class TerminalTab {
 
   dispose(): void {
     if (this._isDisposed) return;
+    this.ensureTerminalHostBridge().emitClosed();
     this._isDisposed = true;
     this._discardHiddenWrites();
     this.removePiSessionMapping();

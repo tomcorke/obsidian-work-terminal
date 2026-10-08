@@ -3,6 +3,7 @@ import {
   AGENT_TYPES,
   AgentProfileArraySchema,
   AgentProfileSchema,
+  StoredProfileArraySchema,
   BRAND_COLORS,
   agentTypeToSessionType,
   sessionTypeToAgentType,
@@ -16,6 +17,7 @@ import {
   getBuiltInProfiles,
   getLaunchConfig,
   validateProfilePromptInjection,
+  BROKER_CAPABILITIES,
 } from "./AgentProfile";
 
 describe("agentTypeToSessionType", () => {
@@ -93,6 +95,7 @@ describe("createDefaultProfile", () => {
     expect(profile.appendContextPrompt).toBe(true);
     expect(profile.escapeWorkTerminalPrompt).toBe(true);
     expect(profile.button.enabled).toBe(false);
+    expect(profile.brokerCapabilities).toEqual([]);
   });
 
   it("applies overrides", () => {
@@ -158,6 +161,31 @@ describe("zod validation", () => {
     const profile = createDefaultClaudeProfile();
     const result = AgentProfileSchema.safeParse(profile);
     expect(result.success).toBe(true);
+  });
+
+  it("defaults stored broker grants off and accepts only exact capabilities", () => {
+    const stored = AgentProfileSchema.parse(createDefaultClaudeProfile());
+    expect(stored.brokerCapabilities).toEqual([]);
+    expect(
+      StoredProfileArraySchema.parse([{ id: "legacy", name: "Legacy", agentType: "claude" }])[0]
+        .brokerCapabilities,
+    ).toEqual([]);
+    expect(BROKER_CAPABILITIES).toEqual([
+      "discover",
+      "read",
+      "wait",
+      "message",
+      "create-tab",
+      "prompt-tab",
+      "interrupt-tab",
+      "close-tab",
+    ]);
+    expect(
+      AgentProfileSchema.safeParse({
+        ...createDefaultClaudeProfile(),
+        brokerCapabilities: ["discover", "arbitrary-shell"],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects a profile with missing name", () => {

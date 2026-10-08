@@ -12,7 +12,7 @@ pnpm exec vitest run    # run tests
 
 - **Output**: esbuild outputs `main.js` to repo root. `manifest.json` and `styles.css` already at repo root.
 - **Vault link**: `.obsidian/plugins/work-terminal` is a symlink to this repo directory. No copy step.
-- When packaging or distributing the plugin, keep `pty-wrapper.py` in the plugin directory alongside `main.js`, `manifest.json`, and `styles.css`.
+- When packaging or distributing the plugin, keep `pty-wrapper.py` and `skills/work-terminal-task-tab-broker/` alongside `main.js`, `manifest.json`, and `styles.css`. The skill directory contains its broker helper under `scripts/`.
 
 ## Running Fallow
 

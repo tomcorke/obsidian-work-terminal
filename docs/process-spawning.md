@@ -80,6 +80,10 @@ One-shot `pi [user-configured arguments] --print --no-session --no-tools --no-co
 
 **Note**: All terminal processes (Shell, Claude, Copilot, OpenCode, Strands, custom agents) run inside `pty-wrapper.py`, a Python script that uses `pty.fork()` to provide a real pseudo-terminal. Electron's sandbox blocks native PTY access, so this Python wrapper is the necessary bridge between xterm.js and the child process.
 
+### Task tab broker child environment
+
+When the global task tab broker is enabled and an agent profile has at least one explicit capability grant, the terminal child additionally receives `WORK_TERMINAL_BROKER_PROTOCOL`, `WORK_TERMINAL_BROKER_ENDPOINT`, `WORK_TERMINAL_TASK_ID`, `WORK_TERMINAL_TAB_ID`, `WORK_TERMINAL_TAB_GENERATION`, and `WORK_TERMINAL_BROKER_TOKEN`. Profiles without grants receive none of these values. The endpoint and token are sensitive local capability material and are excluded from ordinary logs and diagnostics.
+
 ## Filesystem access
 
 ### Inside the vault (Obsidian API only)
@@ -132,6 +136,9 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 |------|-----------|---------|-------------|
 | `pty-wrapper.py` | Read-only existence check | Terminal tab spawn | `src/core/terminal/TerminalTab.ts` - `resolvePtyWrapperPath()` |
 | Command binary paths | Read-only existence + executable check | Terminal tab spawn, headless agent spawn | `src/core/agents/AgentLauncher.ts` - `resolveCommandInfo()` |
+| User-private runtime directory | Create/remove one Unix-domain socket; directory mode `0700`, socket mode `0600` | Task tab broker enabled, disabled, or reloaded | `src/core/broker/TaskTabBrokerTransport.ts` |
+
+On Windows the broker uses a named pipe instead of a filesystem socket. It never opens a TCP or other network listener. A stale Unix path is removed only when it is a socket; the plugin refuses to replace a regular file at the endpoint.
 
 ## Security properties
 
@@ -139,5 +146,8 @@ Enrichment failure logs are written to `<vault>/<configDir>/plugins/work-termina
 - **`child_process.spawn()` array form - no shell interpretation** - Arguments are constructed as arrays and passed to `spawn()`, which invokes executables directly without a shell. This prevents command injection. The one exception is the VS Code `code --goto` call which uses `exec()` with a quoted path. (`src/core/terminal/TerminalTab.ts`, `src/core/claude/HeadlessClaude.ts`)
 - **Zero outbound network requests from the plugin itself** - The plugin makes no network calls. Any network activity comes from the spawned processes (e.g. Claude CLI communicating with Anthropic's API).
 - **Vault modifications exclusively through Obsidian API** - Vault file operations use `app.vault.create()` / `app.vault.modify()` / `app.vault.rename()` / `app.vault.trash()`, never direct `fs.*` writes to vault files. Enrichment logs use the lower-level `app.vault.adapter.write()` but this is still within the Obsidian API surface.
-- **Minimal direct filesystem access** - Direct `fs.*` calls are limited to read-only checks on `pty-wrapper.py` and command binary paths. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`. All other filesystem operations go through Obsidian's API.
+- **Minimal direct filesystem access** - Direct `fs.*` calls cover read-only checks on `pty-wrapper.py` and command binary paths, profile-file storage, and creation/removal of the private local broker socket. Enrichment failure logs are written via `app.vault.adapter`, not raw `fs.*`; vault content operations go through Obsidian's API.
 - **Plugin data via Obsidian API** - Settings use `plugin.loadData()` / `plugin.saveData()`, stored in the vault's `.obsidian/plugins/work-terminal/data.json`.
+- **Task tab broker is default-off and least-privilege** - Both the global broker setting and exact per-profile grants are required. Tokens bind the caller's vault, task, tab generation, profile, and launch-time grant snapshot. Removed grants revoke live access; added grants require a new session.
+- **Local IPC is not a same-user sandbox** - Socket permissions and random tokens prevent casual unrelated access, but another process running as the same OS user may be able to inspect process environments or memory. The broker therefore exposes only bounded vault-local task/tab methods and never arbitrary shell, filesystem, DOM, xterm, process-handle, or workspace access.
+- **Bounded protocol** - IPC is versioned newline-delimited JSON with 65,536-byte frames, bounded connections and in-flight requests, request/result limits, rate limits, exact tab generations, and structured failures. Reload closes clients; opted-in live sessions reconnect to the same endpoint and reconcile current state.

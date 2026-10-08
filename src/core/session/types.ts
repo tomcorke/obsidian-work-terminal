@@ -9,6 +9,7 @@ import type { Unicode11Addon } from "@xterm/addon-unicode11";
 import type { WebglAddon } from "@xterm/addon-webgl";
 import type { ChildProcess } from "child_process";
 import { isProfileSessionType } from "../agents/AgentProfile";
+import type { TerminalHostBridge } from "../terminal/TerminalHost";
 import type { TerminalTab } from "../terminal/TerminalTab";
 
 export const KNOWN_SESSION_TYPES = [
@@ -52,6 +53,7 @@ export interface TerminalProcessBridge {
  */
 export interface StoredSession {
   id: string;
+  generation?: number;
   taskPath: string | null;
   label: string;
   sessionType: SessionType;
@@ -88,6 +90,7 @@ export interface StoredSession {
   processBridge?: TerminalProcessBridge;
   documentListeners: { event: string; handler: EventListener }[];
   resizeObserver: ResizeObserver;
+  terminalHostBridge?: TerminalHostBridge;
 }
 
 export interface ActiveTabInfo {

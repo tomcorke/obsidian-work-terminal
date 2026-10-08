@@ -1223,6 +1223,123 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
+  it("injects broker context only through an opted-in profile launch", async () => {
+    mockState.activeItemId = "task-1";
+    const target = { taskId: "task-1", tabId: "tab-1", generation: 1 };
+    const createdTab = {
+      getHostSnapshot: () => target,
+      launchEnv: { EXISTING_CONTEXT: "kept" },
+    } as any;
+    mockState.nextCreatedTab = createdTab;
+    const createBrokerEnv = vi.fn(() => ({
+      WORK_TERMINAL_BROKER_ENDPOINT: "/tmp/broker.sock",
+      WORK_TERMINAL_BROKER_TOKEN: "secret",
+    }));
+    const { view } = createView(
+      {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      { createTaskTabBrokerLaunchEnvironment: createBrokerEnv } as any,
+    );
+    await flushAsync();
+    const profile = {
+      id: "profile-broker",
+      name: "Broker profile",
+      agentType: "claude",
+      command: "",
+      defaultCwd: "",
+      arguments: "",
+      contextPrompt: "",
+      useContext: false,
+      suppressAdapterPrompt: false,
+      button: { enabled: false, label: "" },
+      sortOrder: 0,
+      brokerCapabilities: ["discover"],
+    } as any;
+
+    await (view as any).spawnAgentSession({
+      agentType: "claude",
+      sessionType: "claude",
+      profile,
+    });
+
+    expect(createBrokerEnv).toHaveBeenCalledWith(profile, target);
+    expect(createdTab.launchEnv).toEqual({
+      EXISTING_CONTEXT: "kept",
+      WORK_TERMINAL_BROKER_ENDPOINT: "/tmp/broker.sock",
+      WORK_TERMINAL_BROKER_TOKEN: "secret",
+    });
+  });
+
+  it("creates broker profile tabs in the background with child broker context", async () => {
+    mockState.activeItemId = "task-caller";
+    const target = { taskId: "task-target", tabId: "tab-child", generation: 1 };
+    const createdTab = {
+      getHostSnapshot: () => ({
+        ...target,
+        label: "Child",
+        sessionType: "claude",
+        profileId: "profile-child",
+        state: "active",
+        processStatus: "running",
+        latestSequence: "0",
+      }),
+      launchEnv: {},
+    } as any;
+    mockState.nextCreatedTab = createdTab;
+    const createBrokerEnv = vi.fn(() => ({
+      WORK_TERMINAL_TASK_ID: "task-target",
+      WORK_TERMINAL_BROKER_TOKEN: "child-token",
+    }));
+    const { view } = createView({ "core.defaultTerminalCwd": "~" }, {
+      createTaskTabBrokerLaunchEnvironment: createBrokerEnv,
+    } as any);
+    await flushAsync();
+    const profile = {
+      id: "profile-child",
+      name: "Child",
+      agentType: "claude",
+      command: process.execPath,
+      defaultCwd: "~",
+      arguments: "",
+      contextPrompt: "",
+      useContext: false,
+      suppressAdapterPrompt: false,
+      button: { enabled: false, label: "Child" },
+      sortOrder: 0,
+      brokerCapabilities: ["discover"],
+    } as any;
+    (view as any).profileManager = {
+      getProfile: (id: string) => (id === profile.id ? profile : undefined),
+      resolveCommand: () => process.execPath,
+      resolveCwd: () => "~",
+      resolveArguments: () => "",
+      resolveContextPrompt: () => "",
+      getButtonProfiles: () => [],
+    };
+    view.setItems([
+      {
+        id: "task-target",
+        title: "Target",
+        state: "todo",
+        path: "Tasks/target.md",
+        metadata: {},
+      },
+    ]);
+
+    await expect(
+      view.getBrokerHost().createProfileTab!("task-target", profile.id, "Start child work"),
+    ).resolves.toMatchObject({ status: "created", tab: target });
+    expect(mockState.activeItemId).toBe("task-caller");
+    expect(mockState.latestCreateTabArgs?.at(-1)).toBe(false);
+    expect(createBrokerEnv).toHaveBeenCalledWith(profile, expect.objectContaining(target));
+    expect(createdTab.launchEnv).toMatchObject({
+      WORK_TERMINAL_TASK_ID: "task-target",
+      WORK_TERMINAL_BROKER_TOKEN: "child-token",
+    });
+  });
+
   it("can launch a prompt session for a specific target item", async () => {
     const { view } = createView({
       "core.claudeCommand": "/bin/echo",
