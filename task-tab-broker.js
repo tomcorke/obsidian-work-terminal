@@ -81,7 +81,9 @@ function run(attempt = 0) {
         socket.destroy();
         return;
       }
-      if (response.type === "event" && response.event === "broker.reloading") {
+      if (response.type === "event") {
+        if (response.event === "mailbox.available") continue;
+        if (response.event !== "broker.reloading") continue;
         socket.destroy();
         if (method === "waitForTab" && greeted) {
           console.error("Broker reloaded during wait; list tabs again before starting a new wait.");

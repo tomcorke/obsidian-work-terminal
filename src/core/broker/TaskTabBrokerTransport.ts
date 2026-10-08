@@ -2,6 +2,7 @@ import { electronRequire } from "../utils";
 import {
   BROKER_FRAME_MAX_BYTES,
   BROKER_PROTOCOL_VERSION,
+  type BrokerMailboxAvailableEvent,
   type BrokerRequest,
   type BrokerResponse,
   TaskTabBroker,
@@ -21,6 +22,8 @@ interface ConnectionState {
   token?: string;
   callerKey?: string;
   inFlight: Map<string, AbortController>;
+  mailboxUnsubscribe?: () => void;
+  pendingMailboxEvent?: BrokerMailboxAvailableEvent;
   closing: boolean;
 }
 
@@ -89,6 +92,8 @@ export class TaskTabBrokerTransport {
     for (const connection of this.connections) {
       connection.closing = true;
       for (const controller of connection.inFlight.values()) controller.abort();
+      connection.mailboxUnsubscribe?.();
+      connection.mailboxUnsubscribe = undefined;
       if (options.reloading) {
         connection.socket.end(
           `${JSON.stringify({
@@ -241,7 +246,10 @@ export class TaskTabBrokerTransport {
           );
         }
       })
-      .finally(() => state.inFlight.delete(id));
+      .finally(() => {
+        state.inFlight.delete(id);
+        this.flushMailboxEvent(state);
+      });
   }
 
   private handleHello(state: ConnectionState, envelope: Record<string, unknown>): void {
@@ -262,9 +270,11 @@ export class TaskTabBrokerTransport {
       state.socket.end();
       return;
     }
-    const caller = (
-      response.result as { caller: { taskId: string; tabId: string; generation: number } }
-    ).caller;
+    const helloResult = response.result as {
+      caller: { taskId: string; tabId: string; generation: number };
+      capabilities: string[];
+    };
+    const caller = helloResult.caller;
     const callerKey = `${caller.tabId}\0${caller.generation}`;
     const count = this.callerConnections.get(callerKey) ?? 0;
     if (count >= MAX_CALLER_CONNECTIONS) {
@@ -280,8 +290,32 @@ export class TaskTabBrokerTransport {
     }
     state.token = envelope.token;
     state.callerKey = callerKey;
+    if (helloResult.capabilities.includes("message")) {
+      state.mailboxUnsubscribe = this.broker.subscribeMailbox(caller, (event) => {
+        if (state.closing) return;
+        if (state.inFlight.size > 0) state.pendingMailboxEvent = event;
+        else this.writeMailboxEvent(state, event);
+      });
+    }
     this.callerConnections.set(callerKey, count + 1);
     this.write(state.socket, response);
+  }
+
+  private flushMailboxEvent(state: ConnectionState): void {
+    if (state.closing || state.inFlight.size > 0 || !state.pendingMailboxEvent) return;
+    const event = state.pendingMailboxEvent;
+    state.pendingMailboxEvent = undefined;
+    this.writeMailboxEvent(state, event);
+  }
+
+  private writeMailboxEvent(state: ConnectionState, event: BrokerMailboxAvailableEvent): void {
+    this.write(state.socket, {
+      v: 1,
+      type: "event",
+      event: "mailbox.available",
+      sequence: event.sequence,
+      data: { pending: event.pending },
+    });
   }
 
   private writeBoundedResponse(state: ConnectionState, response: BrokerResponse): void {
@@ -318,6 +352,7 @@ export class TaskTabBrokerTransport {
     state.closing = true;
     for (const controller of state.inFlight.values()) controller.abort();
     state.inFlight.clear();
+    state.mailboxUnsubscribe?.();
     if (state.callerKey) {
       const count = (this.callerConnections.get(state.callerKey) ?? 1) - 1;
       if (count > 0) this.callerConnections.set(state.callerKey, count);

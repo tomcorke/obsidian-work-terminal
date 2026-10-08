@@ -82,7 +82,7 @@ describe("bundled task tab broker helper", () => {
     }
   });
 
-  it("handles multiple broker frames delivered in one chunk", async () => {
+  it("handles multiple broker frames and ignores mailbox hints", async () => {
     const directory = mkdtempSync(join(tmpdir(), "wt-broker-helper-"));
     const endpoint =
       process.platform === "win32"
@@ -92,6 +92,7 @@ describe("bundled task tab broker helper", () => {
       socket.once("data", () => {
         socket.write(
           `${JSON.stringify({ v: 1, type: "response", id: "hello", ok: true, result: {} })}\n` +
+            `${JSON.stringify({ v: 1, type: "event", event: "mailbox.available", sequence: "1", data: { pending: 1 } })}\n` +
             `${JSON.stringify({ v: 1, type: "response", id: "result", ok: true, result: ["active"] })}\n`,
         );
       });
