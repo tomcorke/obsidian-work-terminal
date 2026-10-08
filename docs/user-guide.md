@@ -186,6 +186,8 @@ All three modes share the same interactive behaviour:
 - **Pinned section** with state badges (standard mode only - hidden in compact/comfortable to save space)
 - **Filtering** by text and active sessions
 
+Pin state is stored as `pinned: true` or `pinned: false` in each task's frontmatter, so it survives plugin settings/data resets. Pinned display order remains plugin-local. Existing pins migrate to frontmatter when first loaded.
+
 Switch between modes at any time from the settings dropdown.
 
 ### Hiding card indicators

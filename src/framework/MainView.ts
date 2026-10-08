@@ -814,6 +814,7 @@ export class MainView extends ItemView {
     if (!this.listPanel || !this.parser) return [];
     let items = await this.parser.loadAll();
     items = (await this.listPanel.syncInheritedSubTaskStates?.(items)) ?? items;
+    await this.listPanel.syncPinnedStates(items);
     this.allItems = items;
     const groups = this.parser.groupByColumn(items);
     this.seedActivityTimestamps(items);

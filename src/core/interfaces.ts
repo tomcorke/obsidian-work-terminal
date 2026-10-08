@@ -190,6 +190,8 @@ export interface WorkItemMover {
   move(file: TFile, targetColumnId: string): Promise<boolean>;
   /** Change hierarchy without changing the item's state, content, or identity. */
   setParent?(file: TFile, parent: WorkItem | null): Promise<boolean>;
+  /** Persist display pin state in the work item's durable source. */
+  setPinned?(file: TFile, pinned: boolean): Promise<boolean>;
 }
 
 /**

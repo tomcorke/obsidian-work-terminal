@@ -39,6 +39,7 @@ export interface TaskFile {
   goal: string[];
   parent?: TaskParent;
   isSubTask?: boolean;
+  pinned?: boolean;
   color?: string;
   /** Custom icon - Lucide icon name or emoji string. */
   icon?: string;

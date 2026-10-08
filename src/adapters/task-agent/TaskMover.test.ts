@@ -37,6 +37,39 @@ function createMockApp() {
 describe("TaskMover", () => {
   const defaultSettings = { "adapter.taskBasePath": "2 - Areas/Tasks" };
 
+  it("persists pin state in frontmatter", async () => {
+    const { app, modify } = createMockApp();
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    expect(await mover.setPinned(file, true)).toBe(true);
+    expect(modify.mock.calls[0][1]).toMatch(/^pinned: true$/m);
+  });
+
+  it("does not replace body-level pin text", async () => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue(`${SAMPLE_CONTENT}\npinned: discussion pending\n`);
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    expect(await mover.setPinned(file, true)).toBe(true);
+    const content = modify.mock.calls[0][1] as string;
+    expect(content).toMatch(/^pinned: true$/m);
+    expect(content).toContain("pinned: discussion pending");
+  });
+
+  it("updates existing pin state", async () => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue(SAMPLE_CONTENT.replace("state: todo", "state: todo\npinned: true"));
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    expect(await mover.setPinned(file, false)).toBe(true);
+    const content = modify.mock.calls[0][1] as string;
+    expect(content).toMatch(/^pinned: false$/m);
+    expect(content.match(/^pinned:/gm)).toHaveLength(1);
+  });
+
   it("updates state field", async () => {
     const { app, modify } = createMockApp();
     const mover = new TaskMover(app, "", defaultSettings);

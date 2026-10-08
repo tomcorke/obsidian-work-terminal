@@ -259,6 +259,25 @@ export class ListPanel {
     this.pinStore = pinStore;
   }
 
+  /** Reconcile durable frontmatter pins with ordered plugin-data display state. */
+  async syncPinnedStates(items: WorkItem[]): Promise<void> {
+    if (!this.pinStore) return;
+    for (const item of items) {
+      const pinned = (item.metadata as Record<string, unknown>)?.pinned;
+      if (typeof pinned === "boolean") {
+        if (pinned) await this.pinStore.pin(item.id);
+        else await this.pinStore.unpin(item.id);
+        continue;
+      }
+      if (this.pinStore.isPinned(item.id)) {
+        const file = this.app.vault.getAbstractFileByPath(item.path);
+        if (this.mover.setPinned && file && (await this.mover.setPinned(file as TFile, true))) {
+          item.metadata = { ...(item.metadata as Record<string, unknown>), pinned: true };
+        }
+      }
+    }
+  }
+
   /** Inject an ActivityTracker after construction (created by MainView). */
   setActivityTracker(tracker: ActivityTracker): void {
     this.activityTracker = tracker;
@@ -773,18 +792,35 @@ export class ListPanel {
   }
 
   private pinItem(item: WorkItem): void {
-    if (!this.pinStore) return;
-    void this.pinStore.pin(item.id).then(() => {
-      this.render(this.groups, this.customOrder);
-      this.selectItem(item);
-    });
+    void this.setItemPinned(item, true);
   }
 
   private async unpinItem(item: WorkItem): Promise<void> {
+    await this.setItemPinned(item, false);
+  }
+
+  private async setItemPinned(item: WorkItem, pinned: boolean): Promise<boolean> {
     if (!this.pinStore) return;
-    await this.pinStore.unpin(item.id);
+    const file = this.app.vault.getAbstractFileByPath(item.path);
+    if (this.mover.setPinned) {
+      if (!file || !(await this.mover.setPinned(file as TFile, pinned))) {
+        new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
+        return false;
+      }
+    }
+    try {
+      if (pinned) await this.pinStore.pin(item.id);
+      else await this.pinStore.unpin(item.id);
+    } catch (err) {
+      if (this.mover.setPinned && file) await this.mover.setPinned(file as TFile, !pinned);
+      console.error("[work-terminal] Failed to persist pin order:", err);
+      new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
+      return false;
+    }
+    item.metadata = { ...(item.metadata as Record<string, unknown>), pinned };
     this.render(this.groups, this.customOrder);
     this.selectItem(item);
+    return true;
   }
 
   setIngesting(id: string): void {
@@ -1170,6 +1206,11 @@ export class ListPanel {
   private async mirrorPinnedParent(parentItem: WorkItem, newItem: WorkItem): Promise<void> {
     if (!this.pinStore?.isPinned(parentItem.id)) return;
 
+    const file = this.app.vault.getAbstractFileByPath(newItem.path);
+    if (this.mover.setPinned && (!file || !(await this.mover.setPinned(file as TFile, true)))) {
+      throw new Error("Failed to persist sub-task pin state");
+    }
+    newItem.metadata = { ...(newItem.metadata as Record<string, unknown>), pinned: true };
     await this.pinStore.pin(newItem.id);
     const pinnedIds = this.pinStore.getPinnedIds().filter((id) => id !== newItem.id);
     const parentIndex = pinnedIds.indexOf(parentItem.id);
@@ -1358,8 +1399,8 @@ export class ListPanel {
             // Reorder within pinned section
             this.reorderWithinPinnedSection(dragId, dropIndex);
           } else {
-            // Pin the item
-            await this.pinStore.pin(dragId);
+            // Pin the item and persist durable frontmatter first.
+            if (!(await this.setItemPinned(item, true))) return;
             // Reorder to drop position
             const pinnedIds = this.pinStore.getPinnedIds();
             const filtered = pinnedIds.filter((id) => id !== dragId);
@@ -1380,7 +1421,7 @@ export class ListPanel {
             const didMove = await this.moveToColumn(item, columnId);
             if (!didMove) return;
           }
-          await this.pinStore.unpin(dragId);
+          if (!(await this.setItemPinned(item, false))) return;
           // Set drop position in the target column
           setTimeout(
             () => {
@@ -1459,6 +1500,19 @@ export class ListPanel {
       if (movedSource.state !== source.state) {
         await this.moveItemState(movedSource, source.state);
       }
+      return;
+    }
+
+    if (
+      parent &&
+      !(await this.setItemPinned(movedSource, this.pinStore?.isPinned(parent.id) ?? false))
+    ) {
+      if (movedSource.state !== source.state) await this.moveItemState(movedSource, source.state);
+      const oldParentId = this.getParentId(source);
+      await this.mover.setParent(
+        file as TFile,
+        this.items.find((item) => item.id === oldParentId) ?? null,
+      );
       return;
     }
 
