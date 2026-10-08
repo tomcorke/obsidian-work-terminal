@@ -91,6 +91,14 @@ export class TaskTabBrokerTransport {
     this.server = null;
     for (const connection of this.connections) {
       connection.closing = true;
+      if (options.reloading) {
+        for (const id of connection.inFlight.keys()) {
+          this.write(
+            connection.socket,
+            transportFailure(id, "BROKER_RELOADING", "The broker is reloading"),
+          );
+        }
+      }
       for (const controller of connection.inFlight.values()) controller.abort();
       connection.mailboxUnsubscribe?.();
       connection.mailboxUnsubscribe = undefined;
@@ -363,7 +371,13 @@ export class TaskTabBrokerTransport {
 
 function transportFailure(
   id: string | null,
-  code: "INVALID_FRAME" | "UNSUPPORTED_VERSION" | "AUTH_REQUIRED" | "LIMIT_EXCEEDED" | "INTERNAL",
+  code:
+    | "INVALID_FRAME"
+    | "UNSUPPORTED_VERSION"
+    | "AUTH_REQUIRED"
+    | "LIMIT_EXCEEDED"
+    | "BROKER_RELOADING"
+    | "INTERNAL",
   message: string,
   details?: Record<string, unknown>,
 ): BrokerResponse {
@@ -375,7 +389,7 @@ function transportFailure(
     error: {
       code,
       message,
-      retryable: code === "INTERNAL",
+      retryable: code === "INTERNAL" || code === "BROKER_RELOADING",
       ...(details ? { details } : {}),
     },
   };

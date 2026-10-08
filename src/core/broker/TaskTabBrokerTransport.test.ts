@@ -136,7 +136,10 @@ describe("TaskTabBrokerTransport", () => {
         ok: true,
         result: { caller, capabilities: ["discover"], brokerEpoch: expect.any(String) },
       },
-      { ok: true, result: [{ id: "active", label: "Active" }] },
+      {
+        ok: true,
+        result: { categories: [{ id: "active", label: "Active" }], truncated: false },
+      },
     ]);
     if (process.platform !== "win32") expect(statSync(endpoint).mode & 0o777).toBe(0o600);
   });
@@ -315,6 +318,56 @@ describe("TaskTabBrokerTransport", () => {
         },
       },
     ]);
+  });
+
+  it("completes pending requests with BROKER_RELOADING before closing", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wt-broker-test-"));
+    const endpoint = join(directory, "broker.sock");
+    const { broker, token, lifecycleListeners } = makeBroker(["wait"]);
+    const transport = new TaskTabBrokerTransport(broker, endpoint);
+    cleanup.push(() => rmSync(directory, { recursive: true, force: true }));
+    await transport.start();
+
+    const socket = connect(endpoint);
+    const frames: any[] = [];
+    await new Promise<void>((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    socket.on("data", (chunk) => {
+      for (const line of chunk.toString("utf8").split("\n")) {
+        if (line) frames.push(JSON.parse(line));
+      }
+    });
+    socket.write(`${JSON.stringify({ v: 1, type: "hello", id: "hello", token })}\n`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    socket.write(
+      `${JSON.stringify({
+        v: 1,
+        type: "request",
+        id: "wait",
+        method: "waitForTab",
+        params: { target: caller, states: ["idle"], timeoutMs: 60_000 },
+      })}\n`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(lifecycleListeners.size).toBe(1);
+
+    const ended = new Promise<void>((resolve) => socket.once("end", resolve));
+    await transport.stop({ reloading: true });
+    await ended;
+
+    expect(frames).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "wait",
+          ok: false,
+          error: expect.objectContaining({ code: "BROKER_RELOADING", retryable: true }),
+        }),
+        expect.objectContaining({ type: "event", event: "broker.reloading" }),
+      ]),
+    );
+    expect(lifecycleListeners.size).toBe(0);
   });
 
   it("rebinds the same private endpoint so live callers can reconnect after reload", async () => {
