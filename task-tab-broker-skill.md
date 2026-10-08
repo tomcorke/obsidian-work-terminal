@@ -12,6 +12,8 @@ node /path/to/work-terminal/task-tab-broker.js listTabs '{"taskId":"<stable-task
 node /path/to/work-terminal/task-tab-broker.js getSubtasks '{"taskId":"<stable-task-id>","maxDepth":8}'
 node /path/to/work-terminal/task-tab-broker.js getParentTasks '{"taskId":"<stable-task-id>","maxDepth":8}'
 node /path/to/work-terminal/task-tab-broker.js readOutput '{"target":{"taskId":"<id>","tabId":"<id>","generation":1},"maxLines":50}'
+node /path/to/work-terminal/task-tab-broker.js createTab '{"taskId":"<id>","profileId":"<profile-id>","initialPrompt":"Start with the failing test"}'
+node /path/to/work-terminal/task-tab-broker.js promptTab '{"target":{"taskId":"<id>","tabId":"<id>","generation":1},"prompt":"Continue"}'
 ```
 
 The helper authenticates from its injected caller context, reconnects with bounded backoff during plugin reload, and prints one structured response. A non-zero exit means the response or transport failed.
@@ -27,4 +29,4 @@ The helper authenticates from its injected caller context, reconnects with bound
 - Never print, persist, send, or include `WORK_TERMINAL_BROKER_TOKEN` or the endpoint in diagnostics.
 - Agent state is heuristic. `idle` is not proof that work completed.
 
-Only the read-only methods above are available in this release slice. Later broker methods require their separately named profile grant and should not be guessed before the host advertises them.
+The discovery and output methods are read-only. `createTab` and `promptTab` require their separately named profile grants, accept at most 16 KiB of prompt text, and never focus or select the target. `createTab` accepts only a stored profile ID, while `promptTab` accepts only an exact generation-pinned target; neither accepts commands, process handles, or arbitrary key input. Later broker methods require their separately named profile grant and should not be guessed before the host advertises them.

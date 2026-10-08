@@ -24,10 +24,14 @@ export const BROKER_HIERARCHY_MAX_RESULTS = 500;
 export const BROKER_OUTPUT_DEFAULT_LINES = 50;
 export const BROKER_OUTPUT_MAX_LINES = 200;
 export const BROKER_OUTPUT_MAX_BYTES = 48 * 1024;
+export const BROKER_PROMPT_MAX_BYTES = 16 * 1024;
+export const BROKER_TABS_PER_TASK_MAX = 32;
 
 const RATE_WINDOW_MS = 60_000;
 const GENERAL_RATE_LIMIT = 120;
 const OUTPUT_RATE_LIMIT = 60;
+const CREATE_RATE_LIMIT = 6;
+const PROMPT_RATE_LIMIT = 20;
 const AUTH_FAILURE_RATE_LIMIT = 20;
 const TOMBSTONE_TTL_MS = 60 * 60_000;
 const TOMBSTONE_LIMIT = 10_000;
@@ -41,7 +45,9 @@ export type BrokerMethod =
   | "listTabs"
   | "getSubtasks"
   | "getParentTasks"
-  | "readOutput";
+  | "readOutput"
+  | "createTab"
+  | "promptTab";
 
 export interface BrokerRequest {
   v: number;
@@ -63,6 +69,7 @@ export interface BrokerError {
     | "RATE_LIMITED"
     | "NOT_FOUND"
     | "STALE_TARGET"
+    | "TARGET_EXITED"
     | "TARGET_UNAVAILABLE"
     | "INTERNAL";
   message: string;
@@ -85,7 +92,12 @@ export interface BrokerTaskCatalogue {
   ): Promise<TaskTraversalResult | null>;
 }
 
-/** Handle-free subset of TabManager used by the broker. */
+export type BrokerCreateTabResult =
+  | { status: "created"; tab: TerminalTabHostSnapshot }
+  | { status: "profile-not-found" }
+  | { status: "unavailable" };
+
+/** Handle-free terminal host primitives used by the broker. */
 export interface BrokerTerminalHost {
   getTabHostSnapshots(taskId: string): readonly TerminalTabHostSnapshot[];
   getAllTabHostSnapshots(): readonly TerminalTabHostSnapshot[];
@@ -93,6 +105,15 @@ export interface BrokerTerminalHost {
     target: TerminalTabTarget,
     options: { maxLines: number; maxBytes: number },
   ): CleanOutputRead | null;
+  createProfileTab?(
+    taskId: string,
+    profileId: string,
+    initialPrompt?: string,
+  ): Promise<BrokerCreateTabResult>;
+  promptTab?(
+    target: TerminalTabTarget,
+    prompt: string,
+  ): "accepted" | "exited" | "unavailable" | null;
 }
 
 export interface BrokerCallerGrant {
@@ -118,6 +139,8 @@ interface StoredCallerGrant extends BrokerCallerGrant {
   digest: Buffer;
   requestTimes: number[];
   outputRequestTimes: number[];
+  createRequestTimes: number[];
+  promptRequestTimes: number[];
 }
 
 interface KnownTab {
@@ -131,6 +154,8 @@ export interface BrokerRuntimeState {
     digest: string;
     requestTimes: number[];
     outputRequestTimes: number[];
+    createRequestTimes?: number[];
+    promptRequestTimes?: number[];
   }>;
   knownTabs: Array<[string, KnownTab]>;
   failedAuthTimes: number[];
@@ -174,6 +199,8 @@ export class TaskTabBroker {
           digest: Buffer.from(caller.digest, "base64"),
           requestTimes: [...caller.requestTimes],
           outputRequestTimes: [...caller.outputRequestTimes],
+          createRequestTimes: [...(caller.createRequestTimes ?? [])],
+          promptRequestTimes: [...(caller.promptRequestTimes ?? [])],
         });
       }
       for (const [tabId, known] of runtime.knownTabs) {
@@ -197,6 +224,8 @@ export class TaskTabBroker {
         digest: caller.digest.toString("base64"),
         requestTimes: [...caller.requestTimes],
         outputRequestTimes: [...caller.outputRequestTimes],
+        createRequestTimes: [...caller.createRequestTimes],
+        promptRequestTimes: [...caller.promptRequestTimes],
       })),
       knownTabs: [...this.knownTabs].map(([tabId, known]) => [tabId, { ...known }]),
       failedAuthTimes: [...this.failedAuthTimes],
@@ -228,6 +257,8 @@ export class TaskTabBroker {
       digest: crypto.createHash("sha256").update(token).digest(),
       requestTimes: [],
       outputRequestTimes: [],
+      createRequestTimes: [],
+      promptRequestTimes: [],
     });
     return token;
   }
@@ -328,7 +359,7 @@ export class TaskTabBroker {
   ): Promise<BrokerResponse> {
     const id = request.id;
     try {
-      const required: BrokerCapability = request.method === "readOutput" ? "read" : "discover";
+      const required = requiredCapability(request.method);
       const currentCapabilities = new Set(this.getProfileCapabilities(caller.profileId));
       if (!caller.capabilities.includes(required) || !currentCapabilities.has(required)) {
         return failure(id, "CAPABILITY_DENIED", `The caller lacks ${required}`, false, {
@@ -364,11 +395,43 @@ export class TaskTabBroker {
         );
       }
       if (request.method === "readOutput") return this.readOutput(id, params);
+      if (request.method === "promptTab") return this.promptTab(id, params);
 
       const taskId = params.taskId;
       if (!validIdentifier(taskId)) return invalidIdentifier(id, "taskId");
       const task = await this.catalogue.getTask(taskId);
       if (!task) return failure(id, "NOT_FOUND", "The task was not found");
+      if (request.method === "createTab") {
+        const tabs = this.collectTabs(taskId);
+        if (hasDuplicateTargets(tabs)) {
+          return failure(id, "TARGET_UNAVAILABLE", "A tab has multiple host owners", true);
+        }
+        if (tabs.length >= BROKER_TABS_PER_TASK_MAX) {
+          return failure(id, "LIMIT_EXCEEDED", "The task has reached its tab limit", false, {
+            limit: BROKER_TABS_PER_TASK_MAX,
+          });
+        }
+        const owners = this.findTargetOwners(caller.caller);
+        if (owners.length !== 1 || !owners[0].createProfileTab) {
+          return failure(id, "TARGET_UNAVAILABLE", "The caller terminal host is unavailable", true);
+        }
+        const created = await owners[0].createProfileTab(
+          taskId,
+          params.profileId as string,
+          params.initialPrompt as string | undefined,
+        );
+        if (created.status === "profile-not-found") {
+          return failure(id, "NOT_FOUND", "The profile was not found");
+        }
+        if (created.status === "unavailable") {
+          return failure(id, "TARGET_UNAVAILABLE", "The host could not create the tab", true);
+        }
+        if (created.tab.taskId !== taskId) {
+          return failure(id, "INTERNAL", "The host returned an invalid tab", true);
+        }
+        this.rememberTab(created.tab);
+        return success(id, created.tab);
+      }
       if (request.method === "getTask") return success(id, task);
       if (request.method === "listTabs") {
         const tabs = this.collectTabs(taskId);
@@ -401,6 +464,38 @@ export class TaskTabBroker {
     } catch {
       return failure(id, "INTERNAL", "The broker could not complete the request", true);
     }
+  }
+
+  private promptTab(id: string, params: Record<string, unknown>): BrokerResponse {
+    const target = parseTarget(params.target);
+    if (!target) {
+      return failure(id, "INVALID_ARGUMENT", "A valid target is required", false, {
+        argument: "target",
+      });
+    }
+    const owners = this.findTargetOwners(target);
+    if (owners.length > 1) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target has multiple host owners", true);
+    }
+    if (owners.length === 0) {
+      this.pruneKnownTabs();
+      const code = this.knownTabs.has(target.tabId) ? "STALE_TARGET" : "NOT_FOUND";
+      return failure(
+        id,
+        code,
+        code === "STALE_TARGET" ? "The target is stale" : "The tab was not found",
+      );
+    }
+    if (!owners[0].promptTab) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target host is unavailable", true);
+    }
+    const result = owners[0].promptTab(target, params.prompt as string);
+    if (result === null) return failure(id, "STALE_TARGET", "The target became stale");
+    if (result === "exited") return failure(id, "TARGET_EXITED", "The target process has exited");
+    if (result === "unavailable") {
+      return failure(id, "TARGET_UNAVAILABLE", "The target could not accept the prompt", true);
+    }
+    return success(id, { target, affectedGeneration: target.generation });
   }
 
   private readOutput(id: string, params: Record<string, unknown>): BrokerResponse {
@@ -467,11 +562,15 @@ export class TaskTabBroker {
   ): BrokerError | null {
     const generalRetry = consumeRate(caller.requestTimes, GENERAL_RATE_LIMIT, now);
     if (generalRetry !== null) return rateError(generalRetry);
-    if (method === "readOutput") {
-      const outputRetry = consumeRate(caller.outputRequestTimes, OUTPUT_RATE_LIMIT, now);
-      if (outputRetry !== null) return rateError(outputRetry);
-    }
-    return null;
+    const limits: Partial<Record<string, [number[], number]>> = {
+      readOutput: [caller.outputRequestTimes, OUTPUT_RATE_LIMIT],
+      createTab: [caller.createRequestTimes, CREATE_RATE_LIMIT],
+      promptTab: [caller.promptRequestTimes, PROMPT_RATE_LIMIT],
+    };
+    const specific = limits[method];
+    if (!specific) return null;
+    const retryAfterMs = consumeRate(specific[0], specific[1], now);
+    return retryAfterMs === null ? null : rateError(retryAfterMs);
   }
 
   private collectTabs(taskId: string): TerminalTabHostSnapshot[] {
@@ -595,10 +694,43 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     getSubtasks: ["taskId", "maxDepth", "maxResults"],
     getParentTasks: ["taskId", "maxDepth", "maxResults"],
     readOutput: ["target", "maxLines", "maxBytes"],
+    createTab: ["taskId", "profileId", "initialPrompt"],
+    promptTab: ["target", "prompt"],
   };
   if (!Object.prototype.hasOwnProperty.call(allowed, method)) return invalidArgumentError("method");
   const unexpected = Object.keys(params).find((key) => !allowed[method].includes(key));
-  return unexpected ? invalidArgumentError(unexpected) : null;
+  if (unexpected) return invalidArgumentError(unexpected);
+  if (method === "createTab") {
+    if (!validIdentifier((params as Record<string, unknown>).profileId)) {
+      return invalidArgumentError("profileId");
+    }
+    const initialPrompt = (params as Record<string, unknown>).initialPrompt;
+    if (initialPrompt !== undefined) return validatePrompt("initialPrompt", initialPrompt);
+  }
+  if (method === "promptTab") {
+    return validatePrompt("prompt", (params as Record<string, unknown>).prompt);
+  }
+  return null;
+}
+
+function requiredCapability(method: string): BrokerCapability {
+  if (method === "readOutput") return "read";
+  if (method === "createTab") return "create-tab";
+  if (method === "promptTab") return "prompt-tab";
+  return "discover";
+}
+
+function validatePrompt(argument: string, value: unknown): BrokerError | null {
+  if (typeof value !== "string") return invalidArgumentError(argument);
+  if (Buffer.byteLength(value) > BROKER_PROMPT_MAX_BYTES) {
+    return {
+      code: "LIMIT_EXCEEDED",
+      message: `${argument} exceeds its limit`,
+      retryable: false,
+      details: { argument, limit: BROKER_PROMPT_MAX_BYTES },
+    };
+  }
+  return null;
 }
 
 function validIdentifier(value: unknown): value is string {
