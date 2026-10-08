@@ -142,3 +142,17 @@ All new placeholder variables must use the `$name` form (camelCase, dollar prefi
 - **Resize protocol**: `ESC]777;resize;COLS;ROWS BEL` through stdin; pty-wrapper.py intercepts and applies.
 - **Keyboard capture**: Two layers (bubble + capture phase) intercept keys before Obsidian. Option+Arrow, Option+B/F/D, Shift+Enter, Option+Backspace, Cmd+Left/Right. xterm keeps Meta behavior by default, while Option+digit printable combos are preserved for layout-specific characters.
 - **State detection reads xterm buffer, not stdout**: Immune to status line redraws. Reads last 30 buffer lines and pattern-matches the tail for waiting/active detection. Handles narrow terminal wrapping via joined-tail fallback.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues for `tomcorke/obsidian-work-terminal`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` and `docs/adr/`. See `docs/agents/domain.md`.
