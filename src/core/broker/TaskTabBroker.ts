@@ -558,7 +558,7 @@ export class TaskTabBroker {
         const page = parseListPage(id, params);
         if ("response" in page) return page.response;
         const categories = await this.catalogue.listCategories();
-        return success(id, paginate(categories, page.offset, page.limit, "categories"));
+        return paginate(id, categories, page.offset, page.limit, "categories");
       }
       if (request.method === "listTasks") {
         const page = parseListPage(id, params);
@@ -566,14 +566,12 @@ export class TaskTabBroker {
         if (params.categoryId !== undefined && !validIdentifier(params.categoryId)) {
           return invalidIdentifier(id, "categoryId");
         }
-        return success(
-          id,
-          await this.catalogue.listTasks({
-            categoryId: params.categoryId as string | undefined,
-            limit: page.limit,
-            ...(params.cursor !== undefined ? { cursor: params.cursor as string } : {}),
-          }),
-        );
+        const result = await this.catalogue.listTasks({
+          categoryId: params.categoryId as string | undefined,
+          limit: page.limit,
+          ...(params.cursor !== undefined ? { cursor: params.cursor as string } : {}),
+        });
+        return fitPage(id, result.tasks, page.offset, result.truncated, "tasks");
       }
       if (request.method === "readOutput") return this.readOutput(id, params);
       if (request.method === "waitForTab") return this.waitForTab(caller, id, params, signal);
@@ -641,7 +639,7 @@ export class TaskTabBroker {
         if (hasDuplicateTargets(tabs)) {
           return failure(id, "TARGET_UNAVAILABLE", "A tab has multiple host owners", true);
         }
-        return success(id, paginate(tabs, page.offset, page.limit, "tabs"));
+        return paginate(id, tabs, page.offset, page.limit, "tabs");
       }
 
       const maxDepth = params.maxDepth ?? BROKER_HIERARCHY_DEFAULT_DEPTH;
@@ -1407,20 +1405,44 @@ function parseListPage(
 }
 
 function paginate<T>(
+  id: string,
   values: readonly T[],
   offset: number,
   limit: number,
   key: "categories" | "tabs",
-): Record<string, unknown> {
+): BrokerResponse {
   const items = values.slice(offset, offset + limit);
-  const truncated = offset + items.length < values.length;
-  return {
-    [key]: items,
-    truncated,
-    ...(truncated
-      ? { nextCursor: Buffer.from(String(offset + items.length)).toString("base64url") }
-      : {}),
-  };
+  return fitPage(id, items, offset, offset + items.length < values.length, key);
+}
+
+function fitPage<T>(
+  id: string,
+  values: readonly T[],
+  offset: number,
+  hasMore: boolean,
+  key: "categories" | "tasks" | "tabs",
+): BrokerResponse {
+  const items = [...values];
+  let truncated = hasMore;
+  const buildResponse = () =>
+    success(id, {
+      [key]: items,
+      truncated,
+      ...(truncated
+        ? { nextCursor: Buffer.from(String(offset + items.length)).toString("base64url") }
+        : {}),
+    });
+  let response = buildResponse();
+  while (items.length > 0 && encodedSize(response) > BROKER_FRAME_MAX_BYTES) {
+    items.pop();
+    truncated = true;
+    response = buildResponse();
+  }
+  return items.length > 0 || values.length === 0
+    ? response
+    : failure(id, "LIMIT_EXCEEDED", "A list item exceeds the frame limit", false, {
+        limit: BROKER_FRAME_MAX_BYTES,
+      });
 }
 
 function parseTarget(value: unknown): TerminalTabTarget | null {

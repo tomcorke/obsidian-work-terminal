@@ -6,7 +6,12 @@ import type {
   TerminalTabHostSnapshot,
   TerminalTabTarget,
 } from "../terminal/TerminalHost";
-import { TaskTabBroker, type BrokerCapability, type BrokerTerminalHost } from "./TaskTabBroker";
+import {
+  BROKER_FRAME_MAX_BYTES,
+  TaskTabBroker,
+  type BrokerCapability,
+  type BrokerTerminalHost,
+} from "./TaskTabBroker";
 
 const caller: TerminalTabTarget = { taskId: "task-a", tabId: "tab-a", generation: 1 };
 const callerTab: TerminalTabHostSnapshot = {
@@ -793,6 +798,23 @@ describe("TaskTabBroker read-only dispatcher", () => {
       ok: true,
       result: { categories: [{ id: "state-50", label: "State 50" }], truncated: false },
     });
+
+    categoryContext.catalogue.listCategories = async () =>
+      Array.from({ length: 50 }, (_, index) => ({
+        id: `large-${index}`,
+        label: "x".repeat(2_000),
+      }));
+    const frameBoundedPage = await categoryContext.broker.dispatch(
+      categoryContext.token,
+      request("listCategories", { limit: 50 }, "frame-bounded"),
+    );
+    expect(frameBoundedPage).toMatchObject({
+      ok: true,
+      result: { categories: expect.any(Array), truncated: true, nextCursor: expect.any(String) },
+    });
+    expect(Buffer.byteLength(JSON.stringify(frameBoundedPage))).toBeLessThanOrEqual(
+      BROKER_FRAME_MAX_BYTES,
+    );
 
     await expect(
       broker.dispatch(token, request("listTasks", { limit: 201 })),
