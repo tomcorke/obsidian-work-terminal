@@ -1104,7 +1104,7 @@ export class TerminalTab {
     return this.commandArgs ? [...this.commandArgs] : undefined;
   }
 
-  show(): void {
+  show(focus = true): void {
     // Backfill linkHandler for already-live terminals that were created before
     // the Electron openExternal handler was added (pre-#156 fix). Without this,
     // OSC 8 link clicks fall through to xterm's confirm() + window.open() no-op.
@@ -1129,7 +1129,7 @@ export class TerminalTab {
         this.terminal.refresh(0, this.terminal.rows - 1);
         this.terminal.scrollToBottom();
         this.syncViewportScrollArea();
-        this.terminal.focus();
+        if (focus) this.terminal.focus();
         requestAnimationFrame(() => {
           if (this._isDisposed) return;
           this.recoverBlankRendererIfNeeded();

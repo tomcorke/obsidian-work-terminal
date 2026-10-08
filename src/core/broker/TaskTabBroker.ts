@@ -48,6 +48,8 @@ const BROKER_WAIT_LIMIT = 128;
 const MESSAGE_RATE_LIMIT = 30;
 const CREATE_RATE_LIMIT = 6;
 const PROMPT_RATE_LIMIT = 20;
+const INTERRUPT_RATE_LIMIT = 10;
+const CLOSE_RATE_LIMIT = 5;
 const AUTH_FAILURE_RATE_LIMIT = 20;
 const TOMBSTONE_TTL_MS = 60 * 60_000;
 const TOMBSTONE_LIMIT = 10_000;
@@ -69,7 +71,9 @@ export type BrokerMethod =
   | "receiveMessages"
   | "ackMessages"
   | "createTab"
-  | "promptTab";
+  | "promptTab"
+  | "interruptTab"
+  | "closeTab";
 
 export interface BrokerRequest {
   v: number;
@@ -143,6 +147,8 @@ export interface BrokerTerminalHost {
     target: TerminalTabTarget,
     prompt: string,
   ): "accepted" | "exited" | "unavailable" | null;
+  interruptTab?(target: TerminalTabTarget): "accepted" | "exited" | "unavailable" | null;
+  closeTab?(target: TerminalTabTarget): { processWasRunning: boolean } | null;
 }
 
 export interface BrokerCallerGrant {
@@ -193,6 +199,8 @@ interface StoredCallerGrant extends BrokerCallerGrant {
   messageRequestTimes: number[];
   createRequestTimes: number[];
   promptRequestTimes: number[];
+  interruptRequestTimes: number[];
+  closeRequestTimes: number[];
   activeWaits: number;
 }
 
@@ -233,6 +241,8 @@ export interface BrokerRuntimeState {
     messageRequestTimes: number[];
     createRequestTimes?: number[];
     promptRequestTimes?: number[];
+    interruptRequestTimes?: number[];
+    closeRequestTimes?: number[];
   }>;
   knownTabs: Array<[string, KnownTab]>;
   mailboxes: Array<[string, StoredMailbox]>;
@@ -292,6 +302,8 @@ export class TaskTabBroker {
           messageRequestTimes: [...(caller.messageRequestTimes ?? [])],
           createRequestTimes: [...(caller.createRequestTimes ?? [])],
           promptRequestTimes: [...(caller.promptRequestTimes ?? [])],
+          interruptRequestTimes: [...(caller.interruptRequestTimes ?? [])],
+          closeRequestTimes: [...(caller.closeRequestTimes ?? [])],
           activeWaits: 0,
         });
       }
@@ -339,6 +351,8 @@ export class TaskTabBroker {
         messageRequestTimes: [...caller.messageRequestTimes],
         createRequestTimes: [...caller.createRequestTimes],
         promptRequestTimes: [...caller.promptRequestTimes],
+        interruptRequestTimes: [...caller.interruptRequestTimes],
+        closeRequestTimes: [...caller.closeRequestTimes],
       })),
       knownTabs: [...this.knownTabs].map(([tabId, known]) => [tabId, { ...known }]),
       mailboxes: [...this.mailboxes].map(([key, mailbox]) => [
@@ -396,6 +410,8 @@ export class TaskTabBroker {
       messageRequestTimes: [],
       createRequestTimes: [],
       promptRequestTimes: [],
+      interruptRequestTimes: [],
+      closeRequestTimes: [],
       activeWaits: 0,
     });
     return token;
@@ -560,6 +576,8 @@ export class TaskTabBroker {
       if (request.method === "receiveMessages") return this.receiveMessages(caller, id, params);
       if (request.method === "ackMessages") return this.ackMessages(caller, id, params);
       if (request.method === "promptTab") return this.promptTab(id, params);
+      if (request.method === "interruptTab") return this.interruptTab(id, params);
+      if (request.method === "closeTab") return this.closeTab(id, params);
 
       const taskId = params.taskId;
       if (!validIdentifier(taskId)) return invalidIdentifier(id, "taskId");
@@ -665,6 +683,71 @@ export class TaskTabBroker {
       return failure(id, "TARGET_UNAVAILABLE", "The target could not accept the prompt", true);
     }
     return success(id, { target, affectedGeneration: target.generation });
+  }
+
+  private interruptTab(id: string, params: Record<string, unknown>): BrokerResponse {
+    const resolved = this.resolveControlTarget(id, params.target);
+    if ("response" in resolved) return resolved.response;
+    if (!resolved.host.interruptTab) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target host is unavailable", true);
+    }
+    const result = resolved.host.interruptTab(resolved.target);
+    if (result === null) return failure(id, "STALE_TARGET", "The target became stale");
+    if (result === "exited") return failure(id, "TARGET_EXITED", "The target process has exited");
+    if (result === "unavailable") {
+      return failure(id, "TARGET_UNAVAILABLE", "The target could not be interrupted", true);
+    }
+    return success(id, {
+      target: resolved.target,
+      affectedGeneration: resolved.target.generation,
+    });
+  }
+
+  private closeTab(id: string, params: Record<string, unknown>): BrokerResponse {
+    const resolved = this.resolveControlTarget(id, params.target);
+    if ("response" in resolved) return resolved.response;
+    if (!resolved.host.closeTab) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target host is unavailable", true);
+    }
+    const result = resolved.host.closeTab(resolved.target);
+    if (result === null) return failure(id, "STALE_TARGET", "The target became stale");
+    return success(id, {
+      target: resolved.target,
+      affectedGeneration: resolved.target.generation,
+      processWasRunning: result.processWasRunning,
+    });
+  }
+
+  private resolveControlTarget(
+    id: string,
+    value: unknown,
+  ): { target: TerminalTabTarget; host: BrokerTerminalHost } | { response: BrokerResponse } {
+    const target = parseTarget(value);
+    if (!target) {
+      return {
+        response: failure(id, "INVALID_ARGUMENT", "A valid target is required", false, {
+          argument: "target",
+        }),
+      };
+    }
+    const owners = this.findTargetOwners(target);
+    if (owners.length > 1) {
+      return {
+        response: failure(id, "TARGET_UNAVAILABLE", "The target has multiple host owners", true),
+      };
+    }
+    if (owners.length === 0) {
+      this.pruneKnownTabs();
+      const code = this.knownTabs.has(target.tabId) ? "STALE_TARGET" : "NOT_FOUND";
+      return {
+        response: failure(
+          id,
+          code,
+          code === "STALE_TARGET" ? "The target is stale" : "The tab was not found",
+        ),
+      };
+    }
+    return { target, host: owners[0] };
   }
 
   private readOutput(id: string, params: Record<string, unknown>): BrokerResponse {
@@ -1089,6 +1172,8 @@ export class TaskTabBroker {
       sendMessage: [caller.messageRequestTimes, MESSAGE_RATE_LIMIT],
       createTab: [caller.createRequestTimes, CREATE_RATE_LIMIT],
       promptTab: [caller.promptRequestTimes, PROMPT_RATE_LIMIT],
+      interruptTab: [caller.interruptRequestTimes, INTERRUPT_RATE_LIMIT],
+      closeTab: [caller.closeRequestTimes, CLOSE_RATE_LIMIT],
     };
     const specific = limits[method];
     if (!specific) return null;
@@ -1198,6 +1283,8 @@ function requiredCapability(method: string): BrokerCapability {
   if (["sendMessage", "receiveMessages", "ackMessages"].includes(method)) return "message";
   if (method === "createTab") return "create-tab";
   if (method === "promptTab") return "prompt-tab";
+  if (method === "interruptTab") return "interrupt-tab";
+  if (method === "closeTab") return "close-tab";
   return "discover";
 }
 
@@ -1310,6 +1397,8 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     ackMessages: ["messageIds"],
     createTab: ["taskId", "profileId", "initialPrompt"],
     promptTab: ["target", "prompt"],
+    interruptTab: ["target"],
+    closeTab: ["target"],
   };
   if (!Object.prototype.hasOwnProperty.call(allowed, method)) return invalidArgumentError("method");
   const unexpected = Object.keys(params).find((key) => !allowed[method].includes(key));

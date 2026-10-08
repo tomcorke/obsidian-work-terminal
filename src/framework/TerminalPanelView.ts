@@ -1430,6 +1430,8 @@ export class TerminalPanelView {
       createProfileTab: (taskId, profileId, initialPrompt) =>
         this.createBrokerProfileTab(taskId, profileId, initialPrompt),
       promptTab: (target, prompt) => this.tabManager.promptTab(target, prompt),
+      interruptTab: (target) => this.tabManager.interruptTab(target),
+      closeTab: (target) => this.tabManager.closeHostTab(target),
     };
   }
 
