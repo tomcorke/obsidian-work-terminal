@@ -8,7 +8,28 @@ interface PiSessionMapping {
   pid: number;
   sessionId: string;
   sessionFile?: string;
+  state?: "active" | "idle";
+  seq?: number;
   updatedAt: number;
+}
+
+export interface PiLifecycleReport {
+  state: "active" | "idle";
+  seq: number;
+}
+
+export interface PiLifecycleAuthority {
+  accepted: boolean;
+  state?: "active" | "idle";
+  seq: number;
+}
+
+export function acceptPiLifecycleReport(
+  current: PiLifecycleAuthority,
+  report: PiLifecycleReport | null,
+): PiLifecycleAuthority {
+  if (!report || (current.accepted && report.seq <= current.seq)) return current;
+  return { accepted: true, state: report.state, seq: report.seq };
 }
 
 interface SessionEntry {
@@ -51,6 +72,30 @@ export function prunePiSessionMappings(directory: string): void {
     }
   } catch {
     // Directory does not exist yet or is unreadable.
+  }
+}
+
+export function readPiLifecycleReport(
+  mappingPath: string,
+  expectedToken: string,
+): PiLifecycleReport | null {
+  const fs = electronRequire("fs") as typeof import("fs");
+  try {
+    const mapping = JSON.parse(fs.readFileSync(mappingPath, "utf8")) as PiSessionMapping;
+    if (
+      mapping.token !== expectedToken ||
+      !Number.isSafeInteger(mapping.pid) ||
+      mapping.pid <= 0 ||
+      !isProcessAlive(mapping.pid) ||
+      (mapping.state !== "active" && mapping.state !== "idle") ||
+      !Number.isSafeInteger(mapping.seq) ||
+      mapping.seq! < 0
+    ) {
+      return null;
+    }
+    return { state: mapping.state, seq: mapping.seq! };
+  } catch {
+    return null;
   }
 }
 

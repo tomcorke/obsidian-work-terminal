@@ -55,6 +55,9 @@ export interface StoredSession {
   commandArgs?: string[];
   piSessionMappingPath?: string;
   piSessionLaunchToken?: string;
+  piLifecycleAuthority?: boolean;
+  piLifecycleSeq?: number;
+  piLifecycleState?: "active" | "idle";
   outputDataBridge?: {
     callback?: (data: Buffer | string) => void;
     requestTitle?: (force?: boolean) => void;
