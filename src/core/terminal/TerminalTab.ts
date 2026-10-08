@@ -178,6 +178,7 @@ export class TerminalTab {
   private static MIN_FIT_WIDTH = 200;
   private cwd: string = "";
   private spawnTime = 0;
+  private _processStarted = false;
 
   // Agent state detection
   private _agentState: AgentState = "inactive";
@@ -559,6 +560,7 @@ export class TerminalTab {
   // ---------------------------------------------------------------------------
 
   private wireProcess(proc: ChildProcess): void {
+    this._processStarted = true;
     this.terminal.onData((data) => {
       if (this._isDisposed) return;
       if (proc.stdin && !proc.stdin.destroyed) {
@@ -1025,7 +1027,7 @@ export class TerminalTab {
       sessionType: this.sessionType,
       ...(this.profileId ? { profileId: this.profileId } : {}),
       state: this.getHostRuntimeState(),
-      processStatus: this.isProcessRunning() ? "running" : "exited",
+      processStatus: !this._processStarted || this.isProcessRunning() ? "running" : "exited",
       latestSequence: this.ensureTerminalHostBridge().latestSequence(),
     });
   }
@@ -1537,6 +1539,7 @@ export class TerminalTab {
     tab.unicode11Addon = stored.unicode11Addon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
+    tab._processStarted = Boolean(stored.process);
     tab._terminalHostBridge = stored.terminalHostBridge ?? new TerminalHostBridge();
     tab._terminalHostBridge.clearListeners();
     tab.refreshHostTarget();

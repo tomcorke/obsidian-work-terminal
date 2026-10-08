@@ -673,6 +673,62 @@ describe("TaskTabBroker read-only dispatcher", () => {
     expect(focusEffects.focusTab).not.toHaveBeenCalled();
   });
 
+  it("drops a closed generation's grants, mailbox, and deduplication records", async () => {
+    const context = setup(["close-tab", "message"]);
+    const recipient = addMessageRecipient(context);
+    const send = await context.broker.dispatch(
+      context.token,
+      request("sendMessage", {
+        target: recipient.target,
+        clientMessageId: "before-close",
+        payload: "pending",
+      }),
+    );
+    expect(send).toMatchObject({ ok: true });
+    const messageId = (send as any).result.messageId;
+    await context.broker.dispatch(
+      recipient.token,
+      request("ackMessages", { messageIds: [messageId] }, "ack-before-close"),
+    );
+    await context.broker.dispatch(
+      context.token,
+      request(
+        "sendMessage",
+        { target: recipient.target, clientMessageId: "still-pending", payload: "pending" },
+        "pending-before-close",
+      ),
+    );
+    context.host.closeTab.mockImplementation(() => {
+      context.tabs.set(
+        recipient.target.taskId,
+        (context.tabs.get(recipient.target.taskId) ?? []).filter(
+          (tab) => tab.tabId !== recipient.target.tabId,
+        ),
+      );
+      return { processWasRunning: true };
+    });
+
+    await expect(
+      context.broker.dispatch(
+        context.token,
+        request("closeTab", { target: recipient.target }, "close-recipient"),
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(context.broker.hello(recipient.token, "closed-token")).toMatchObject({
+      ok: false,
+      error: { code: "AUTH_FAILED" },
+    });
+    const runtime = context.broker.exportRuntimeState();
+    expect(runtime.callers).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ grant: expect.objectContaining({ caller: recipient.target }) }),
+      ]),
+    );
+    expect(runtime.mailboxes).toEqual([]);
+    expect(runtime.deliveryRecords).toEqual([]);
+    expect(runtime.acknowledgedRecords).toEqual([]);
+  });
+
   it("rate limits interrupt and destructive close independently", async () => {
     const target = { taskId: "task-a", tabId: "missing", generation: 1 };
     const interrupts = setup(["interrupt-tab"]);
@@ -863,6 +919,12 @@ describe("TaskTabBroker read-only dispatcher", () => {
     });
     expect(() => broker.registerHost("vault-b", host)).toThrow(/another vault/);
     expect(() =>
+      broker.registerHost("vault-a", {
+        ...host,
+        getAllTabHostSnapshots: () => [callerTab],
+      }),
+    ).toThrow(/TARGET_UNAVAILABLE/);
+    expect(() =>
       broker.issueToken({
         vaultId: "vault-b",
         caller,
@@ -955,6 +1017,15 @@ describe("TaskTabBroker read-only dispatcher", () => {
         details: { requiredCapability: "discover" },
       },
     });
+
+    grants.set("profile-a", ["discover"]);
+    await expect(broker.dispatch(token, request("listCategories"))).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "CAPABILITY_DENIED",
+        details: { requiredCapability: "discover" },
+      },
+    });
   });
 });
 
@@ -984,7 +1055,7 @@ describe("TaskTabBroker lifecycle waits", () => {
       ok: true,
       result: { kind: "exit", exitCode: null, signal: null, sequence: "4" },
     });
-    expect([...lifecycleListeners.values()].flatMap((listeners) => [...listeners])).toHaveLength(0);
+    expect([...lifecycleListeners.values()].flatMap((listeners) => [...listeners])).toHaveLength(1);
   });
 
   it("waits for ordered state or exit events without polling and pins the generation", async () => {
@@ -1005,7 +1076,7 @@ describe("TaskTabBroker lifecycle waits", () => {
       ok: true,
       result: { kind: "state", state: "idle", sequence: "3" },
     });
-    expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+    expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(1);
 
     const exitWait = broker.dispatch(
       token,
@@ -1039,7 +1110,7 @@ describe("TaskTabBroker lifecycle waits", () => {
         ok: true,
         result: { kind: "timeout" },
       });
-      expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+      expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(1);
 
       const staleWait = broker.dispatch(
         token,
@@ -1073,7 +1144,7 @@ describe("TaskTabBroker lifecycle waits", () => {
       ok: false,
       error: { code: "BROKER_RELOADING", retryable: true },
     });
-    expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+    expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(1);
   });
 
   it("enforces wait arguments, capability, concurrency, and rate limits", async () => {
@@ -1288,6 +1359,29 @@ describe("TaskTabBroker mailbox", () => {
         messages: [{ clientMessageId: "before-reload", payload: { durableForReload: true } }],
       },
     });
+  });
+
+  it("cleans a mailbox and token when the host reports its generation closed", async () => {
+    const context = setup(["message"]);
+    const recipient = addMessageRecipient(context);
+    await context.broker.dispatch(
+      context.token,
+      request("sendMessage", {
+        target: recipient.target,
+        clientMessageId: "host-close",
+        payload: "pending",
+      }),
+    );
+
+    context.emitLifecycle({ type: "closed", target: recipient.target, sequence: "3" });
+
+    expect(context.broker.hello(recipient.token, "closed-token")).toMatchObject({
+      ok: false,
+      error: { code: "AUTH_FAILED" },
+    });
+    const runtime = context.broker.exportRuntimeState();
+    expect(runtime.mailboxes).toEqual([]);
+    expect(runtime.deliveryRecords).toEqual([]);
   });
 
   it("requires message capability from both caller and recipient", async () => {

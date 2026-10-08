@@ -1963,6 +1963,14 @@ describe("TerminalTab broker host primitives", () => {
     };
   }
 
+  it("does not report a fresh pre-spawn tab as exited", () => {
+    const { tab } = createHostTab();
+    (tab as any).process = null;
+    (tab as any)._processStarted = false;
+
+    expect(tab.getHostSnapshot().processStatus).toBe("running");
+  });
+
   it("reads bounded clean output without consulting the xterm buffer", () => {
     const { tab, emitOutput } = createHostTab();
 

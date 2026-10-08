@@ -85,8 +85,12 @@ function run(attempt = 0) {
         if (response.event === "mailbox.available") continue;
         if (response.event !== "broker.reloading") continue;
         socket.destroy();
-        if (method === "waitForTab" && greeted) {
-          console.error("Broker reloaded during wait; list tabs again before starting a new wait.");
+        if (greeted) {
+          console.error(
+            method === "waitForTab"
+              ? "Broker reloaded during wait; list tabs again before starting a new wait."
+              : "Broker reloaded after the request was sent; completion is unknown, so reconcile before retrying.",
+          );
           process.exitCode = 1;
         } else if (attempt < 4) setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
         else {
@@ -120,8 +124,12 @@ function run(attempt = 0) {
     }
   });
   socket.on("error", (error) => {
-    if (method === "waitForTab" && greeted) {
-      console.error("Broker disconnected during wait; list tabs again before starting a new wait.");
+    if (greeted) {
+      console.error(
+        method === "waitForTab"
+          ? "Broker disconnected during wait; list tabs again before starting a new wait."
+          : "Broker disconnected after the request was sent; completion is unknown, so reconcile before retrying.",
+      );
       process.exitCode = 1;
       return;
     }

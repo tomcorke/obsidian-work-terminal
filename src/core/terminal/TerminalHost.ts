@@ -53,7 +53,7 @@ export type TerminalLifecycleEvent =
 
 export type TerminalLifecycleListener = (event: TerminalLifecycleEvent) => void;
 
-function incrementDecimal(value: string): string {
+export function incrementDecimal(value: string): string {
   const digits = value.split("");
   for (let index = digits.length - 1; index >= 0; index--) {
     if (digits[index] === "9") {

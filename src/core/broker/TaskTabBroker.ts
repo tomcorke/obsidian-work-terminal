@@ -1,4 +1,5 @@
 import type { BrokerCapability } from "../agents/AgentProfile";
+import { incrementDecimal } from "../terminal/TerminalHost";
 import type {
   CleanOutputRead,
   TerminalHostRuntimeState,
@@ -262,7 +263,7 @@ export class TaskTabBroker {
   private readonly getProfileCapabilities: (profileId: string) => readonly string[];
   private readonly now: () => number;
   private readonly brokerEpoch: string;
-  private readonly hosts = new Set<BrokerTerminalHost>();
+  private readonly hosts = new Map<string, BrokerTerminalHost>();
   private readonly callers: StoredCallerGrant[] = [];
   private readonly knownTabs = new Map<string, KnownTab>();
   private readonly mailboxes = new Map<string, StoredMailbox>();
@@ -276,6 +277,7 @@ export class TaskTabBroker {
   private readonly failedAuthTimes: number[] = [];
   private readonly audit: BrokerAuditEntry[] = [];
   private readonly pendingTabCreations = new Map<string, number>();
+  private readonly targetCloseSubscriptions = new Map<string, () => void>();
   private activeWaits = 0;
 
   constructor(options: {
@@ -391,9 +393,21 @@ export class TaskTabBroker {
 
   registerHost(vaultId: string, host: BrokerTerminalHost): () => void {
     if (vaultId !== this.vaultId) throw new Error("Cannot register a host from another vault");
-    this.hosts.add(host);
-    for (const tab of host.getAllTabHostSnapshots()) this.rememberTab(tab);
-    return () => this.hosts.delete(host);
+    const tabs = host.getAllTabHostSnapshots();
+    for (const existing of this.hosts.values()) {
+      if (
+        tabs.some((tab) =>
+          existing.getAllTabHostSnapshots().some((candidate) => sameTarget(candidate, tab)),
+        )
+      ) {
+        throw new Error("TARGET_UNAVAILABLE: a tab already has a host owner");
+      }
+    }
+    const hostId = cryptoModule().randomUUID();
+    this.hosts.set(hostId, host);
+    for (const tab of tabs) this.rememberTab(tab);
+    for (const caller of this.callers) this.watchTargetClose(caller.caller);
+    return () => this.hosts.delete(hostId);
   }
 
   issueToken(grant: BrokerCallerGrant): string {
@@ -421,6 +435,7 @@ export class TaskTabBroker {
       closeRequestTimes: [],
       activeWaits: 0,
     });
+    this.watchTargetClose(grant.caller);
     return token;
   }
 
@@ -458,11 +473,10 @@ export class TaskTabBroker {
             retryAfterMs,
           });
     }
-    const current = new Set(this.getProfileCapabilities(caller.profileId));
     return success(id, {
       brokerEpoch: this.brokerEpoch,
       caller: { ...caller.caller },
-      capabilities: caller.capabilities.filter((capability) => current.has(capability)),
+      capabilities: [...this.retainCurrentCapabilities(caller)],
     });
   }
 
@@ -481,6 +495,8 @@ export class TaskTabBroker {
 
   revokeAllCallers(): void {
     this.callers.length = 0;
+    for (const unsubscribe of this.targetCloseSubscriptions.values()) unsubscribe();
+    this.targetCloseSubscriptions.clear();
     this.mailboxes.clear();
     this.deliveryRecords.clear();
     this.acknowledgedRecords.clear();
@@ -543,8 +559,7 @@ export class TaskTabBroker {
     const id = request.id;
     try {
       const required = requiredCapability(request.method);
-      const currentCapabilities = new Set(this.getProfileCapabilities(caller.profileId));
-      if (!caller.capabilities.includes(required) || !currentCapabilities.has(required)) {
+      if (!this.retainCurrentCapabilities(caller).has(required)) {
         return failure(id, "CAPABILITY_DENIED", `The caller lacks ${required}`, false, {
           requiredCapability: required,
         });
@@ -721,6 +736,7 @@ export class TaskTabBroker {
     }
     const result = resolved.host.closeTab(resolved.target);
     if (result === null) return failure(id, "STALE_TARGET", "The target became stale");
+    this.retireTarget(resolved.target);
     return success(id, {
       target: resolved.target,
       affectedGeneration: resolved.target.generation,
@@ -985,10 +1001,8 @@ export class TaskTabBroker {
     if (recipientCallers.length === 0) {
       return failure(id, "TARGET_UNAVAILABLE", "The recipient is not broker-enabled");
     }
-    const recipientEnabled = recipientCallers.some(
-      (candidate) =>
-        candidate.capabilities.includes("message") &&
-        this.getProfileCapabilities(candidate.profileId).includes("message"),
+    const recipientEnabled = recipientCallers.some((candidate) =>
+      this.retainCurrentCapabilities(candidate).has("message"),
     );
     if (!recipientEnabled) {
       return failure(id, "CAPABILITY_DENIED", "The recipient lacks message", false, {
@@ -1154,6 +1168,48 @@ export class TaskTabBroker {
     }
   }
 
+  private retainCurrentCapabilities(caller: StoredCallerGrant): ReadonlySet<BrokerCapability> {
+    const current = new Set(this.getProfileCapabilities(caller.profileId));
+    const retained = caller.capabilities.filter((capability) => current.has(capability));
+    if (retained.length !== caller.capabilities.length) {
+      caller.capabilities = Object.freeze(retained);
+    }
+    return new Set(retained);
+  }
+
+  private watchTargetClose(target: TerminalTabTarget): void {
+    const key = mailboxKey(target);
+    if (this.targetCloseSubscriptions.has(key)) return;
+    const owners = this.findTargetOwners(target);
+    if (owners.length !== 1 || typeof owners[0].onTabLifecycle !== "function") return;
+    const unsubscribe = owners[0].onTabLifecycle(target, (event) => {
+      if (event.type === "closed" && sameTarget(event.target, target)) this.retireTarget(target);
+    });
+    if (unsubscribe) this.targetCloseSubscriptions.set(key, unsubscribe);
+  }
+
+  private retireTarget(target: TerminalTabTarget): void {
+    for (let index = this.callers.length - 1; index >= 0; index--) {
+      const caller = this.callers[index].caller;
+      if (caller.tabId === target.tabId && caller.generation === target.generation) {
+        this.callers.splice(index, 1);
+      }
+    }
+    const recipientKey = mailboxKey(target);
+    this.targetCloseSubscriptions.get(recipientKey)?.();
+    this.targetCloseSubscriptions.delete(recipientKey);
+    this.dropMailboxKey(recipientKey);
+    for (const [messageId, record] of this.acknowledgedRecords) {
+      if (record.recipientKey !== recipientKey) continue;
+      this.acknowledgedRecords.delete(messageId);
+      this.deliveryRecords.delete(record.dedupKey);
+    }
+    for (const [dedupKey, record] of this.deliveryRecords) {
+      if (record.recipientKey === recipientKey) this.deliveryRecords.delete(dedupKey);
+    }
+    this.mailboxListeners.delete(recipientKey);
+  }
+
   private authenticate(token: string): StoredCallerGrant | null {
     if (typeof token !== "string") return null;
     const crypto = cryptoModule();
@@ -1200,7 +1256,7 @@ export class TaskTabBroker {
   }
 
   private collectTabs(taskId: string): TerminalTabHostSnapshot[] {
-    const tabs = [...this.hosts]
+    const tabs = [...this.hosts.values()]
       .flatMap((host) => [...host.getTabHostSnapshots(taskId)])
       .filter((tab) => tab.taskId === taskId);
     for (const tab of tabs) this.rememberTab(tab);
@@ -1209,7 +1265,7 @@ export class TaskTabBroker {
 
   private findTargetOwners(target: TerminalTabTarget): BrokerTerminalHost[] {
     const owners: BrokerTerminalHost[] = [];
-    for (const host of this.hosts) {
+    for (const host of this.hosts.values()) {
       const tabs = [...host.getTabHostSnapshots(target.taskId)];
       for (const tab of tabs) this.rememberTab(tab);
       if (tabs.some((tab) => sameTarget(tab, target))) owners.push(host);
@@ -1223,7 +1279,7 @@ export class TaskTabBroker {
 
   private findTabAcrossHosts(tabId: string, generation: number): TerminalTabHostSnapshot | null {
     let found: TerminalTabHostSnapshot | null = null;
-    for (const host of this.hosts) {
+    for (const host of this.hosts.values()) {
       for (const tab of host.getAllTabHostSnapshots()) {
         this.rememberTab(tab);
         if (tab.tabId === tabId && tab.generation === generation) {
@@ -1280,19 +1336,6 @@ export class TaskTabBroker {
 
 function cryptoModule(): typeof import("crypto") {
   return electronRequire("crypto") as typeof import("crypto");
-}
-
-function incrementDecimal(value: string): string {
-  const digits = value.split("");
-  for (let index = digits.length - 1; index >= 0; index--) {
-    if (digits[index] === "9") {
-      digits[index] = "0";
-    } else {
-      digits[index] = String(Number(digits[index]) + 1);
-      return digits.join("");
-    }
-  }
-  return `1${digits.join("")}`;
 }
 
 function requiredCapability(method: string): BrokerCapability {

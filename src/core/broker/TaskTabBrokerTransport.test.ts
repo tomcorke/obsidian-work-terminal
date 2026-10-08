@@ -192,11 +192,11 @@ describe("TaskTabBrokerTransport", () => {
       })}\n`,
     );
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(lifecycleListeners.size).toBe(1);
+    expect(lifecycleListeners.size).toBe(2);
 
     socket.destroy();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(lifecycleListeners.size).toBe(0);
+    expect(lifecycleListeners.size).toBe(1);
   });
 
   it("keeps mailbox delivery available when the recipient reconnects", async () => {
@@ -351,7 +351,7 @@ describe("TaskTabBrokerTransport", () => {
       })}\n`,
     );
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(lifecycleListeners.size).toBe(1);
+    expect(lifecycleListeners.size).toBe(2);
 
     const ended = new Promise<void>((resolve) => socket.once("end", resolve));
     await transport.stop({ reloading: true });
@@ -367,7 +367,7 @@ describe("TaskTabBrokerTransport", () => {
         expect.objectContaining({ type: "event", event: "broker.reloading" }),
       ]),
     );
-    expect(lifecycleListeners.size).toBe(0);
+    expect(lifecycleListeners.size).toBe(1);
   });
 
   it("rebinds the same private endpoint so live callers can reconnect after reload", async () => {
