@@ -54,44 +54,65 @@ function run(attempt = 0) {
   });
   socket.on("data", (chunk) => {
     buffer = Buffer.concat([buffer, chunk]);
-    if (buffer.length > MAX_FRAME_BYTES + 1) {
-      console.error("Broker response exceeded the frame limit.");
-      process.exitCode = 1;
-      socket.destroy();
-      return;
-    }
-    const newline = buffer.indexOf(0x0a);
-    if (newline === -1) return;
-    const line = buffer.subarray(0, newline).toString("utf8");
-    buffer = buffer.subarray(newline + 1);
-    let response;
-    try {
-      response = JSON.parse(line);
-    } catch {
-      console.error("Broker returned an invalid frame.");
-      process.exitCode = 1;
-      socket.destroy();
-      return;
-    }
-    if (!greeted) {
-      if (!response.ok) {
-        if (response.error?.code === "AUTH_FAILED" && attempt < 4) {
+    while (!socket.destroyed) {
+      const newline = buffer.indexOf(0x0a);
+      if (newline === -1) {
+        if (buffer.length > MAX_FRAME_BYTES) {
+          console.error("Broker response exceeded the frame limit.");
+          process.exitCode = 1;
           socket.destroy();
-          setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
-          return;
         }
-        console.error(JSON.stringify(response));
-        process.exitCode = 1;
-        socket.end();
         return;
       }
-      greeted = true;
-      socket.write(`${JSON.stringify({ v: 1, type: "request", id: requestId, method, params })}\n`);
+      if (newline > MAX_FRAME_BYTES) {
+        console.error("Broker response exceeded the frame limit.");
+        process.exitCode = 1;
+        socket.destroy();
+        return;
+      }
+      const line = buffer.subarray(0, newline).toString("utf8");
+      buffer = buffer.subarray(newline + 1);
+      let response;
+      try {
+        response = JSON.parse(line);
+      } catch {
+        console.error("Broker returned an invalid frame.");
+        process.exitCode = 1;
+        socket.destroy();
+        return;
+      }
+      if (response.type === "event" && response.event === "broker.reloading") {
+        socket.destroy();
+        if (attempt < 4) setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
+        else {
+          console.error("Work Terminal broker remained unavailable after reload.");
+          process.exitCode = 1;
+        }
+        return;
+      }
+      if (!greeted) {
+        if (!response.ok) {
+          if (response.error?.code === "AUTH_FAILED" && attempt < 4) {
+            socket.destroy();
+            setTimeout(() => run(attempt + 1), 100 * 2 ** attempt);
+            return;
+          }
+          console.error(JSON.stringify(response));
+          process.exitCode = 1;
+          socket.end();
+          return;
+        }
+        greeted = true;
+        socket.write(
+          `${JSON.stringify({ v: 1, type: "request", id: requestId, method, params })}\n`,
+        );
+        continue;
+      }
+      process.stdout.write(`${JSON.stringify(response)}\n`);
+      process.exitCode = response.ok ? 0 : 1;
+      socket.end();
       return;
     }
-    process.stdout.write(`${JSON.stringify(response)}\n`);
-    process.exitCode = response.ok ? 0 : 1;
-    socket.end();
   });
   socket.on("error", (error) => {
     if (attempt < 4 && ["ECONNREFUSED", "ENOENT", "ECONNRESET"].includes(error.code)) {
