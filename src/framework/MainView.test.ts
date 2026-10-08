@@ -356,6 +356,7 @@ describe("MainView selection ID backfill", () => {
       rekeyCustomOrder: vi.fn(() => true),
       render: vi.fn(),
       setPinnedCustomStates: vi.fn(),
+      syncPinnedStates: vi.fn(),
     };
     const parser = {
       loadAll: vi.fn().mockResolvedValue([]),
@@ -560,6 +561,7 @@ describe("MainView activity timestamp seeding", () => {
     const listPanel = {
       render: vi.fn(),
       setPinnedCustomStates: vi.fn(),
+      syncPinnedStates: vi.fn(),
     };
     const parser = {
       loadAll: vi.fn(async () => [item]),
@@ -603,6 +605,7 @@ describe("MainView activity timestamp seeding", () => {
     const listPanel = {
       render: vi.fn(),
       setPinnedCustomStates: vi.fn(),
+      syncPinnedStates: vi.fn(),
     };
     const parser = {
       loadAll: vi.fn(async () => [item]),
@@ -677,6 +680,7 @@ describe("MainView dynamic column cleanup", () => {
     const listPanel = {
       render: vi.fn(),
       setPinnedCustomStates: vi.fn(),
+      syncPinnedStates: vi.fn(),
     };
     const parser = {
       loadAll: vi.fn(async () => {

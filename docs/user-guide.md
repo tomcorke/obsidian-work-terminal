@@ -609,7 +609,7 @@ To pin a task, use the pin action from the task's context area. Pinned tasks can
 
 In **standard mode**, pinned cards show a state label badge (e.g. "Active", "To Do") so you can see each task's real column at a glance. In **compact** and **comfortable** modes, the state label is hidden to conserve horizontal space - the dedicated Pinned section heading already provides sufficient context.
 
-Pinned state is persisted across sessions using the task's UUID, so it survives file renames and moves.
+Pinned membership is stored in the task's `pinned` frontmatter boolean. Plugin data uses the task UUID only to retain display order and migrate legacy pins, so file renames and moves remain safe.
 
 ### Parent tasks and sub-tasks
 

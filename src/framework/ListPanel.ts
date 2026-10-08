@@ -262,19 +262,36 @@ export class ListPanel {
   /** Reconcile durable frontmatter pins with ordered plugin-data display state. */
   async syncPinnedStates(items: WorkItem[]): Promise<void> {
     if (!this.pinStore) return;
+    const legacyIds = this.pinStore.getPinnedIds();
+    const legacySet = new Set(legacyIds);
+    const itemIds = new Set(items.map((item) => item.id));
+    const desired = legacyIds.filter((id) => !itemIds.has(id));
+
     for (const item of items) {
       const pinned = (item.metadata as Record<string, unknown>)?.pinned;
       if (typeof pinned === "boolean") {
-        if (pinned) await this.pinStore.pin(item.id);
-        else await this.pinStore.unpin(item.id);
+        if (pinned) desired.push(item.id);
         continue;
       }
-      if (this.pinStore.isPinned(item.id)) {
-        const file = this.app.vault.getAbstractFileByPath(item.path);
-        if (this.mover.setPinned && file && (await this.mover.setPinned(file as TFile, true))) {
-          item.metadata = { ...(item.metadata as Record<string, unknown>), pinned: true };
+      if (!legacySet.has(item.id)) continue;
+
+      desired.push(item.id);
+      if (!this.mover.setPinned) continue;
+
+      const file = this.app.vault.getAbstractFileByPath(item.path);
+      try {
+        if (!file || !(await this.mover.setPinned(file as TFile, true))) {
+          console.error(`[work-terminal] Failed to migrate pin state for ${item.path}`);
+          continue;
         }
+        item.metadata = { ...(item.metadata as Record<string, unknown>), pinned: true };
+      } catch (err) {
+        console.error(`[work-terminal] Failed to migrate pin state for ${item.path}:`, err);
       }
+    }
+
+    if (!(await this.pinStore.reconcile(desired))) {
+      console.error("[work-terminal] Failed to persist reconciled pin order");
     }
   }
 
@@ -800,22 +817,24 @@ export class ListPanel {
   }
 
   private async setItemPinned(item: WorkItem, pinned: boolean): Promise<boolean> {
-    if (!this.pinStore) return;
+    if (!this.pinStore || !this.mover.setPinned) return false;
     const file = this.app.vault.getAbstractFileByPath(item.path);
-    if (this.mover.setPinned) {
+    try {
       if (!file || !(await this.mover.setPinned(file as TFile, pinned))) {
         new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
         return false;
       }
+    } catch (err) {
+      console.error(`[work-terminal] Failed to ${pinned ? "pin" : "unpin"} task:`, err);
+      new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
+      return false;
     }
     try {
       if (pinned) await this.pinStore.pin(item.id);
       else await this.pinStore.unpin(item.id);
     } catch (err) {
-      if (this.mover.setPinned && file) await this.mover.setPinned(file as TFile, !pinned);
       console.error("[work-terminal] Failed to persist pin order:", err);
-      new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
-      return false;
+      new Notice("Pin state saved, but display order could not be persisted");
     }
     item.metadata = { ...(item.metadata as Record<string, unknown>), pinned };
     this.render(this.groups, this.customOrder);
@@ -1204,10 +1223,10 @@ export class ListPanel {
   }
 
   private async mirrorPinnedParent(parentItem: WorkItem, newItem: WorkItem): Promise<void> {
-    if (!this.pinStore?.isPinned(parentItem.id)) return;
+    if (!this.pinStore?.isPinned(parentItem.id) || !this.mover.setPinned) return;
 
     const file = this.app.vault.getAbstractFileByPath(newItem.path);
-    if (this.mover.setPinned && (!file || !(await this.mover.setPinned(file as TFile, true)))) {
+    if (!file || !(await this.mover.setPinned(file as TFile, true))) {
       throw new Error("Failed to persist sub-task pin state");
     }
     newItem.metadata = { ...(newItem.metadata as Record<string, unknown>), pinned: true };
@@ -1505,7 +1524,9 @@ export class ListPanel {
 
     if (
       parent &&
-      !(await this.setItemPinned(movedSource, this.pinStore?.isPinned(parent.id) ?? false))
+      this.pinStore &&
+      this.mover.setPinned &&
+      !(await this.setItemPinned(movedSource, this.pinStore.isPinned(parent.id)))
     ) {
       if (movedSource.state !== source.state) await this.moveItemState(movedSource, source.state);
       const oldParentId = this.getParentId(source);
@@ -1773,7 +1794,7 @@ export class ListPanel {
     const ctx = this.buildCardActionContext(item, columnId);
 
     // Framework-injected pin/unpin action at the top of the menu
-    if (this.pinStore) {
+    if (this.pinStore && this.mover.setPinned) {
       const pinned = this.pinStore.isPinned(item.id);
       menu.addItem((menuItem) => {
         menuItem.setTitle(pinned ? "Unpin" : "Pin to Top").onClick(() => {
