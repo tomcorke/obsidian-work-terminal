@@ -76,6 +76,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 ## Key design decisions
 
 - **Agent integration owned by framework, not adapter** - AgentLauncher and AgentStateDetector are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
+- **Task Tab Broker is the vault-scoped authority boundary** - Agent-facing task/tab discovery and control route through one authenticated, capability-controlled broker rather than renderer internals. See [ADR 0001](adr/0001-task-tab-broker-contract.md) for the versioned contract and safety limits.
 - **UUID-based keying** - Sessions, custom order, pinned state, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
 - **2-panel ItemView + flexible detail placement** - The default detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`. Alternative placements (tab, navigate, preview pseudo-tab, embedded pseudo-tab) are available. Split gives live preview, frontmatter editing, backlinks for free.
 - **State resolution is pluggable** - Three strategies (folder, frontmatter, composite) are implemented via `core/resolvers/`. The adapter selects one via `stateResolverFactory`. Custom states create dynamic columns automatically.
