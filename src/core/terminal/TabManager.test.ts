@@ -632,7 +632,9 @@ describe("TabManager - broker host primitives", () => {
         latestSequence: "0",
       },
     ]);
+    expect(mgr.getAllTabHostSnapshots()).toEqual(snapshots);
     expect(Object.isFrozen(snapshots)).toBe(true);
+    expect(Object.isFrozen(mgr.getAllTabHostSnapshots())).toBe(true);
     expect(tab.show).not.toHaveBeenCalled();
     expect(tab.hide).not.toHaveBeenCalled();
   });

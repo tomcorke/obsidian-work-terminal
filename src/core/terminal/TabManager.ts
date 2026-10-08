@@ -445,6 +445,13 @@ export class TabManager {
     return Object.freeze((this.sessions.get(itemId) ?? []).map((tab) => tab.getHostSnapshot()));
   }
 
+  /** Return handle-free snapshots across tasks for caller re-binding after a tab move. */
+  getAllTabHostSnapshots(): readonly TerminalTabHostSnapshot[] {
+    return Object.freeze(
+      [...this.sessions.values()].flatMap((tabs) => tabs.map((tab) => tab.getHostSnapshot())),
+    );
+  }
+
   readTabOutput(
     target: TerminalTabTarget,
     options: { maxLines: number; maxBytes: number },
