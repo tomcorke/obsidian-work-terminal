@@ -54,6 +54,35 @@ export class TaskMover implements WorkItemMover {
     }
   }
 
+  async setPinned(file: TFile, pinned: boolean): Promise<boolean> {
+    let foundFrontmatter = false;
+    try {
+      await this.app.vault.process(file, (content) => {
+        if (!content.startsWith("---\n") && !content.startsWith("---\r\n")) return content;
+        const frontmatter = content.match(/^---(\r?\n)([\s\S]*?)^---(?:\r?\n|$)/m);
+        if (!frontmatter) return content;
+        foundFrontmatter = true;
+        const [fullMatch, eol, body] = frontmatter;
+        const line = `pinned: ${pinned}`;
+        let updatedBody = /^pinned:\s*.*$/m.test(body)
+          ? body.replace(/^pinned:\s*.*$/m, line)
+          : `${body}${body.endsWith(eol) ? "" : eol}${line}${eol}`;
+        if (updatedBody === body) return content;
+
+        const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+        updatedBody = updatedBody.replace(/^updated:\s*.+$/m, `updated: ${now}`);
+        return content.replace(
+          fullMatch,
+          `---${eol}${updatedBody}---${fullMatch.endsWith(eol) ? eol : ""}`,
+        );
+      });
+      return foundFrontmatter;
+    } catch (err) {
+      console.error("[work-terminal] TaskMover.setPinned failed:", err);
+      return false;
+    }
+  }
+
   async move(file: TFile, targetColumnId: string): Promise<boolean> {
     const newColumn = targetColumnId;
     // Read basePath at call time so runtime changes to adapter.taskBasePath

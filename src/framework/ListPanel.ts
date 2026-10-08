@@ -259,6 +259,42 @@ export class ListPanel {
     this.pinStore = pinStore;
   }
 
+  /** Reconcile durable frontmatter pins with ordered plugin-data display state. */
+  async syncPinnedStates(items: WorkItem[]): Promise<void> {
+    if (!this.pinStore) return;
+    const legacyIds = this.pinStore.getPinnedIds();
+    const legacySet = new Set(legacyIds);
+    const itemIds = new Set(items.map((item) => item.id));
+    const desired = legacyIds.filter((id) => !itemIds.has(id));
+
+    for (const item of items) {
+      const pinned = (item.metadata as Record<string, unknown>)?.pinned;
+      if (typeof pinned === "boolean") {
+        if (pinned) desired.push(item.id);
+        continue;
+      }
+      if (!legacySet.has(item.id)) continue;
+
+      desired.push(item.id);
+      if (!this.mover.setPinned) continue;
+
+      const file = this.app.vault.getAbstractFileByPath(item.path);
+      try {
+        if (!file || !(await this.mover.setPinned(file as TFile, true))) {
+          console.error(`[work-terminal] Failed to migrate pin state for ${item.path}`);
+          continue;
+        }
+        item.metadata = { ...(item.metadata as Record<string, unknown>), pinned: true };
+      } catch (err) {
+        console.error(`[work-terminal] Failed to migrate pin state for ${item.path}:`, err);
+      }
+    }
+
+    if (!(await this.pinStore.reconcile(desired))) {
+      console.error("[work-terminal] Failed to persist reconciled pin order");
+    }
+  }
+
   /** Inject an ActivityTracker after construction (created by MainView). */
   setActivityTracker(tracker: ActivityTracker): void {
     this.activityTracker = tracker;
@@ -773,18 +809,37 @@ export class ListPanel {
   }
 
   private pinItem(item: WorkItem): void {
-    if (!this.pinStore) return;
-    void this.pinStore.pin(item.id).then(() => {
-      this.render(this.groups, this.customOrder);
-      this.selectItem(item);
-    });
+    void this.setItemPinned(item, true);
   }
 
   private async unpinItem(item: WorkItem): Promise<void> {
-    if (!this.pinStore) return;
-    await this.pinStore.unpin(item.id);
+    await this.setItemPinned(item, false);
+  }
+
+  private async setItemPinned(item: WorkItem, pinned: boolean): Promise<boolean> {
+    if (!this.pinStore || !this.mover.setPinned) return false;
+    const file = this.app.vault.getAbstractFileByPath(item.path);
+    try {
+      if (!file || !(await this.mover.setPinned(file as TFile, pinned))) {
+        new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
+        return false;
+      }
+    } catch (err) {
+      console.error(`[work-terminal] Failed to ${pinned ? "pin" : "unpin"} task:`, err);
+      new Notice(`Failed to ${pinned ? "pin" : "unpin"} task`);
+      return false;
+    }
+    try {
+      if (pinned) await this.pinStore.pin(item.id);
+      else await this.pinStore.unpin(item.id);
+    } catch (err) {
+      console.error("[work-terminal] Failed to persist pin order:", err);
+      new Notice("Pin state saved, but display order could not be persisted");
+    }
+    item.metadata = { ...(item.metadata as Record<string, unknown>), pinned };
     this.render(this.groups, this.customOrder);
     this.selectItem(item);
+    return true;
   }
 
   setIngesting(id: string): void {
@@ -1168,8 +1223,13 @@ export class ListPanel {
   }
 
   private async mirrorPinnedParent(parentItem: WorkItem, newItem: WorkItem): Promise<void> {
-    if (!this.pinStore?.isPinned(parentItem.id)) return;
+    if (!this.pinStore?.isPinned(parentItem.id) || !this.mover.setPinned) return;
 
+    const file = this.app.vault.getAbstractFileByPath(newItem.path);
+    if (!file || !(await this.mover.setPinned(file as TFile, true))) {
+      throw new Error("Failed to persist sub-task pin state");
+    }
+    newItem.metadata = { ...(newItem.metadata as Record<string, unknown>), pinned: true };
     await this.pinStore.pin(newItem.id);
     const pinnedIds = this.pinStore.getPinnedIds().filter((id) => id !== newItem.id);
     const parentIndex = pinnedIds.indexOf(parentItem.id);
@@ -1358,8 +1418,8 @@ export class ListPanel {
             // Reorder within pinned section
             this.reorderWithinPinnedSection(dragId, dropIndex);
           } else {
-            // Pin the item
-            await this.pinStore.pin(dragId);
+            // Pin the item and persist durable frontmatter first.
+            if (!(await this.setItemPinned(item, true))) return;
             // Reorder to drop position
             const pinnedIds = this.pinStore.getPinnedIds();
             const filtered = pinnedIds.filter((id) => id !== dragId);
@@ -1380,7 +1440,7 @@ export class ListPanel {
             const didMove = await this.moveToColumn(item, columnId);
             if (!didMove) return;
           }
-          await this.pinStore.unpin(dragId);
+          if (!(await this.setItemPinned(item, false))) return;
           // Set drop position in the target column
           setTimeout(
             () => {
@@ -1459,6 +1519,21 @@ export class ListPanel {
       if (movedSource.state !== source.state) {
         await this.moveItemState(movedSource, source.state);
       }
+      return;
+    }
+
+    if (
+      parent &&
+      this.pinStore &&
+      this.mover.setPinned &&
+      !(await this.setItemPinned(movedSource, this.pinStore.isPinned(parent.id)))
+    ) {
+      if (movedSource.state !== source.state) await this.moveItemState(movedSource, source.state);
+      const oldParentId = this.getParentId(source);
+      await this.mover.setParent(
+        file as TFile,
+        this.items.find((item) => item.id === oldParentId) ?? null,
+      );
       return;
     }
 
@@ -1719,7 +1794,7 @@ export class ListPanel {
     const ctx = this.buildCardActionContext(item, columnId);
 
     // Framework-injected pin/unpin action at the top of the menu
-    if (this.pinStore) {
+    if (this.pinStore && this.mover.setPinned) {
       const pinned = this.pinStore.isPinned(item.id);
       menu.addItem((menuItem) => {
         menuItem.setTitle(pinned ? "Unpin" : "Pin to Top").onClick(() => {

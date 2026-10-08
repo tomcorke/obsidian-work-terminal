@@ -14,7 +14,7 @@ export interface WorkItem {
   title: string;
   /** Current state/column (e.g. "active", "todo", "done"). */
   state: string;
-  /** Adapter-specific metadata (scores, tags, deadlines, etc.). */
+  /** Adapter-specific metadata. Adapters with setPinned expose optional durable `pinned` boolean here. */
   metadata: Record<string, unknown>;
 }
 
@@ -196,6 +196,8 @@ export interface WorkItemMover {
   move(file: TFile, targetColumnId: string): Promise<boolean>;
   /** Change hierarchy without changing the item's state, content, or identity. */
   setParent?(file: TFile, parent: WorkItem | null): Promise<boolean>;
+  /** Persist pin membership in the item's durable source. When implemented, the framework reads metadata.pinned; other adapters retain ownership of similarly named metadata. */
+  setPinned?(file: TFile, pinned: boolean): Promise<boolean>;
 }
 
 /**
