@@ -34,6 +34,7 @@ import { hasAgentActiveIndicator, hasAgentWaitingIndicator } from "../agents/Age
 import { sessionTypeToAgentType } from "../agents/AgentProfile";
 import { getFullPath } from "../agents/AgentLauncher";
 import { buildPtyLaunchPlan, resolvePtyWrapperPath } from "./PtyLaunch";
+import { acceptPiLifecycleReport, readPiLifecycleReport } from "./PiSessionTranscript";
 
 export { resolvePtyWrapperPath } from "./PtyLaunch";
 
@@ -184,6 +185,9 @@ export class TerminalTab {
   private _prevScreenFingerprint = "";
   /** How many consecutive polls the screen content has remained unchanged. */
   private _unchangedPolls = 0;
+  private _piLifecycleAuthority = false;
+  private _piLifecycleSeq = -1;
+  private _piLifecycleState: "active" | "idle" | undefined;
 
   // User-initiated scroll tracking: true when the user has explicitly scrolled
   // up via wheel/touchmove/keyboard. Auto-scroll is suppressed while this flag
@@ -605,7 +609,10 @@ export class TerminalTab {
 
     proc.on("exit", (code, signal) => {
       this.removePiSessionMapping();
+      this.stopStateTracking();
+      this.clearPiLifecycleAuthority();
       if (this._isDisposed) return;
+      this._setAgentState("inactive");
       writeWithAutoScroll(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
       this.onProcessExit?.(code, signal);
     });
@@ -1151,9 +1158,13 @@ export class TerminalTab {
     this._isAgentTab = this._detectAgentTab();
     if (!this._isAgentTab || this._stateTimer) return;
 
-    // On fresh spawn, assume active. After reload, start as idle to avoid
-    // false active flash from stale buffer content.
-    this._agentState = this._suppressActiveUntil > 0 ? "idle" : "active";
+    // On fresh spawn, assume active. After reload, retain accepted Pi authority;
+    // otherwise start idle to avoid a false active flash from stale content.
+    this._agentState = this._piLifecycleAuthority
+      ? (this._piLifecycleState ?? "idle")
+      : this._suppressActiveUntil > 0
+        ? "idle"
+        : "active";
     if (!preserveObservedWork) this.autoRenameSawActive = false;
     if (!this._recentCleanLines) this._recentCleanLines = [];
 
@@ -1205,6 +1216,41 @@ export class TerminalTab {
 
   private _checkState(): void {
     if (!this._isAgentTab) return;
+
+    // A restored tab keeps the original ChildProcess but not its original exit
+    // listener closures. Poll its retained exit fields so stale lifecycle
+    // authority cannot survive after that process ends.
+    if (this.process?.exitCode != null || this.process?.signalCode != null) {
+      this.removePiSessionMapping();
+      this.stopStateTracking();
+      this.clearPiLifecycleAuthority();
+      this._setAgentState("inactive");
+      return;
+    }
+
+    if (this.piSessionMappingPath && this.piSessionLaunchToken) {
+      const report = readPiLifecycleReport(
+        this.piSessionMappingPath,
+        this.piSessionLaunchToken,
+      );
+      const authority = acceptPiLifecycleReport(
+        {
+          accepted: this._piLifecycleAuthority,
+          state: this._piLifecycleState,
+          seq: this._piLifecycleSeq,
+        },
+        report,
+      );
+      if (authority.seq !== this._piLifecycleSeq) {
+        this._piLifecycleAuthority = authority.accepted;
+        this._piLifecycleSeq = authority.seq;
+        this._piLifecycleState = authority.state;
+        if (authority.state) this._setAgentState(authority.state);
+      }
+      // Once Pi has reported, retain authority across equal, stale, missing, or
+      // temporarily unreadable mapping files. Pi reports active/idle only.
+      if (this._piLifecycleAuthority) return;
+    }
 
     const hidden = !this.isVisible;
 
@@ -1300,6 +1346,18 @@ export class TerminalTab {
     }
   }
 
+  private stopStateTracking(): void {
+    if (!this._stateTimer) return;
+    clearInterval(this._stateTimer);
+    this._stateTimer = null;
+  }
+
+  private clearPiLifecycleAuthority(): void {
+    this._piLifecycleAuthority = false;
+    this._piLifecycleSeq = -1;
+    this._piLifecycleState = undefined;
+  }
+
   private _setAgentState(state: AgentState, completesWork = true): void {
     if (state === "active") {
       this.autoRenameSawActive = true;
@@ -1343,6 +1401,9 @@ export class TerminalTab {
       commandArgs: this.commandArgs ? [...this.commandArgs] : undefined,
       piSessionMappingPath: this.piSessionMappingPath,
       piSessionLaunchToken: this.piSessionLaunchToken,
+      piLifecycleAuthority: this._piLifecycleAuthority,
+      piLifecycleSeq: this._piLifecycleSeq,
+      piLifecycleState: this._piLifecycleState,
       outputDataBridge: this.outputDataBridge,
       autoRenameOutput: this.autoRenameOutput,
       autoRenameLastTranscript: this.autoRenameLastTranscript,
@@ -1388,6 +1449,9 @@ export class TerminalTab {
     tab.commandArgs = stored.commandArgs ? [...stored.commandArgs] : undefined;
     tab.piSessionMappingPath = stored.piSessionMappingPath;
     tab.piSessionLaunchToken = stored.piSessionLaunchToken;
+    tab._piLifecycleAuthority = stored.piLifecycleAuthority ?? false;
+    tab._piLifecycleSeq = stored.piLifecycleSeq ?? -1;
+    tab._piLifecycleState = stored.piLifecycleState;
     tab.outputDataBridge = stored.outputDataBridge ?? {};
     tab.autoRenameOutput = stored.autoRenameOutput ?? "";
     tab.autoRenameLastTranscript = stored.autoRenameLastTranscript ?? "";
@@ -1430,7 +1494,9 @@ export class TerminalTab {
     }
     tab._webglSuspended = false;
     tab._documentCleanups = [];
-    tab._agentState = "inactive" as AgentState;
+    tab._agentState = stored.piLifecycleAuthority
+      ? (stored.piLifecycleState ?? "idle")
+      : ("inactive" as AgentState);
     tab._recentCleanLines = [];
     tab._stateTimer = null;
     tab._isAgentTab = false;
@@ -1603,11 +1669,9 @@ export class TerminalTab {
     if (this._isDisposed) return;
     this._isDisposed = true;
     this.removePiSessionMapping();
-    // Stop state tracking
-    if (this._stateTimer) {
-      clearInterval(this._stateTimer);
-      this._stateTimer = null;
-    }
+    this.stopStateTracking();
+    this.clearPiLifecycleAuthority();
+    this._agentState = "inactive";
     if (this._resizeDebounce) {
       clearTimeout(this._resizeDebounce);
       this._resizeDebounce = null;

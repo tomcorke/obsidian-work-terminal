@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => {
     attachCapturePhase: vi.fn(() => vi.fn()),
     attachInputCapture: vi.fn(() => vi.fn()),
     electronShell: { openExternal: vi.fn() },
+    rmSync: vi.fn(),
   };
 });
 
@@ -69,6 +70,9 @@ vi.mock("../utils", () => ({
   electronRequire: (moduleName: string) => {
     if (moduleName === "electron") {
       return { shell: mocks.electronShell };
+    }
+    if (moduleName === "fs") {
+      return { rmSync: mocks.rmSync };
     }
     return {};
   },
@@ -114,6 +118,7 @@ vi.mock("@xterm/addon-unicode11", () => ({
   Unicode11Addon: class {},
 }));
 
+import type { StoredSession } from "../session/types";
 import { TerminalTab } from "./TerminalTab";
 
 class MockResizeObserver {
@@ -144,6 +149,7 @@ describe("TerminalTab keyboard configuration", () => {
     document.body.innerHTML = "";
     mocks.MockTerminal.lastOptions = null;
     mocks.MockTerminal.lastInstance = null;
+    mocks.rmSync.mockClear();
   });
 
   it("defaults macOS Option to Meta and installs custom handling", () => {
@@ -182,6 +188,72 @@ describe("TerminalTab keyboard configuration", () => {
       }),
     );
     expect(terminal?.options.macOptionIsMeta).toBe(true);
+  });
+
+  it("preserves accepted Pi lifecycle authority through stash and restore", () => {
+    const parentEl = document.createElement("div");
+    const newParentEl = document.createElement("div");
+    const freshTab = new TerminalTab(parentEl, "/bin/zsh", "~/repo", "Pi", null, "custom");
+    const internal = freshTab as unknown as {
+      _piLifecycleAuthority: boolean;
+      _piLifecycleSeq: number;
+      _piLifecycleState: "active" | "idle";
+    };
+    internal._piLifecycleAuthority = true;
+    internal._piLifecycleSeq = 12;
+    internal._piLifecycleState = "active";
+
+    const stored = freshTab.stash();
+    expect(stored).toMatchObject({
+      piLifecycleAuthority: true,
+      piLifecycleSeq: 12,
+      piLifecycleState: "active",
+    });
+
+    const restored = TerminalTab.fromStored(stored, newParentEl);
+    expect(restored.agentState).toBe("active");
+    expect(restored.stash()).toMatchObject({
+      piLifecycleAuthority: true,
+      piLifecycleSeq: 12,
+      piLifecycleState: "active",
+    });
+  });
+
+  it("clears restored Pi authority when retained process exit fields are set", () => {
+    const parentEl = document.createElement("div");
+    const newParentEl = document.createElement("div");
+    const freshTab = new TerminalTab(
+      parentEl,
+      "/bin/zsh",
+      "~/repo",
+      "Pi",
+      null,
+      "custom",
+      undefined,
+      undefined,
+      { piSessionMappingPath: "/tmp/pi.json", piSessionLaunchToken: "token" },
+    );
+    const stored = freshTab.stash();
+    stored.piLifecycleAuthority = true;
+    stored.piLifecycleSeq = 12;
+    stored.piLifecycleState = "active";
+    stored.process = { exitCode: 0, signalCode: null } as StoredSession["process"];
+
+    const restored = TerminalTab.fromStored(stored, newParentEl);
+    const internal = restored as unknown as {
+      _isAgentTab: boolean;
+      _checkState(): void;
+    };
+    internal._isAgentTab = true;
+    internal._checkState();
+
+    expect(restored.agentState).toBe("inactive");
+    expect(mocks.rmSync).toHaveBeenCalledWith("/tmp/pi.json", { force: true });
+    expect(restored.stash()).toMatchObject({
+      piLifecycleAuthority: false,
+      piLifecycleSeq: -1,
+      piLifecycleState: undefined,
+    });
   });
 
   it("re-applies the same Option handling to restored terminals", () => {

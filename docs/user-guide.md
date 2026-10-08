@@ -367,7 +367,9 @@ Work Terminal monitors agent sessions and displays their current state:
 - **Waiting** (amber/yellow) - the agent is waiting for user input
 - **Idle** (grey) - the session is idle with no recent activity
 
-State detection works by reading the xterm buffer (not stdout), which makes it immune to status line redraws. It reads the last 30 lines from the buffer and applies pattern matching against the tail for waiting/active detection. Narrow terminal wrapping is handled via a joined-tail fallback.
+State detection normally reads the xterm buffer (not stdout), which makes it immune to status line redraws. It reads the last 30 lines from the buffer and applies pattern matching against the tail for waiting/active detection. Narrow terminal wrapping is handled via a joined-tail fallback.
+
+Pi sessions use an automatic proof-of-concept lifecycle hook instead: Pi's `agent_start` and `agent_end` events report active/idle state through the existing private session mapping file. Reports are token-bound, process-checked, and monotonically ordered. Buffer detection remains the fallback until the first valid report; after that, Pi owns active/idle state until the process exits, including across plugin hot reloads. This POC does not report Pi waiting state, so waiting detection is available only before lifecycle authority begins.
 
 The state indicator appears both on the tab and on the task card, giving you visibility into agent activity even when viewing a different tab.
 

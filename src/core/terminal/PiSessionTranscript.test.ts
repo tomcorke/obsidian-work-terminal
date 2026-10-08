@@ -35,8 +35,10 @@ vi.mock("../utils", () => ({
 }));
 
 import {
+  acceptPiLifecycleReport,
   parsePiSessionTranscript,
   prunePiSessionMappings,
+  readPiLifecycleReport,
   readPiSessionTranscript,
 } from "./PiSessionTranscript";
 
@@ -115,6 +117,49 @@ describe("PiSessionTranscript", () => {
       throw error;
     });
     expect(readPiSessionTranscript("map", "expected")).toBeNull();
+  });
+
+  it("accepts only live, token-bound lifecycle reports with safe sequences", () => {
+    files.set(
+      "map",
+      JSON.stringify({ token: "token", pid: 42, state: "active", seq: 3, updatedAt: Date.now() }),
+    );
+    expect(readPiLifecycleReport("map", "token")).toEqual({ state: "active", seq: 3 });
+
+    for (const invalid of [
+      { token: "other", pid: 42, state: "idle", seq: 4 },
+      { token: "token", pid: 42, state: "waiting", seq: 4 },
+      { token: "token", pid: 42, state: "idle", seq: -1 },
+      { token: "token", pid: 42, state: "idle", seq: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      files.set("map", JSON.stringify(invalid));
+      expect(readPiLifecycleReport("map", "token")).toBeNull();
+    }
+  });
+
+  it("retains authority for absent or stale reports and accepts newer sequences", () => {
+    const accepted = acceptPiLifecycleReport(
+      { accepted: false, seq: -1 },
+      { state: "active", seq: 2 },
+    );
+    expect(acceptPiLifecycleReport(accepted, null)).toBe(accepted);
+    expect(acceptPiLifecycleReport(accepted, { state: "idle", seq: 2 })).toBe(accepted);
+    expect(acceptPiLifecycleReport(accepted, { state: "idle", seq: 1 })).toBe(accepted);
+    expect(acceptPiLifecycleReport(accepted, { state: "idle", seq: 3 })).toEqual({
+      accepted: true,
+      state: "idle",
+      seq: 3,
+    });
+  });
+
+  it("rejects lifecycle reports from dead processes", () => {
+    files.set("map", JSON.stringify({ token: "token", pid: 42, state: "idle", seq: 1 }));
+    kill.mockImplementation(() => {
+      const error = new Error() as NodeJS.ErrnoException;
+      error.code = "ESRCH";
+      throw error;
+    });
+    expect(readPiLifecycleReport("map", "token")).toBeNull();
   });
 
   it("prunes mappings for processes that no longer exist", () => {
