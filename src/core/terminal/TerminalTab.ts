@@ -27,6 +27,7 @@ import {
   type AgentRuntimeState,
   type StoredSession,
   type SessionType,
+  type TerminalProcessBridge,
   type TerminalTabDiagnostics,
   type TabProcessDiagnostics,
 } from "../session/types";
@@ -45,6 +46,8 @@ let hasWarnedViewportResync = false;
 const TERMINAL_SCROLLBACK = 5000;
 const STATE_POLL_INTERVAL_MS = 2000;
 const RESTORE_ACTIVE_GRACE_MS = STATE_POLL_INTERVAL_MS * 2;
+const HIDDEN_WRITE_BATCH_MS = 250;
+const HIDDEN_WRITE_MAX_BYTES = 64 * 1024;
 
 type TerminalWithAddonManager = Terminal & {
   _addonManager?: {
@@ -160,6 +163,7 @@ export class TerminalTab {
   private _searchBarEl: HTMLElement | null = null;
   private _resizeDebounce: ReturnType<typeof setTimeout> | null = null;
   private _spawnTimeout: ReturnType<typeof setTimeout> | null = null;
+  private _processBridge: TerminalProcessBridge;
   private _isDisposed = false;
   /** True when WebGL was intentionally suspended for a background tab. */
   private _webglSuspended = false;
@@ -184,6 +188,7 @@ export class TerminalTab {
   private _prevScreenFingerprint = "";
   /** How many consecutive polls the screen content has remained unchanged. */
   private _unchangedPolls = 0;
+  private _stateCheckPending = false;
 
   // User-initiated scroll tracking: true when the user has explicitly scrolled
   // up via wheel/touchmove/keyboard. Auto-scroll is suppressed while this flag
@@ -220,6 +225,13 @@ export class TerminalTab {
     this.sessionType = sessionType;
     this.piSessionMappingPath = launchMetadata?.piSessionMappingPath;
     this.piSessionLaunchToken = launchMetadata?.piSessionLaunchToken;
+    this._processBridge = {
+      owner: this,
+      writesInFlight: 0,
+      hiddenWriteTimer: null,
+      hiddenWriteChunks: [],
+      hiddenWriteBytes: 0,
+    };
     this.launchEnv = launchMetadata
       ? {
           WORK_TERMINAL_PI_SESSION_MAP: launchMetadata.piSessionMappingPath,
@@ -548,76 +560,140 @@ export class TerminalTab {
   // Process wiring
   // ---------------------------------------------------------------------------
 
-  private wireProcess(proc: ChildProcess): void {
-    this.terminal.onData((data) => {
-      if (this._isDisposed) return;
-      if (proc.stdin && !proc.stdin.destroyed) {
-        proc.stdin.write(data);
-      }
-    });
+  private wireProcess(proc: ChildProcess, wireInput = true): void {
+    const bridge = this._processBridge;
 
-    // Auto-scroll: always scroll to bottom after each write UNLESS the user
-    // has explicitly scrolled up (tracked via wheel/touchmove/keydown events).
-    // This replaces the per-write wasAtBottom snapshot approach which was
-    // defeated by DOM scroll events firing during screen clear/redraw cycles.
-    const writeWithAutoScroll = (data: string | Uint8Array) => {
-      const trackScroll = this.isVisible;
-      if (trackScroll) this._programmaticScrollGuards += 1;
-
-      this.terminal.write(data, () => {
-        if (!this.isVisible) {
-          if (trackScroll) {
-            this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
-          }
-          return;
+    if (wireInput) {
+      this.terminal.onData((data) => {
+        const owner = bridge.owner;
+        if (owner._isDisposed) return;
+        const currentProcess = owner.process ?? proc;
+        if (currentProcess.stdin && !currentProcess.stdin.destroyed) {
+          currentProcess.stdin.write(data);
         }
-        if (!this._userScrolledUp) {
-          this.terminal.scrollToBottom();
-        }
-        if (!trackScroll) return;
-        requestAnimationFrame(() => {
-          this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
-          if (this._programmaticScrollGuards === 0 && this._pendingBottomCheck) {
-            this._pendingBottomCheck = false;
-            const buf = this.terminal.buffer.active;
-            if (buf.viewportY >= buf.baseY) {
-              this._userScrolledUp = false;
-            }
-          }
-        });
       });
-    };
+    }
 
-    proc.stdout?.on("data", (data: Buffer) => {
-      if (this._isDisposed) return;
-      this._checkRename(data);
-      this._trackOutput(data);
-      this.onOutputData?.(data);
-      this.outputDataBridge?.callback?.(data);
-      writeWithAutoScroll(data);
-    });
+    proc.stdout?.on("data", (data: Buffer) => bridge.owner._handleProcessData(data));
+    proc.stderr?.on("data", (data: Buffer) => bridge.owner._handleProcessData(data));
+    proc.on("error", (err) => bridge.owner._handleProcessError(err));
+    proc.on("exit", (code, signal) => bridge.owner._handleProcessExit(code, signal));
+  }
 
-    proc.stderr?.on("data", (data: Buffer) => {
-      if (this._isDisposed) return;
-      this._checkRename(data);
-      this._trackOutput(data);
-      this.onOutputData?.(data);
-      this.outputDataBridge?.callback?.(data);
-      writeWithAutoScroll(data);
-    });
+  private _handleProcessData(data: Buffer): void {
+    if (this._isDisposed) return;
+    this._checkRename(data);
+    this._trackOutput(data);
+    this.onOutputData?.(data);
+    this.outputDataBridge?.callback?.(data);
+    this._writeProcessOutput(data);
+  }
 
-    proc.on("error", (err) => {
-      if (this._isDisposed) return;
-      console.error("[work-terminal] Process error:", err);
-      writeWithAutoScroll(`\r\n[Process error: ${err.message}]\r\n`);
-    });
+  private _handleProcessError(err: Error): void {
+    if (this._isDisposed) return;
+    console.error("[work-terminal] Process error:", err);
+    this._writeProcessOutput(`\r\n[Process error: ${err.message}]\r\n`);
+  }
 
-    proc.on("exit", (code, signal) => {
-      this.removePiSessionMapping();
-      if (this._isDisposed) return;
-      writeWithAutoScroll(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
-      this.onProcessExit?.(code, signal);
-    });
+  private _handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
+    this.removePiSessionMapping();
+    if (this._isDisposed) return;
+    this._writeProcessOutput(`\r\n[Process exited (code: ${code}, signal: ${signal})]\r\n`);
+    this.onProcessExit?.(code, signal);
+  }
+
+  private _writeProcessOutput(data: string | Uint8Array): void {
+    if (!this.isVisible) {
+      const chunk =
+        typeof data === "string"
+          ? Buffer.from(data)
+          : Buffer.isBuffer(data)
+            ? data
+            : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+      const bridge = this._processBridge;
+      bridge.hiddenWriteChunks.push(chunk);
+      bridge.hiddenWriteBytes += chunk.byteLength;
+
+      if (bridge.hiddenWriteBytes >= HIDDEN_WRITE_MAX_BYTES) {
+        this._flushHiddenWrites();
+      } else if (bridge.hiddenWriteTimer === null) {
+        bridge.hiddenWriteTimer = setTimeout(() => {
+          bridge.hiddenWriteTimer = null;
+          bridge.owner._flushHiddenWrites();
+        }, HIDDEN_WRITE_BATCH_MS);
+      }
+      return;
+    }
+
+    this._flushHiddenWrites();
+    this._writeTerminal(data);
+  }
+
+  private _flushHiddenWrites(): void {
+    const bridge = this._processBridge;
+    if (!bridge) return;
+    if (bridge.hiddenWriteTimer !== null) {
+      clearTimeout(bridge.hiddenWriteTimer);
+      bridge.hiddenWriteTimer = null;
+    }
+    if (bridge.hiddenWriteChunks.length === 0) return;
+
+    const data =
+      bridge.hiddenWriteChunks.length === 1
+        ? bridge.hiddenWriteChunks[0]
+        : Buffer.concat(bridge.hiddenWriteChunks, bridge.hiddenWriteBytes);
+    bridge.hiddenWriteChunks = [];
+    bridge.hiddenWriteBytes = 0;
+    this._writeTerminal(data);
+  }
+
+  private _discardHiddenWrites(): void {
+    const bridge = this._processBridge;
+    if (!bridge) return;
+    if (bridge.hiddenWriteTimer !== null) {
+      clearTimeout(bridge.hiddenWriteTimer);
+      bridge.hiddenWriteTimer = null;
+    }
+    bridge.hiddenWriteChunks = [];
+    bridge.hiddenWriteBytes = 0;
+  }
+
+  private _writeTerminal(data: string | Uint8Array): void {
+    const bridge = this._processBridge;
+    const trackScroll = this.isVisible;
+    if (trackScroll) this._programmaticScrollGuards += 1;
+    bridge.writesInFlight += 1;
+
+    this.terminal.write(data, () => bridge.owner._completeTerminalWrite(trackScroll));
+  }
+
+  private _completeTerminalWrite(trackScroll: boolean): void {
+    this._processBridge.writesInFlight = Math.max(0, this._processBridge.writesInFlight - 1);
+    if (this._isDisposed) return;
+
+    if (!this.isVisible) {
+      if (trackScroll) {
+        this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
+      }
+      this._runPendingStateCheck();
+      return;
+    }
+    if (!this._userScrolledUp) {
+      this.terminal.scrollToBottom();
+    }
+    if (trackScroll) {
+      requestAnimationFrame(() => {
+        this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
+        if (this._programmaticScrollGuards === 0 && this._pendingBottomCheck) {
+          this._pendingBottomCheck = false;
+          const buf = this.terminal.buffer.active;
+          if (buf.viewportY >= buf.baseY) {
+            this._userScrolledUp = false;
+          }
+        }
+      });
+    }
+    this._runPendingStateCheck();
   }
 
   /**
@@ -1008,6 +1084,7 @@ export class TerminalTab {
   }
 
   show(): void {
+    this._flushHiddenWrites();
     // Backfill linkHandler for already-live terminals that were created before
     // the Electron openExternal handler was added (pre-#156 fix). Without this,
     // OSC 8 link clicks fall through to xterm's confirm() + window.open() no-op.
@@ -1214,6 +1291,25 @@ export class TerminalTab {
 
   private _checkState(): void {
     if (!this._isAgentTab) return;
+    if (
+      this._processBridge.hiddenWriteChunks.length > 0 ||
+      this._processBridge.writesInFlight > 0
+    ) {
+      this._stateCheckPending = true;
+      this._flushHiddenWrites();
+      return;
+    }
+    this._checkStateNow();
+  }
+
+  private _runPendingStateCheck(): void {
+    if (!this._stateCheckPending || this._isDisposed) return;
+    this._stateCheckPending = false;
+    this._checkStateNow();
+  }
+
+  private _checkStateNow(): void {
+    if (!this._isAgentTab) return;
 
     const hidden = !this.isVisible;
 
@@ -1334,6 +1430,7 @@ export class TerminalTab {
    * The returned StoredSession holds references to live objects.
    */
   stash(): StoredSession {
+    this._flushHiddenWrites();
     // Stop state timer during stash - will be restarted by fromStored
     if (this._stateTimer) {
       clearInterval(this._stateTimer);
@@ -1369,6 +1466,7 @@ export class TerminalTab {
       webglContextLossListener: this.webglContextLossListener,
       containerEl: this.containerEl,
       process: this.process,
+      processBridge: this._processBridge,
       documentListeners: this._documentCleanups.map((fn, i) => ({
         event: `cleanup-${i}`,
         handler: fn as unknown as EventListener,
@@ -1426,6 +1524,14 @@ export class TerminalTab {
     tab.unicode11Addon = stored.unicode11Addon;
     tab.containerEl = stored.containerEl;
     tab.process = stored.process;
+    tab._processBridge = stored.processBridge ?? {
+      owner: tab,
+      writesInFlight: 0,
+      hiddenWriteTimer: null,
+      hiddenWriteChunks: [],
+      hiddenWriteBytes: 0,
+    };
+    tab._processBridge.owner = tab;
     tab.webglAddon = stored.webglAddon ?? null;
     tab.webglContextLossListener = null;
     tab.recoverLegacyAddonRefs();
@@ -1443,11 +1549,31 @@ export class TerminalTab {
     tab._recentCleanLines = [];
     tab._stateTimer = null;
     tab._isAgentTab = false;
+    tab._stateCheckPending = false;
+    tab._userScrolledUp = false;
+    tab._programmaticScrollGuards = 0;
+    tab._pendingBottomCheck = false;
     tab._isDisposed = false;
     tab._renameDecoder = new StringDecoder("utf8");
     tab._renameLineBuffer = "";
     tab._renamePattern = /^\s*[^\w]*Session renamed to:\s*(.+?)\s*$/;
     tab.spawnTime = 0;
+
+    // Sessions created before the bridge existed still have process listeners
+    // bound to the old TerminalTab. Replace only this process's output listeners;
+    // its existing terminal input listener can continue writing to the same PTY.
+    if (
+      !stored.processBridge &&
+      tab.process &&
+      typeof tab.process.removeAllListeners === "function" &&
+      typeof tab.process.stdout?.on === "function"
+    ) {
+      tab.process.stdout.removeAllListeners("data");
+      tab.process.stderr?.removeAllListeners("data");
+      tab.process.removeAllListeners("error");
+      tab.process.removeAllListeners("exit");
+      tab.wireProcess(tab.process, false);
+    }
 
     // Re-attach container DOM to the new parent
     parentEl.appendChild(stored.containerEl);
@@ -1611,6 +1737,7 @@ export class TerminalTab {
   dispose(): void {
     if (this._isDisposed) return;
     this._isDisposed = true;
+    this._discardHiddenWrites();
     this.removePiSessionMapping();
     // Stop state tracking
     if (this._stateTimer) {

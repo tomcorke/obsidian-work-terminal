@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -296,6 +297,61 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(TerminalTab.prototype.startStateTracking).toHaveBeenCalledWith(true);
     expect(parentEl.appendChild).toHaveBeenCalledWith(containerEl);
     expect(scrollToBottom).toHaveBeenCalled();
+  });
+
+  it("rebinds output listeners when restoring a legacy session without a bridge", () => {
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    const process = Object.assign(new EventEmitter(), {
+      stdout,
+      stderr,
+      stdin: { destroyed: false, write: vi.fn() },
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+    });
+    const legacyOutput = vi.fn();
+    stdout.on("data", legacyOutput);
+    process.on("exit", vi.fn());
+
+    const write = vi.fn((_data: unknown, callback?: () => void) => callback?.());
+    const terminal = {
+      options: {} as Record<string, unknown>,
+      focus: vi.fn(),
+      scrollToBottom: vi.fn(),
+      write,
+      cols: 80,
+    };
+    const containerEl = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      hasClass: vi.fn(() => false),
+      querySelector: vi.fn(() => null),
+    };
+
+    TerminalTab.fromStored(
+      {
+        id: "term-1",
+        taskPath: "task.md",
+        label: "Shell",
+        sessionType: "shell",
+        terminal: terminal as any,
+        fitAddon: {} as any,
+        searchAddon: {} as any,
+        containerEl: containerEl as any,
+        process: process as any,
+        documentListeners: [],
+        resizeObserver: { disconnect: vi.fn(), observe: vi.fn() } as any,
+      },
+      { appendChild: vi.fn() } as any,
+    );
+
+    stdout.emit("data", Buffer.from("restored"));
+
+    expect(legacyOutput).not.toHaveBeenCalled();
+    expect(stdout.listenerCount("data")).toBe(1);
+    expect(process.listenerCount("exit")).toBe(1);
+    expect(write).toHaveBeenCalledOnce();
   });
 
   it("sets linkHandler on restored terminals that lack one (pre-fix sessions)", () => {
@@ -1388,6 +1444,7 @@ describe("TerminalTab auto-scroll on write", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -1429,6 +1486,7 @@ describe("TerminalTab auto-scroll on write", () => {
       }),
       scrollToBottom,
       write,
+      dispose: vi.fn(),
       buffer: { active: bufferActive },
     };
 
@@ -1455,19 +1513,26 @@ describe("TerminalTab auto-scroll on write", () => {
       _userScrolledUp: false,
       _programmaticScrollGuards: 0,
       _pendingBottomCheck: false,
+      _stateCheckPending: false,
       _documentCleanups: [],
+      resizeObserver: { disconnect: vi.fn() },
       _sessionTracker: null,
       _renameDecoder: { write: () => "", end: () => "" },
       _renameLineBuffer: "",
       _renamePattern: /^\s*[^\w]*Session renamed to:\s*(.+?)\s*$/,
       _recentCleanLines: [],
     }) as TerminalTab;
+    (tab as any)._processBridge = {
+      owner: tab,
+      writesInFlight: 0,
+      hiddenWriteTimer: null,
+      hiddenWriteChunks: [],
+      hiddenWriteBytes: 0,
+    };
 
-    /** Flush all deferred write callbacks in order */
+    const flushNextCallback = () => pendingCallbacks.shift()?.();
     const flushCallbacks = () => {
-      while (pendingCallbacks.length > 0) {
-        pendingCallbacks.shift()!();
-      }
+      while (pendingCallbacks.length > 0) flushNextCallback();
     };
 
     return {
@@ -1476,6 +1541,7 @@ describe("TerminalTab auto-scroll on write", () => {
       scrollToBottom,
       bufferActive,
       pendingCallbacks,
+      flushNextCallback,
       flushCallbacks,
       viewportEl,
       xtermEl,
@@ -1517,7 +1583,8 @@ describe("TerminalTab auto-scroll on write", () => {
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
   });
 
-  it("writes hidden output without scroll bookkeeping and catches up if shown", () => {
+  it("batches hidden output without scroll bookkeeping and catches up if shown", () => {
+    vi.useFakeTimers();
     const requestFrame = vi.fn();
     vi.stubGlobal("requestAnimationFrame", requestFrame);
     const { tab, terminal, scrollToBottom, flushCallbacks } = createTabWithMockTerminal({
@@ -1527,21 +1594,148 @@ describe("TerminalTab auto-scroll on write", () => {
 
     (tab as any).wireProcess(proc);
     tab.containerEl.addClass("hidden");
-    proc.emitStdout(Buffer.from("hidden"));
+    const first = Buffer.from([0xff, 0x00, 0x1b]);
+    const second = Buffer.from([0x5b, 0x32, 0x4a]);
+    proc.emitStdout(first);
+    proc.emitStdout(second);
 
-    expect(terminal.write).toHaveBeenCalledTimes(1);
+    expect(terminal.write).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(250);
+    expect(terminal.write).toHaveBeenCalledOnce();
+    expect(Buffer.from(terminal.write.mock.calls[0][0] as Uint8Array)).toEqual(
+      Buffer.concat([first, second]),
+    );
     expect(tab._programmaticScrollGuards).toBe(0);
     flushCallbacks();
     expect(scrollToBottom).not.toHaveBeenCalled();
     expect(requestFrame).not.toHaveBeenCalled();
 
     proc.emitStdout(Buffer.from("shown-before-write-finishes"));
+    vi.advanceTimersByTime(250);
     tab.containerEl.removeClass("hidden");
     flushCallbacks();
 
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
     expect(tab._programmaticScrollGuards).toBe(0);
     expect(requestFrame).not.toHaveBeenCalled();
+  });
+
+  it("flushes a hidden batch immediately at the byte cap", () => {
+    vi.useFakeTimers();
+    const { tab, terminal } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab.containerEl.addClass("hidden");
+    proc.emitStdout(Buffer.alloc(64 * 1024 - 1, 1));
+    expect(terminal.write).not.toHaveBeenCalled();
+
+    proc.emitStdout(Buffer.from([2, 3]));
+
+    expect(terminal.write).toHaveBeenCalledOnce();
+    expect(Buffer.from(terminal.write.mock.calls[0][0] as Uint8Array)).toHaveLength(64 * 1024 + 1);
+  });
+
+  it("flushes queued hidden output when shown before the deadline", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(() => 1),
+    );
+    const { tab, terminal } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab.containerEl.addClass("hidden");
+    proc.emitStdout(Buffer.from("queued"));
+    expect(terminal.write).not.toHaveBeenCalled();
+
+    tab.show();
+
+    expect(terminal.write).toHaveBeenCalledOnce();
+    expect(Buffer.from(terminal.write.mock.calls[0][0] as Uint8Array).toString()).toBe("queued");
+    vi.advanceTimersByTime(250);
+    expect(terminal.write).toHaveBeenCalledOnce();
+  });
+
+  it("flushes queued hidden output before stashing", () => {
+    vi.useFakeTimers();
+    const { tab, terminal } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab.containerEl.addClass("hidden");
+    proc.emitStdout(Buffer.from("queued"));
+
+    const stored = tab.stash();
+
+    expect(terminal.write).toHaveBeenCalledOnce();
+    expect(stored.processBridge).toBe((tab as any)._processBridge);
+  });
+
+  it("discards queued hidden output when disposed", () => {
+    vi.useFakeTimers();
+    const { tab, terminal } = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    (tab as any).wireProcess(proc);
+    tab.containerEl.addClass("hidden");
+    proc.emitStdout(Buffer.from("discard-me"));
+
+    tab.dispose();
+    vi.advanceTimersByTime(250);
+
+    expect(terminal.write).not.toHaveBeenCalled();
+  });
+
+  it("transfers output arriving between stash and restore", () => {
+    vi.useFakeTimers();
+    const original = createTabWithMockTerminal();
+    const restored = createTabWithMockTerminal();
+    const proc = createMockProcess();
+
+    (original.tab as any).wireProcess(proc);
+    original.tab.containerEl.addClass("hidden");
+    const stored = original.tab.stash();
+    proc.emitStdout(Buffer.from("during-reload"));
+
+    const bridge = stored.processBridge!;
+    bridge.owner = restored.tab;
+    (restored.tab as any)._processBridge = bridge;
+    restored.tab.containerEl.addClass("hidden");
+    vi.advanceTimersByTime(250);
+
+    expect(original.terminal.write).not.toHaveBeenCalled();
+    expect(restored.terminal.write).toHaveBeenCalledOnce();
+    expect(Buffer.from(restored.terminal.write.mock.calls[0][0] as Uint8Array).toString()).toBe(
+      "during-reload",
+    );
+
+    restored.tab.dispose();
+    proc.emitStdout(Buffer.from("after-dispose"));
+    vi.advanceTimersByTime(250);
+    expect(restored.terminal.write).toHaveBeenCalledOnce();
+  });
+
+  it("inspects state after one pending write parses even if another remains", () => {
+    const { tab, pendingCallbacks, flushNextCallback } = createTabWithMockTerminal({
+      deferCallbacks: true,
+    });
+    const proc = createMockProcess();
+    const checkStateNow = vi.fn();
+
+    (tab as any)._isAgentTab = true;
+    (tab as any)._checkStateNow = checkStateNow;
+    (tab as any).wireProcess(proc);
+    proc.emitStdout(Buffer.from("first"));
+    proc.emitStdout(Buffer.from("second"));
+
+    (tab as any)._checkState();
+    expect(checkStateNow).not.toHaveBeenCalled();
+
+    flushNextCallback();
+    expect(checkStateNow).toHaveBeenCalledOnce();
+    expect(pendingCallbacks).toHaveLength(1);
   });
 
   it("skips visible-write scroll bookkeeping if hidden before completion", () => {
