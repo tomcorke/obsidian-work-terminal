@@ -60,6 +60,18 @@ export const BRAND_COLORS: Partial<Record<ProfileIcon, string>> = {
 export const AGENT_TYPES = ["claude", "copilot", "opencode", "strands", "shell", "custom"] as const;
 export type AgentType = (typeof AGENT_TYPES)[number];
 
+export const BROKER_CAPABILITIES = [
+  "discover",
+  "read",
+  "wait",
+  "message",
+  "create-tab",
+  "prompt-tab",
+  "interrupt-tab",
+  "close-tab",
+] as const;
+export type BrokerCapability = (typeof BROKER_CAPABILITIES)[number];
+
 // ---------------------------------------------------------------------------
 // Button configuration
 // ---------------------------------------------------------------------------
@@ -108,6 +120,8 @@ export interface AgentProfile {
    * (e.g. auto-update wrappers) defined in ~/.zshrc or ~/.bashrc.
    */
   loginShellWrap?: boolean;
+  /** Exact task-tab broker grants. Empty means the broker is off for this profile. */
+  brokerCapabilities?: BrokerCapability[];
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +160,7 @@ const AgentProfileSchema = z.object({
   appendContextPrompt: z.boolean().default(true),
   escapeWorkTerminalPrompt: z.boolean().default(true),
   loginShellWrap: z.boolean().optional(),
+  brokerCapabilities: z.array(z.enum(BROKER_CAPABILITIES)).default([]),
 });
 
 /**
@@ -176,6 +191,7 @@ const StoredProfileSchema = z
     appendContextPrompt: z.boolean().default(true),
     escapeWorkTerminalPrompt: z.boolean().default(true),
     loginShellWrap: z.boolean().optional(),
+    brokerCapabilities: z.array(z.enum(BROKER_CAPABILITIES)).default([]),
   })
   .strip();
 
@@ -431,6 +447,7 @@ export function createDefaultProfile(overrides?: Partial<AgentProfile>): AgentPr
     suppressAdapterPrompt: false,
     appendContextPrompt: true,
     escapeWorkTerminalPrompt: true,
+    brokerCapabilities: [],
     button: {
       enabled: false,
       label: "",
@@ -457,6 +474,7 @@ export function createDefaultClaudeProfile(sortOrder = 0): AgentProfile {
     suppressAdapterPrompt: false,
     appendContextPrompt: true,
     escapeWorkTerminalPrompt: true,
+    brokerCapabilities: [],
     button: {
       enabled: true,
       label: "Claude",
@@ -481,6 +499,7 @@ export function createDefaultClaudeCtxProfile(sortOrder = 1): AgentProfile {
     suppressAdapterPrompt: false,
     appendContextPrompt: true,
     escapeWorkTerminalPrompt: true,
+    brokerCapabilities: [],
     button: {
       enabled: true,
       label: "Claude (ctx)",
@@ -505,6 +524,7 @@ export function createDefaultCopilotProfile(sortOrder = 2): AgentProfile {
     suppressAdapterPrompt: false,
     appendContextPrompt: true,
     escapeWorkTerminalPrompt: true,
+    brokerCapabilities: [],
     button: {
       enabled: false,
       label: "Copilot",

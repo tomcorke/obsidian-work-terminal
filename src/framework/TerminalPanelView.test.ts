@@ -1223,6 +1223,55 @@ describe("TerminalPanelView", () => {
     expect(mockState.latestCreateTabArgs?.[5]).toEqual(["/bin/echo"]);
   });
 
+  it("injects broker context only through an opted-in profile launch", async () => {
+    mockState.activeItemId = "task-1";
+    const target = { taskId: "task-1", tabId: "tab-1", generation: 1 };
+    const createdTab = {
+      getHostSnapshot: () => target,
+      launchEnv: { EXISTING_CONTEXT: "kept" },
+    } as any;
+    mockState.nextCreatedTab = createdTab;
+    const createBrokerEnv = vi.fn(() => ({
+      WORK_TERMINAL_BROKER_ENDPOINT: "/tmp/broker.sock",
+      WORK_TERMINAL_BROKER_TOKEN: "secret",
+    }));
+    const { view } = createView(
+      {
+        "core.claudeCommand": "/bin/echo",
+        "core.defaultTerminalCwd": "~/ctx",
+      },
+      { createTaskTabBrokerLaunchEnvironment: createBrokerEnv } as any,
+    );
+    await flushAsync();
+    const profile = {
+      id: "profile-broker",
+      name: "Broker profile",
+      agentType: "claude",
+      command: "",
+      defaultCwd: "",
+      arguments: "",
+      contextPrompt: "",
+      useContext: false,
+      suppressAdapterPrompt: false,
+      button: { enabled: false, label: "" },
+      sortOrder: 0,
+      brokerCapabilities: ["discover"],
+    } as any;
+
+    await (view as any).spawnAgentSession({
+      agentType: "claude",
+      sessionType: "claude",
+      profile,
+    });
+
+    expect(createBrokerEnv).toHaveBeenCalledWith(profile, target);
+    expect(createdTab.launchEnv).toEqual({
+      EXISTING_CONTEXT: "kept",
+      WORK_TERMINAL_BROKER_ENDPOINT: "/tmp/broker.sock",
+      WORK_TERMINAL_BROKER_TOKEN: "secret",
+    });
+  });
+
   it("can launch a prompt session for a specific target item", async () => {
     const { view } = createView({
       "core.claudeCommand": "/bin/echo",

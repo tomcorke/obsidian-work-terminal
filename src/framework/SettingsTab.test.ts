@@ -331,10 +331,23 @@ describe("WorkTerminalSettingsTab", () => {
     vi.clearAllMocks();
   });
 
-  it("defaults automatic tab renaming to disabled", async () => {
+  it("defaults automatic tab renaming and the task tab broker to disabled", async () => {
     const plugin = makePlugin({});
 
     await expect(loadSetting(plugin as any, "core.autoRenameAgentTabs")).resolves.toBe(false);
+    await expect(loadSetting(plugin as any, "core.taskTabBrokerEnabled")).resolves.toBe(false);
+  });
+
+  it("renders the global task tab broker opt-in under Agents", async () => {
+    const plugin = makePlugin({});
+    const tab = new WorkTerminalSettingsTab({} as any, plugin as any, adapter, mockProfileManager);
+
+    tab.display();
+    await flushAsyncWork();
+
+    const setting = tab.containerEl.querySelector('[data-setting-key="core.taskTabBrokerEnabled"]');
+    expect(setting?.textContent).toContain("Enable task tab broker");
+    expect(setting?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
   });
 
   it("does not render legacy agent command settings", async () => {

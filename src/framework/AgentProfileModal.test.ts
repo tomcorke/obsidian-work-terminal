@@ -263,6 +263,26 @@ function getDeleteButton(modal: AgentProfileEditModal): HTMLButtonElement | null
 describe("AgentProfileEditModal validation", () => {
   beforeEach(() => NoticeMock.mockClear());
 
+  it("renders every broker capability as an unchecked profile grant by default", () => {
+    const modal = new AgentProfileEditModal(
+      {} as any,
+      makeProfile({ id: "broker-defaults" }),
+      vi.fn(),
+    );
+    modal.open();
+
+    const brokerSection = (modal as any).contentEl.querySelector(
+      ".wt-broker-capabilities",
+    ) as HTMLElement | null;
+    expect(brokerSection?.textContent).toContain("Task tab broker");
+    expect(brokerSection?.querySelectorAll('input[type="checkbox"]')).toHaveLength(8);
+    expect(
+      Array.from(
+        brokerSection?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [],
+      ).every((input) => !input.checked),
+    ).toBe(true);
+  });
+
   it("offers OpenCode as an agent type and branded icon", () => {
     const modal = new AgentProfileEditModal(
       {} as any,

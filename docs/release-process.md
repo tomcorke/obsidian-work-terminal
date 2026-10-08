@@ -89,7 +89,7 @@ Tagging `origin/main` directly avoids switching the root checkout away from the 
 
 After the tag is pushed:
 
-1. Wait for the release workflow to attach `main.js`, `manifest.json`, `styles.css`, `pty-wrapper.py`, and `pi-session-hook.ts`.
+1. Wait for the release workflow to attach `main.js`, `manifest.json`, `styles.css`, `pty-wrapper.py`, `pi-session-hook.ts`, `task-tab-broker.js`, and `task-tab-broker-skill.md`.
 2. Copy the matching `CHANGELOG.md` entry into a temporary file.
 3. Publish the formatted notes with `gh`.
 

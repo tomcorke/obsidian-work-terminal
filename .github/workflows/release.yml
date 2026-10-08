@@ -38,3 +38,5 @@ jobs:
             styles.css
             pty-wrapper.py
             pi-session-hook.ts
+            task-tab-broker.js
+            task-tab-broker-skill.md

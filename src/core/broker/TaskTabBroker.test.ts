@@ -91,6 +91,62 @@ function setup(capabilities: Array<"discover" | "read"> = ["discover", "read"]) 
 }
 
 describe("TaskTabBroker read-only dispatcher", () => {
+  it("returns authenticated caller context without echoing the token", async () => {
+    const { broker, token } = setup(["discover"]);
+
+    const response = broker.hello(token, "hello-1");
+
+    expect(response).toMatchObject({
+      v: 1,
+      type: "response",
+      id: "hello-1",
+      ok: true,
+      result: {
+        brokerEpoch: expect.any(String),
+        caller,
+        capabilities: ["discover"],
+      },
+    });
+    expect(JSON.stringify(response)).not.toContain(token);
+    expect(broker.hello("invalid", "hello-2")).toMatchObject({
+      ok: false,
+      error: { code: "AUTH_FAILED" },
+    });
+  });
+
+  it("builds child context only for explicitly granted profiles", () => {
+    const { broker } = setup();
+    expect(
+      broker.issueLaunchContext(
+        {
+          vaultId: "vault-a",
+          caller,
+          profileId: "profile-a",
+          capabilities: [],
+        },
+        "/tmp/work-terminal.sock",
+      ),
+    ).toBeUndefined();
+
+    const context = broker.issueLaunchContext(
+      {
+        vaultId: "vault-a",
+        caller,
+        profileId: "profile-a",
+        capabilities: ["discover", "read"],
+      },
+      "/tmp/work-terminal.sock",
+    );
+    expect(context).toMatchObject({
+      WORK_TERMINAL_BROKER_PROTOCOL: "1",
+      WORK_TERMINAL_BROKER_ENDPOINT: "/tmp/work-terminal.sock",
+      WORK_TERMINAL_TASK_ID: "task-a",
+      WORK_TERMINAL_TAB_ID: "tab-a",
+      WORK_TERMINAL_TAB_GENERATION: "1",
+      WORK_TERMINAL_BROKER_TOKEN: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+    });
+  });
+
   it("authenticates a caller-bound token and dispatches versioned discovery requests", async () => {
     const { broker, token } = setup();
 

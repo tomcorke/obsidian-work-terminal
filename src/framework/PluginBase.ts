@@ -5,10 +5,33 @@
 import { type App, Notice, type PluginManifest, Plugin } from "obsidian";
 import type { AdapterBundle } from "../core/interfaces";
 import { AgentProfileManager } from "../core/agents/AgentProfileManager";
+import type { AgentProfile } from "../core/agents/AgentProfile";
+import {
+  TaskTabBroker,
+  type BrokerRuntimeState,
+  type BrokerTerminalHost,
+} from "../core/broker/TaskTabBroker";
+import {
+  createBrokerEndpoint,
+  TaskTabBrokerTransport,
+} from "../core/broker/TaskTabBrokerTransport";
+import type { TerminalTabTarget } from "../core/terminal/TerminalHost";
+import { electronRequire } from "../core/utils";
+import { resolveVaultBasePath } from "../core/workspace/pluginPaths";
+import { TaskCatalogue } from "./TaskCatalogue";
 import type { WorkTerminalSettingsTab } from "./SettingsTab";
 import { VIEW_TYPE } from "./viewType";
 
 export { VIEW_TYPE };
+
+declare global {
+  interface Window {
+    __workTerminalBrokerHandoff?: {
+      state: BrokerRuntimeState;
+      stopping: Promise<void>;
+    };
+  }
+}
 
 export abstract class PluginBase extends Plugin {
   protected adapter: AdapterBundle;
@@ -16,6 +39,19 @@ export abstract class PluginBase extends Plugin {
   private _lastWorkTerminalLeaf: unknown = null;
   private _settingsTab: WorkTerminalSettingsTab | null = null;
   private _profileManager: AgentProfileManager | null = null;
+  private _taskTabBroker: TaskTabBroker | null = null;
+  private _taskTabBrokerTransport: TaskTabBrokerTransport | null = null;
+  private _brokerVaultId = "";
+  private _brokerCatalogue: TaskCatalogue | null = null;
+  private _brokerEnabled = false;
+  private readonly _handleSettingsChanged = (event: Event) => {
+    const settings = (event as CustomEvent<Record<string, unknown>>).detail;
+    this._brokerCatalogue = new TaskCatalogue(
+      this.adapter.createParser(this.app, "", settings),
+      this.adapter,
+    );
+    void this.setTaskTabBrokerEnabled(settings["core.taskTabBrokerEnabled"] === true);
+  };
 
   constructor(app: App, manifest: PluginManifest, adapter: AdapterBundle) {
     super(app, manifest);
@@ -36,7 +72,47 @@ export abstract class PluginBase extends Plugin {
 
     // Defer view/settings registration to allow lazy imports
     const { MainView } = await import("./MainView");
-    const { WorkTerminalSettingsTab } = await import("./SettingsTab");
+    const { WorkTerminalSettingsTab, loadAllSettings, SETTINGS_CHANGED_EVENT } =
+      await import("./SettingsTab");
+    const settings = await loadAllSettings(this, this.adapter);
+    this._brokerCatalogue = new TaskCatalogue(
+      this.adapter.createParser(this.app, "", settings),
+      this.adapter,
+    );
+    this._brokerVaultId = this.resolveBrokerVaultId();
+    const handoff = window.__workTerminalBrokerHandoff;
+    if (handoff) {
+      await handoff.stopping;
+      delete window.__workTerminalBrokerHandoff;
+    }
+    this._taskTabBroker = new TaskTabBroker({
+      vaultId: this._brokerVaultId,
+      catalogue: {
+        listCategories: () => this.requireBrokerCatalogue().listCategories(),
+        listTasks: (options) => this.requireBrokerCatalogue().listTasks(options),
+        getTask: (taskId) => this.requireBrokerCatalogue().getTask(taskId),
+        getSubtasks: (taskId, options) =>
+          this.requireBrokerCatalogue().getSubtasks(taskId, options),
+        getParentTasks: (taskId, options) =>
+          this.requireBrokerCatalogue().getParentTasks(taskId, options),
+      },
+      getProfileCapabilities: (profileId) =>
+        this._profileManager?.getProfile(profileId)?.brokerCapabilities ?? [],
+      ...(handoff ? { runtimeState: handoff.state } : {}),
+    });
+    this._taskTabBrokerTransport = new TaskTabBrokerTransport(
+      this._taskTabBroker,
+      createBrokerEndpoint(this.resolveBrokerVaultIdentity()),
+    );
+    this._brokerEnabled = settings["core.taskTabBrokerEnabled"] === true;
+    if (this._brokerEnabled) {
+      try {
+        await this._taskTabBrokerTransport.start();
+      } catch {
+        console.error("[work-terminal] Could not start the task tab broker");
+      }
+    }
+    window.addEventListener(SETTINGS_CHANGED_EVENT, this._handleSettingsChanged as EventListener);
 
     this.registerView(VIEW_TYPE, (leaf) => new MainView(leaf, this.adapter, this));
 
@@ -116,6 +192,78 @@ export abstract class PluginBase extends Plugin {
     return this._isReloading;
   }
 
+  registerTaskTabBrokerHost(host: BrokerTerminalHost): () => void {
+    return this._taskTabBroker?.registerHost(this._brokerVaultId, host) ?? (() => undefined);
+  }
+
+  createTaskTabBrokerLaunchEnvironment(
+    profile: AgentProfile,
+    caller: TerminalTabTarget,
+  ): NodeJS.ProcessEnv | undefined {
+    const capabilities = profile.brokerCapabilities ?? [];
+    if (
+      !this._brokerEnabled ||
+      capabilities.length === 0 ||
+      !this._taskTabBroker ||
+      !this._taskTabBrokerTransport?.isListening
+    ) {
+      return undefined;
+    }
+    try {
+      return this._taskTabBroker.issueLaunchContext(
+        {
+          vaultId: this._brokerVaultId,
+          caller,
+          profileId: profile.id,
+          capabilities,
+        },
+        this._taskTabBrokerTransport.endpoint,
+      );
+    } catch (error) {
+      console.error("[work-terminal] Could not issue task tab broker context", error);
+      return undefined;
+    }
+  }
+
+  private requireBrokerCatalogue(): TaskCatalogue {
+    if (!this._brokerCatalogue) throw new Error("Task catalogue is unavailable");
+    return this._brokerCatalogue;
+  }
+
+  private resolveBrokerVaultIdentity(): string {
+    return resolveVaultBasePath(this.app) || this.app.vault.getName();
+  }
+
+  private resolveBrokerVaultId(): string {
+    const crypto = electronRequire("crypto") as typeof import("crypto");
+    return crypto
+      .createHash("sha256")
+      .update(this.resolveBrokerVaultIdentity())
+      .digest("hex")
+      .slice(0, 32);
+  }
+
+  private async setTaskTabBrokerEnabled(enabled: boolean): Promise<void> {
+    this._brokerEnabled = enabled;
+    if (!this._taskTabBroker || !this._taskTabBrokerTransport) return;
+    if (enabled) {
+      if (!this._taskTabBrokerTransport.isListening) {
+        try {
+          await this._taskTabBrokerTransport.start();
+        } catch {
+          console.error("[work-terminal] Could not start the task tab broker");
+        }
+      }
+      return;
+    }
+    this._taskTabBroker.revokeAllCallers();
+    try {
+      await this._taskTabBrokerTransport.stop();
+    } catch {
+      console.error("[work-terminal] Could not cleanly stop the task tab broker");
+    }
+  }
+
   rememberWorkTerminalLeaf(leaf: unknown): void {
     this._lastWorkTerminalLeaf = leaf;
   }
@@ -148,7 +296,23 @@ export abstract class PluginBase extends Plugin {
   }
 
   onunload(): void {
-    // No-op: session resume and disk persistence have been removed.
-    // Hot-reload stash (SessionStore) handles module re-evaluation.
+    window.removeEventListener(
+      "work-terminal:settings-changed",
+      this._handleSettingsChanged as EventListener,
+    );
+    if (!this._taskTabBroker || !this._taskTabBrokerTransport) return;
+    if (this._isReloading) {
+      window.__workTerminalBrokerHandoff = {
+        state: this._taskTabBroker.exportRuntimeState(),
+        stopping: this._taskTabBrokerTransport.stop({ reloading: true }).catch(() => {
+          console.error("[work-terminal] Could not cleanly stop the task tab broker for reload");
+        }),
+      };
+      return;
+    }
+    this._taskTabBroker.revokeAllCallers();
+    void this._taskTabBrokerTransport.stop().catch(() => {
+      console.error("[work-terminal] Could not cleanly stop the task tab broker");
+    });
   }
 }
