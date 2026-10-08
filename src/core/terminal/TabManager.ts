@@ -186,8 +186,9 @@ export class TabManager {
     preCommand?: string,
     commandArgs?: string[],
     launchMetadata?: { piSessionMappingPath: string; piSessionLaunchToken: string },
+    activate = true,
   ): TerminalTab {
-    const isActiveItem = this.activeItemId === itemId;
+    const isActiveItem = activate && this.activeItemId === itemId;
 
     const tabs = this.sessions.get(itemId) || [];
     const spawnTime = Date.now();

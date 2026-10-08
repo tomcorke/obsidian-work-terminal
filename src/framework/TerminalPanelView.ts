@@ -35,7 +35,7 @@ import { getDefaultSessionLabel } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
 import type { AgentProfile, AgentType } from "../core/agents/AgentProfile";
-import type { BrokerTerminalHost } from "../core/broker/TaskTabBroker";
+import type { BrokerCreateTabResult, BrokerTerminalHost } from "../core/broker/TaskTabBroker";
 import type { TerminalTabTarget } from "../core/terminal/TerminalHost";
 import {
   agentTypeToSessionType,
@@ -998,7 +998,7 @@ export class TerminalPanelView {
     return typeof value === "string" ? value : defaultValue;
   }
 
-  private launchAction(actionLabel: string, launch: () => Promise<void>): void {
+  private launchAction(actionLabel: string, launch: () => Promise<unknown>): void {
     void launch().catch((error: unknown) => {
       console.error(`[work-terminal] Failed to launch ${actionLabel}`, error);
       const message = error instanceof Error ? error.message : String(error);
@@ -1007,10 +1007,14 @@ export class TerminalPanelView {
   }
 
   /** Spawn a session from the same resolved profile model shown in the editor preview. */
-  async spawnFromProfile(profile: AgentProfile): Promise<void> {
-    if (!this.profileManager) return;
+  async spawnFromProfile(
+    profile: AgentProfile,
+    options: { targetItem?: WorkItem; nonActivating?: boolean; notifyErrors?: boolean } = {},
+  ): Promise<TerminalTab | null> {
+    if (!this.profileManager) return null;
     const fresh = await this.loadFreshSettings();
-    const item = this.getActiveItem();
+    const item = options.targetItem ?? this.getActiveItem();
+    const notifyErrors = options.notifyErrors !== false;
     const resolved = resolveProfileLaunch({
       profile,
       settings: fresh,
@@ -1021,18 +1025,20 @@ export class TerminalPanelView {
     });
 
     if (resolved.error === "context-item-required") {
-      new Notice(
-        `Select a ${this.adapter.config.itemName} first to launch this profile with context`,
-      );
-      return;
+      if (notifyErrors) {
+        new Notice(
+          `Select a ${this.adapter.config.itemName} first to launch this profile with context`,
+        );
+      }
+      return null;
     }
     if (resolved.error === "context-prompt-unavailable") {
-      new Notice("Could not build a contextual prompt for this item");
-      return;
+      if (notifyErrors) new Notice("Could not build a contextual prompt for this item");
+      return null;
     }
     if (resolved.error === "manual-prompt-placeholder-required") {
-      new Notice(validateProfilePromptInjection(profile)!);
-      return;
+      if (notifyErrors) new Notice(validateProfilePromptInjection(profile)!);
+      return null;
     }
 
     // resolveArguments() already merged global + profile args, so do not merge
@@ -1050,10 +1056,12 @@ export class TerminalPanelView {
       launchConfigOverrides: profile.agentType === "custom" ? resolved.launchConfig : undefined,
       loginShellWrap: profile.loginShellWrap,
       invocation: resolved.invocation,
+      targetItemId: options.targetItem?.id,
+      nonActivating: options.nonActivating,
       profile,
     });
 
-    if (!tab) return;
+    if (!tab) return null;
     tab.profileId = profile.id;
     if (profile.button.color) tab.profileColor = profile.button.color;
     tab.activityPatterns =
@@ -1063,6 +1071,7 @@ export class TerminalPanelView {
         : undefined);
     if (profile.loginShellWrap) tab.loginShellWrap = true;
     this.renderTabBar();
+    return tab;
   }
 
   private async spawnShell(): Promise<void> {
@@ -1140,18 +1149,20 @@ export class TerminalPanelView {
       label?: string;
       cwdOverride?: string;
       targetItem?: WorkItem;
+      nonActivating?: boolean;
+      notifyErrors?: boolean;
     },
-  ): Promise<void> {
+  ): Promise<TerminalTab | null> {
     if (!this.profileManager) {
       // Should never happen - fall back to the legacy path rather than throwing.
-      await this.spawnAgentSession({
+      return this.spawnAgentSession({
         agentType: "claude",
         sessionType: "claude-with-context",
         prompt,
         label: options.label || "Claude (ctx)",
         targetItemId: options.targetItem?.id,
+        nonActivating: options.nonActivating,
       });
-      return;
     }
 
     const fresh = await this.loadFreshSettings();
@@ -1165,8 +1176,8 @@ export class TerminalPanelView {
     const label = options.label || profile.button.label || profile.name;
     const validationError = validateProfilePromptInjection(profile);
     if (validationError) {
-      new Notice(validationError);
-      return;
+      if (options.notifyErrors !== false) new Notice(validationError);
+      return null;
     }
 
     // Expand $sessionId lazily (TabManager resolves it) and resolve manual prompt
@@ -1205,13 +1216,12 @@ export class TerminalPanelView {
       launchConfigOverrides,
       loginShellWrap: profile.loginShellWrap,
       targetItemId: options.targetItem?.id,
+      nonActivating: options.nonActivating,
       invocation,
       profile,
     });
 
-    if (!tab) {
-      return;
-    }
+    if (!tab) return null;
 
     // Apply profile metadata to the newly created tab so it styles / rekeys
     // identically to button-launched profile sessions. Do not fall back to an
@@ -1227,6 +1237,7 @@ export class TerminalPanelView {
       tab.loginShellWrap = true;
     }
     this.renderTabBar();
+    return tab;
   }
 
   // ---------------------------------------------------------------------------
@@ -1391,8 +1402,35 @@ export class TerminalPanelView {
     return path.resolve(vaultPath, itemPath);
   }
 
+  private async createBrokerProfileTab(
+    taskId: string,
+    profileId: string,
+    initialPrompt?: string,
+  ): Promise<BrokerCreateTabResult> {
+    const profile = this.profileManager?.getProfile(profileId);
+    if (!profile) return { status: "profile-not-found" };
+    if (profile.agentType === "shell") return { status: "invalid-profile" };
+    const targetItem = this.allItems.find((item) => item.id === taskId);
+    if (!targetItem) return { status: "unavailable" };
+
+    const options = { targetItem, nonActivating: true, notifyErrors: false };
+    const tab =
+      initialPrompt === undefined
+        ? await this.spawnFromProfile(profile, options)
+        : await this.spawnFromResolvedProfile(profile, initialPrompt, options);
+    return tab ? { status: "created", tab: tab.getHostSnapshot() } : { status: "unavailable" };
+  }
+
   getBrokerHost(): BrokerTerminalHost {
-    return this.tabManager;
+    return {
+      getTabHostSnapshots: (taskId) => this.tabManager.getTabHostSnapshots(taskId),
+      getAllTabHostSnapshots: () => this.tabManager.getAllTabHostSnapshots(),
+      readTabOutput: (target, options) => this.tabManager.readTabOutput(target, options),
+      onTabLifecycle: (target, listener) => this.tabManager.onTabLifecycle(target, listener),
+      createProfileTab: (taskId, profileId, initialPrompt) =>
+        this.createBrokerProfileTab(taskId, profileId, initialPrompt),
+      promptTab: (target, prompt) => this.tabManager.promptTab(target, prompt),
+    };
   }
 
   getAllActiveTabs(): ActiveTabInfo[] {
@@ -1596,10 +1634,12 @@ export class TerminalPanelView {
     invocation?: ResolvedAgentInvocation;
     /** Create tab for a specific item instead of the active item. */
     targetItemId?: string;
+    /** Keep task and tab selection unchanged while creating the target tab. */
+    nonActivating?: boolean;
     /** Persisted profile supplying optional exact broker grants. */
     profile?: AgentProfile;
   }): Promise<TerminalTab | null> {
-    this.exitDetailView();
+    if (!options.nonActivating) this.exitDetailView();
     const launchConfig = options.launchConfigOverrides ?? getLaunchConfig(options.agentType);
     const { withContext } = sessionTypeToAgentType(options.sessionType);
 
@@ -1674,19 +1714,33 @@ export class TerminalPanelView {
     }
 
     const label = options.label || getDefaultSessionLabel(options.sessionType);
+    const launchMetadata =
+      piSessionMappingPath && piSessionLaunchToken
+        ? { piSessionMappingPath, piSessionLaunchToken }
+        : undefined;
     const tab = options.targetItemId
-      ? this.tabManager.createTabForItem(
-          options.targetItemId,
-          invocation.executable,
-          invocation.cwd,
-          label,
-          options.sessionType,
-          undefined,
-          invocation.argv,
-          ...(piSessionMappingPath && piSessionLaunchToken
-            ? [{ piSessionMappingPath, piSessionLaunchToken }]
-            : []),
-        )
+      ? options.nonActivating
+        ? this.tabManager.createTabForItem(
+            options.targetItemId,
+            invocation.executable,
+            invocation.cwd,
+            label,
+            options.sessionType,
+            undefined,
+            invocation.argv,
+            launchMetadata,
+            false,
+          )
+        : this.tabManager.createTabForItem(
+            options.targetItemId,
+            invocation.executable,
+            invocation.cwd,
+            label,
+            options.sessionType,
+            undefined,
+            invocation.argv,
+            ...(launchMetadata ? [launchMetadata] : []),
+          )
       : this.tabManager.createTab(
           invocation.executable,
           invocation.cwd,
@@ -1694,9 +1748,7 @@ export class TerminalPanelView {
           options.sessionType,
           undefined,
           invocation.argv,
-          ...(piSessionMappingPath && piSessionLaunchToken
-            ? [{ piSessionMappingPath, piSessionLaunchToken }]
-            : []),
+          ...(launchMetadata ? [launchMetadata] : []),
         );
     if (tab) {
       if (options.profile) {

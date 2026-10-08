@@ -16,6 +16,8 @@ node /path/to/work-terminal/task-tab-broker.js waitForTab '{"target":{"taskId":"
 node /path/to/work-terminal/task-tab-broker.js sendMessage '{"target":{"taskId":"<id>","tabId":"<id>","generation":1},"clientMessageId":"<caller-unique-id>","kind":"status","payload":{"text":"ready"}}'
 node /path/to/work-terminal/task-tab-broker.js receiveMessages '{"limit":20}'
 node /path/to/work-terminal/task-tab-broker.js ackMessages '{"messageIds":["<message-id>"]}'
+node /path/to/work-terminal/task-tab-broker.js createTab '{"taskId":"<id>","profileId":"<profile-id>","initialPrompt":"Start with the failing test"}'
+node /path/to/work-terminal/task-tab-broker.js promptTab '{"target":{"taskId":"<id>","tabId":"<id>","generation":1},"prompt":"Continue"}'
 ```
 
 The helper authenticates from its injected caller context, reconnects with bounded backoff during plugin reload, and prints one structured response. A non-zero exit means the response or transport failed.
@@ -34,4 +36,4 @@ The helper authenticates from its injected caller context, reconnects with bound
 - Never print, persist, send, or include `WORK_TERMINAL_BROKER_TOKEN` or the endpoint in diagnostics.
 - Agent state is heuristic. `idle` is not proof that work completed.
 
-Only discovery, bounded output reads, lifecycle waits, and mailbox methods are available in this release slice. Later control methods require their separately named profile grant and should not be guessed before the host advertises them.
+Discovery and output methods are read-only; lifecycle waits and mailbox methods require their separately named grants. `createTab` and `promptTab` require their separately named profile grants, accept at most 16 KiB of prompt text, and never focus or select the target. `createTab` accepts only a stored profile ID, while `promptTab` accepts only an exact generation-pinned target; neither accepts commands, process handles, or arbitrary key input. Later broker methods require their separately named profile grant and should not be guessed before the host advertises them.

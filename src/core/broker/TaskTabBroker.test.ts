@@ -34,11 +34,12 @@ function setup(
     `${target.taskId}:${target.tabId}:${target.generation}`;
   const focusState = { taskId: "task-a", tabId: "tab-a" };
   const focusEffects = { activate: vi.fn(), selectTask: vi.fn(), focusTab: vi.fn() };
-  const host: BrokerTerminalHost & typeof focusEffects = {
-    getTabHostSnapshots: (taskId) => tabs.get(taskId) ?? [],
+  const host = {
+    getTabHostSnapshots: (taskId: string) => tabs.get(taskId) ?? [],
     getAllTabHostSnapshots: () => [...tabs.values()].flat(),
-    readTabOutput: (target) => outputs.get(`${target.tabId}:${target.generation}`) ?? null,
-    onTabLifecycle: (target, listener) => {
+    readTabOutput: (target: TerminalTabTarget) =>
+      outputs.get(`${target.tabId}:${target.generation}`) ?? null,
+    onTabLifecycle: (target: TerminalTabTarget, listener: TerminalLifecycleListener) => {
       if (!(tabs.get(target.taskId) ?? []).some((tab) => targetKey(tab) === targetKey(target))) {
         return null;
       }
@@ -47,8 +48,14 @@ function setup(
       lifecycleListeners.set(targetKey(target), listeners);
       return () => listeners.delete(listener);
     },
+    createProfileTab: vi.fn(),
+    promptTab: vi.fn(),
     ...focusEffects,
-  };
+  } as BrokerTerminalHost &
+    typeof focusEffects & {
+      createProfileTab: ReturnType<typeof vi.fn>;
+      promptTab: ReturnType<typeof vi.fn>;
+    };
   const tasks = [
     {
       id: "task-a",
@@ -265,6 +272,210 @@ describe("TaskTabBroker read-only dispatcher", () => {
       result: { tasks: [{ id: "task-a", depth: 1, direct: true }] },
     });
     expect(focusState).toEqual({ taskId: "task-a", tabId: "tab-a" });
+    expect(focusEffects.activate).not.toHaveBeenCalled();
+    expect(focusEffects.selectTask).not.toHaveBeenCalled();
+    expect(focusEffects.focusTab).not.toHaveBeenCalled();
+  });
+
+  it("creates a profile-backed tab for a valid task without changing focus", async () => {
+    const { broker, token, host, tabs, focusState, focusEffects } = setup(["create-tab"]);
+    const created: TerminalTabHostSnapshot = {
+      taskId: "task-b",
+      tabId: "tab-created",
+      generation: 1,
+      label: "Worker",
+      sessionType: "claude",
+      profileId: "profile-b",
+      state: "active",
+      processStatus: "running",
+      latestSequence: "0",
+    };
+    host.createProfileTab.mockImplementation(async () => {
+      tabs.set("task-b", [created]);
+      return { status: "created", tab: created };
+    });
+
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", {
+          taskId: "task-b",
+          profileId: "profile-b",
+          initialPrompt: "Start with the failing test",
+        }),
+      ),
+    ).resolves.toEqual({ v: 1, type: "response", id: "r1", ok: true, result: created });
+    expect(host.createProfileTab).toHaveBeenCalledWith(
+      "task-b",
+      "profile-b",
+      "Start with the failing test",
+    );
+    expect(focusState).toEqual({ taskId: "task-a", tabId: "tab-a" });
+    expect(focusEffects.activate).not.toHaveBeenCalled();
+    expect(focusEffects.selectTask).not.toHaveBeenCalled();
+    expect(focusEffects.focusTab).not.toHaveBeenCalled();
+
+    host.createProfileTab.mockResolvedValueOnce({ status: "profile-not-found" });
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "missing-profile" }, "missing-profile"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    host.createProfileTab.mockResolvedValueOnce({ status: "invalid-profile" });
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "shell-profile" }, "shell-profile"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARGUMENT", details: { argument: "profileId" } },
+    });
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "missing-task", profileId: "profile-b" }, "missing-task"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  });
+
+  it("enforces separate mutation grants and UTF-8 prompt bounds before host dispatch", async () => {
+    const { broker, token, host, tabs } = setup(["create-tab"]);
+
+    await expect(
+      broker.dispatch(token, request("promptTab", { target: caller, prompt: "Continue" })),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "CAPABILITY_DENIED",
+        details: { requiredCapability: "prompt-tab" },
+      },
+    });
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", {
+          taskId: "task-b",
+          profileId: "profile-b",
+          initialPrompt: "😀".repeat(4097),
+        }),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "LIMIT_EXCEEDED",
+        details: { argument: "initialPrompt", limit: 16 * 1024 },
+      },
+    });
+    await expect(
+      broker.dispatch(token, request("createTab", { taskId: "task-b", profileId: "" })),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARGUMENT", details: { argument: "profileId" } },
+    });
+    tabs.set(
+      "task-b",
+      Array.from({ length: 32 }, (_, index) => ({
+        ...callerTab,
+        taskId: "task-b",
+        tabId: `task-b-tab-${index}`,
+      })),
+    );
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "profile-b" }, "tab-limit"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "LIMIT_EXCEEDED", details: { limit: 32 } },
+    });
+    expect(host.createProfileTab).not.toHaveBeenCalled();
+    expect(host.promptTab).not.toHaveBeenCalled();
+
+    const promptOnly = setup(["prompt-tab"]);
+    await expect(
+      promptOnly.broker.dispatch(
+        promptOnly.token,
+        request("promptTab", { target: caller, prompt: "😀".repeat(4097) }),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "LIMIT_EXCEEDED",
+        details: { argument: "prompt", limit: 16 * 1024 },
+      },
+    });
+    expect(promptOnly.host.promptTab).not.toHaveBeenCalled();
+  });
+
+  it("rate limits remote tab creation independently", async () => {
+    const { broker, token, host } = setup(["create-tab"]);
+    host.createProfileTab.mockResolvedValue({
+      status: "created",
+      tab: {
+        taskId: "task-b",
+        tabId: "tab-created",
+        generation: 1,
+        label: "Worker",
+        sessionType: "claude",
+        state: "active",
+        processStatus: "running",
+        latestSequence: "0",
+      },
+    });
+
+    for (let count = 0; count < 6; count++) {
+      const response = await broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "profile-b" }, `create-${count}`),
+      );
+      expect(response.ok).toBe(true);
+    }
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "profile-b" }, "create-limited"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED", retryable: true } });
+  });
+
+  it("prompts only an existing generation-pinned tab without changing focus", async () => {
+    const { broker, token, host, tabs, focusEffects } = setup(["prompt-tab"]);
+    const target: TerminalTabTarget = {
+      taskId: "task-b",
+      tabId: "tab-target",
+      generation: 4,
+    };
+    tabs.set("task-b", [
+      {
+        ...target,
+        label: "Worker",
+        sessionType: "claude",
+        state: "waiting",
+        processStatus: "running",
+        latestSequence: "5",
+      },
+    ]);
+    host.promptTab.mockReturnValue("accepted");
+
+    await expect(
+      broker.dispatch(token, request("promptTab", { target, prompt: "Continue" })),
+    ).resolves.toEqual({
+      v: 1,
+      type: "response",
+      id: "r1",
+      ok: true,
+      result: { target, affectedGeneration: 4 },
+    });
+    expect(host.promptTab).toHaveBeenCalledWith(target, "Continue");
+
+    tabs.set("task-b", [{ ...tabs.get("task-b")![0], generation: 5 }]);
+    await expect(
+      broker.dispatch(token, request("promptTab", { target, prompt: "Late" }, "stale")),
+    ).resolves.toMatchObject({ ok: false, error: { code: "STALE_TARGET" } });
+    expect(host.promptTab).toHaveBeenCalledOnce();
     expect(focusEffects.activate).not.toHaveBeenCalled();
     expect(focusEffects.selectTask).not.toHaveBeenCalled();
     expect(focusEffects.focusTab).not.toHaveBeenCalled();
