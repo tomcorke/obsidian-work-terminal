@@ -3,6 +3,7 @@ import {
   BaseAdapter,
   type WorkItem,
   type WorkItemParser,
+  type WorkItemRelationships,
   type WorkItemMover,
   type CardRenderer,
   type WorkItemPromptBuilder,
@@ -136,6 +137,17 @@ export class TaskAgentAdapter extends BaseAdapter {
 
   createPromptBuilder(): WorkItemPromptBuilder {
     return new TaskPromptBuilder();
+  }
+
+  getWorkItemRelationships(item: WorkItem): WorkItemRelationships {
+    const parent = (item.metadata as Record<string, unknown>).parent;
+    const parentId =
+      parent &&
+      typeof parent === "object" &&
+      typeof (parent as Record<string, unknown>).id === "string"
+        ? ((parent as Record<string, unknown>).id as string)
+        : "";
+    return { parentIds: parentId.trim() ? [parentId.trim()] : [], childIds: [] };
   }
 
   createDetailView(
