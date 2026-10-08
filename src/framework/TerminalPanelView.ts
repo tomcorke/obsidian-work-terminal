@@ -1409,7 +1409,7 @@ export class TerminalPanelView {
   ): Promise<BrokerCreateTabResult> {
     const profile = this.profileManager?.getProfile(profileId);
     if (!profile) return { status: "profile-not-found" };
-    if (profile.agentType === "shell") return { status: "unavailable" };
+    if (profile.agentType === "shell") return { status: "invalid-profile" };
     const targetItem = this.allItems.find((item) => item.id === taskId);
     if (!targetItem) return { status: "unavailable" };
 

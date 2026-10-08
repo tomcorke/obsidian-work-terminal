@@ -266,6 +266,16 @@ describe("TaskTabBroker read-only dispatcher", () => {
         request("createTab", { taskId: "task-b", profileId: "missing-profile" }, "missing-profile"),
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    host.createProfileTab.mockResolvedValueOnce({ status: "invalid-profile" });
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "shell-profile" }, "shell-profile"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARGUMENT", details: { argument: "profileId" } },
+    });
     await expect(
       broker.dispatch(
         token,

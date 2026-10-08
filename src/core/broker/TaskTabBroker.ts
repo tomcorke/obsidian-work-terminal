@@ -95,6 +95,7 @@ export interface BrokerTaskCatalogue {
 export type BrokerCreateTabResult =
   | { status: "created"; tab: TerminalTabHostSnapshot }
   | { status: "profile-not-found" }
+  | { status: "invalid-profile" }
   | { status: "unavailable" };
 
 /** Handle-free terminal host primitives used by the broker. */
@@ -422,6 +423,11 @@ export class TaskTabBroker {
         );
         if (created.status === "profile-not-found") {
           return failure(id, "NOT_FOUND", "The profile was not found");
+        }
+        if (created.status === "invalid-profile") {
+          return failure(id, "INVALID_ARGUMENT", "The profile cannot create an agent tab", false, {
+            argument: "profileId",
+          });
         }
         if (created.status === "unavailable") {
           return failure(id, "TARGET_UNAVAILABLE", "The host could not create the tab", true);
