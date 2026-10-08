@@ -1127,7 +1127,7 @@ export class TerminalTab {
         // xterm may not have painted anything. Refreshing ensures the canvas
         // renderer draws the buffer content.
         this.terminal.refresh(0, this.terminal.rows - 1);
-        this.terminal.scrollToBottom();
+        if (focus) this.terminal.scrollToBottom();
         this.syncViewportScrollArea();
         if (focus) this.terminal.focus();
         requestAnimationFrame(() => {

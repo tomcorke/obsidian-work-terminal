@@ -662,6 +662,21 @@ describe("TabManager - broker host primitives", () => {
     expect(tab.onLifecycleEvent).toHaveBeenCalledWith(listener);
     expect(tab.show).not.toHaveBeenCalled();
   });
+
+  it("closes only an exact generation and reveals its neighbour without focus", () => {
+    const targetTab = makeStubTab({ id: "tab-1", generation: 3, taskPath: "item-1" });
+    const neighbour = makeStubTab({ id: "tab-2", generation: 1, taskPath: "item-1" });
+    const mgr = makeTabManagerWithSessions("item-1", [targetTab, neighbour]);
+    const target = { taskId: "item-1", tabId: "tab-1", generation: 3 };
+
+    expect(mgr.closeHostTab({ ...target, generation: 2 })).toBeNull();
+    expect(mgr.closeHostTab(target)).toEqual({ processWasRunning: true });
+
+    expect(targetTab.dispose).toHaveBeenCalledOnce();
+    expect(mgr.getTabs("item-1")).toEqual([neighbour]);
+    expect(neighbour.resumeWebGl).toHaveBeenCalledOnce();
+    expect(neighbour.show).toHaveBeenCalledWith(false);
+  });
 });
 
 describe("TabManager - onProcessExit auto-close behaviour", () => {

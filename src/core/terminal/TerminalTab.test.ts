@@ -503,6 +503,32 @@ describe("TerminalTab hot-reload addon handling", () => {
     expect(terminal.focus).toHaveBeenCalledTimes(1);
   });
 
+  it("shows without moving focus or scroll when requested by background control", () => {
+    const terminal = {
+      options: {} as Record<string, unknown>,
+      refresh: vi.fn(),
+      scrollToBottom: vi.fn(),
+      focus: vi.fn(),
+      rows: 24,
+    };
+    const tab = Object.assign(Object.create(TerminalTab.prototype), {
+      terminal,
+      containerEl: {
+        removeClass: vi.fn(),
+        hasClass: vi.fn(() => false),
+        querySelectorAll: vi.fn(() => []),
+      },
+      _isDisposed: false,
+      fitAddon: { fit: vi.fn() },
+    }) as TerminalTab;
+
+    tab.show(false);
+
+    expect(terminal.refresh).toHaveBeenCalledWith(0, 23);
+    expect(terminal.scrollToBottom).not.toHaveBeenCalled();
+    expect(terminal.focus).not.toHaveBeenCalled();
+  });
+
   it("disposes the custom link provider before terminal teardown", () => {
     const order: string[] = [];
     const tab = Object.assign(Object.create(TerminalTab.prototype), {
