@@ -419,7 +419,7 @@ The file is shared by every vault using the plugin. On first run it is created f
 
 The task tab broker is disabled by default. To use it, enable **Settings > Agents > Enable task tab broker**, then edit a profile and grant only the exact capabilities that profile needs. Existing profiles and all eight grants (`discover`, `read`, `wait`, `message`, `create-tab`, `prompt-tab`, `interrupt-tab`, and `close-tab`) default to off. Grants do not imply one another; `close-tab` is explicitly destructive. Profile changes revoke removed grants from live callers, while newly added grants apply only to newly launched sessions.
 
-An opted-in profile receives a local endpoint, its caller task/tab/generation, and a random token in its child environment. Profiles with no grants receive none of these variables. The bundled `task-tab-broker.js` helper refuses to run without that complete context. Read-only discovery, bounded output reads, lifecycle waits, and acknowledged mailbox messaging are available. Profiles with `create-tab` can create a non-activating profile-backed agent tab for a valid task, optionally with an initial prompt; profiles with `prompt-tab` can prompt an exact live task/tab/generation. Prompts are limited to 16 KiB. The separate `interrupt-tab` grant requests the host's fixed process interrupt, while the destructive `close-tab` grant closes an exact generation and reports whether its process was running. Remote control does not accept arbitrary signals or key input, and successful prompt, interrupt, and close results identify the affected generation.
+An opted-in profile receives a local endpoint, its caller task/tab/generation, and a random token in its child environment. Profiles with no grants receive none of these variables. The bundled `skills/work-terminal-task-tab-broker/scripts/task-tab-broker.js` helper refuses to run without that complete context. Read-only discovery, bounded output reads, lifecycle waits, and acknowledged mailbox messaging are available. Profiles with `create-tab` can create a non-activating profile-backed agent tab for a valid task, optionally with an initial prompt; profiles with `prompt-tab` can prompt an exact live task/tab/generation. Prompts are limited to 16 KiB. The separate `interrupt-tab` grant requests the host's fixed process interrupt, while the destructive `close-tab` grant closes an exact generation and reports whether its process was running. Remote control does not accept arbitrary signals or key input, and successful prompt, interrupt, and close results identify the affected generation.
 
 Lifecycle waits pin an exact tab generation and return requested state, process exit, timeout, or unknown detector state as distinct outcomes. State detection is heuristic, so idle does not confirm completed work. Waits default to 30 seconds and are capped at 10 minutes.
 
@@ -427,7 +427,21 @@ The `message` grant lets a tab send structured JSON to an exact tab generation i
 
 The endpoint is a user-private Unix socket (or a Windows named pipe), never a network listener. Calls are limited to the current vault, bounded and rate-limited, and do not focus Work Terminal. Tokens and message payloads are not persisted or logged. Live sessions can reconnect after plugin hot reload, but clients must list current tabs and drain their mailbox again because runtime events are not durable. Pending waits are cancelled on disconnect or reload and must be started again against the newly listed generation. This is a local capability boundary, not a sandbox against another process running as the same OS user, which may be able to inspect process memory or environment.
 
-See `task-tab-broker-skill.md` beside the plugin files for helper examples, exact-target rules, and error handling.
+A standard agent skill is included at `skills/work-terminal-task-tab-broker/SKILL.md`. Install it manually by copying the whole `work-terminal-task-tab-broker` directory into the agent's user or project skill directory. Keep its `scripts/` directory with it.
+
+```sh
+# Pi
+mkdir -p ~/.pi/agent/skills/work-terminal-task-tab-broker
+cp -R /path/to/work-terminal/skills/work-terminal-task-tab-broker/. \
+  ~/.pi/agent/skills/work-terminal-task-tab-broker/
+
+# Claude Code
+mkdir -p ~/.claude/skills/work-terminal-task-tab-broker
+cp -R /path/to/work-terminal/skills/work-terminal-task-tab-broker/. \
+  ~/.claude/skills/work-terminal-task-tab-broker/
+```
+
+GitHub releases attach `work-terminal-task-tab-broker-skill.tar.gz`; extract it into the same user or project skill directory. The skill tells agents when broker context is available, how to invoke the bundled helper, and how to handle exact targets, capabilities, mailboxes, reloads, and errors.
 
 The per-profile **Context prompt** field is the place to configure additional context that used to live in the removed **Additional agent context prompt** setting (issue #472). Set it on each profile that should inject task context on top of the adapter prompt.
 
