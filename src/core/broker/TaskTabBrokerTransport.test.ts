@@ -3,7 +3,11 @@ import { connect } from "net";
 import { join } from "path";
 import { tmpdir } from "os";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TerminalTabHostSnapshot, TerminalTabTarget } from "../terminal/TerminalHost";
+import type {
+  TerminalLifecycleListener,
+  TerminalTabHostSnapshot,
+  TerminalTabTarget,
+} from "../terminal/TerminalHost";
 import { BROKER_FRAME_MAX_BYTES, TaskTabBroker } from "./TaskTabBroker";
 import { TaskTabBrokerTransport } from "./TaskTabBrokerTransport";
 
@@ -23,7 +27,8 @@ afterEach(async () => {
   while (cleanup.length) await cleanup.pop()!();
 });
 
-function makeBroker() {
+function makeBroker(capabilities: Array<"discover" | "wait"> = ["discover"]) {
+  const lifecycleListeners = new Set<TerminalLifecycleListener>();
   const broker = new TaskTabBroker({
     vaultId: "vault-a",
     catalogue: {
@@ -33,20 +38,24 @@ function makeBroker() {
       getSubtasks: async () => null,
       getParentTasks: async () => null,
     },
-    getProfileCapabilities: () => ["discover"],
+    getProfileCapabilities: () => capabilities,
   });
   broker.registerHost("vault-a", {
     getTabHostSnapshots: (taskId) => (taskId === "task-a" ? [callerTab] : []),
     getAllTabHostSnapshots: () => [callerTab],
     readTabOutput: () => null,
+    onTabLifecycle: (_target, listener) => {
+      lifecycleListeners.add(listener);
+      return () => lifecycleListeners.delete(listener);
+    },
   });
   const token = broker.issueToken({
     vaultId: "vault-a",
     caller,
     profileId: "profile-a",
-    capabilities: ["discover"],
+    capabilities,
   });
-  return { broker, token };
+  return { broker, token, lifecycleListeners };
 }
 
 function readFrame(socket: ReturnType<typeof connect>): Promise<any> {
@@ -152,6 +161,41 @@ describe("TaskTabBrokerTransport", () => {
     ]);
   });
 
+  it("cancels a pending wait when its connection closes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wt-broker-test-"));
+    const endpoint = join(directory, "broker.sock");
+    const { broker, token, lifecycleListeners } = makeBroker(["wait"]);
+    const transport = new TaskTabBrokerTransport(broker, endpoint);
+    cleanup.push(async () => {
+      await transport.stop();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    await transport.start();
+
+    const socket = connect(endpoint);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    socket.write(`${JSON.stringify({ v: 1, type: "hello", id: "h1", token })}\n`);
+    await expect(readFrame(socket)).resolves.toMatchObject({ ok: true });
+    socket.write(
+      `${JSON.stringify({
+        v: 1,
+        type: "request",
+        id: "wait",
+        method: "waitForTab",
+        params: { target: caller, states: ["idle"], timeoutMs: 60_000 },
+      })}\n`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(lifecycleListeners.size).toBe(1);
+
+    socket.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(lifecycleListeners.size).toBe(0);
+  });
+
   it("rebinds the same private endpoint so live callers can reconnect after reload", async () => {
     const directory = mkdtempSync(join(tmpdir(), "wt-broker-test-"));
     const endpoint = join(directory, "broker.sock");
@@ -189,6 +233,7 @@ describe("TaskTabBrokerTransport", () => {
       getTabHostSnapshots: (taskId) => (taskId === "task-a" ? [callerTab] : []),
       getAllTabHostSnapshots: () => [callerTab],
       readTabOutput: () => null,
+      onTabLifecycle: () => null,
     });
     const replacement = new TaskTabBrokerTransport(replacementBroker, endpoint);
     cleanup.push(async () => {

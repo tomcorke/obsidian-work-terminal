@@ -1,6 +1,9 @@
 import type { BrokerCapability } from "../agents/AgentProfile";
 import type {
   CleanOutputRead,
+  TerminalHostRuntimeState,
+  TerminalLifecycleEvent,
+  TerminalLifecycleListener,
   TerminalTabHostSnapshot,
   TerminalTabTarget,
 } from "../terminal/TerminalHost";
@@ -24,10 +27,15 @@ export const BROKER_HIERARCHY_MAX_RESULTS = 500;
 export const BROKER_OUTPUT_DEFAULT_LINES = 50;
 export const BROKER_OUTPUT_MAX_LINES = 200;
 export const BROKER_OUTPUT_MAX_BYTES = 48 * 1024;
+export const BROKER_WAIT_DEFAULT_TIMEOUT_MS = 30_000;
+export const BROKER_WAIT_MAX_TIMEOUT_MS = 10 * 60_000;
 
 const RATE_WINDOW_MS = 60_000;
 const GENERAL_RATE_LIMIT = 120;
 const OUTPUT_RATE_LIMIT = 60;
+const WAIT_RATE_LIMIT = 30;
+const CALLER_WAIT_LIMIT = 16;
+const BROKER_WAIT_LIMIT = 128;
 const AUTH_FAILURE_RATE_LIMIT = 20;
 const TOMBSTONE_TTL_MS = 60 * 60_000;
 const TOMBSTONE_LIMIT = 10_000;
@@ -41,7 +49,8 @@ export type BrokerMethod =
   | "listTabs"
   | "getSubtasks"
   | "getParentTasks"
-  | "readOutput";
+  | "readOutput"
+  | "waitForTab";
 
 export interface BrokerRequest {
   v: number;
@@ -64,6 +73,7 @@ export interface BrokerError {
     | "NOT_FOUND"
     | "STALE_TARGET"
     | "TARGET_UNAVAILABLE"
+    | "BROKER_RELOADING"
     | "INTERNAL";
   message: string;
   retryable: boolean;
@@ -93,6 +103,10 @@ export interface BrokerTerminalHost {
     target: TerminalTabTarget,
     options: { maxLines: number; maxBytes: number },
   ): CleanOutputRead | null;
+  onTabLifecycle(
+    target: TerminalTabTarget,
+    listener: TerminalLifecycleListener,
+  ): (() => void) | null;
 }
 
 export interface BrokerCallerGrant {
@@ -118,6 +132,8 @@ interface StoredCallerGrant extends BrokerCallerGrant {
   digest: Buffer;
   requestTimes: number[];
   outputRequestTimes: number[];
+  waitRequestTimes: number[];
+  activeWaits: number;
 }
 
 interface KnownTab {
@@ -131,6 +147,7 @@ export interface BrokerRuntimeState {
     digest: string;
     requestTimes: number[];
     outputRequestTimes: number[];
+    waitRequestTimes: number[];
   }>;
   knownTabs: Array<[string, KnownTab]>;
   failedAuthTimes: number[];
@@ -148,6 +165,7 @@ export class TaskTabBroker {
   private readonly knownTabs = new Map<string, KnownTab>();
   private readonly failedAuthTimes: number[] = [];
   private readonly audit: BrokerAuditEntry[] = [];
+  private activeWaits = 0;
 
   constructor(options: {
     vaultId: string;
@@ -174,6 +192,8 @@ export class TaskTabBroker {
           digest: Buffer.from(caller.digest, "base64"),
           requestTimes: [...caller.requestTimes],
           outputRequestTimes: [...caller.outputRequestTimes],
+          waitRequestTimes: [...(caller.waitRequestTimes ?? [])],
+          activeWaits: 0,
         });
       }
       for (const [tabId, known] of runtime.knownTabs) {
@@ -197,6 +217,7 @@ export class TaskTabBroker {
         digest: caller.digest.toString("base64"),
         requestTimes: [...caller.requestTimes],
         outputRequestTimes: [...caller.outputRequestTimes],
+        waitRequestTimes: [...caller.waitRequestTimes],
       })),
       knownTabs: [...this.knownTabs].map(([tabId, known]) => [tabId, { ...known }]),
       failedAuthTimes: [...this.failedAuthTimes],
@@ -228,6 +249,8 @@ export class TaskTabBroker {
       digest: crypto.createHash("sha256").update(token).digest(),
       requestTimes: [],
       outputRequestTimes: [],
+      waitRequestTimes: [],
+      activeWaits: 0,
     });
     return token;
   }
@@ -277,7 +300,11 @@ export class TaskTabBroker {
     this.callers.length = 0;
   }
 
-  async dispatch(token: string, request: BrokerRequest): Promise<BrokerResponse> {
+  async dispatch(
+    token: string,
+    request: BrokerRequest,
+    signal?: AbortSignal,
+  ): Promise<BrokerResponse> {
     const startedAt = this.now();
     const id = validRequestId(request?.id) ? request.id : null;
     if (request?.v !== BROKER_PROTOCOL_VERSION) {
@@ -316,7 +343,7 @@ export class TaskTabBroker {
     if (rateError) {
       response = { v: 1, type: "response", id, ok: false, error: rateError };
     } else {
-      response = await this.dispatchAuthenticated(caller, request);
+      response = await this.dispatchAuthenticated(caller, request, signal);
     }
     this.recordAudit(caller, request, response, startedAt);
     return response;
@@ -325,10 +352,16 @@ export class TaskTabBroker {
   private async dispatchAuthenticated(
     caller: StoredCallerGrant,
     request: BrokerRequest,
+    signal?: AbortSignal,
   ): Promise<BrokerResponse> {
     const id = request.id;
     try {
-      const required: BrokerCapability = request.method === "readOutput" ? "read" : "discover";
+      const required: BrokerCapability =
+        request.method === "readOutput"
+          ? "read"
+          : request.method === "waitForTab"
+            ? "wait"
+            : "discover";
       const currentCapabilities = new Set(this.getProfileCapabilities(caller.profileId));
       if (!caller.capabilities.includes(required) || !currentCapabilities.has(required)) {
         return failure(id, "CAPABILITY_DENIED", `The caller lacks ${required}`, false, {
@@ -364,6 +397,7 @@ export class TaskTabBroker {
         );
       }
       if (request.method === "readOutput") return this.readOutput(id, params);
+      if (request.method === "waitForTab") return this.waitForTab(caller, id, params, signal);
 
       const taskId = params.taskId;
       if (!validIdentifier(taskId)) return invalidIdentifier(id, "taskId");
@@ -437,6 +471,128 @@ export class TaskTabBroker {
     return output ? success(id, output) : failure(id, "STALE_TARGET", "The target became stale");
   }
 
+  private waitForTab(
+    caller: StoredCallerGrant,
+    id: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<BrokerResponse> | BrokerResponse {
+    const target = parseTarget(params.target);
+    if (!target) {
+      return failure(id, "INVALID_ARGUMENT", "A valid target is required", false, {
+        argument: "target",
+      });
+    }
+    const states = parseWaitStates(params.states);
+    if (!states)
+      return failure(id, "INVALID_ARGUMENT", "states is invalid", false, { argument: "states" });
+    const timeoutMs = params.timeoutMs ?? BROKER_WAIT_DEFAULT_TIMEOUT_MS;
+    const timeoutError = validateBoundedInteger("timeoutMs", timeoutMs, BROKER_WAIT_MAX_TIMEOUT_MS);
+    if (timeoutError) return { v: 1, type: "response", id, ok: false, error: timeoutError };
+    if (caller.activeWaits >= CALLER_WAIT_LIMIT) {
+      return failure(id, "LIMIT_EXCEEDED", "The caller has too many active waits", false, {
+        limit: CALLER_WAIT_LIMIT,
+      });
+    }
+    if (this.activeWaits >= BROKER_WAIT_LIMIT) {
+      return failure(id, "LIMIT_EXCEEDED", "The broker has too many active waits", false, {
+        limit: BROKER_WAIT_LIMIT,
+      });
+    }
+
+    const owners = this.findTargetOwners(target);
+    if (owners.length > 1) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target has multiple host owners", true);
+    }
+    if (owners.length === 0) return this.missingTargetFailure(id, target);
+
+    const owner = owners[0];
+    const initial = owner
+      .getTabHostSnapshots(target.taskId)
+      .find((snapshot) => sameTarget(snapshot, target));
+    if (!initial) return failure(id, "STALE_TARGET", "The target became stale");
+    const initialResult = currentWaitResult(id, initial, states);
+    if (initialResult) return initialResult;
+    if (signal?.aborted) {
+      return failure(id, "BROKER_RELOADING", "The broker wait was cancelled", true);
+    }
+
+    return new Promise<BrokerResponse>((resolve) => {
+      let settled = false;
+      let unsubscribe: (() => void) | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      caller.activeWaits++;
+      this.activeWaits++;
+
+      const complete = (response: BrokerResponse) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        unsubscribe?.();
+        signal?.removeEventListener("abort", onAbort);
+        caller.activeWaits--;
+        this.activeWaits--;
+        resolve(response);
+      };
+      const onAbort = () =>
+        complete(failure(id, "BROKER_RELOADING", "The broker wait was cancelled", true));
+      const onEvent = (event: TerminalLifecycleEvent) => {
+        if (!sameTarget(event.target, target)) return;
+        if (event.type === "closed") {
+          complete(failure(id, "STALE_TARGET", "The target became stale"));
+        } else if (event.type === "exit") {
+          complete(
+            success(id, {
+              kind: "exit",
+              exitCode: event.exitCode,
+              signal: event.signal,
+              sequence: event.sequence,
+            }),
+          );
+        } else if (event.state === "unknown") {
+          complete(success(id, { kind: "unknown", sequence: event.sequence }));
+        } else if (states.has(event.state)) {
+          complete(success(id, { kind: "state", state: event.state, sequence: event.sequence }));
+        }
+      };
+
+      unsubscribe = owner.onTabLifecycle(target, onEvent);
+      if (!unsubscribe) {
+        complete(failure(id, "STALE_TARGET", "The target became stale"));
+        return;
+      }
+      if (settled) {
+        unsubscribe();
+        return;
+      }
+
+      const current = owner
+        .getTabHostSnapshots(target.taskId)
+        .find((snapshot) => sameTarget(snapshot, target));
+      const currentResult = current && currentWaitResult(id, current, states);
+      if (!current) {
+        complete(failure(id, "STALE_TARGET", "The target became stale"));
+      } else if (currentResult) {
+        complete(currentResult);
+      } else {
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+        else
+          timer = setTimeout(() => complete(success(id, { kind: "timeout" })), timeoutMs as number);
+      }
+    });
+  }
+
+  private missingTargetFailure(id: string, target: TerminalTabTarget): BrokerResponse {
+    this.pruneKnownTabs();
+    const code = this.knownTabs.has(target.tabId) ? "STALE_TARGET" : "NOT_FOUND";
+    return failure(
+      id,
+      code,
+      code === "STALE_TARGET" ? "The target is stale" : "The tab was not found",
+    );
+  }
+
   private authenticate(token: string): StoredCallerGrant | null {
     if (typeof token !== "string") return null;
     const crypto = cryptoModule();
@@ -470,6 +626,10 @@ export class TaskTabBroker {
     if (method === "readOutput") {
       const outputRetry = consumeRate(caller.outputRequestTimes, OUTPUT_RATE_LIMIT, now);
       if (outputRetry !== null) return rateError(outputRetry);
+    }
+    if (method === "waitForTab") {
+      const waitRetry = consumeRate(caller.waitRequestTimes, WAIT_RATE_LIMIT, now);
+      if (waitRetry !== null) return rateError(waitRetry);
     }
     return null;
   }
@@ -595,10 +755,39 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     getSubtasks: ["taskId", "maxDepth", "maxResults"],
     getParentTasks: ["taskId", "maxDepth", "maxResults"],
     readOutput: ["target", "maxLines", "maxBytes"],
+    waitForTab: ["target", "states", "timeoutMs"],
   };
   if (!Object.prototype.hasOwnProperty.call(allowed, method)) return invalidArgumentError("method");
   const unexpected = Object.keys(params).find((key) => !allowed[method].includes(key));
   return unexpected ? invalidArgumentError(unexpected) : null;
+}
+
+function currentWaitResult(
+  id: string,
+  snapshot: TerminalTabHostSnapshot,
+  states: ReadonlySet<Exclude<TerminalHostRuntimeState, "unknown">>,
+): BrokerResponse | null {
+  if (snapshot.processStatus === "exited") {
+    return success(id, {
+      kind: "exit",
+      exitCode: null,
+      signal: null,
+      sequence: snapshot.latestSequence,
+    });
+  }
+  if (snapshot.state === "unknown") {
+    return success(id, { kind: "unknown", sequence: snapshot.latestSequence });
+  }
+  return states.has(snapshot.state)
+    ? success(id, { kind: "state", state: snapshot.state, sequence: snapshot.latestSequence })
+    : null;
+}
+
+function parseWaitStates(value: unknown): Set<Exclude<TerminalHostRuntimeState, "unknown">> | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const allowed = new Set(["active", "idle", "waiting"]);
+  if (value.some((state) => typeof state !== "string" || !allowed.has(state))) return null;
+  return new Set(value as Array<Exclude<TerminalHostRuntimeState, "unknown">>);
 }
 
 function validIdentifier(value: unknown): value is string {

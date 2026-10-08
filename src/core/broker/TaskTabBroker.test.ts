@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   CleanOutputRead,
+  TerminalLifecycleEvent,
+  TerminalLifecycleListener,
   TerminalTabHostSnapshot,
   TerminalTabTarget,
 } from "../terminal/TerminalHost";
@@ -21,15 +23,27 @@ function request(method: string, params: Record<string, unknown> = {}, id = "r1"
   return { v: 1, type: "request" as const, id, method, params };
 }
 
-function setup(capabilities: Array<"discover" | "read"> = ["discover", "read"]) {
+function setup(capabilities: Array<"discover" | "read" | "wait"> = ["discover", "read", "wait"]) {
   const tabs = new Map<string, TerminalTabHostSnapshot[]>([["task-a", [callerTab]]]);
   const outputs = new Map<string, CleanOutputRead>();
+  const lifecycleListeners = new Map<string, Set<TerminalLifecycleListener>>();
+  const targetKey = (target: TerminalTabTarget) =>
+    `${target.taskId}:${target.tabId}:${target.generation}`;
   const focusState = { taskId: "task-a", tabId: "tab-a" };
   const focusEffects = { activate: vi.fn(), selectTask: vi.fn(), focusTab: vi.fn() };
   const host: BrokerTerminalHost & typeof focusEffects = {
     getTabHostSnapshots: (taskId) => tabs.get(taskId) ?? [],
     getAllTabHostSnapshots: () => [...tabs.values()].flat(),
     readTabOutput: (target) => outputs.get(`${target.tabId}:${target.generation}`) ?? null,
+    onTabLifecycle: (target, listener) => {
+      if (!(tabs.get(target.taskId) ?? []).some((tab) => targetKey(tab) === targetKey(target))) {
+        return null;
+      }
+      const listeners = lifecycleListeners.get(targetKey(target)) ?? new Set();
+      listeners.add(listener);
+      lifecycleListeners.set(targetKey(target), listeners);
+      return () => listeners.delete(listener);
+    },
     ...focusEffects,
   };
   const tasks = [
@@ -87,7 +101,21 @@ function setup(capabilities: Array<"discover" | "read"> = ["discover", "read"]) 
     profileId: "profile-a",
     capabilities,
   });
-  return { broker, token, host, tabs, outputs, grants, focusState, focusEffects };
+  const emitLifecycle = (event: TerminalLifecycleEvent) => {
+    for (const listener of lifecycleListeners.get(targetKey(event.target)) ?? []) listener(event);
+  };
+  return {
+    broker,
+    token,
+    host,
+    tabs,
+    outputs,
+    grants,
+    focusState,
+    focusEffects,
+    emitLifecycle,
+    lifecycleListeners,
+  };
 }
 
 describe("TaskTabBroker read-only dispatcher", () => {
@@ -402,5 +430,191 @@ describe("TaskTabBroker read-only dispatcher", () => {
         details: { requiredCapability: "discover" },
       },
     });
+  });
+});
+
+describe("TaskTabBroker lifecycle waits", () => {
+  it("returns current requested, unknown, and exited states distinctly", async () => {
+    const { broker, token, tabs, lifecycleListeners } = setup(["wait"]);
+
+    await expect(
+      broker.dispatch(token, request("waitForTab", { target: caller, states: ["active"] })),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { kind: "state", state: "active", sequence: "2" },
+    });
+
+    tabs.set("task-a", [{ ...callerTab, state: "unknown", latestSequence: "3" }]);
+    await expect(
+      broker.dispatch(token, request("waitForTab", { target: caller, states: ["idle"] })),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { kind: "unknown", sequence: "3" },
+    });
+
+    tabs.set("task-a", [{ ...callerTab, processStatus: "exited", latestSequence: "4" }]);
+    await expect(
+      broker.dispatch(token, request("waitForTab", { target: caller, states: ["idle"] })),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { kind: "exit", exitCode: null, signal: null, sequence: "4" },
+    });
+    expect([...lifecycleListeners.values()].flatMap((listeners) => [...listeners])).toHaveLength(0);
+  });
+
+  it("waits for ordered state or exit events without polling and pins the generation", async () => {
+    const { broker, token, emitLifecycle, lifecycleListeners } = setup(["wait"]);
+    const stateWait = broker.dispatch(
+      token,
+      request("waitForTab", { target: caller, states: ["idle"], timeoutMs: 1_000 }),
+    );
+    await Promise.resolve();
+
+    emitLifecycle({
+      type: "state",
+      target: caller,
+      state: "idle",
+      sequence: "3",
+    });
+    await expect(stateWait).resolves.toMatchObject({
+      ok: true,
+      result: { kind: "state", state: "idle", sequence: "3" },
+    });
+    expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+
+    const exitWait = broker.dispatch(
+      token,
+      request("waitForTab", { target: caller, states: ["waiting"] }),
+    );
+    await Promise.resolve();
+    emitLifecycle({
+      type: "exit",
+      target: caller,
+      exitCode: 7,
+      signal: null,
+      sequence: "4",
+    });
+    await expect(exitWait).resolves.toMatchObject({
+      ok: true,
+      result: { kind: "exit", exitCode: 7, signal: null, sequence: "4" },
+    });
+  });
+
+  it("returns timeout and stale outcomes and always removes its listener", async () => {
+    vi.useFakeTimers();
+    try {
+      const { broker, token, emitLifecycle, lifecycleListeners } = setup(["wait"]);
+      const timeoutWait = broker.dispatch(
+        token,
+        request("waitForTab", { target: caller, states: ["idle"], timeoutMs: 25 }),
+      );
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(25);
+      await expect(timeoutWait).resolves.toMatchObject({
+        ok: true,
+        result: { kind: "timeout" },
+      });
+      expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+
+      const staleWait = broker.dispatch(
+        token,
+        request("waitForTab", { target: caller, states: ["waiting"] }),
+      );
+      await Promise.resolve();
+      emitLifecycle({ type: "closed", target: caller, sequence: "5" });
+      await expect(staleWait).resolves.toMatchObject({
+        ok: false,
+        error: { code: "STALE_TARGET" },
+      });
+      expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels and cleans up a pending wait when its transport signal aborts", async () => {
+    const { broker, token, lifecycleListeners } = setup(["wait"]);
+    const controller = new AbortController();
+    const pending = broker.dispatch(
+      token,
+      request("waitForTab", { target: caller, states: ["idle"] }),
+      controller.signal,
+    );
+    await Promise.resolve();
+
+    controller.abort();
+
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      error: { code: "BROKER_RELOADING", retryable: true },
+    });
+    expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(0);
+  });
+
+  it("enforces wait arguments, capability, concurrency, and rate limits", async () => {
+    const denied = setup(["discover"]);
+    await expect(
+      denied.broker.dispatch(
+        denied.token,
+        request("waitForTab", { target: caller, states: ["idle"] }),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "CAPABILITY_DENIED", details: { requiredCapability: "wait" } },
+    });
+
+    const { broker, token } = setup(["wait"]);
+    await expect(
+      broker.dispatch(token, request("waitForTab", { target: caller, states: [] })),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_ARGUMENT" } });
+    await expect(
+      broker.dispatch(
+        token,
+        request("waitForTab", { target: caller, states: ["idle"], timeoutMs: 600_001 }),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "LIMIT_EXCEEDED", details: { argument: "timeoutMs", limit: 600_000 } },
+    });
+
+    const controllers = Array.from({ length: 16 }, () => new AbortController());
+    const pending = controllers.map((controller, index) =>
+      broker.dispatch(
+        token,
+        request(
+          "waitForTab",
+          { target: caller, states: ["idle"], timeoutMs: 60_000 },
+          `wait-${index}`,
+        ),
+        controller.signal,
+      ),
+    );
+    await Promise.resolve();
+    await expect(
+      broker.dispatch(
+        token,
+        request("waitForTab", { target: caller, states: ["idle"] }, "wait-overflow"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "LIMIT_EXCEEDED", details: { limit: 16 } },
+    });
+    controllers.forEach((controller) => controller.abort());
+    await Promise.all(pending);
+
+    for (let index = 0; index < 11; index++) {
+      await expect(
+        broker.dispatch(
+          token,
+          request("waitForTab", { target: caller, states: ["active"] }, `rate-${index}`),
+        ),
+      ).resolves.toMatchObject({ ok: true, result: { kind: "state", state: "active" } });
+    }
+    await expect(
+      broker.dispatch(
+        token,
+        request("waitForTab", { target: caller, states: ["active"] }, "rate-overflow"),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
   });
 });
