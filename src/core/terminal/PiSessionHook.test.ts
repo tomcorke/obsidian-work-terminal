@@ -33,12 +33,15 @@ describe("pi-session-hook", () => {
     } as any);
 
     expect([...handlers.keys()]).toEqual(["session_start", "agent_start", "agent_end"]);
-    await handlers.get("session_start")?.({}, {
-      sessionManager: {
-        getSessionId: () => "session-1",
-        getSessionFile: () => "/tmp/session.jsonl",
+    await handlers.get("session_start")?.(
+      {},
+      {
+        sessionManager: {
+          getSessionId: () => "session-1",
+          getSessionFile: () => "/tmp/session.jsonl",
+        },
       },
-    });
+    );
     await handlers.get("agent_start")?.();
     await handlers.get("agent_end")?.();
 

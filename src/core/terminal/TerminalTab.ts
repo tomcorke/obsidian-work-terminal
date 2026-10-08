@@ -1229,10 +1229,7 @@ export class TerminalTab {
     }
 
     if (this.piSessionMappingPath && this.piSessionLaunchToken) {
-      const report = readPiLifecycleReport(
-        this.piSessionMappingPath,
-        this.piSessionLaunchToken,
-      );
+      const report = readPiLifecycleReport(this.piSessionMappingPath, this.piSessionLaunchToken);
       const authority = acceptPiLifecycleReport(
         {
           accepted: this._piLifecycleAuthority,
