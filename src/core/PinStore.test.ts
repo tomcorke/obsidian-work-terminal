@@ -137,7 +137,7 @@ describe("PinStore", () => {
     expect(store.getPinnedIds()).toEqual(["id-1"]);
   });
 
-  it("restores in-memory pins when persistence fails", async () => {
+  it("retains in-memory membership when persistence fails", async () => {
     const plugin = createMockPlugin({ pinnedItems: ["id-1"] });
     const store = new PinStore(plugin);
     await store.load();
@@ -145,7 +145,38 @@ describe("PinStore", () => {
 
     await expect(store.pin("id-2")).rejects.toThrow("write failed");
 
-    expect(store.getPinnedIds()).toEqual(["id-1"]);
+    expect(store.getPinnedIds()).toEqual(["id-1", "id-2"]);
+  });
+
+  it("reconciles membership while preserving existing relative order", async () => {
+    const plugin = createMockPlugin({ pinnedItems: ["id-3", "id-1", "id-2"] });
+    const store = new PinStore(plugin);
+    await store.load();
+
+    expect(await store.reconcile(["id-2", "id-3", "id-4"])).toBe(true);
+
+    expect(store.getPinnedIds()).toEqual(["id-3", "id-2", "id-4"]);
+    expect(plugin.saveData).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes malformed and duplicate IDs and skips unchanged saves", async () => {
+    const plugin = createMockPlugin({ pinnedItems: ["id-1", 42, "id-1", "id-2"] });
+    const store = new PinStore(plugin);
+    await store.load();
+
+    expect(store.getPinnedIds()).toEqual(["id-1", "id-2"]);
+    expect(await store.reconcile(["id-1", "id-1", 99, "id-2"] as any)).toBe(true);
+    expect(plugin.saveData).not.toHaveBeenCalled();
+  });
+
+  it("keeps reconciled memory when persistence fails", async () => {
+    const plugin = createMockPlugin({ pinnedItems: ["id-1"] });
+    const store = new PinStore(plugin);
+    await store.load();
+    plugin.saveData.mockRejectedValueOnce(new Error("write failed"));
+
+    expect(await store.reconcile(["id-2"])).toBe(false);
+    expect(store.getPinnedIds()).toEqual(["id-2"]);
   });
 
   it("returns a defensive copy from getPinnedIds", async () => {

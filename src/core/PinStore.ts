@@ -2,12 +2,9 @@ import type { PluginDataStore } from "./PluginDataStore";
 import { mergeAndSavePluginData } from "./PluginDataStore";
 
 /**
- * Manages pinned item IDs. Pin state is stored in plugin data (data.json)
- * under the `pinnedItems` key as an ordered array of item UUIDs. The array
- * order defines the display order in the pinned section.
- *
- * This is a display-only concept - pinning does not change the item's actual
- * state/column, just its visual position at the top of the kanban board.
+ * Maintains the ordered cache of pinned item IDs in plugin data. Durable pin
+ * membership lives in each item's source; this cache controls display order
+ * and supplies legacy migration input.
  */
 export class PinStore {
   private pinnedIds: string[] = [];
@@ -20,7 +17,7 @@ export class PinStore {
   /** Load pinned IDs from plugin data. Call once during initialization. */
   async load(): Promise<void> {
     const data = (await this.plugin.loadData()) || {};
-    this.pinnedIds = Array.isArray(data.pinnedItems) ? [...data.pinnedItems] : [];
+    this.pinnedIds = Array.isArray(data.pinnedItems) ? this.normalize(data.pinnedItems) : [];
   }
 
   /** Get the ordered list of pinned item IDs. */
@@ -36,27 +33,38 @@ export class PinStore {
   /** Pin an item. Adds to the end of the pinned list. */
   async pin(itemId: string): Promise<void> {
     if (this.pinnedIds.includes(itemId)) return;
-    const previous = [...this.pinnedIds];
     this.pinnedIds.push(itemId);
-    try {
-      await this.persist();
-    } catch (err) {
-      this.pinnedIds = previous;
-      throw err;
-    }
+    await this.persist();
   }
 
   /** Unpin an item. */
   async unpin(itemId: string): Promise<void> {
     const idx = this.pinnedIds.indexOf(itemId);
     if (idx < 0) return;
-    const previous = [...this.pinnedIds];
     this.pinnedIds.splice(idx, 1);
+    await this.persist();
+  }
+
+  /**
+   * Replace membership while retaining the relative order of existing IDs.
+   * Returns false when persistence fails, but keeps memory aligned with the
+   * durable item sources.
+   */
+  async reconcile(desiredIds: string[]): Promise<boolean> {
+    const desired = this.normalize(desiredIds);
+    const desiredSet = new Set(desired);
+    const previous = this.pinnedIds;
+    const next = [
+      ...previous.filter((id) => desiredSet.has(id)),
+      ...desired.filter((id) => !previous.includes(id)),
+    ];
+    this.pinnedIds = next;
+    if (next.length === previous.length && next.every((id, i) => id === previous[i])) return true;
     try {
       await this.persist();
-    } catch (err) {
-      this.pinnedIds = previous;
-      throw err;
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -75,15 +83,14 @@ export class PinStore {
    * Reorder pinned items. Accepts a full replacement array of pinned IDs.
    * Only IDs that are currently pinned are kept (prevents stale IDs).
    */
-  async reorder(newOrder: string[]): Promise<void> {
-    const previous = this.pinnedIds;
-    const pinSet = new Set(previous);
-    this.pinnedIds = newOrder.filter((id) => pinSet.has(id));
+  async reorder(newOrder: string[]): Promise<boolean> {
+    const pinSet = new Set(this.pinnedIds);
+    this.pinnedIds = this.normalize(newOrder).filter((id) => pinSet.has(id));
     try {
       await this.persist();
-    } catch (err) {
-      this.pinnedIds = previous;
-      throw err;
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -102,9 +109,14 @@ export class PinStore {
     // Re-locate idx after potential splice (may have shifted)
     const adjustedIdx = this.pinnedIds.indexOf(oldId);
     this.pinnedIds[adjustedIdx] = newId;
-    // Persist asynchronously - caller is responsible for triggering save
-    void this.persist();
+    void this.persist().catch((err) => {
+      console.error("[work-terminal] Failed to persist pin order:", err);
+    });
     return true;
+  }
+
+  private normalize(ids: unknown[]): string[] {
+    return [...new Set(ids.filter((id): id is string => typeof id === "string"))];
   }
 
   private async persist(): Promise<void> {

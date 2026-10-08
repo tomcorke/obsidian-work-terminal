@@ -95,7 +95,11 @@ function createListPanel(
   options: {
     columns?: { id: string; label: string; folderName: string }[];
     creationColumns?: { id: string; label: string; default?: boolean }[];
-    mover?: { move: ReturnType<typeof vi.fn>; setParent?: ReturnType<typeof vi.fn> };
+    mover?: {
+      move: ReturnType<typeof vi.fn>;
+      setParent?: ReturnType<typeof vi.fn>;
+      setPinned?: ReturnType<typeof vi.fn>;
+    };
     onCustomOrderChange?: ReturnType<typeof vi.fn>;
     onSessionFilterChange?: ReturnType<typeof vi.fn>;
     onCreateSubTask?: ReturnType<typeof vi.fn>;
@@ -114,7 +118,7 @@ function createListPanel(
   const creationColumns = options.creationColumns ?? [
     { id: "todo", label: "To Do", default: true },
   ];
-  const mover = options.mover ?? { move: vi.fn() };
+  const mover = options.mover ?? { move: vi.fn(), setPinned: vi.fn().mockResolvedValue(true) };
   const onCustomOrderChange = options.onCustomOrderChange ?? vi.fn();
 
   const adapter = {
@@ -170,7 +174,7 @@ function createListPanel(
   const plugin = {
     app: {
       vault: {
-        getAbstractFileByPath: vi.fn(),
+        getAbstractFileByPath: vi.fn((path: string) => ({ path })),
         adapter: { basePath: "/vault" },
         trash: vi.fn(),
       },
@@ -737,6 +741,40 @@ describe("ListPanel", () => {
     expect(mover.move).toHaveBeenCalledWith(file, "active");
   });
 
+  it.each([true, false])(
+    "keeps same-state reparenting when shared pin state is %s",
+    async (pinned) => {
+      const file = { path: "Tasks/child.md" };
+      const mover = {
+        move: vi.fn().mockResolvedValue(true),
+        setParent: vi.fn().mockResolvedValue(true),
+        setPinned: vi.fn().mockResolvedValue(true),
+      };
+      const { panel, plugin } = createListPanel({ mover });
+      const oldParent = makeItem("old-parent");
+      const parent = makeItem("new-parent");
+      const child = {
+        ...makeItem("child"),
+        metadata: { parent: { id: oldParent.id, title: oldParent.title, path: oldParent.path } },
+      };
+      const pinStore = createMockPinStore(pinned ? [parent.id, child.id] : []);
+      panel.setPinStore(pinStore as any);
+      (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(file);
+      panel.render({ todo: [oldParent, parent, child] }, {});
+
+      await (panel as any).setItemParent(child, parent);
+
+      expect(mover.move).not.toHaveBeenCalled();
+      expect(mover.setParent).toHaveBeenCalledTimes(1);
+      expect(mover.setPinned).toHaveBeenCalledWith(file, pinned);
+      expect(
+        (panel as any).items.find((item: WorkItem) => item.id === child.id).metadata.parent.id,
+      ).toBe(parent.id);
+      expect(noticeMock).not.toHaveBeenCalledWith("Failed to pin task");
+      expect(noticeMock).not.toHaveBeenCalledWith("Failed to unpin task");
+    },
+  );
+
   it("recursively moves non-done descendants with their top-level parent when enabled", async () => {
     const mover = { move: vi.fn().mockResolvedValue(true) };
     const { panel, plugin } = createListPanel({
@@ -909,9 +947,20 @@ describe("ListPanel", () => {
         ids.push(id);
         return true;
       }),
+      reconcile: vi.fn(async (newIds: string[]) => {
+        const desired = new Set(newIds);
+        const next = [
+          ...ids.filter((id) => desired.has(id)),
+          ...newIds.filter((id) => !ids.includes(id)),
+        ];
+        ids.length = 0;
+        ids.push(...next);
+        return true;
+      }),
       reorder: vi.fn(async (newOrder: string[]) => {
         ids.length = 0;
         ids.push(...newOrder);
+        return true;
       }),
       rekey: vi.fn((oldId: string, newId: string) => {
         const idx = ids.indexOf(oldId);
@@ -922,6 +971,69 @@ describe("ListPanel", () => {
       load: vi.fn(async () => {}),
     };
   }
+
+  it("reconciles frontmatter conflicts and migrates missing legacy pins once", async () => {
+    const setPinned = vi.fn().mockResolvedValue(true);
+    const { panel } = createListPanel({ mover: { move: vi.fn(), setPinned } });
+    const pinStore = createMockPinStore(["legacy", "explicit-false", "unresolved"]);
+    panel.setPinStore(pinStore as any);
+    const legacy = makeItem("legacy");
+    const explicitTrue = { ...makeItem("explicit-true"), metadata: { pinned: true } };
+    const explicitFalse = { ...makeItem("explicit-false"), metadata: { pinned: false } };
+
+    await panel.syncPinnedStates([legacy, explicitTrue, explicitFalse]);
+
+    expect(setPinned).toHaveBeenCalledTimes(1);
+    expect(setPinned).toHaveBeenCalledWith(expect.objectContaining({ path: legacy.path }), true);
+    expect(legacy.metadata.pinned).toBe(true);
+    expect(pinStore.reconcile).toHaveBeenCalledWith(["unresolved", "legacy", "explicit-true"]);
+  });
+
+  it("reconciles explicit pin state without a durable writer", async () => {
+    const { panel } = createListPanel({ mover: { move: vi.fn() } });
+    const pinStore = createMockPinStore(["explicit-false"]);
+    panel.setPinStore(pinStore as any);
+    const explicitTrue = { ...makeItem("explicit-true"), metadata: { pinned: true } };
+    const explicitFalse = { ...makeItem("explicit-false"), metadata: { pinned: false } };
+
+    await panel.syncPinnedStates([explicitTrue, explicitFalse]);
+
+    expect(pinStore.reconcile).toHaveBeenCalledWith(["explicit-true"]);
+  });
+
+  it("preserves legacy membership when migration and cache persistence fail", async () => {
+    const setPinned = vi.fn().mockRejectedValue(new Error("vault failed"));
+    const { panel } = createListPanel({ mover: { move: vi.fn(), setPinned } });
+    const pinStore = createMockPinStore(["legacy"]);
+    pinStore.reconcile.mockResolvedValueOnce(false);
+    panel.setPinStore(pinStore as any);
+    const legacy = makeItem("legacy");
+
+    await expect(panel.syncPinnedStates([legacy])).resolves.toBeUndefined();
+
+    expect(legacy.metadata.pinned).toBeUndefined();
+    expect(pinStore.reconcile).toHaveBeenCalledWith(["legacy"]);
+  });
+
+  it("keeps durable pin state when cache persistence fails", async () => {
+    const { panel, mover, onSelect } = createListPanel();
+    const pinStore = createMockPinStore([]);
+    pinStore.pin.mockRejectedValueOnce(new Error("write failed"));
+    panel.setPinStore(pinStore as any);
+    const item = makeItem("task-1");
+    panel.render({ todo: [item] }, {});
+
+    expect(await (panel as any).setItemPinned(item, true)).toBe(true);
+    expect(mover.setPinned).toHaveBeenCalledWith(
+      expect.objectContaining({ path: item.path }),
+      true,
+    );
+    expect(item.metadata.pinned).toBe(true);
+    expect(onSelect).toHaveBeenLastCalledWith(item);
+    expect(noticeMock).toHaveBeenCalledWith(
+      "Pin state saved, but display order could not be persisted",
+    );
+  });
 
   it("renders a pinned section above regular columns when items are pinned", () => {
     const { panel } = createListPanel();

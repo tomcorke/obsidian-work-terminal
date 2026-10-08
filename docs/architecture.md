@@ -12,7 +12,7 @@ src/
     cardFlags.ts          # Card indicator rule parsing and serialisation
     detailViewPlacement.ts # Detail view placement enum and option resolution
     frontmatter.ts        # Frontmatter field helpers
-    PinStore.ts           # Pinned-task persistence (UUID set)
+    PinStore.ts           # Ordered pin cache and legacy migration input
     PluginDataStore.ts    # Typed read/write for plugin data.json
     terminal/             # XtermCss, ScrollButton, KeyboardCapture, TerminalTab, TabManager, PythonCheck
     agents/               # AgentLauncher, AgentStateDetector, AgentProfile, AgentProfileManager, ProfileFileStore
@@ -76,7 +76,7 @@ To create a custom adapter: extend `BaseAdapter`, implement the abstract methods
 ## Key design decisions
 
 - **Agent integration owned by framework, not adapter** - AgentLauncher and AgentStateDetector are framework code. Adapters only provide a `WorkItemPromptBuilder` for context prompts.
-- **UUID-based keying** - Sessions, custom order, pinned state, and selection all use frontmatter UUIDs, not file paths. Survives renames without re-keying.
+- **UUID-based keying** - Sessions, custom order, pin display order, and selection use frontmatter UUIDs, not file paths. Durable pin membership is the task's frontmatter boolean.
 - **2-panel ItemView + flexible detail placement** - The default detail panel is a native Obsidian MarkdownView created via `createLeafBySplit`. Alternative placements (tab, navigate, preview pseudo-tab, embedded pseudo-tab) are available. Split gives live preview, frontmatter editing, backlinks for free.
 - **State resolution is pluggable** - Three strategies (folder, frontmatter, composite) are implemented via `core/resolvers/`. The adapter selects one via `stateResolverFactory`. Custom states create dynamic columns automatically.
 - **CSS prefix `wt-`** - All plugin CSS classes use `wt-` prefix. No CSS modules.
