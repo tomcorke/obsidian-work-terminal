@@ -111,7 +111,11 @@ export type BrokerResponse =
 
 export interface BrokerTaskCatalogue {
   listCategories(): Promise<TaskCategorySummary[]>;
-  listTasks(options?: { categoryId?: string; limit?: number }): Promise<TaskListResult>;
+  listTasks(options?: {
+    categoryId?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<TaskListResult>;
   getTask(taskId: string): Promise<TaskSummary | null>;
   getSubtasks(taskId: string, options?: TaskTraversalOptions): Promise<TaskTraversalResult | null>;
   getParentTasks(
@@ -206,7 +210,7 @@ interface StoredCallerGrant extends BrokerCallerGrant {
 
 interface StoredMessage extends Omit<BrokerMailboxMessage, "payload"> {
   payloadJson: string;
-  payloadBytes: number;
+  byteCount?: number;
 }
 
 interface StoredMailbox {
@@ -271,6 +275,7 @@ export class TaskTabBroker {
   private mailboxEventSequence = "0";
   private readonly failedAuthTimes: number[] = [];
   private readonly audit: BrokerAuditEntry[] = [];
+  private readonly pendingTabCreations = new Map<string, number>();
   private activeWaits = 0;
 
   constructor(options: {
@@ -311,13 +316,15 @@ export class TaskTabBroker {
         this.knownTabs.set(tabId, { ...known });
       }
       for (const [key, mailbox] of runtime.mailboxes ?? []) {
+        const messages = mailbox.messages.map((message) => ({
+          ...message,
+          sender: { ...message.sender },
+          recipient: { ...message.recipient },
+          byteCount: message.byteCount ?? encodedSize(toMailboxMessage(message)),
+        }));
         this.mailboxes.set(key, {
-          messages: mailbox.messages.map((message) => ({
-            ...message,
-            sender: { ...message.sender },
-            recipient: { ...message.recipient },
-          })),
-          byteCount: mailbox.byteCount,
+          messages,
+          byteCount: messages.reduce((total, message) => total + (message.byteCount ?? 0), 0),
         });
       }
       for (const [key, record] of runtime.deliveryRecords ?? []) {
@@ -548,27 +555,23 @@ export class TaskTabBroker {
       if (paramsError) return { v: 1, type: "response", id, ok: false, error: paramsError };
 
       if (request.method === "listCategories") {
+        const page = parseListPage(id, params);
+        if ("response" in page) return page.response;
         const categories = await this.catalogue.listCategories();
-        return categories.length <= BROKER_LIST_MAX_LIMIT
-          ? success(id, categories)
-          : failure(id, "LIMIT_EXCEEDED", "The category result exceeds its limit", false, {
-              limit: BROKER_LIST_MAX_LIMIT,
-            });
+        return paginate(id, categories, page.offset, page.limit, "categories");
       }
       if (request.method === "listTasks") {
-        const limit = params.limit ?? BROKER_LIST_DEFAULT_LIMIT;
-        const limitError = validateBoundedInteger("limit", limit, BROKER_LIST_MAX_LIMIT);
-        if (limitError) return { v: 1, type: "response", id, ok: false, error: limitError };
+        const page = parseListPage(id, params);
+        if ("response" in page) return page.response;
         if (params.categoryId !== undefined && !validIdentifier(params.categoryId)) {
           return invalidIdentifier(id, "categoryId");
         }
-        return success(
-          id,
-          await this.catalogue.listTasks({
-            categoryId: params.categoryId as string | undefined,
-            limit: limit as number,
-          }),
-        );
+        const result = await this.catalogue.listTasks({
+          categoryId: params.categoryId as string | undefined,
+          limit: page.limit,
+          ...(params.cursor !== undefined ? { cursor: params.cursor as string } : {}),
+        });
+        return fitPage(id, result.tasks, page.offset, result.truncated, "tasks");
       }
       if (request.method === "readOutput") return this.readOutput(id, params);
       if (request.method === "waitForTab") return this.waitForTab(caller, id, params, signal);
@@ -588,7 +591,8 @@ export class TaskTabBroker {
         if (hasDuplicateTargets(tabs)) {
           return failure(id, "TARGET_UNAVAILABLE", "A tab has multiple host owners", true);
         }
-        if (tabs.length >= BROKER_TABS_PER_TASK_MAX) {
+        const pending = this.pendingTabCreations.get(taskId) ?? 0;
+        if (tabs.length + pending >= BROKER_TABS_PER_TASK_MAX) {
           return failure(id, "LIMIT_EXCEEDED", "The task has reached its tab limit", false, {
             limit: BROKER_TABS_PER_TASK_MAX,
           });
@@ -597,11 +601,19 @@ export class TaskTabBroker {
         if (owners.length !== 1 || !owners[0].createProfileTab) {
           return failure(id, "TARGET_UNAVAILABLE", "The caller terminal host is unavailable", true);
         }
-        const created = await owners[0].createProfileTab(
-          taskId,
-          params.profileId as string,
-          params.initialPrompt as string | undefined,
-        );
+        this.pendingTabCreations.set(taskId, pending + 1);
+        let created: BrokerCreateTabResult;
+        try {
+          created = await owners[0].createProfileTab(
+            taskId,
+            params.profileId as string,
+            params.initialPrompt as string | undefined,
+          );
+        } finally {
+          const remaining = (this.pendingTabCreations.get(taskId) ?? 1) - 1;
+          if (remaining === 0) this.pendingTabCreations.delete(taskId);
+          else this.pendingTabCreations.set(taskId, remaining);
+        }
         if (created.status === "profile-not-found") {
           return failure(id, "NOT_FOUND", "The profile was not found");
         }
@@ -621,15 +633,13 @@ export class TaskTabBroker {
       }
       if (request.method === "getTask") return success(id, task);
       if (request.method === "listTabs") {
+        const page = parseListPage(id, params);
+        if ("response" in page) return page.response;
         const tabs = this.collectTabs(taskId);
         if (hasDuplicateTargets(tabs)) {
           return failure(id, "TARGET_UNAVAILABLE", "A tab has multiple host owners", true);
         }
-        return tabs.length <= BROKER_LIST_MAX_LIMIT
-          ? success(id, tabs)
-          : failure(id, "LIMIT_EXCEEDED", "The tab result exceeds its limit", false, {
-              limit: BROKER_LIST_MAX_LIMIT,
-            });
+        return paginate(id, tabs, page.offset, page.limit, "tabs");
       }
 
       const maxDepth = params.maxDepth ?? BROKER_HIERARCHY_DEFAULT_DEPTH;
@@ -1000,15 +1010,23 @@ export class TaskTabBroker {
         resource: "messages",
       });
     }
-    if (mailbox.byteCount + encodedPayload.byteCount > BROKER_MAILBOX_MAX_BYTES) {
+    const acceptedAt = this.now();
+    const messageId = cryptoModule().randomUUID();
+    const messageByteCount = encodedSize({
+      messageId,
+      clientMessageId: params.clientMessageId,
+      sender: caller.caller,
+      recipient: target,
+      acceptedAt,
+      ...(params.kind !== undefined ? { kind: params.kind } : {}),
+      payload: params.payload,
+    });
+    if (mailbox.byteCount + messageByteCount > BROKER_MAILBOX_MAX_BYTES) {
       return failure(id, "MAILBOX_FULL", "The recipient mailbox is full", false, {
         limit: BROKER_MAILBOX_MAX_BYTES,
         resource: "bytes",
       });
     }
-
-    const acceptedAt = this.now();
-    const messageId = cryptoModule().randomUUID();
     const acceptance: BrokerMessageAcceptance = Object.freeze({
       messageId,
       acceptedAt,
@@ -1022,9 +1040,9 @@ export class TaskTabBroker {
       acceptedAt,
       ...(params.kind !== undefined ? { kind: params.kind as string } : {}),
       payloadJson: encodedPayload.json,
-      payloadBytes: encodedPayload.byteCount,
+      byteCount: messageByteCount,
     });
-    mailbox.byteCount += encodedPayload.byteCount;
+    mailbox.byteCount += messageByteCount;
     this.mailboxes.set(recipientKey, mailbox);
     this.deliveryRecords.set(dedupKey, { acceptance, recipientKey });
     this.notifyMailbox(recipientKey, mailbox.messages.length);
@@ -1088,7 +1106,7 @@ export class TaskTabBroker {
         mailbox?.messages.findIndex((message) => message.messageId === messageId) ?? -1;
       if (mailbox && messageIndex >= 0) {
         const [message] = mailbox.messages.splice(messageIndex, 1);
-        mailbox.byteCount -= message.payloadBytes;
+        mailbox.byteCount -= message.byteCount ?? encodedSize(toMailboxMessage(message));
         const dedupKey = messageDedupKey(message.sender, message.clientMessageId);
         const delivery = this.deliveryRecords.get(dedupKey);
         if (delivery) delivery.acknowledgedAt = now;
@@ -1361,6 +1379,72 @@ function toTarget(tab: TerminalTabTarget): TerminalTabTarget {
   return { taskId: tab.taskId, tabId: tab.tabId, generation: tab.generation };
 }
 
+function parseListPage(
+  id: string,
+  params: Record<string, unknown>,
+): { limit: number; offset: number } | { response: BrokerResponse } {
+  const limit = params.limit ?? BROKER_LIST_DEFAULT_LIMIT;
+  const limitError = validateBoundedInteger("limit", limit, BROKER_LIST_MAX_LIMIT);
+  if (limitError) return { response: { v: 1, type: "response", id, ok: false, error: limitError } };
+  if (params.cursor === undefined) return { limit: limit as number, offset: 0 };
+  if (!validIdentifier(params.cursor)) return { response: invalidIdentifier(id, "cursor") };
+  const decoded = Buffer.from(params.cursor, "base64url").toString("utf8");
+  const offset = Number(decoded);
+  if (
+    !/^\d+$/.test(decoded) ||
+    !Number.isSafeInteger(offset) ||
+    Buffer.from(decoded).toString("base64url") !== params.cursor
+  ) {
+    return {
+      response: failure(id, "INVALID_ARGUMENT", "cursor is invalid", false, {
+        argument: "cursor",
+      }),
+    };
+  }
+  return { limit: limit as number, offset };
+}
+
+function paginate<T>(
+  id: string,
+  values: readonly T[],
+  offset: number,
+  limit: number,
+  key: "categories" | "tabs",
+): BrokerResponse {
+  const items = values.slice(offset, offset + limit);
+  return fitPage(id, items, offset, offset + items.length < values.length, key);
+}
+
+function fitPage<T>(
+  id: string,
+  values: readonly T[],
+  offset: number,
+  hasMore: boolean,
+  key: "categories" | "tasks" | "tabs",
+): BrokerResponse {
+  const items = [...values];
+  let truncated = hasMore;
+  const buildResponse = () =>
+    success(id, {
+      [key]: items,
+      truncated,
+      ...(truncated
+        ? { nextCursor: Buffer.from(String(offset + items.length)).toString("base64url") }
+        : {}),
+    });
+  let response = buildResponse();
+  while (items.length > 0 && encodedSize(response) > BROKER_FRAME_MAX_BYTES) {
+    items.pop();
+    truncated = true;
+    response = buildResponse();
+  }
+  return items.length > 0 || values.length === 0
+    ? response
+    : failure(id, "LIMIT_EXCEEDED", "A list item exceeds the frame limit", false, {
+        limit: BROKER_FRAME_MAX_BYTES,
+      });
+}
+
 function parseTarget(value: unknown): TerminalTabTarget | null {
   if (!value || typeof value !== "object") return null;
   const target = value as Record<string, unknown>;
@@ -1384,10 +1468,10 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     return invalidArgumentError("params");
   }
   const allowed: Record<string, readonly string[]> = {
-    listCategories: [],
-    listTasks: ["categoryId", "limit"],
+    listCategories: ["limit", "cursor"],
+    listTasks: ["categoryId", "limit", "cursor"],
     getTask: ["taskId"],
-    listTabs: ["taskId"],
+    listTabs: ["taskId", "limit", "cursor"],
     getSubtasks: ["taskId", "maxDepth", "maxResults"],
     getParentTasks: ["taskId", "maxDepth", "maxResults"],
     readOutput: ["target", "maxLines", "maxBytes"],
@@ -1417,7 +1501,9 @@ function validateParams(method: string, params: unknown): BrokerError | null {
 }
 
 function validatePrompt(argument: string, value: unknown): BrokerError | null {
-  if (typeof value !== "string") return invalidArgumentError(argument);
+  if (typeof value !== "string" || /[\x00-\x08\x0b-\x1f\x7f]/.test(value)) {
+    return invalidArgumentError(argument);
+  }
   if (Buffer.byteLength(value) > BROKER_PROMPT_MAX_BYTES) {
     return {
       code: "LIMIT_EXCEEDED",

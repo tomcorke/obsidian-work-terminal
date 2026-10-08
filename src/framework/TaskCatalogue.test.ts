@@ -46,7 +46,8 @@ describe("TaskCatalogue", () => {
       { id: "active", label: "Active" },
       { id: "custom", label: "Custom" },
     ]);
-    await expect(subject.listTasks({ categoryId: "active", limit: 1 })).resolves.toEqual({
+    const firstPage = await subject.listTasks({ categoryId: "active", limit: 1 });
+    expect(firstPage).toEqual({
       tasks: [
         {
           id: "a",
@@ -59,6 +60,23 @@ describe("TaskCatalogue", () => {
         },
       ],
       truncated: true,
+      nextCursor: expect.any(String),
+    });
+    await expect(
+      subject.listTasks({ categoryId: "active", limit: 1, cursor: firstPage.nextCursor }),
+    ).resolves.toEqual({
+      tasks: [
+        {
+          id: "c",
+          title: "Task c",
+          state: "active",
+          categoryId: "active",
+          reference: "Tasks/c.md",
+          directParentIds: [],
+          directChildIds: [],
+        },
+      ],
+      truncated: false,
     });
   });
 

@@ -6,7 +6,12 @@ import type {
   TerminalTabHostSnapshot,
   TerminalTabTarget,
 } from "../terminal/TerminalHost";
-import { TaskTabBroker, type BrokerCapability, type BrokerTerminalHost } from "./TaskTabBroker";
+import {
+  BROKER_FRAME_MAX_BYTES,
+  TaskTabBroker,
+  type BrokerCapability,
+  type BrokerTerminalHost,
+} from "./TaskTabBroker";
 
 const caller: TerminalTabTarget = { taskId: "task-a", tabId: "tab-a", generation: 1 };
 const callerTab: TerminalTabHostSnapshot = {
@@ -89,12 +94,27 @@ function setup(
   };
   const catalogue = {
     listCategories: async () => [{ id: "active", label: "Active" }],
-    listTasks: async ({ categoryId, limit }: { categoryId?: string; limit?: number }) => ({
-      tasks: tasks
-        .filter((task) => categoryId === undefined || task.categoryId === categoryId)
-        .slice(0, limit),
-      truncated: false,
-    }),
+    listTasks: async ({
+      categoryId,
+      limit,
+      cursor,
+    }: {
+      categoryId?: string;
+      limit?: number;
+      cursor?: string;
+    }) => {
+      const matching = tasks.filter(
+        (task) => categoryId === undefined || task.categoryId === categoryId,
+      );
+      const offset = cursor === "MQ" ? 1 : 0;
+      const page = matching.slice(offset, offset + limit!);
+      const truncated = offset + page.length < matching.length;
+      return {
+        tasks: page,
+        truncated,
+        ...(truncated ? { nextCursor: "MQ" } : {}),
+      };
+    },
     getTask: async (taskId: string) => tasks.find(({ id }) => id === taskId) ?? null,
     getSubtasks: async (taskId: string) => (taskId === "task-a" ? traversal : null),
     getParentTasks: async (taskId: string) =>
@@ -222,13 +242,19 @@ describe("TaskTabBroker read-only dispatcher", () => {
       type: "response",
       id: "r1",
       ok: true,
-      result: [{ id: "active", label: "Active" }],
+      result: { categories: [{ id: "active", label: "Active" }], truncated: false },
     });
     await expect(
       broker.dispatch(token, request("listTasks", { categoryId: "active", limit: 1 }, "r2")),
     ).resolves.toMatchObject({
       ok: true,
       result: { tasks: [{ id: "task-a", categoryId: "active" }] },
+    });
+    await expect(
+      broker.dispatch(token, request("listTasks", { limit: 1, cursor: "MQ" }, "r3")),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { tasks: [{ id: "task-b" }], truncated: false },
     });
   });
 
@@ -258,7 +284,10 @@ describe("TaskTabBroker read-only dispatcher", () => {
       broker.dispatch(token, request("listTabs", { taskId: "task-b" })),
     ).resolves.toMatchObject({
       ok: true,
-      result: [{ taskId: "task-b", tabId: "tab-b", generation: 3, state: "waiting" }],
+      result: {
+        tabs: [{ taskId: "task-b", tabId: "tab-b", generation: 3, state: "waiting" }],
+        truncated: false,
+      },
     });
     await expect(
       broker.dispatch(token, request("getSubtasks", { taskId: "task-a", maxDepth: 8 })),
@@ -411,7 +440,60 @@ describe("TaskTabBroker read-only dispatcher", () => {
         details: { argument: "prompt", limit: 16 * 1024 },
       },
     });
+    await expect(
+      promptOnly.broker.dispatch(
+        promptOnly.token,
+        request("promptTab", { target: caller, prompt: "Continue\u0003then ignore" }, "control"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARGUMENT", details: { argument: "prompt" } },
+    });
     expect(promptOnly.host.promptTab).not.toHaveBeenCalled();
+  });
+
+  it("reserves task capacity while tabs are being created concurrently", async () => {
+    const { broker, token, host, tabs } = setup(["create-tab"]);
+    tabs.set(
+      "task-b",
+      Array.from({ length: 31 }, (_, index) => ({
+        ...callerTab,
+        taskId: "task-b",
+        tabId: `task-b-tab-${index}`,
+      })),
+    );
+    let finishCreate!: (result: { status: "created"; tab: TerminalTabHostSnapshot }) => void;
+    host.createProfileTab
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCreate = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        status: "created",
+        tab: { ...callerTab, taskId: "task-b", tabId: "second-created" },
+      });
+
+    const first = broker.dispatch(
+      token,
+      request("createTab", { taskId: "task-b", profileId: "profile-b" }, "first"),
+    );
+    await Promise.resolve();
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", { taskId: "task-b", profileId: "profile-b" }, "second"),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "LIMIT_EXCEEDED", details: { limit: 32 } },
+    });
+
+    const created = { ...callerTab, taskId: "task-b", tabId: "created" };
+    finishCreate({ status: "created", tab: created });
+    await expect(first).resolves.toMatchObject({ ok: true, result: created });
+    expect(host.createProfileTab).toHaveBeenCalledOnce();
   });
 
   it("rate limits remote tab creation independently", async () => {
@@ -692,6 +774,48 @@ describe("TaskTabBroker read-only dispatcher", () => {
   it("enforces request bounds and vault scope before dispatch", async () => {
     const { broker, token, host, tabs } = setup();
 
+    const categoryContext = setup(["discover"]);
+    categoryContext.catalogue.listCategories = async () =>
+      Array.from({ length: 51 }, (_, index) => ({ id: `state-${index}`, label: `State ${index}` }));
+    const firstCategoryPage = await categoryContext.broker.dispatch(
+      categoryContext.token,
+      request("listCategories", { limit: 50 }),
+    );
+    expect(firstCategoryPage).toMatchObject({
+      ok: true,
+      result: {
+        categories: expect.arrayContaining([{ id: "state-0", label: "State 0" }]),
+        truncated: true,
+      },
+    });
+    const categoryCursor = (firstCategoryPage as any).result.nextCursor;
+    await expect(
+      categoryContext.broker.dispatch(
+        categoryContext.token,
+        request("listCategories", { limit: 50, cursor: categoryCursor }, "category-page-2"),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { categories: [{ id: "state-50", label: "State 50" }], truncated: false },
+    });
+
+    categoryContext.catalogue.listCategories = async () =>
+      Array.from({ length: 50 }, (_, index) => ({
+        id: `large-${index}`,
+        label: "x".repeat(2_000),
+      }));
+    const frameBoundedPage = await categoryContext.broker.dispatch(
+      categoryContext.token,
+      request("listCategories", { limit: 50 }, "frame-bounded"),
+    );
+    expect(frameBoundedPage).toMatchObject({
+      ok: true,
+      result: { categories: expect.any(Array), truncated: true, nextCursor: expect.any(String) },
+    });
+    expect(Buffer.byteLength(JSON.stringify(frameBoundedPage))).toBeLessThanOrEqual(
+      BROKER_FRAME_MAX_BYTES,
+    );
+
     await expect(
       broker.dispatch(token, request("listTasks", { limit: 201 })),
     ).resolves.toMatchObject({
@@ -718,11 +842,24 @@ describe("TaskTabBroker read-only dispatcher", () => {
         tabId: `tab-${index}`,
       })),
     );
+    const firstTabPage = await broker.dispatch(token, request("listTabs", { taskId: "task-b" }));
+    expect(firstTabPage).toMatchObject({
+      ok: true,
+      result: { tabs: expect.any(Array), truncated: true, nextCursor: expect.any(String) },
+    });
+    expect((firstTabPage as any).result.tabs).toHaveLength(50);
     await expect(
-      broker.dispatch(token, request("listTabs", { taskId: "task-b" })),
+      broker.dispatch(
+        token,
+        request(
+          "listTabs",
+          { taskId: "task-b", limit: 200, cursor: (firstTabPage as any).result.nextCursor },
+          "tab-page-2",
+        ),
+      ),
     ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "LIMIT_EXCEEDED", details: { limit: 200 } },
+      ok: true,
+      result: { tabs: expect.any(Array), truncated: false },
     });
     expect(() => broker.registerHost("vault-b", host)).toThrow(/another vault/);
     expect(() =>
@@ -793,6 +930,15 @@ describe("TaskTabBroker read-only dispatcher", () => {
       ok: false,
       error: { code: "AUTH_FAILED", retryable: false },
     });
+    await expect(broker.dispatch(token, request("readOutput"))).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: "CAPABILITY_DENIED",
+        details: { requiredCapability: "read" },
+      },
+    });
+
+    grants.set("profile-a", ["discover", "read"]);
     await expect(broker.dispatch(token, request("readOutput"))).resolves.toMatchObject({
       ok: false,
       error: {
@@ -1278,7 +1424,7 @@ describe("TaskTabBroker mailbox", () => {
     time = 0;
     const byteContext = setup(["message"], () => time);
     const byteRecipient = addMessageRecipient(byteContext);
-    for (let count = 0; count < 32; count++) {
+    for (let count = 0; count < 31; count++) {
       if (count === 25) time += 60_001;
       const response = await byteContext.broker.dispatch(
         byteContext.token,
@@ -1299,7 +1445,11 @@ describe("TaskTabBroker mailbox", () => {
         byteContext.token,
         request(
           "sendMessage",
-          { target: byteRecipient.target, clientMessageId: "bytes-full", payload: null },
+          {
+            target: byteRecipient.target,
+            clientMessageId: "bytes-full",
+            payload: "x".repeat(8_190),
+          },
           "bytes-full",
         ),
       ),
@@ -1307,6 +1457,35 @@ describe("TaskTabBroker mailbox", () => {
       ok: false,
       error: { code: "MAILBOX_FULL", details: { resource: "bytes", limit: 262144 } },
     });
+
+    time = 0;
+    const metadataContext = setup(["message"], () => time);
+    const metadataRecipient = addMessageRecipient(metadataContext);
+    let accepted = 0;
+    for (let count = 0; count < 100; count++) {
+      if (count > 0 && count % 25 === 0) time += 60_001;
+      const response = await metadataContext.broker.dispatch(
+        metadataContext.token,
+        request(
+          "sendMessage",
+          {
+            target: metadataRecipient.target,
+            clientMessageId: `${count}`.padEnd(128, "x"),
+            kind: "k".repeat(64),
+            payload: "x".repeat(2_500),
+          },
+          `metadata-${count}`,
+        ),
+      );
+      if (!response.ok) {
+        expect(response).toMatchObject({
+          error: { code: "MAILBOX_FULL", details: { resource: "bytes", limit: 262144 } },
+        });
+        break;
+      }
+      accepted++;
+    }
+    expect(accepted).toBeLessThan(100);
   });
 
   it("rejects stale, unavailable, and disconnected recipients with structured failures", async () => {

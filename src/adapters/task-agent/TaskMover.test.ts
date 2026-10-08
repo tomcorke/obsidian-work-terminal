@@ -26,16 +26,88 @@ function createMockApp() {
   const createFolder = vi.fn();
   const getAbstractFileByPath = vi.fn().mockReturnValue(null);
   const read = vi.fn().mockResolvedValue(SAMPLE_CONTENT);
+  const process = vi.fn(async (file: TFile, transform: (content: string) => string) => {
+    const content = await read(file);
+    const updated = transform(content);
+    if (updated !== content) await modify(file, updated);
+    return updated;
+  });
 
   const app = {
-    vault: { read, modify, rename, createFolder, getAbstractFileByPath },
+    vault: { read, process, modify, rename, createFolder, getAbstractFileByPath },
   } as unknown as App;
 
-  return { app, modify, rename, createFolder, getAbstractFileByPath, read };
+  return { app, process, modify, rename, createFolder, getAbstractFileByPath, read };
 }
 
 describe("TaskMover", () => {
   const defaultSettings = { "adapter.taskBasePath": "2 - Areas/Tasks" };
+
+  it("persists pin state in frontmatter", async () => {
+    const { app, modify } = createMockApp();
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    expect(await mover.setPinned(file, true)).toBe(true);
+    expect(modify.mock.calls[0][1]).toMatch(/^pinned: true$/m);
+  });
+
+  it("does not replace body-level pin text", async () => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue(`${SAMPLE_CONTENT}\npinned: discussion pending\n`);
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    expect(await mover.setPinned(file, true)).toBe(true);
+    const content = modify.mock.calls[0][1] as string;
+    expect(content).toMatch(/^pinned: true$/m);
+    expect(content).toContain("pinned: discussion pending");
+  });
+
+  it("updates existing pin state", async () => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue(SAMPLE_CONTENT.replace("state: todo", "state: todo\npinned: true"));
+    const mover = new TaskMover(app, "", defaultSettings);
+    const file = { path: "2 - Areas/Tasks/todo/task.md", name: "task.md" } as TFile;
+
+    expect(await mover.setPinned(file, false)).toBe(true);
+    const content = modify.mock.calls[0][1] as string;
+    expect(content).toMatch(/^pinned: false$/m);
+    expect(content.match(/^pinned:/gm)).toHaveLength(1);
+    expect(content).not.toContain("updated: 2026-03-26T00:00:00Z");
+    expect(content).toMatch(/^updated: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/m);
+  });
+
+  it("succeeds without writing when pin state already matches", async () => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue(SAMPLE_CONTENT.replace("state: todo", "state: todo\npinned: true"));
+    const mover = new TaskMover(app, "", defaultSettings);
+
+    expect(await mover.setPinned({ path: "task.md" } as TFile, true)).toBe(true);
+    expect(modify).not.toHaveBeenCalled();
+  });
+
+  it("adds pin state to frontmatter without a state field and preserves CRLF", async () => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue("---\r\nid: abc\r\n---\r\nBody\r\n");
+    const mover = new TaskMover(app, "", defaultSettings);
+
+    expect(await mover.setPinned({ path: "task.md" } as TFile, true)).toBe(true);
+    expect(modify.mock.calls[0][1]).toBe("---\r\nid: abc\r\npinned: true\r\n---\r\nBody\r\n");
+  });
+
+  it.each([
+    ["body-only fences", "Body\n---\nstate: todo\n---\n"],
+    ["leading prose", "Intro\n---\nstate: todo\n---\n"],
+    ["unclosed frontmatter", "---\nstate: todo\nBody\n"],
+  ])("does not mutate %s", async (_name, content) => {
+    const { app, modify, read } = createMockApp();
+    read.mockResolvedValue(content);
+    const mover = new TaskMover(app, "", defaultSettings);
+
+    expect(await mover.setPinned({ path: "task.md" } as TFile, true)).toBe(false);
+    expect(modify).not.toHaveBeenCalled();
+  });
 
   it("updates state field", async () => {
     const { app, modify } = createMockApp();

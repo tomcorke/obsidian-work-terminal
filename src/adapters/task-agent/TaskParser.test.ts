@@ -166,6 +166,26 @@ describe("TaskParser", () => {
       });
     });
 
+    it("parses durable pinned state", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], {
+        [file.path]: makeFrontmatter({ pinned: true }),
+      });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).pinned).toBe(true);
+    });
+
+    it("leaves legacy pin state undefined for migration", () => {
+      const file = makeFile("2 - Areas/Tasks/active/task.md");
+      const app = mockApp([file], { [file.path]: makeFrontmatter() });
+      const parser = new TaskParser(app, "", defaultSettings);
+      const item = parser.parse(file as unknown as TFile);
+
+      expect((item!.metadata as any).pinned).toBeUndefined();
+    });
+
     it("falls back to the folder state when frontmatter state is invalid", () => {
       const file = makeFile("2 - Areas/Tasks/active/task.md");
       const app = mockApp([file], {

@@ -30,6 +30,7 @@ export interface TaskSummary {
 export interface TaskListResult {
   tasks: TaskSummary[];
   truncated: boolean;
+  nextCursor?: string;
 }
 
 export interface TaskRelationshipSummary extends TaskSummary {
@@ -74,15 +75,21 @@ export class TaskCatalogue {
     return [...configured, ...dynamicIds.map((id) => ({ id, label: titleCase(id) }))];
   }
 
-  async listTasks(options: { categoryId?: string; limit?: number } = {}): Promise<TaskListResult> {
+  async listTasks(
+    options: { categoryId?: string; limit?: number; cursor?: string } = {},
+  ): Promise<TaskListResult> {
     const limit = boundedInteger(options.limit, TASK_LIST_DEFAULT_LIMIT, TASK_LIST_MAX_LIMIT);
+    const offset = decodeCursor(options.cursor);
     const snapshot = await this.loadSnapshot();
     const matching = snapshot.filter(
       ({ categoryId }) => options.categoryId === undefined || categoryId === options.categoryId,
     );
+    const tasks = matching.slice(offset, offset + limit);
+    const truncated = offset + tasks.length < matching.length;
     return {
-      tasks: matching.slice(0, limit),
-      truncated: matching.length > limit,
+      tasks,
+      truncated,
+      ...(truncated ? { nextCursor: encodeCursor(offset + tasks.length) } : {}),
     };
   }
 
@@ -243,6 +250,21 @@ function findCycles(
 
 function compareCycles(a: TaskRelationshipCycle, b: TaskRelationshipCycle): number {
   return compareText(a.fromId, b.fromId) || compareText(a.toId, b.toId);
+}
+
+function encodeCursor(offset: number): string {
+  return Buffer.from(String(offset)).toString("base64url");
+}
+
+function decodeCursor(cursor: string | undefined): number {
+  if (cursor === undefined) return 0;
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  if (!/^\d+$/.test(decoded) || Buffer.from(decoded).toString("base64url") !== cursor) {
+    throw new Error("Invalid task list cursor");
+  }
+  const offset = Number(decoded);
+  if (!Number.isSafeInteger(offset)) throw new Error("Invalid task list cursor");
+  return offset;
 }
 
 function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {

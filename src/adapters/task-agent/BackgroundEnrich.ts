@@ -531,6 +531,7 @@ export async function handleSubTaskCreated(
     goal: [],
     parent: parentReference,
     isSubTask: true,
+    pinned: false,
     created: now,
     updated: now,
     lastActive: "",
