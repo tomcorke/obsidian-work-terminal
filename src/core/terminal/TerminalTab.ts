@@ -561,11 +561,20 @@ export class TerminalTab {
     // This replaces the per-write wasAtBottom snapshot approach which was
     // defeated by DOM scroll events firing during screen clear/redraw cycles.
     const writeWithAutoScroll = (data: string | Uint8Array) => {
-      this._programmaticScrollGuards += 1;
+      const trackScroll = this.isVisible;
+      if (trackScroll) this._programmaticScrollGuards += 1;
+
       this.terminal.write(data, () => {
+        if (!this.isVisible) {
+          if (trackScroll) {
+            this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
+          }
+          return;
+        }
         if (!this._userScrolledUp) {
           this.terminal.scrollToBottom();
         }
+        if (!trackScroll) return;
         requestAnimationFrame(() => {
           this._programmaticScrollGuards = Math.max(0, this._programmaticScrollGuards - 1);
           if (this._programmaticScrollGuards === 0 && this._pendingBottomCheck) {
