@@ -389,7 +389,7 @@ The settings page is organised into five top-level sections. Use this map to jum
 | **Board & Columns** | Column display order (reorder and pin), creation column selector, create custom state input, and **Manage Rules** for custom card flag rules. |
 | **Terminal** | **Configure terminal...** button opening a dedicated dialog with default shell and default terminal CWD. |
 | **Detail view** | Placement dropdown (split / tab / navigate / preview / disabled) plus the placement-dependent auto-close toggle, readable line-width override, and split direction. |
-| **Agents** | **Open Profile Manager** for agent profiles, **Configure enrichment...** for task enrichment, and **Configure agent actions...** for task-scoping profile binding. |
+| **Agents** | **Open Profile Manager** for agent profiles, the task tab broker opt-in, **Configure enrichment...** for task enrichment, and **Configure agent actions...** for task-scoping profile binding. |
 
 Most groups of three or more related settings live inside a dedicated sub-dialog (Profile Manager, Task enrichment, Agent actions, Terminal) to keep the top-level page scannable. Single settings and small groups (detail view) stay inline.
 
@@ -412,6 +412,16 @@ Each profile includes:
 **Where profiles are stored**: profiles live in `~/.config/obsidian-work-terminal/profiles.json` as a plain JSON array, not in the plugin's `data.json`. The path is shown at the top of the Profile Manager. Edit the file directly for bulk changes (retargeting several CWDs, renaming a flag across profiles), keep it in a dotfile repo, or copy it between machines. After editing outside Obsidian, press **Reload from file** in the Profile Manager to pick the changes up without restarting.
 
 The file is shared by every vault using the plugin. On first run it is created from your existing profiles in `data.json`; the old `agentProfiles` key is left in place, so an older plugin version still finds its profiles. If the file is unreadable or not a JSON array, the plugin logs a warning, leaves the file alone, and falls back to built-in defaults for that session - fix the file and reload.
+
+#### Task tab broker
+
+The task tab broker is disabled by default. To use it, enable **Settings > Agents > Enable task tab broker**, then edit a profile and grant only the exact capabilities that profile needs. Existing profiles and all eight grants (`discover`, `read`, `wait`, `message`, `create-tab`, `prompt-tab`, `interrupt-tab`, and `close-tab`) default to off. Grants do not imply one another; `close-tab` is explicitly destructive. Profile changes revoke removed grants from live callers, while newly added grants apply only to newly launched sessions.
+
+An opted-in profile receives a local endpoint, its caller task/tab/generation, and a random token in its child environment. Profiles with no grants receive none of these variables. The bundled `task-tab-broker.js` helper refuses to run without that complete context. Read-only discovery and bounded output reads are currently available; later control methods remain unavailable until their implementation tickets ship.
+
+The endpoint is a user-private Unix socket (or a Windows named pipe), never a network listener. Calls are limited to the current vault, bounded and rate-limited, and do not focus Work Terminal. Tokens are not persisted or logged. Live sessions can reconnect after plugin hot reload, but clients must list current tabs again because runtime events are not durable. This is a local capability boundary, not a sandbox against another process running as the same OS user, which may be able to inspect process memory or environment.
+
+See `task-tab-broker-skill.md` beside the plugin files for helper examples, exact-target rules, and error handling.
 
 The per-profile **Context prompt** field is the place to configure additional context that used to live in the removed **Additional agent context prompt** setting (issue #472). Set it on each profile that should inject task context on top of the adapter prompt.
 

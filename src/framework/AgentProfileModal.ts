@@ -8,12 +8,14 @@ import type {
   AgentProfile,
   AgentType,
   BorderStyle,
+  BrokerCapability,
   ProfileIcon,
 } from "../core/agents/AgentProfile";
 import {
   AGENT_TYPES,
   BORDER_STYLES,
   BRAND_COLORS,
+  BROKER_CAPABILITIES,
   PROFILE_ICONS,
   createDefaultProfile,
   validateProfilePromptInjection,
@@ -37,6 +39,17 @@ const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   strands: "Strands",
   shell: "Shell",
   custom: "Custom",
+};
+
+const BROKER_CAPABILITY_LABELS: Record<BrokerCapability, string> = {
+  discover: "Discover tasks and tabs",
+  read: "Read bounded tab output",
+  wait: "Wait for tab state",
+  message: "Exchange cross-task messages",
+  "create-tab": "Create agent tabs",
+  "prompt-tab": "Prompt existing tabs",
+  "interrupt-tab": "Interrupt tab processes",
+  "close-tab": "Close tabs (destructive)",
 };
 
 const BORDER_STYLE_LABELS: Record<BorderStyle, string> = {
@@ -113,7 +126,13 @@ export class AgentProfileEditModal extends Modal {
     super(app);
     this.isNew = !profile;
     this.originalProfile = profile ? { ...profile, button: { ...profile.button } } : null;
-    this.draft = profile ? { ...profile, button: { ...profile.button } } : createDefaultProfile();
+    this.draft = profile
+      ? {
+          ...profile,
+          button: { ...profile.button },
+          brokerCapabilities: [...(profile.brokerCapabilities ?? [])],
+        }
+      : createDefaultProfile();
     // Normalize imported whitespace-only color values
     if (this.draft.button.color !== undefined) {
       const trimmed = this.draft.button.color.trim();
@@ -311,6 +330,34 @@ export class AgentProfileEditModal extends Modal {
     const launchPreviewEl = contentEl.createEl("pre", { cls: "wt-profile-launch-preview" });
     this.launchPreviewCodeEl = launchPreviewEl.createEl("code", { text: "Resolving..." });
     void this.updateLaunchPreview();
+
+    // ---------------------------------------------------------------------------
+    // Broker capability grants
+    // ---------------------------------------------------------------------------
+
+    const brokerEl = contentEl.createDiv({ cls: "wt-broker-capabilities" });
+    brokerEl.createEl("h4", { text: "Task tab broker" });
+    brokerEl.createDiv({
+      cls: "setting-item-description",
+      text: "Off by default. Enabled grants expose only the named vault-scoped operation to new sessions when the global broker setting is on.",
+    });
+    for (const capability of BROKER_CAPABILITIES) {
+      new Setting(brokerEl)
+        .setName(BROKER_CAPABILITY_LABELS[capability])
+        .setDesc(capability === "close-tab" ? "Allows destructive remote tab closure." : "")
+        .addToggle((toggle) => {
+          toggle
+            .setValue(this.draft.brokerCapabilities?.includes(capability) ?? false)
+            .onChange((enabled) => {
+              const grants = new Set(this.draft.brokerCapabilities ?? []);
+              if (enabled) grants.add(capability);
+              else grants.delete(capability);
+              this.draft.brokerCapabilities = BROKER_CAPABILITIES.filter((grant) =>
+                grants.has(grant),
+              );
+            });
+        });
+    }
 
     // ---------------------------------------------------------------------------
     // Button configuration

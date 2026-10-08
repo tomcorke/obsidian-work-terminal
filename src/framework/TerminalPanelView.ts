@@ -35,6 +35,8 @@ import { getDefaultSessionLabel } from "./CustomSessionConfig";
 import type { AgentProfileManager } from "../core/agents/AgentProfileManager";
 import { PROFILES_CHANGED_EVENT } from "../core/agents/AgentProfileManager";
 import type { AgentProfile, AgentType } from "../core/agents/AgentProfile";
+import type { BrokerTerminalHost } from "../core/broker/TaskTabBroker";
+import type { TerminalTabTarget } from "../core/terminal/TerminalHost";
 import {
   agentTypeToSessionType,
   sessionTypeToAgentType,
@@ -123,9 +125,16 @@ declare global {
   }
 }
 
+type BrokerAwarePlugin = Plugin & {
+  createTaskTabBrokerLaunchEnvironment?: (
+    profile: AgentProfile,
+    caller: TerminalTabTarget,
+  ) => NodeJS.ProcessEnv | undefined;
+};
+
 export class TerminalPanelView {
   private tabManager: TabManager;
-  private plugin: Plugin;
+  private plugin: BrokerAwarePlugin;
   private adapter: AdapterBundle;
   private settings: Record<string, any>;
   private promptBuilder: WorkItemPromptBuilder;
@@ -222,7 +231,7 @@ export class TerminalPanelView {
   constructor(
     panelEl: HTMLElement,
     terminalWrapperEl: HTMLElement,
-    plugin: Plugin,
+    plugin: BrokerAwarePlugin,
     adapter: AdapterBundle,
     settings: Record<string, any>,
     promptBuilder: WorkItemPromptBuilder,
@@ -1041,6 +1050,7 @@ export class TerminalPanelView {
       launchConfigOverrides: profile.agentType === "custom" ? resolved.launchConfig : undefined,
       loginShellWrap: profile.loginShellWrap,
       invocation: resolved.invocation,
+      profile,
     });
 
     if (!tab) return;
@@ -1196,6 +1206,7 @@ export class TerminalPanelView {
       loginShellWrap: profile.loginShellWrap,
       targetItemId: options.targetItem?.id,
       invocation,
+      profile,
     });
 
     if (!tab) {
@@ -1378,6 +1389,10 @@ export class TerminalPanelView {
       return itemPath;
     }
     return path.resolve(vaultPath, itemPath);
+  }
+
+  getBrokerHost(): BrokerTerminalHost {
+    return this.tabManager;
   }
 
   getAllActiveTabs(): ActiveTabInfo[] {
@@ -1581,6 +1596,8 @@ export class TerminalPanelView {
     invocation?: ResolvedAgentInvocation;
     /** Create tab for a specific item instead of the active item. */
     targetItemId?: string;
+    /** Persisted profile supplying optional exact broker grants. */
+    profile?: AgentProfile;
   }): Promise<TerminalTab | null> {
     this.exitDetailView();
     const launchConfig = options.launchConfigOverrides ?? getLaunchConfig(options.agentType);
@@ -1682,6 +1699,14 @@ export class TerminalPanelView {
             : []),
         );
     if (tab) {
+      if (options.profile) {
+        tab.profileId = options.profile.id;
+        const brokerEnv = this.plugin.createTaskTabBrokerLaunchEnvironment?.(
+          options.profile,
+          tab.getHostSnapshot(),
+        );
+        if (brokerEnv) tab.launchEnv = { ...tab.launchEnv, ...brokerEnv };
+      }
       if (options.loginShellWrap) {
         tab.loginShellWrap = true;
       }

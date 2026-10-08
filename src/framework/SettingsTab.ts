@@ -110,6 +110,7 @@ interface CoreSettings {
   "core.showVersionInTabTitle": boolean;
   "core.autoRenameAgentTabs": boolean;
   "core.autoRenamePiArguments": string;
+  "core.taskTabBrokerEnabled": boolean;
 }
 
 export const SETTINGS_CHANGED_EVENT = "work-terminal:settings-changed";
@@ -143,6 +144,7 @@ const CORE_DEFAULTS: CoreSettings = {
   "core.showVersionInTabTitle": true,
   "core.autoRenameAgentTabs": false,
   "core.autoRenamePiArguments": "",
+  "core.taskTabBrokerEnabled": false,
 };
 
 /**
@@ -510,6 +512,14 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           }),
       );
 
+    this.addCoreToggle(
+      containerEl,
+      settings,
+      "core.taskTabBrokerEnabled",
+      "Enable task tab broker",
+      "Start the vault-local authenticated IPC broker. No profile receives access until exact capabilities are granted in Profile Manager.",
+    );
+
     // Enrichment dialog button (only if the adapter schema declares
     // enrichment fields).
     const schema = this.adapter.config.settingsSchema;
@@ -630,6 +640,7 @@ export class WorkTerminalSettingsTab extends PluginSettingTab {
           });
         }),
       );
+    setting.settingEl.setAttribute("data-setting-key", key);
     if (tourId) {
       setting.settingEl.setAttribute("data-wt-tour", tourId);
     }

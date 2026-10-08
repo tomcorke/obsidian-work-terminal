@@ -549,7 +549,12 @@ describe("WorkTerminalSettingsTab render ordering (issue #473)", () => {
     const sequence = captureSequence(tab.containerEl);
     const agentsIdx = sequence.indexOf("## Agents");
     const tail = sequence.slice(agentsIdx + 1);
-    expect(tail).toEqual(["Manage agent profiles", "Task enrichment", "Agent actions"]);
+    expect(tail).toEqual([
+      "Manage agent profiles",
+      "Enable task tab broker",
+      "Task enrichment",
+      "Agent actions",
+    ]);
   });
 
   it("stays in declared order when loadData() is delayed by many microtasks", async () => {

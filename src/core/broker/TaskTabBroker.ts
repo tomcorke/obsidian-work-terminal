@@ -1,3 +1,4 @@
+import type { BrokerCapability } from "../agents/AgentProfile";
 import type {
   CleanOutputRead,
   TerminalTabHostSnapshot,
@@ -32,7 +33,7 @@ const TOMBSTONE_TTL_MS = 60 * 60_000;
 const TOMBSTONE_LIMIT = 10_000;
 const AUDIT_LIMIT = 1_000;
 
-export type BrokerCapability = "discover" | "read";
+export type { BrokerCapability } from "../agents/AgentProfile";
 export type BrokerMethod =
   | "listCategories"
   | "listTasks"
@@ -54,6 +55,7 @@ export interface BrokerError {
   code:
     | "INVALID_FRAME"
     | "UNSUPPORTED_VERSION"
+    | "AUTH_REQUIRED"
     | "AUTH_FAILED"
     | "CAPABILITY_DENIED"
     | "INVALID_ARGUMENT"
@@ -122,6 +124,19 @@ interface KnownTab {
   observedAt: number;
 }
 
+export interface BrokerRuntimeState {
+  vaultId: string;
+  callers: Array<{
+    grant: BrokerCallerGrant;
+    digest: string;
+    requestTimes: number[];
+    outputRequestTimes: number[];
+  }>;
+  knownTabs: Array<[string, KnownTab]>;
+  failedAuthTimes: number[];
+  audit: BrokerAuditEntry[];
+}
+
 export class TaskTabBroker {
   private readonly vaultId: string;
   private readonly catalogue: BrokerTaskCatalogue;
@@ -139,6 +154,7 @@ export class TaskTabBroker {
     catalogue: BrokerTaskCatalogue;
     getProfileCapabilities: (profileId: string) => readonly string[];
     now?: () => number;
+    runtimeState?: BrokerRuntimeState;
   }) {
     if (!validIdentifier(options.vaultId)) throw new Error("vaultId is invalid");
     this.vaultId = options.vaultId;
@@ -146,6 +162,46 @@ export class TaskTabBroker {
     this.getProfileCapabilities = options.getProfileCapabilities;
     this.now = options.now ?? Date.now;
     this.brokerEpoch = cryptoModule().randomUUID();
+    const runtime = options.runtimeState;
+    if (runtime) {
+      if (runtime.vaultId !== this.vaultId)
+        throw new Error("Broker runtime belongs to another vault");
+      for (const caller of runtime.callers) {
+        this.callers.push({
+          ...caller.grant,
+          caller: Object.freeze({ ...caller.grant.caller }),
+          capabilities: Object.freeze([...caller.grant.capabilities]),
+          digest: Buffer.from(caller.digest, "base64"),
+          requestTimes: [...caller.requestTimes],
+          outputRequestTimes: [...caller.outputRequestTimes],
+        });
+      }
+      for (const [tabId, known] of runtime.knownTabs) {
+        this.knownTabs.set(tabId, { ...known });
+      }
+      this.failedAuthTimes.push(...runtime.failedAuthTimes);
+      this.audit.push(...runtime.audit);
+    }
+  }
+
+  exportRuntimeState(): BrokerRuntimeState {
+    return {
+      vaultId: this.vaultId,
+      callers: this.callers.map((caller) => ({
+        grant: {
+          vaultId: caller.vaultId,
+          caller: { ...caller.caller },
+          profileId: caller.profileId,
+          capabilities: [...caller.capabilities],
+        },
+        digest: caller.digest.toString("base64"),
+        requestTimes: [...caller.requestTimes],
+        outputRequestTimes: [...caller.outputRequestTimes],
+      })),
+      knownTabs: [...this.knownTabs].map(([tabId, known]) => [tabId, { ...known }]),
+      failedAuthTimes: [...this.failedAuthTimes],
+      audit: [...this.audit],
+    };
   }
 
   registerHost(vaultId: string, host: BrokerTerminalHost): () => void {
@@ -178,6 +234,47 @@ export class TaskTabBroker {
 
   getDiagnostics(): readonly BrokerAuditEntry[] {
     return Object.freeze(this.audit.map((entry) => Object.freeze({ ...entry })));
+  }
+
+  hello(token: string, id: string): BrokerResponse {
+    if (!validRequestId(id)) return failure(null, "INVALID_FRAME", "Invalid hello request");
+    let caller: StoredCallerGrant | null;
+    try {
+      caller = this.authenticate(token);
+    } catch {
+      return failure(id, "INTERNAL", "The broker could not authenticate the request", true);
+    }
+    if (!caller) {
+      const retryAfterMs = consumeRate(this.failedAuthTimes, AUTH_FAILURE_RATE_LIMIT, this.now());
+      return retryAfterMs === null
+        ? failure(id, "AUTH_FAILED", "The broker token is invalid or stale")
+        : failure(id, "RATE_LIMITED", "Authentication attempts are rate limited", true, {
+            retryAfterMs,
+          });
+    }
+    const current = new Set(this.getProfileCapabilities(caller.profileId));
+    return success(id, {
+      brokerEpoch: this.brokerEpoch,
+      caller: { ...caller.caller },
+      capabilities: caller.capabilities.filter((capability) => current.has(capability)),
+    });
+  }
+
+  issueLaunchContext(grant: BrokerCallerGrant, endpoint: string): NodeJS.ProcessEnv | undefined {
+    if (grant.capabilities.length === 0) return undefined;
+    const token = this.issueToken(grant);
+    return {
+      WORK_TERMINAL_BROKER_PROTOCOL: String(BROKER_PROTOCOL_VERSION),
+      WORK_TERMINAL_BROKER_ENDPOINT: endpoint,
+      WORK_TERMINAL_TASK_ID: grant.caller.taskId,
+      WORK_TERMINAL_TAB_ID: grant.caller.tabId,
+      WORK_TERMINAL_TAB_GENERATION: String(grant.caller.generation),
+      WORK_TERMINAL_BROKER_TOKEN: token,
+    };
+  }
+
+  revokeAllCallers(): void {
+    this.callers.length = 0;
   }
 
   async dispatch(token: string, request: BrokerRequest): Promise<BrokerResponse> {

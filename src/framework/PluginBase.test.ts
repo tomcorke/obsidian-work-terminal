@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoistedMocks = vi.hoisted(() => {
@@ -54,6 +55,8 @@ vi.mock("../core/agents/AgentProfileManager", () => ({
 vi.mock("./MainView", () => ({ MainView: hoistedMocks.MainViewMock }));
 vi.mock("./SettingsTab", () => ({
   WorkTerminalSettingsTab: hoistedMocks.WorkTerminalSettingsTabMock,
+  SETTINGS_CHANGED_EVENT: "work-terminal:settings-changed",
+  loadAllSettings: vi.fn(() => Promise.resolve({ "core.taskTabBrokerEnabled": false })),
 }));
 
 vi.mock("obsidian", () => {
@@ -99,7 +102,10 @@ import { PluginBase, VIEW_TYPE } from "./PluginBase";
 class TestPlugin extends PluginBase {}
 
 function makeAdapter() {
-  return {} as any;
+  return {
+    config: { columns: [] },
+    createParser: vi.fn(() => ({ loadAll: vi.fn(() => Promise.resolve([])) })),
+  } as any;
 }
 
 function makeApp(overrides: Record<string, unknown> = {}) {
@@ -112,6 +118,10 @@ function makeApp(overrides: Record<string, unknown> = {}) {
       revealLeaf: vi.fn(),
       activeLeaf: undefined,
       ...overrides,
+    },
+    vault: {
+      adapter: { basePath: "/vault" },
+      getName: vi.fn(() => "vault"),
     },
     plugins: {
       disablePlugin: vi.fn(() => Promise.resolve()),
