@@ -12,6 +12,13 @@ import { TerminalTab, type AgentState } from "./TerminalTab";
 import { aggregateState } from "../agents/AgentStateDetector";
 import { SessionStore } from "../session/SessionStore";
 import type { ActiveTabInfo, StoredSession, SessionType, TabDiagnostics } from "../session/types";
+import type {
+  CleanOutputRead,
+  TerminalHostCommandResult,
+  TerminalLifecycleListener,
+  TerminalTabHostSnapshot,
+  TerminalTabTarget,
+} from "./TerminalHost";
 
 export class TabManager {
   private sessions: Map<string, TerminalTab[]> = new Map();
@@ -291,6 +298,7 @@ export class TabManager {
     targetTabs.push(tab);
     this.sessions.set(targetItemId, targetTabs);
     tab.taskPath = targetItemId;
+    tab.refreshHostTarget();
     this.bindTabCallbacks(tab);
     tab.hide();
     tab.suspendWebGl();
@@ -432,6 +440,33 @@ export class TabManager {
     return this.sessions.get(itemId) || [];
   }
 
+  /** Return handle-free snapshots for broker discovery. */
+  getTabHostSnapshots(itemId: string): readonly TerminalTabHostSnapshot[] {
+    return Object.freeze((this.sessions.get(itemId) ?? []).map((tab) => tab.getHostSnapshot()));
+  }
+
+  readTabOutput(
+    target: TerminalTabTarget,
+    options: { maxLines: number; maxBytes: number },
+  ): CleanOutputRead | null {
+    return this.findHostTab(target)?.readCleanOutput(options) ?? null;
+  }
+
+  promptTab(target: TerminalTabTarget, prompt: string): TerminalHostCommandResult | null {
+    return this.findHostTab(target)?.submitPrompt(prompt) ?? null;
+  }
+
+  interruptTab(target: TerminalTabTarget): TerminalHostCommandResult | null {
+    return this.findHostTab(target)?.interrupt() ?? null;
+  }
+
+  onTabLifecycle(
+    target: TerminalTabTarget,
+    listener: TerminalLifecycleListener,
+  ): (() => void) | null {
+    return this.findHostTab(target)?.onLifecycleEvent(listener) ?? null;
+  }
+
   /** Get the currently active tab, or null. */
   getActiveTab(): TerminalTab | null {
     if (!this.activeItemId) return null;
@@ -570,6 +605,7 @@ export class TabManager {
 
     for (const tab of tabs) {
       tab.taskPath = newId;
+      tab.refreshHostTarget();
     }
 
     if (this.activeItemId === oldId) {
@@ -616,6 +652,13 @@ export class TabManager {
   // ---------------------------------------------------------------------------
   // Internal
   // ---------------------------------------------------------------------------
+
+  private findHostTab(target: TerminalTabTarget): TerminalTab | null {
+    const tab = (this.sessions.get(target.taskId) ?? []).find(
+      (candidate) => candidate.id === target.tabId && candidate.generation === target.generation,
+    );
+    return tab ?? null;
+  }
 
   private hideAllTerminals(): void {
     for (const tabs of this.sessions.values()) {
