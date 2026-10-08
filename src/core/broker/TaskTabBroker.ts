@@ -24,13 +24,23 @@ export const BROKER_HIERARCHY_MAX_RESULTS = 500;
 export const BROKER_OUTPUT_DEFAULT_LINES = 50;
 export const BROKER_OUTPUT_MAX_LINES = 200;
 export const BROKER_OUTPUT_MAX_BYTES = 48 * 1024;
+export const BROKER_MESSAGE_KIND_MAX_BYTES = 64;
+export const BROKER_MESSAGE_PAYLOAD_MAX_BYTES = 8 * 1024;
+export const BROKER_MAILBOX_MAX_MESSAGES = 100;
+export const BROKER_MAILBOX_MAX_BYTES = 256 * 1024;
+export const BROKER_MAILBOX_DEFAULT_LIMIT = 20;
+export const BROKER_MAILBOX_MAX_LIMIT = 50;
+export const BROKER_ACK_MAX_MESSAGES = 50;
 
 const RATE_WINDOW_MS = 60_000;
 const GENERAL_RATE_LIMIT = 120;
 const OUTPUT_RATE_LIMIT = 60;
+const MESSAGE_RATE_LIMIT = 30;
 const AUTH_FAILURE_RATE_LIMIT = 20;
 const TOMBSTONE_TTL_MS = 60 * 60_000;
 const TOMBSTONE_LIMIT = 10_000;
+const ACK_RECORD_TTL_MS = 60 * 60_000;
+const ACK_RECORD_LIMIT = 10_000;
 const AUDIT_LIMIT = 1_000;
 
 export type { BrokerCapability } from "../agents/AgentProfile";
@@ -41,7 +51,10 @@ export type BrokerMethod =
   | "listTabs"
   | "getSubtasks"
   | "getParentTasks"
-  | "readOutput";
+  | "readOutput"
+  | "sendMessage"
+  | "receiveMessages"
+  | "ackMessages";
 
 export interface BrokerRequest {
   v: number;
@@ -64,6 +77,7 @@ export interface BrokerError {
     | "NOT_FOUND"
     | "STALE_TARGET"
     | "TARGET_UNAVAILABLE"
+    | "MAILBOX_FULL"
     | "INTERNAL";
   message: string;
   retryable: boolean;
@@ -102,6 +116,27 @@ export interface BrokerCallerGrant {
   capabilities: readonly BrokerCapability[];
 }
 
+export interface BrokerMailboxMessage {
+  readonly messageId: string;
+  readonly clientMessageId: string;
+  readonly sender: TerminalTabTarget;
+  readonly recipient: TerminalTabTarget;
+  readonly acceptedAt: number;
+  readonly kind?: string;
+  readonly payload: unknown;
+}
+
+export interface BrokerMailboxAvailableEvent {
+  readonly sequence: string;
+  readonly pending: number;
+}
+
+export interface BrokerMessageAcceptance {
+  readonly messageId: string;
+  readonly acceptedAt: number;
+  readonly target: TerminalTabTarget;
+}
+
 export interface BrokerAuditEntry {
   readonly timestamp: number;
   readonly brokerEpoch: string;
@@ -118,6 +153,29 @@ interface StoredCallerGrant extends BrokerCallerGrant {
   digest: Buffer;
   requestTimes: number[];
   outputRequestTimes: number[];
+  messageRequestTimes: number[];
+}
+
+interface StoredMessage extends Omit<BrokerMailboxMessage, "payload"> {
+  payloadJson: string;
+  payloadBytes: number;
+}
+
+interface StoredMailbox {
+  messages: StoredMessage[];
+  byteCount: number;
+}
+
+interface DeliveryRecord {
+  acceptance: BrokerMessageAcceptance;
+  recipientKey: string;
+  acknowledgedAt?: number;
+}
+
+interface AcknowledgedRecord {
+  dedupKey: string;
+  recipientKey: string;
+  acknowledgedAt: number;
 }
 
 interface KnownTab {
@@ -131,8 +189,12 @@ export interface BrokerRuntimeState {
     digest: string;
     requestTimes: number[];
     outputRequestTimes: number[];
+    messageRequestTimes: number[];
   }>;
   knownTabs: Array<[string, KnownTab]>;
+  mailboxes: Array<[string, StoredMailbox]>;
+  deliveryRecords: Array<[string, DeliveryRecord]>;
+  acknowledgedRecords: Array<[string, AcknowledgedRecord]>;
   failedAuthTimes: number[];
   audit: BrokerAuditEntry[];
 }
@@ -146,6 +208,14 @@ export class TaskTabBroker {
   private readonly hosts = new Set<BrokerTerminalHost>();
   private readonly callers: StoredCallerGrant[] = [];
   private readonly knownTabs = new Map<string, KnownTab>();
+  private readonly mailboxes = new Map<string, StoredMailbox>();
+  private readonly deliveryRecords = new Map<string, DeliveryRecord>();
+  private readonly acknowledgedRecords = new Map<string, AcknowledgedRecord>();
+  private readonly mailboxListeners = new Map<
+    string,
+    Set<(event: BrokerMailboxAvailableEvent) => void>
+  >();
+  private mailboxEventSequence = "0";
   private readonly failedAuthTimes: number[] = [];
   private readonly audit: BrokerAuditEntry[] = [];
 
@@ -174,10 +244,30 @@ export class TaskTabBroker {
           digest: Buffer.from(caller.digest, "base64"),
           requestTimes: [...caller.requestTimes],
           outputRequestTimes: [...caller.outputRequestTimes],
+          messageRequestTimes: [...(caller.messageRequestTimes ?? [])],
         });
       }
       for (const [tabId, known] of runtime.knownTabs) {
         this.knownTabs.set(tabId, { ...known });
+      }
+      for (const [key, mailbox] of runtime.mailboxes ?? []) {
+        this.mailboxes.set(key, {
+          messages: mailbox.messages.map((message) => ({
+            ...message,
+            sender: { ...message.sender },
+            recipient: { ...message.recipient },
+          })),
+          byteCount: mailbox.byteCount,
+        });
+      }
+      for (const [key, record] of runtime.deliveryRecords ?? []) {
+        this.deliveryRecords.set(key, {
+          ...record,
+          acceptance: { ...record.acceptance, target: { ...record.acceptance.target } },
+        });
+      }
+      for (const [key, record] of runtime.acknowledgedRecords ?? []) {
+        this.acknowledgedRecords.set(key, { ...record });
       }
       this.failedAuthTimes.push(...runtime.failedAuthTimes);
       this.audit.push(...runtime.audit);
@@ -197,8 +287,31 @@ export class TaskTabBroker {
         digest: caller.digest.toString("base64"),
         requestTimes: [...caller.requestTimes],
         outputRequestTimes: [...caller.outputRequestTimes],
+        messageRequestTimes: [...caller.messageRequestTimes],
       })),
       knownTabs: [...this.knownTabs].map(([tabId, known]) => [tabId, { ...known }]),
+      mailboxes: [...this.mailboxes].map(([key, mailbox]) => [
+        key,
+        {
+          messages: mailbox.messages.map((message) => ({
+            ...message,
+            sender: { ...message.sender },
+            recipient: { ...message.recipient },
+          })),
+          byteCount: mailbox.byteCount,
+        },
+      ]),
+      deliveryRecords: [...this.deliveryRecords].map(([key, record]) => [
+        key,
+        {
+          ...record,
+          acceptance: { ...record.acceptance, target: { ...record.acceptance.target } },
+        },
+      ]),
+      acknowledgedRecords: [...this.acknowledgedRecords].map(([key, record]) => [
+        key,
+        { ...record },
+      ]),
       failedAuthTimes: [...this.failedAuthTimes],
       audit: [...this.audit],
     };
@@ -228,12 +341,27 @@ export class TaskTabBroker {
       digest: crypto.createHash("sha256").update(token).digest(),
       requestTimes: [],
       outputRequestTimes: [],
+      messageRequestTimes: [],
     });
     return token;
   }
 
   getDiagnostics(): readonly BrokerAuditEntry[] {
     return Object.freeze(this.audit.map((entry) => Object.freeze({ ...entry })));
+  }
+
+  subscribeMailbox(
+    target: TerminalTabTarget,
+    listener: (event: BrokerMailboxAvailableEvent) => void,
+  ): () => void {
+    const key = mailboxKey(target);
+    const listeners = this.mailboxListeners.get(key) ?? new Set();
+    listeners.add(listener);
+    this.mailboxListeners.set(key, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.mailboxListeners.delete(key);
+    };
   }
 
   hello(token: string, id: string): BrokerResponse {
@@ -275,6 +403,9 @@ export class TaskTabBroker {
 
   revokeAllCallers(): void {
     this.callers.length = 0;
+    this.mailboxes.clear();
+    this.deliveryRecords.clear();
+    this.acknowledgedRecords.clear();
   }
 
   async dispatch(token: string, request: BrokerRequest): Promise<BrokerResponse> {
@@ -328,7 +459,7 @@ export class TaskTabBroker {
   ): Promise<BrokerResponse> {
     const id = request.id;
     try {
-      const required: BrokerCapability = request.method === "readOutput" ? "read" : "discover";
+      const required = requiredCapability(request.method);
       const currentCapabilities = new Set(this.getProfileCapabilities(caller.profileId));
       if (!caller.capabilities.includes(required) || !currentCapabilities.has(required)) {
         return failure(id, "CAPABILITY_DENIED", `The caller lacks ${required}`, false, {
@@ -364,6 +495,9 @@ export class TaskTabBroker {
         );
       }
       if (request.method === "readOutput") return this.readOutput(id, params);
+      if (request.method === "sendMessage") return this.sendMessage(caller, id, params);
+      if (request.method === "receiveMessages") return this.receiveMessages(caller, id, params);
+      if (request.method === "ackMessages") return this.ackMessages(caller, id, params);
 
       const taskId = params.taskId;
       if (!validIdentifier(taskId)) return invalidIdentifier(id, "taskId");
@@ -437,6 +571,236 @@ export class TaskTabBroker {
     return output ? success(id, output) : failure(id, "STALE_TARGET", "The target became stale");
   }
 
+  private sendMessage(
+    caller: StoredCallerGrant,
+    id: string,
+    params: Record<string, unknown>,
+  ): BrokerResponse {
+    const target = parseTarget(params.target);
+    if (!target) {
+      return failure(id, "INVALID_ARGUMENT", "A valid target is required", false, {
+        argument: "target",
+      });
+    }
+    if (!validIdentifier(params.clientMessageId)) {
+      return invalidIdentifier(id, "clientMessageId");
+    }
+    if (params.kind !== undefined && (typeof params.kind !== "string" || !params.kind)) {
+      return failure(id, "INVALID_ARGUMENT", "kind is invalid", false, {
+        argument: "kind",
+      });
+    }
+    if (
+      typeof params.kind === "string" &&
+      Buffer.byteLength(params.kind) > BROKER_MESSAGE_KIND_MAX_BYTES
+    ) {
+      return failure(id, "LIMIT_EXCEEDED", "kind exceeds its limit", false, {
+        argument: "kind",
+        limit: BROKER_MESSAGE_KIND_MAX_BYTES,
+      });
+    }
+    if (!Object.prototype.hasOwnProperty.call(params, "payload")) {
+      return failure(id, "INVALID_ARGUMENT", "payload is invalid", false, {
+        argument: "payload",
+      });
+    }
+    const encodedPayload = encodeJson(params.payload);
+    if (!encodedPayload) {
+      return failure(id, "INVALID_ARGUMENT", "payload is invalid", false, {
+        argument: "payload",
+      });
+    }
+    if (encodedPayload.byteCount > BROKER_MESSAGE_PAYLOAD_MAX_BYTES) {
+      return failure(id, "LIMIT_EXCEEDED", "payload exceeds its limit", false, {
+        argument: "payload",
+        limit: BROKER_MESSAGE_PAYLOAD_MAX_BYTES,
+      });
+    }
+
+    const owners = this.findTargetOwners(target);
+    if (owners.length > 1) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target has multiple host owners", true);
+    }
+    if (owners.length === 0) {
+      this.dropMailbox(target);
+      this.pruneKnownTabs();
+      const code = this.knownTabs.has(target.tabId) ? "STALE_TARGET" : "NOT_FOUND";
+      return failure(
+        id,
+        code,
+        code === "STALE_TARGET" ? "The target is stale" : "The tab was not found",
+      );
+    }
+
+    const recipientCallers = this.callers.filter(
+      (candidate) =>
+        candidate.caller.tabId === target.tabId &&
+        candidate.caller.generation === target.generation,
+    );
+    if (recipientCallers.length === 0) {
+      return failure(id, "TARGET_UNAVAILABLE", "The recipient is not broker-enabled");
+    }
+    const recipientEnabled = recipientCallers.some(
+      (candidate) =>
+        candidate.capabilities.includes("message") &&
+        this.getProfileCapabilities(candidate.profileId).includes("message"),
+    );
+    if (!recipientEnabled) {
+      return failure(id, "CAPABILITY_DENIED", "The recipient lacks message", false, {
+        requiredCapability: "message",
+        recipient: true,
+      });
+    }
+
+    const recipientKey = mailboxKey(target);
+    const dedupKey = messageDedupKey(caller.caller, params.clientMessageId);
+    this.pruneAcknowledgedRecords(this.now());
+    const existing = this.deliveryRecords.get(dedupKey);
+    if (existing) return success(id, cloneAcceptance(existing.acceptance));
+
+    const mailbox = this.mailboxes.get(recipientKey) ?? { messages: [], byteCount: 0 };
+    if (mailbox.messages.length >= BROKER_MAILBOX_MAX_MESSAGES) {
+      return failure(id, "MAILBOX_FULL", "The recipient mailbox is full", false, {
+        limit: BROKER_MAILBOX_MAX_MESSAGES,
+        resource: "messages",
+      });
+    }
+    if (mailbox.byteCount + encodedPayload.byteCount > BROKER_MAILBOX_MAX_BYTES) {
+      return failure(id, "MAILBOX_FULL", "The recipient mailbox is full", false, {
+        limit: BROKER_MAILBOX_MAX_BYTES,
+        resource: "bytes",
+      });
+    }
+
+    const acceptedAt = this.now();
+    const messageId = cryptoModule().randomUUID();
+    const acceptance: BrokerMessageAcceptance = Object.freeze({
+      messageId,
+      acceptedAt,
+      target: Object.freeze({ ...target }),
+    });
+    mailbox.messages.push({
+      messageId,
+      clientMessageId: params.clientMessageId,
+      sender: Object.freeze({ ...caller.caller }),
+      recipient: Object.freeze({ ...target }),
+      acceptedAt,
+      ...(params.kind !== undefined ? { kind: params.kind as string } : {}),
+      payloadJson: encodedPayload.json,
+      payloadBytes: encodedPayload.byteCount,
+    });
+    mailbox.byteCount += encodedPayload.byteCount;
+    this.mailboxes.set(recipientKey, mailbox);
+    this.deliveryRecords.set(dedupKey, { acceptance, recipientKey });
+    this.notifyMailbox(recipientKey, mailbox.messages.length);
+    return success(id, cloneAcceptance(acceptance));
+  }
+
+  private receiveMessages(
+    caller: StoredCallerGrant,
+    id: string,
+    params: Record<string, unknown>,
+  ): BrokerResponse {
+    const limit = params.limit ?? BROKER_MAILBOX_DEFAULT_LIMIT;
+    const limitError = validateBoundedInteger("limit", limit, BROKER_MAILBOX_MAX_LIMIT);
+    if (limitError) return { v: 1, type: "response", id, ok: false, error: limitError };
+    const mailbox = this.mailboxes.get(mailboxKey(caller.caller));
+    const pending = mailbox?.messages.length ?? 0;
+    const messages: BrokerMailboxMessage[] = [];
+    for (const stored of mailbox?.messages.slice(0, limit as number) ?? []) {
+      const message = toMailboxMessage(stored);
+      const result = { messages: [...messages, message], pending };
+      if (encodedSize(success(id, result)) > BROKER_FRAME_MAX_BYTES) break;
+      messages.push(message);
+    }
+    return success(id, { messages, pending });
+  }
+
+  private ackMessages(
+    caller: StoredCallerGrant,
+    id: string,
+    params: Record<string, unknown>,
+  ): BrokerResponse {
+    if (!Array.isArray(params.messageIds)) {
+      return failure(id, "INVALID_ARGUMENT", "messageIds is invalid", false, {
+        argument: "messageIds",
+      });
+    }
+    if (params.messageIds.length > BROKER_ACK_MAX_MESSAGES) {
+      return failure(id, "LIMIT_EXCEEDED", "messageIds exceeds its limit", false, {
+        argument: "messageIds",
+        limit: BROKER_ACK_MAX_MESSAGES,
+      });
+    }
+    if (
+      params.messageIds.some((messageId) => !validIdentifier(messageId)) ||
+      new Set(params.messageIds).size !== params.messageIds.length
+    ) {
+      return failure(id, "INVALID_ARGUMENT", "messageIds is invalid", false, {
+        argument: "messageIds",
+      });
+    }
+
+    const recipientKey = mailboxKey(caller.caller);
+    const mailbox = this.mailboxes.get(recipientKey);
+    const acked: string[] = [];
+    const alreadyAcked: string[] = [];
+    const unknown: string[] = [];
+    const now = this.now();
+    this.pruneAcknowledgedRecords(now);
+    for (const messageId of params.messageIds as string[]) {
+      const messageIndex =
+        mailbox?.messages.findIndex((message) => message.messageId === messageId) ?? -1;
+      if (mailbox && messageIndex >= 0) {
+        const [message] = mailbox.messages.splice(messageIndex, 1);
+        mailbox.byteCount -= message.payloadBytes;
+        const dedupKey = messageDedupKey(message.sender, message.clientMessageId);
+        const delivery = this.deliveryRecords.get(dedupKey);
+        if (delivery) delivery.acknowledgedAt = now;
+        this.acknowledgedRecords.set(messageId, { dedupKey, recipientKey, acknowledgedAt: now });
+        acked.push(messageId);
+      } else if (this.acknowledgedRecords.get(messageId)?.recipientKey === recipientKey) {
+        alreadyAcked.push(messageId);
+      } else {
+        unknown.push(messageId);
+      }
+    }
+    if (mailbox && mailbox.messages.length === 0) this.mailboxes.delete(recipientKey);
+    this.pruneAcknowledgedRecords(now);
+    return success(id, { acked, alreadyAcked, unknown });
+  }
+
+  private dropMailbox(target: TerminalTabTarget): void {
+    this.dropMailboxKey(mailboxKey(target));
+  }
+
+  private dropMailboxKey(recipientKey: string): void {
+    const mailbox = this.mailboxes.get(recipientKey);
+    if (!mailbox) return;
+    for (const message of mailbox.messages) {
+      this.deliveryRecords.delete(messageDedupKey(message.sender, message.clientMessageId));
+    }
+    this.mailboxes.delete(recipientKey);
+  }
+
+  private notifyMailbox(recipientKey: string, pending: number): void {
+    const listeners = this.mailboxListeners.get(recipientKey);
+    if (!listeners) return;
+    this.mailboxEventSequence = incrementDecimal(this.mailboxEventSequence);
+    const event = Object.freeze({ sequence: this.mailboxEventSequence, pending });
+    for (const listener of [...listeners]) listener(event);
+  }
+
+  private pruneAcknowledgedRecords(now: number): void {
+    const cutoff = now - ACK_RECORD_TTL_MS;
+    for (const [messageId, record] of this.acknowledgedRecords) {
+      if (record.acknowledgedAt > cutoff && this.acknowledgedRecords.size <= ACK_RECORD_LIMIT)
+        break;
+      this.acknowledgedRecords.delete(messageId);
+      this.deliveryRecords.delete(record.dedupKey);
+    }
+  }
+
   private authenticate(token: string): StoredCallerGrant | null {
     if (typeof token !== "string") return null;
     const crypto = cryptoModule();
@@ -470,6 +834,10 @@ export class TaskTabBroker {
     if (method === "readOutput") {
       const outputRetry = consumeRate(caller.outputRequestTimes, OUTPUT_RATE_LIMIT, now);
       if (outputRetry !== null) return rateError(outputRetry);
+    }
+    if (method === "sendMessage") {
+      const messageRetry = consumeRate(caller.messageRequestTimes, MESSAGE_RATE_LIMIT, now);
+      if (messageRetry !== null) return rateError(messageRetry);
     }
     return null;
   }
@@ -512,6 +880,9 @@ export class TaskTabBroker {
 
   private rememberTab(tab: TerminalTabHostSnapshot): void {
     this.pruneKnownTabs();
+    for (const key of this.mailboxes.keys()) {
+      if (key.startsWith(`${tab.tabId}\0`) && key !== mailboxKey(tab)) this.dropMailboxKey(key);
+    }
     this.knownTabs.delete(tab.tabId);
     this.knownTabs.set(tab.tabId, { observedAt: this.now() });
     while (this.knownTabs.size > TOMBSTONE_LIMIT) {
@@ -541,11 +912,8 @@ export class TaskTabBroker {
       ...(target ? { target: Object.freeze(target) } : {}),
       method: request.method,
       allowed: response.ok,
-      ...(!response.ok ? { errorCode: response.error.code } : {}),
-      byteCount:
-        response.ok && request.method === "readOutput"
-          ? Number((response.result as { byteCount?: number }).byteCount ?? 0)
-          : 0,
+      ...(response.ok === false ? { errorCode: response.error.code } : {}),
+      byteCount: auditByteCount(request, response),
       durationMs: Math.max(0, this.now() - startedAt),
     });
     this.audit.push(entry);
@@ -555,6 +923,90 @@ export class TaskTabBroker {
 
 function cryptoModule(): typeof import("crypto") {
   return electronRequire("crypto") as typeof import("crypto");
+}
+
+function incrementDecimal(value: string): string {
+  const digits = value.split("");
+  for (let index = digits.length - 1; index >= 0; index--) {
+    if (digits[index] === "9") {
+      digits[index] = "0";
+    } else {
+      digits[index] = String(Number(digits[index]) + 1);
+      return digits.join("");
+    }
+  }
+  return `1${digits.join("")}`;
+}
+
+function requiredCapability(method: string): BrokerCapability {
+  if (method === "readOutput") return "read";
+  if (["sendMessage", "receiveMessages", "ackMessages"].includes(method)) return "message";
+  return "discover";
+}
+
+function mailboxKey(target: TerminalTabTarget): string {
+  return `${target.tabId}\0${target.generation}`;
+}
+
+function messageDedupKey(sender: TerminalTabTarget, clientMessageId: string): string {
+  return `${mailboxKey(sender)}\0${clientMessageId}`;
+}
+
+function cloneAcceptance(acceptance: BrokerMessageAcceptance): BrokerMessageAcceptance {
+  return { ...acceptance, target: { ...acceptance.target } };
+}
+
+function toMailboxMessage(message: StoredMessage): BrokerMailboxMessage {
+  return {
+    messageId: message.messageId,
+    clientMessageId: message.clientMessageId,
+    sender: { ...message.sender },
+    recipient: { ...message.recipient },
+    acceptedAt: message.acceptedAt,
+    ...(message.kind !== undefined ? { kind: message.kind } : {}),
+    payload: JSON.parse(message.payloadJson) as unknown,
+  };
+}
+
+function encodeJson(value: unknown): { json: string; byteCount: number } | null {
+  try {
+    if (!isJsonValue(value, new Set())) return null;
+    const json = JSON.stringify(value);
+    if (json === undefined) return null;
+    return { json, byteCount: Buffer.byteLength(json) };
+  } catch {
+    return null;
+  }
+}
+
+function isJsonValue(value: unknown, ancestors: Set<object>): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || ancestors.has(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false;
+  ancestors.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((entry) => isJsonValue(entry, ancestors))
+    : Object.getOwnPropertySymbols(value).length === 0 &&
+      Object.values(value).every((entry) => isJsonValue(entry, ancestors));
+  ancestors.delete(value);
+  return valid;
+}
+
+function auditByteCount(request: BrokerRequest, response: BrokerResponse): number {
+  if (!response.ok) return 0;
+  if (request.method === "readOutput") {
+    return Number((response.result as { byteCount?: number }).byteCount ?? 0);
+  }
+  if (request.method === "sendMessage") return encodeJson(request.params?.payload)?.byteCount ?? 0;
+  if (request.method === "receiveMessages") {
+    return ((response.result as { messages?: BrokerMailboxMessage[] }).messages ?? []).reduce(
+      (total, message) => total + (encodeJson(message.payload)?.byteCount ?? 0),
+      0,
+    );
+  }
+  return 0;
 }
 
 function sameTarget(a: TerminalTabTarget, b: TerminalTabTarget): boolean {
@@ -595,6 +1047,9 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     getSubtasks: ["taskId", "maxDepth", "maxResults"],
     getParentTasks: ["taskId", "maxDepth", "maxResults"],
     readOutput: ["target", "maxLines", "maxBytes"],
+    sendMessage: ["target", "clientMessageId", "kind", "payload"],
+    receiveMessages: ["limit"],
+    ackMessages: ["messageIds"],
   };
   if (!Object.prototype.hasOwnProperty.call(allowed, method)) return invalidArgumentError("method");
   const unexpected = Object.keys(params).find((key) => !allowed[method].includes(key));

@@ -152,6 +152,127 @@ describe("TaskTabBrokerTransport", () => {
     ]);
   });
 
+  it("keeps mailbox delivery available when the recipient reconnects", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "wt-broker-test-"));
+    const endpoint = join(directory, "broker.sock");
+    const recipient: TerminalTabTarget = { taskId: "task-b", tabId: "tab-b", generation: 1 };
+    const recipientTab: TerminalTabHostSnapshot = {
+      ...callerTab,
+      ...recipient,
+      profileId: "profile-b",
+    };
+    const broker = new TaskTabBroker({
+      vaultId: "vault-a",
+      catalogue: {
+        listCategories: async () => [],
+        listTasks: async () => ({ tasks: [], truncated: false }),
+        getTask: async () => null,
+        getSubtasks: async () => null,
+        getParentTasks: async () => null,
+      },
+      getProfileCapabilities: () => ["message"],
+    });
+    broker.registerHost("vault-a", {
+      getTabHostSnapshots: (taskId) =>
+        [callerTab, recipientTab].filter((tab) => tab.taskId === taskId),
+      getAllTabHostSnapshots: () => [callerTab, recipientTab],
+      readTabOutput: () => {
+        throw new Error("mailbox delivery must not read terminal output");
+      },
+    });
+    const senderToken = broker.issueToken({
+      vaultId: "vault-a",
+      caller,
+      profileId: "profile-a",
+      capabilities: ["message"],
+    });
+    const recipientToken = broker.issueToken({
+      vaultId: "vault-a",
+      caller: recipient,
+      profileId: "profile-b",
+      capabilities: ["message"],
+    });
+    const transport = new TaskTabBrokerTransport(broker, endpoint);
+    cleanup.push(async () => {
+      await transport.stop();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    await transport.start();
+
+    await expect(
+      exchange(endpoint, [
+        { v: 1, type: "hello", id: "recipient-disconnects", token: recipientToken },
+      ]),
+    ).resolves.toMatchObject([{ ok: true }]);
+    await expect(
+      exchange(endpoint, [
+        { v: 1, type: "hello", id: "sender", token: senderToken },
+        {
+          v: 1,
+          type: "request",
+          id: "send",
+          method: "sendMessage",
+          params: {
+            target: recipient,
+            clientMessageId: "after-disconnect",
+            payload: { ready: true },
+          },
+        },
+      ]),
+    ).resolves.toMatchObject([{ ok: true }, { ok: true }]);
+    const recipientSocket = connect(endpoint);
+    await new Promise<void>((resolve, reject) => {
+      recipientSocket.once("connect", resolve);
+      recipientSocket.once("error", reject);
+    });
+    recipientSocket.write(
+      `${JSON.stringify({ v: 1, type: "hello", id: "recipient-listens", token: recipientToken })}\n`,
+    );
+    await expect(readFrame(recipientSocket)).resolves.toMatchObject({ ok: true });
+    const availableEvent = readFrame(recipientSocket);
+    await expect(
+      exchange(endpoint, [
+        { v: 1, type: "hello", id: "sender-again", token: senderToken },
+        {
+          v: 1,
+          type: "request",
+          id: "send-again",
+          method: "sendMessage",
+          params: {
+            target: recipient,
+            clientMessageId: "while-connected",
+            payload: { ready: "again" },
+          },
+        },
+      ]),
+    ).resolves.toMatchObject([{ ok: true }, { ok: true }]);
+    await expect(availableEvent).resolves.toMatchObject({
+      type: "event",
+      event: "mailbox.available",
+      sequence: "1",
+      data: { pending: 2 },
+    });
+    recipientSocket.destroy();
+
+    await expect(
+      exchange(endpoint, [
+        { v: 1, type: "hello", id: "recipient-reconnects", token: recipientToken },
+        { v: 1, type: "request", id: "receive", method: "receiveMessages", params: {} },
+      ]),
+    ).resolves.toMatchObject([
+      { ok: true },
+      {
+        ok: true,
+        result: {
+          messages: [
+            { clientMessageId: "after-disconnect", payload: { ready: true } },
+            { clientMessageId: "while-connected", payload: { ready: "again" } },
+          ],
+        },
+      },
+    ]);
+  });
+
   it("rebinds the same private endpoint so live callers can reconnect after reload", async () => {
     const directory = mkdtempSync(join(tmpdir(), "wt-broker-test-"));
     const endpoint = join(directory, "broker.sock");
