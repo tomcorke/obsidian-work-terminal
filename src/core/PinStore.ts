@@ -36,16 +36,28 @@ export class PinStore {
   /** Pin an item. Adds to the end of the pinned list. */
   async pin(itemId: string): Promise<void> {
     if (this.pinnedIds.includes(itemId)) return;
+    const previous = [...this.pinnedIds];
     this.pinnedIds.push(itemId);
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (err) {
+      this.pinnedIds = previous;
+      throw err;
+    }
   }
 
   /** Unpin an item. */
   async unpin(itemId: string): Promise<void> {
     const idx = this.pinnedIds.indexOf(itemId);
     if (idx < 0) return;
+    const previous = [...this.pinnedIds];
     this.pinnedIds.splice(idx, 1);
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (err) {
+      this.pinnedIds = previous;
+      throw err;
+    }
   }
 
   /** Toggle pin state. Returns the new pinned state. */
@@ -64,9 +76,15 @@ export class PinStore {
    * Only IDs that are currently pinned are kept (prevents stale IDs).
    */
   async reorder(newOrder: string[]): Promise<void> {
-    const pinSet = new Set(this.pinnedIds);
+    const previous = this.pinnedIds;
+    const pinSet = new Set(previous);
     this.pinnedIds = newOrder.filter((id) => pinSet.has(id));
-    await this.persist();
+    try {
+      await this.persist();
+    } catch (err) {
+      this.pinnedIds = previous;
+      throw err;
+    }
   }
 
   /**

@@ -110,6 +110,7 @@ id: ${id}
 tags:
 ${tagsSection}
 state: ${safeState}
+pinned: false
 title: ${safeTitle}
 source:
   type: ${yamlQuoteValue(source.type)}

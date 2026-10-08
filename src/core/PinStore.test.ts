@@ -137,6 +137,17 @@ describe("PinStore", () => {
     expect(store.getPinnedIds()).toEqual(["id-1"]);
   });
 
+  it("restores in-memory pins when persistence fails", async () => {
+    const plugin = createMockPlugin({ pinnedItems: ["id-1"] });
+    const store = new PinStore(plugin);
+    await store.load();
+    plugin.saveData.mockRejectedValueOnce(new Error("write failed"));
+
+    await expect(store.pin("id-2")).rejects.toThrow("write failed");
+
+    expect(store.getPinnedIds()).toEqual(["id-1"]);
+  });
+
   it("returns a defensive copy from getPinnedIds", async () => {
     const plugin = createMockPlugin({ pinnedItems: ["id-1"] });
     const store = new PinStore(plugin);
