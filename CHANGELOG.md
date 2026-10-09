@@ -7,7 +7,7 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 ## [Unreleased]
 
 ### Improvements
-- The bundled agent skill is now named `tab-broker`; it prefers immediate, origin-labelled prompt pushes for agent instructions and reserves mailbox messages for explicit poll-and-ack workflows. (#597)
+- The bundled agent skill is now named `work-terminal`; it prefers immediate, origin-labelled prompt pushes for agent instructions and reserves mailbox messages for explicit poll-and-ack workflows. (#597)
 - Task frontmatter is now authoritative for pin membership; existing plugin-data pins migrate automatically, while plugin data remains a best-effort display-order cache. (#586)
 - Agent tabs can optionally update their title after observed completed work cycles using the Pi CLI. Titles are limited to four words and 22 characters to fit the tab. The feature is disabled by default, exposes editable Pi arguments for model/provider selection, skips generation when Pi is unavailable, and stops updating after a manual rename. Right-clicking can re-enable and immediately trigger naming. (#566, #568, #576)
 - The tab **Move to task** menu now nests tasks by category for faster navigation, with pinned tasks grouped first, omitted from their status categories, and ordered like the task list. (#568, #572, #574)

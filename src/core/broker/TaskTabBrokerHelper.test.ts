@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 
 describe("bundled task tab broker helper", () => {
   it("documents pushed agent instructions with an origin envelope", () => {
-    const skill = readFileSync(join(process.cwd(), "skills/tab-broker/SKILL.md"), "utf8");
+    const skill = readFileSync(join(process.cwd(), "skills/work-terminal/SKILL.md"), "utf8");
 
-    expect(skill).toContain("name: tab-broker");
+    expect(skill).toContain("name: work-terminal");
     expect(skill).toContain("Prefer `promptTab` (push) for instructions to active agents");
     expect(skill).toContain("[[START Tab Broker message from <origin task title / tab label>]]");
     expect(skill).toContain("[[END Tab Broker message]]");
@@ -26,7 +26,7 @@ describe("bundled task tab broker helper", () => {
 
     const result = spawnSync(
       process.execPath,
-      [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "listTabs"],
+      [join(process.cwd(), "skills/work-terminal/scripts/task-tab-broker.js"), "listTabs"],
       {
         encoding: "utf8",
         env,
@@ -67,7 +67,11 @@ describe("bundled task tab broker helper", () => {
       const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
         const child = spawn(
           process.execPath,
-          [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "waitForTab", "{}"],
+          [
+            join(process.cwd(), "skills/work-terminal/scripts/task-tab-broker.js"),
+            "waitForTab",
+            "{}",
+          ],
           {
             env: {
               ...process.env,
@@ -123,7 +127,11 @@ describe("bundled task tab broker helper", () => {
       const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
         const child = spawn(
           process.execPath,
-          [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "promptTab", "{}"],
+          [
+            join(process.cwd(), "skills/work-terminal/scripts/task-tab-broker.js"),
+            "promptTab",
+            "{}",
+          ],
           {
             env: {
               ...process.env,
@@ -172,7 +180,10 @@ describe("bundled task tab broker helper", () => {
         (resolve) => {
           const child = spawn(
             process.execPath,
-            [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "listCategories"],
+            [
+              join(process.cwd(), "skills/work-terminal/scripts/task-tab-broker.js"),
+              "listCategories",
+            ],
             {
               env: {
                 ...process.env,
