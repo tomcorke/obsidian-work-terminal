@@ -30,7 +30,7 @@ jobs:
 
       - run: pnpm run build
 
-      - run: tar -czf tab-broker-skill.tar.gz -C skills tab-broker
+      - run: tar -czf work-terminal-skill.tar.gz -C skills tab-broker
 
       - uses: softprops/action-gh-release@v3
         with:
@@ -40,4 +40,4 @@ jobs:
             styles.css
             pty-wrapper.py
             pi-session-hook.ts
-            tab-broker-skill.tar.gz
+            work-terminal-skill.tar.gz

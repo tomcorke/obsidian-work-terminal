@@ -1,9 +1,9 @@
 ---
-name: tab-broker
+name: work-terminal
 description: Coordinate Work Terminal tasks and agent tabs through its authenticated local broker. Use when running inside an opted-in Work Terminal agent tab and discovering tasks or tabs, reading output, waiting for lifecycle state, exchanging messages, or creating, prompting, interrupting, or closing tabs.
 ---
 
-# Tab broker
+# Work Terminal
 
 ## Guard
 
