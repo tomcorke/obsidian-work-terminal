@@ -26,10 +26,7 @@ describe("bundled task tab broker helper", () => {
 
     const result = spawnSync(
       process.execPath,
-      [
-        join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"),
-        "listTabs",
-      ],
+      [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "listTabs"],
       {
         encoding: "utf8",
         env,
@@ -70,11 +67,7 @@ describe("bundled task tab broker helper", () => {
       const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
         const child = spawn(
           process.execPath,
-          [
-            join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"),
-            "waitForTab",
-            "{}",
-          ],
+          [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "waitForTab", "{}"],
           {
             env: {
               ...process.env,
@@ -130,11 +123,7 @@ describe("bundled task tab broker helper", () => {
       const result = await new Promise<{ code: number | null; stderr: string }>((resolve) => {
         const child = spawn(
           process.execPath,
-          [
-            join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"),
-            "promptTab",
-            "{}",
-          ],
+          [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "promptTab", "{}"],
           {
             env: {
               ...process.env,
@@ -183,13 +172,7 @@ describe("bundled task tab broker helper", () => {
         (resolve) => {
           const child = spawn(
             process.execPath,
-            [
-              join(
-                process.cwd(),
-                "skills/tab-broker/scripts/task-tab-broker.js",
-              ),
-              "listCategories",
-            ],
+            [join(process.cwd(), "skills/tab-broker/scripts/task-tab-broker.js"), "listCategories"],
             {
               env: {
                 ...process.env,
