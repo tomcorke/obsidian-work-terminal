@@ -195,10 +195,12 @@ describe("TaskTabBroker read-only dispatcher", () => {
       },
     });
     expect(JSON.stringify(response)).not.toContain(token);
-    expect(broker.hello("invalid", "hello-2")).toMatchObject({
-      ok: false,
-      error: { code: "AUTH_FAILED" },
-    });
+    for (let count = 0; count < 25; count++) {
+      expect(broker.hello("invalid", `hello-${count + 2}`)).toMatchObject({
+        ok: false,
+        error: { code: "AUTH_FAILED" },
+      });
+    }
   });
 
   it("builds child context only for explicitly granted profiles", () => {
@@ -256,6 +258,16 @@ describe("TaskTabBroker read-only dispatcher", () => {
       ok: true,
       result: { tasks: [{ id: "task-b" }], truncated: false },
     });
+  });
+
+  it("does not throttle discovery requests", async () => {
+    const { broker, token } = setup(["discover"]);
+
+    for (let count = 0; count < 125; count++) {
+      await expect(
+        broker.dispatch(token, request("listCategories", {}, `discover-${count}`)),
+      ).resolves.toMatchObject({ ok: true });
+    }
   });
 
   it("returns task, hierarchy, and cross-task tab summaries without changing focus", async () => {
@@ -496,7 +508,7 @@ describe("TaskTabBroker read-only dispatcher", () => {
     expect(host.createProfileTab).toHaveBeenCalledOnce();
   });
 
-  it("rate limits remote tab creation independently", async () => {
+  it("does not throttle remote tab creation", async () => {
     const { broker, token, host } = setup(["create-tab"]);
     host.createProfileTab.mockResolvedValue({
       status: "created",
@@ -522,9 +534,9 @@ describe("TaskTabBroker read-only dispatcher", () => {
     await expect(
       broker.dispatch(
         token,
-        request("createTab", { taskId: "task-b", profileId: "profile-b" }, "create-limited"),
+        request("createTab", { taskId: "task-b", profileId: "profile-b" }, "create-seventh"),
       ),
-    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED", retryable: true } });
+    ).resolves.toMatchObject({ ok: true });
   });
 
   it("prompts only an existing generation-pinned tab without changing focus", async () => {
@@ -729,7 +741,7 @@ describe("TaskTabBroker read-only dispatcher", () => {
     expect(runtime.acknowledgedRecords).toEqual([]);
   });
 
-  it("rate limits interrupt and destructive close independently", async () => {
+  it("does not throttle interrupt or destructive close requests", async () => {
     const target = { taskId: "task-a", tabId: "missing", generation: 1 };
     const interrupts = setup(["interrupt-tab"]);
     for (let count = 0; count < 10; count++) {
@@ -742,9 +754,9 @@ describe("TaskTabBroker read-only dispatcher", () => {
     await expect(
       interrupts.broker.dispatch(
         interrupts.token,
-        request("interruptTab", { target }, "interrupt-limited"),
+        request("interruptTab", { target }, "interrupt-eleventh"),
       ),
-    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
+    ).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
 
     const closes = setup(["close-tab"]);
     for (let count = 0; count < 5; count++) {
@@ -755,8 +767,8 @@ describe("TaskTabBroker read-only dispatcher", () => {
       expect(response).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
     }
     await expect(
-      closes.broker.dispatch(closes.token, request("closeTab", { target }, "close-limited")),
-    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
+      closes.broker.dispatch(closes.token, request("closeTab", { target }, "close-sixth")),
+    ).resolves.toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
   });
 
   it("reads bounded clean output and rejects closed or replacement generations as stale", async () => {
@@ -952,7 +964,7 @@ describe("TaskTabBroker read-only dispatcher", () => {
     });
   });
 
-  it("rate limits output reads and keeps diagnostics free of tokens and output", async () => {
+  it("does not throttle output reads and keeps diagnostics free of tokens and output", async () => {
     const { broker, token, outputs } = setup();
     outputs.set("tab-a:1", {
       text: "sensitive terminal output",
@@ -967,31 +979,28 @@ describe("TaskTabBroker read-only dispatcher", () => {
       expect(response.ok).toBe(true);
     }
     await expect(
-      broker.dispatch(token, { ...outputRequest, id: "read-limited" }),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: "RATE_LIMITED", retryable: true },
-    });
+      broker.dispatch(token, { ...outputRequest, id: "read-61" }),
+    ).resolves.toMatchObject({ ok: true });
 
     const diagnostics = JSON.stringify(broker.getDiagnostics());
     expect(diagnostics).not.toContain(token);
     expect(diagnostics).not.toContain("sensitive terminal output");
     const audit = broker.getDiagnostics();
-    expect(audit[audit.length - 1]).toMatchObject({
-      method: "readOutput",
-      allowed: false,
-      errorCode: "RATE_LIMITED",
-    });
+    expect(audit[audit.length - 1]).toMatchObject({ method: "readOutput", allowed: true });
   });
 
   it("fails closed for invalid tokens and exact capability denial or revocation", async () => {
     const { broker, token, grants } = setup(["discover"]);
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
-    await expect(broker.dispatch("not-a-token", request("listCategories"))).resolves.toMatchObject({
-      ok: false,
-      error: { code: "AUTH_FAILED", retryable: false },
-    });
+    for (let count = 0; count < 25; count++) {
+      await expect(
+        broker.dispatch("not-a-token", request("listCategories", {}, `invalid-${count}`)),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "AUTH_FAILED", retryable: false },
+      });
+    }
     await expect(broker.dispatch(token, request("readOutput"))).resolves.toMatchObject({
       ok: false,
       error: {
@@ -1147,7 +1156,7 @@ describe("TaskTabBroker lifecycle waits", () => {
     expect(lifecycleListeners.get("task-a:tab-a:1")?.size).toBe(1);
   });
 
-  it("enforces wait arguments, capability, concurrency, and rate limits", async () => {
+  it("enforces wait arguments, capability, and concurrency without throttling", async () => {
     const denied = setup(["discover"]);
     await expect(
       denied.broker.dispatch(
@@ -1209,9 +1218,9 @@ describe("TaskTabBroker lifecycle waits", () => {
     await expect(
       broker.dispatch(
         token,
-        request("waitForTab", { target: caller, states: ["active"] }, "rate-overflow"),
+        request("waitForTab", { target: caller, states: ["active"] }, "wait-twelfth"),
       ),
-    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED" } });
+    ).resolves.toMatchObject({ ok: true, result: { kind: "state", state: "active" } });
   });
 });
 
@@ -1421,7 +1430,7 @@ describe("TaskTabBroker mailbox", () => {
     });
   });
 
-  it("enforces payload, receive, acknowledgement, and send-rate limits", async () => {
+  it("enforces payload, receive, acknowledgement, and mailbox limits without throttling", async () => {
     const context = setup(["message"]);
     const recipient = addMessageRecipient(context);
 
@@ -1476,11 +1485,11 @@ describe("TaskTabBroker mailbox", () => {
         rateContext.token,
         request(
           "sendMessage",
-          { target: rateRecipient.target, clientMessageId: "rate-limited", payload: 31 },
-          "send-limited",
+          { target: rateRecipient.target, clientMessageId: "message-31", payload: 31 },
+          "send-31",
         ),
       ),
-    ).resolves.toMatchObject({ ok: false, error: { code: "RATE_LIMITED", retryable: true } });
+    ).resolves.toMatchObject({ ok: true });
 
     let time = 0;
     const queueContext = setup(["message"], () => time);

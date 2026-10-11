@@ -40,18 +40,8 @@ export const BROKER_ACK_MAX_MESSAGES = 50;
 export const BROKER_PROMPT_MAX_BYTES = 16 * 1024;
 export const BROKER_TABS_PER_TASK_MAX = 32;
 
-const RATE_WINDOW_MS = 60_000;
-const GENERAL_RATE_LIMIT = 120;
-const OUTPUT_RATE_LIMIT = 60;
-const WAIT_RATE_LIMIT = 30;
 const CALLER_WAIT_LIMIT = 16;
 const BROKER_WAIT_LIMIT = 128;
-const MESSAGE_RATE_LIMIT = 30;
-const CREATE_RATE_LIMIT = 6;
-const PROMPT_RATE_LIMIT = 20;
-const INTERRUPT_RATE_LIMIT = 10;
-const CLOSE_RATE_LIMIT = 5;
-const AUTH_FAILURE_RATE_LIMIT = 20;
 const TOMBSTONE_TTL_MS = 60 * 60_000;
 const TOMBSTONE_LIMIT = 10_000;
 const ACK_RECORD_TTL_MS = 60 * 60_000;
@@ -93,7 +83,6 @@ export interface BrokerError {
     | "CAPABILITY_DENIED"
     | "INVALID_ARGUMENT"
     | "LIMIT_EXCEEDED"
-    | "RATE_LIMITED"
     | "NOT_FOUND"
     | "STALE_TARGET"
     | "TARGET_EXITED"
@@ -198,14 +187,6 @@ export interface BrokerAuditEntry {
 
 interface StoredCallerGrant extends BrokerCallerGrant {
   digest: Buffer;
-  requestTimes: number[];
-  outputRequestTimes: number[];
-  waitRequestTimes: number[];
-  messageRequestTimes: number[];
-  createRequestTimes: number[];
-  promptRequestTimes: number[];
-  interruptRequestTimes: number[];
-  closeRequestTimes: number[];
   activeWaits: number;
 }
 
@@ -240,20 +221,11 @@ export interface BrokerRuntimeState {
   callers: Array<{
     grant: BrokerCallerGrant;
     digest: string;
-    requestTimes: number[];
-    outputRequestTimes: number[];
-    waitRequestTimes: number[];
-    messageRequestTimes: number[];
-    createRequestTimes?: number[];
-    promptRequestTimes?: number[];
-    interruptRequestTimes?: number[];
-    closeRequestTimes?: number[];
   }>;
   knownTabs: Array<[string, KnownTab]>;
   mailboxes: Array<[string, StoredMailbox]>;
   deliveryRecords: Array<[string, DeliveryRecord]>;
   acknowledgedRecords: Array<[string, AcknowledgedRecord]>;
-  failedAuthTimes: number[];
   audit: BrokerAuditEntry[];
 }
 
@@ -274,7 +246,6 @@ export class TaskTabBroker {
     Set<(event: BrokerMailboxAvailableEvent) => void>
   >();
   private mailboxEventSequence = "0";
-  private readonly failedAuthTimes: number[] = [];
   private readonly audit: BrokerAuditEntry[] = [];
   private readonly pendingTabCreations = new Map<string, number>();
   private readonly targetCloseSubscriptions = new Map<string, () => void>();
@@ -303,14 +274,6 @@ export class TaskTabBroker {
           caller: Object.freeze({ ...caller.grant.caller }),
           capabilities: Object.freeze([...caller.grant.capabilities]),
           digest: Buffer.from(caller.digest, "base64"),
-          requestTimes: [...caller.requestTimes],
-          outputRequestTimes: [...caller.outputRequestTimes],
-          waitRequestTimes: [...(caller.waitRequestTimes ?? [])],
-          messageRequestTimes: [...(caller.messageRequestTimes ?? [])],
-          createRequestTimes: [...(caller.createRequestTimes ?? [])],
-          promptRequestTimes: [...(caller.promptRequestTimes ?? [])],
-          interruptRequestTimes: [...(caller.interruptRequestTimes ?? [])],
-          closeRequestTimes: [...(caller.closeRequestTimes ?? [])],
           activeWaits: 0,
         });
       }
@@ -338,7 +301,6 @@ export class TaskTabBroker {
       for (const [key, record] of runtime.acknowledgedRecords ?? []) {
         this.acknowledgedRecords.set(key, { ...record });
       }
-      this.failedAuthTimes.push(...runtime.failedAuthTimes);
       this.audit.push(...runtime.audit);
     }
   }
@@ -354,14 +316,6 @@ export class TaskTabBroker {
           capabilities: [...caller.capabilities],
         },
         digest: caller.digest.toString("base64"),
-        requestTimes: [...caller.requestTimes],
-        outputRequestTimes: [...caller.outputRequestTimes],
-        waitRequestTimes: [...caller.waitRequestTimes],
-        messageRequestTimes: [...caller.messageRequestTimes],
-        createRequestTimes: [...caller.createRequestTimes],
-        promptRequestTimes: [...caller.promptRequestTimes],
-        interruptRequestTimes: [...caller.interruptRequestTimes],
-        closeRequestTimes: [...caller.closeRequestTimes],
       })),
       knownTabs: [...this.knownTabs].map(([tabId, known]) => [tabId, { ...known }]),
       mailboxes: [...this.mailboxes].map(([key, mailbox]) => [
@@ -386,7 +340,6 @@ export class TaskTabBroker {
         key,
         { ...record },
       ]),
-      failedAuthTimes: [...this.failedAuthTimes],
       audit: [...this.audit],
     };
   }
@@ -425,14 +378,6 @@ export class TaskTabBroker {
       caller: Object.freeze({ ...grant.caller }),
       capabilities: Object.freeze([...new Set(grant.capabilities)]),
       digest: crypto.createHash("sha256").update(token).digest(),
-      requestTimes: [],
-      outputRequestTimes: [],
-      waitRequestTimes: [],
-      messageRequestTimes: [],
-      createRequestTimes: [],
-      promptRequestTimes: [],
-      interruptRequestTimes: [],
-      closeRequestTimes: [],
       activeWaits: 0,
     });
     this.watchTargetClose(grant.caller);
@@ -465,14 +410,7 @@ export class TaskTabBroker {
     } catch {
       return failure(id, "INTERNAL", "The broker could not authenticate the request", true);
     }
-    if (!caller) {
-      const retryAfterMs = consumeRate(this.failedAuthTimes, AUTH_FAILURE_RATE_LIMIT, this.now());
-      return retryAfterMs === null
-        ? failure(id, "AUTH_FAILED", "The broker token is invalid or stale")
-        : failure(id, "RATE_LIMITED", "Authentication attempts are rate limited", true, {
-            retryAfterMs,
-          });
-    }
+    if (!caller) return failure(id, "AUTH_FAILED", "The broker token is invalid or stale");
     return success(id, {
       brokerEpoch: this.brokerEpoch,
       caller: { ...caller.caller },
@@ -531,22 +469,9 @@ export class TaskTabBroker {
     } catch {
       return failure(id, "INTERNAL", "The broker could not authenticate the request", true);
     }
-    if (!caller) {
-      const retryAfterMs = consumeRate(this.failedAuthTimes, AUTH_FAILURE_RATE_LIMIT, startedAt);
-      return retryAfterMs === null
-        ? failure(id, "AUTH_FAILED", "The broker token is invalid or stale")
-        : failure(id, "RATE_LIMITED", "Authentication attempts are rate limited", true, {
-            retryAfterMs,
-          });
-    }
+    if (!caller) return failure(id, "AUTH_FAILED", "The broker token is invalid or stale");
 
-    const rateError = this.consumeCallerRate(caller, request.method, startedAt);
-    let response: BrokerResponse;
-    if (rateError) {
-      response = { v: 1, type: "response", id, ok: false, error: rateError };
-    } else {
-      response = await this.dispatchAuthenticated(caller, request, signal);
-    }
+    const response = await this.dispatchAuthenticated(caller, request, signal);
     this.recordAudit(caller, request, response, startedAt);
     return response;
   }
@@ -1233,28 +1158,6 @@ export class TaskTabBroker {
     return caller;
   }
 
-  private consumeCallerRate(
-    caller: StoredCallerGrant,
-    method: string,
-    now: number,
-  ): BrokerError | null {
-    const generalRetry = consumeRate(caller.requestTimes, GENERAL_RATE_LIMIT, now);
-    if (generalRetry !== null) return rateError(generalRetry);
-    const limits: Partial<Record<string, [number[], number]>> = {
-      readOutput: [caller.outputRequestTimes, OUTPUT_RATE_LIMIT],
-      waitForTab: [caller.waitRequestTimes, WAIT_RATE_LIMIT],
-      sendMessage: [caller.messageRequestTimes, MESSAGE_RATE_LIMIT],
-      createTab: [caller.createRequestTimes, CREATE_RATE_LIMIT],
-      promptTab: [caller.promptRequestTimes, PROMPT_RATE_LIMIT],
-      interruptTab: [caller.interruptRequestTimes, INTERRUPT_RATE_LIMIT],
-      closeTab: [caller.closeRequestTimes, CLOSE_RATE_LIMIT],
-    };
-    const specific = limits[method];
-    if (!specific) return null;
-    const retryAfterMs = consumeRate(specific[0], specific[1], now);
-    return retryAfterMs === null ? null : rateError(retryAfterMs);
-  }
-
   private collectTabs(taskId: string): TerminalTabHostSnapshot[] {
     const tabs = [...this.hosts.values()]
       .flatMap((host) => [...host.getTabHostSnapshots(taskId)])
@@ -1639,22 +1542,6 @@ function hasDuplicateTargets(tabs: readonly TerminalTabTarget[]): boolean {
     seen.add(key);
   }
   return false;
-}
-
-function consumeRate(times: number[], limit: number, now: number): number | null {
-  while (times.length > 0 && times[0] <= now - RATE_WINDOW_MS) times.shift();
-  if (times.length >= limit) return Math.max(1, times[0] + RATE_WINDOW_MS - now);
-  times.push(now);
-  return null;
-}
-
-function rateError(retryAfterMs: number): BrokerError {
-  return {
-    code: "RATE_LIMITED",
-    message: "The caller request rate was exceeded",
-    retryable: true,
-    details: { retryAfterMs },
-  };
 }
 
 function encodedSize(value: unknown): number {

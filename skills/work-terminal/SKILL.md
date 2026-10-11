@@ -84,4 +84,4 @@ Capabilities are exact. `CAPABILITY_DENIED` requires user profile changes. Contr
 - Keep token and endpoint out of output, logs, files, prompts, and messages.
 - Use broker methods only for current-vault tasks and tabs.
 - Use `promptTab` for bounded prompt submission, never emulate arbitrary key input.
-- Treat stale-target, missing-link, cycle, truncation, rate-limit, and structured error metadata explicitly.
+- Treat stale-target, missing-link, cycle, truncation, and structured error metadata explicitly.
