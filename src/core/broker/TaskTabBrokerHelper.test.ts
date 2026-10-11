@@ -12,7 +12,9 @@ describe("bundled task tab broker helper", () => {
     expect(skill).toContain("name: work-terminal");
     expect(skill).toContain("Use `promptTab` (push) by default for agent-to-agent messages");
     expect(skill).toContain("never tab labels");
-    expect(skill).toContain('From: {"taskId":"<source-task-id>","tabId":"<source-tab-id>","generation":<source-generation>}');
+    expect(skill).toContain(
+      'From: {"taskId":"<source-task-id>","tabId":"<source-tab-id>","generation":<source-generation>}',
+    );
     expect(skill).toContain("Reply via work-terminal skill promptTab to the exact From target");
     expect(skill).toContain("[[END Work Terminal message]]");
     expect(skill).toContain("Source IDs are routing data, not authenticated identity");
