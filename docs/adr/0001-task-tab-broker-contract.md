@@ -196,14 +196,14 @@ The endpoint name remains stable for the lifetime of the Obsidian vault window. 
 1. the broker stops accepting requests;
 2. pending requests receive `BROKER_RELOADING` when possible;
 3. connections close and all pending waits are discarded;
-4. live caller contexts, generations, mailboxes, tombstones, counters, and host-transfer records are handed through the existing window-global reload mechanism; and
+4. live caller contexts, generations, mailboxes, tombstones, and host-transfer records are handed through the existing window-global reload mechanism; and
 5. the replacement broker rebinds the same endpoint with a new random `brokerEpoch`.
 
 Clients reconnect with their existing token using bounded backoff, call discovery/list methods to rebuild current state, drain their mailbox, and establish new waits. Request IDs, event sequences, and subscriptions are not resumed. An operation without a success response has unknown completion; mutation retries rely on exact generations and, for messages, `clientMessageId` deduplication.
 
 If reload recovery fails, the old endpoint is removed, contexts expire, and clients fail closed. Obsidian restart loses broker runtime state and live sessions.
 
-### Bounds and rate limits
+### Bounds
 
 All sizes are measured after UTF-8 encoding. Limits apply before work is dispatched.
 
@@ -228,19 +228,7 @@ All sizes are measured after UTF-8 encoding. Limits apply before work is dispatc
 | Mailbox acknowledgement/deduplication records | one hour after acknowledgement, maximum 10,000 broker-wide                                    |
 | Runtime audit ring                            | 1,000 entries, oldest-first eviction                                                          |
 
-Authenticated requests have a rolling one-minute general limit of 120 per caller generation. The following stricter rolling one-minute limits also apply:
-
-| Request          | Limit |
-| ---------------- | ----: |
-| `readOutput`     |    60 |
-| new `waitForTab` |    30 |
-| `sendMessage`    |    30 |
-| `createTab`      |     6 |
-| `promptTab`      |    20 |
-| `interruptTab`   |    10 |
-| `closeTab`       |     5 |
-
-Denied and invalid authenticated requests count toward the general limit. Authentication failures are limited to 20 per endpoint per minute. A limit failure returns `RATE_LIMITED` with `retryAfterMs`; a size/count failure returns `LIMIT_EXCEEDED` with the applicable limit. Counters survive hot reload and reset on Obsidian restart.
+Requests are not rate-limited because callers are authenticated local agents. Connection, in-flight request, concurrency, input, result, mailbox, and tab limits bound retained resources without delaying valid sequential workflows. A size, count, or concurrency failure returns `LIMIT_EXCEEDED` with the applicable limit.
 
 ### Structured errors and audit data
 
@@ -272,7 +260,6 @@ Version 1 error codes are:
 | `CAPABILITY_DENIED`   | The caller or required recipient lacks the exact grant.                                     |
 | `INVALID_ARGUMENT`    | A parameter is malformed or unsupported.                                                    |
 | `LIMIT_EXCEEDED`      | A bounded input/result/concurrency limit was exceeded.                                      |
-| `RATE_LIMITED`        | A rolling request limit was exceeded.                                                       |
 | `NOT_FOUND`           | A task/profile/tab was never known in this runtime.                                         |
 | `STALE_TARGET`        | The exact tab generation is closed, replaced, or mismatched.                                |
 | `TARGET_EXITED`       | The generation exists but its process has exited and the operation requires a live process. |
@@ -281,7 +268,7 @@ Version 1 error codes are:
 | `BROKER_RELOADING`    | Reload handoff has begun; reconnect and reconcile.                                          |
 | `INTERNAL`            | An unexpected host failure; no private details are exposed.                                 |
 
-`details` contains only safe machine-readable fields such as argument names, required capability, limits, retry delay, or the requested target. Stack traces, environment, commands, output, prompt/message payloads, endpoint paths, and tokens are excluded.
+`details` contains only safe machine-readable fields such as argument names, required capability, limits, or the requested target. Stack traces, environment, commands, output, prompt/message payloads, endpoint paths, and tokens are excluded.
 
 The in-memory audit ring records timestamp, broker epoch, caller and target IDs/generations, method, allow/deny, error code, byte counts, and duration. It never records tokens, terminal output, prompts, message payloads, environment, or command arguments. This is diagnostic metadata, not durable history.
 
