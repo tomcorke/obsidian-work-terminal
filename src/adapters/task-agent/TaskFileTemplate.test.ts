@@ -1,3 +1,4 @@
+import { parse } from "yaml";
 import { describe, it, expect } from "vitest";
 import { generateTaskContent, generateTaskFilename } from "./TaskFileTemplate";
 
@@ -32,7 +33,7 @@ describe("generateTaskContent", () => {
 
   it("includes the title in frontmatter and heading", () => {
     const content = generateTaskContent("Fix login bug", "todo");
-    expect(content).toContain("title: Fix login bug");
+    expect(content).toContain('title: "Fix login bug"');
     expect(content).toContain("# Fix login bug");
   });
 
@@ -49,6 +50,13 @@ describe("generateTaskContent", () => {
       'title: "Investigate \\"routes\\"\\\\path\\nwithout airports\\r\\nfor car hire"',
     );
     expect(content).toContain(`# ${title}`);
+    expect(parse(content.match(/^---\n([\s\S]*?)\n---\n/)![1]).title).toBe(title);
+  });
+
+  it.each(["123", "- child"])("keeps %j as a YAML string title", (title) => {
+    const content = generateTaskContent(title, "todo");
+
+    expect(parse(content.match(/^---\n([\s\S]*?)\n---\n/)![1]).title).toBe(title);
   });
 
   it("uses timestamps without milliseconds", () => {
