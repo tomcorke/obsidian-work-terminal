@@ -43,8 +43,7 @@ export function generateTaskContent(
   const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const dateStr = formatActivityDate(new Date());
 
-  // Quote the title to handle special characters in YAML
-  const safeTitle = `"${title.replace(/"/g, '\\"')}"`;
+  const safeTitle = JSON.stringify(title);
 
   const parentLink =
     options.parent?.link || (splitFrom ? `[[${splitFrom.filename.replace(/\.md$/, "")}]]` : "");
