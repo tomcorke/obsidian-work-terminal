@@ -32,13 +32,23 @@ describe("generateTaskContent", () => {
 
   it("includes the title in frontmatter and heading", () => {
     const content = generateTaskContent("Fix login bug", "todo");
-    expect(content).toContain('title: "Fix login bug"');
+    expect(content).toContain("title: Fix login bug");
     expect(content).toContain("# Fix login bug");
   });
 
   it("quotes title with special characters", () => {
     const content = generateTaskContent('Fix: the "auth" bug', "todo");
     expect(content).toContain('title: "Fix: the \\"auth\\" bug"');
+  });
+
+  it("escapes multiline titles in YAML while preserving task content", () => {
+    const title = 'Investigate "routes"\\path\nwithout airports\r\nfor car hire';
+    const content = generateTaskContent(title, "todo");
+
+    expect(content).toContain(
+      'title: "Investigate \\"routes\\"\\\\path\\nwithout airports\\r\\nfor car hire"',
+    );
+    expect(content).toContain(`# ${title}`);
   });
 
   it("uses timestamps without milliseconds", () => {
