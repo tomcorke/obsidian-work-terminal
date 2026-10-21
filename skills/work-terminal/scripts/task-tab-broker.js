@@ -25,9 +25,22 @@ if (process.env.WORK_TERMINAL_BROKER_PROTOCOL !== "1") {
   process.exit(2);
 }
 
+const METHODS = [
+  "listCategories", "listProfiles", "listTasks", "getTask", "listTabs",
+  "getSubtasks", "getParentTasks", "readOutput", "waitForTab",
+  "sendMessage", "receiveMessages", "ackMessages", "createTab",
+  "promptTab", "interruptTab", "closeTab",
+];
 const method = process.argv[2];
+if (method === "--help" || method === "-h") {
+  console.log("Usage: task-tab-broker.js <method> [params-json]");
+  console.log(`Methods: ${METHODS.join(", ")}`);
+  console.log("createTab accepts exactly one of profileId or profileName.");
+  process.exit(0);
+}
 if (!method) {
   console.error("Usage: task-tab-broker.js <method> [params-json]");
+  console.error(`Methods: ${METHODS.join(", ")}`);
   process.exit(2);
 }
 

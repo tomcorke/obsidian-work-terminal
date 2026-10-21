@@ -98,6 +98,8 @@ export abstract class PluginBase extends Plugin {
       },
       getProfileCapabilities: (profileId) =>
         this._profileManager?.getProfile(profileId)?.brokerCapabilities ?? [],
+      listProfiles: () =>
+        this._profileManager?.getProfiles().map(({ id, name, agentType }) => ({ id, name, agentType })) ?? [],
       ...(handoff ? { runtimeState: handoff.state } : {}),
     });
     this._taskTabBrokerTransport = new TaskTabBrokerTransport(
