@@ -26,10 +26,22 @@ if (process.env.WORK_TERMINAL_BROKER_PROTOCOL !== "1") {
 }
 
 const METHODS = [
-  "listCategories", "listProfiles", "listTasks", "getTask", "listTabs",
-  "getSubtasks", "getParentTasks", "readOutput", "waitForTab",
-  "sendMessage", "receiveMessages", "ackMessages", "createTab",
-  "promptTab", "interruptTab", "closeTab",
+  "listCategories",
+  "listProfiles",
+  "listTasks",
+  "getTask",
+  "listTabs",
+  "getSubtasks",
+  "getParentTasks",
+  "readOutput",
+  "waitForTab",
+  "sendMessage",
+  "receiveMessages",
+  "ackMessages",
+  "createTab",
+  "promptTab",
+  "interruptTab",
+  "closeTab",
 ];
 const method = process.argv[2];
 if (method === "--help" || method === "-h") {

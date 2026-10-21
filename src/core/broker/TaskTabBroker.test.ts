@@ -369,7 +369,11 @@ describe("TaskTabBroker read-only dispatcher", () => {
         }),
       ),
     ).resolves.toMatchObject({ ok: true });
-    expect(host.createProfileTab).toHaveBeenLastCalledWith("task-b", "profile-b", "Use named profile");
+    expect(host.createProfileTab).toHaveBeenLastCalledWith(
+      "task-b",
+      "profile-b",
+      "Use named profile",
+    );
     expect(focusState).toEqual({ taskId: "task-a", tabId: "tab-a" });
     expect(focusEffects.activate).not.toHaveBeenCalled();
     expect(focusEffects.selectTask).not.toHaveBeenCalled();

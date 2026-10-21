@@ -543,14 +543,17 @@ export class TaskTabBroker {
       if (request.method === "createTab") {
         const profileId = params.profileId as string | undefined;
         const profileName = params.profileName as string | undefined;
-        const matches = profileName === undefined
-          ? []
-          : this.listProfiles().filter((profile) => profile.name === profileName);
+        const matches =
+          profileName === undefined
+            ? []
+            : this.listProfiles().filter((profile) => profile.name === profileName);
         if (profileName !== undefined && matches.length !== 1) {
           return failure(
             id,
             matches.length === 0 ? "NOT_FOUND" : "AMBIGUOUS_PROFILE",
-            matches.length === 0 ? "The profile name was not found" : "The profile name is ambiguous",
+            matches.length === 0
+              ? "The profile name was not found"
+              : "The profile name is ambiguous",
             false,
             { argument: "profileName" },
           );
