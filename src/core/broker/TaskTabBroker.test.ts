@@ -31,6 +31,7 @@ function request(method: string, params: Record<string, unknown> = {}, id = "r1"
 function setup(
   capabilities: BrokerCapability[] = ["discover", "read", "wait"],
   now?: () => number,
+  profiles = [{ id: "profile-b", name: "pi-luna", agentType: "custom" }],
 ) {
   const tabs = new Map<string, TerminalTabHostSnapshot[]>([["task-a", [callerTab]]]);
   const outputs = new Map<string, CleanOutputRead>();
@@ -127,6 +128,7 @@ function setup(
     vaultId: "vault-a",
     catalogue,
     getProfileCapabilities: (profileId) => grants.get(profileId) ?? [],
+    listProfiles: () => profiles,
     ...(now ? { now } : {}),
   });
   broker.registerHost("vault-a", host);
@@ -354,6 +356,23 @@ describe("TaskTabBroker read-only dispatcher", () => {
       "task-b",
       "profile-b",
       "Start with the failing test",
+    );
+
+    host.createProfileTab.mockResolvedValueOnce({ status: "created", tab: created });
+    await expect(
+      broker.dispatch(
+        token,
+        request("createTab", {
+          taskId: "task-b",
+          profileName: "pi-luna",
+          initialPrompt: "Use named profile",
+        }),
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(host.createProfileTab).toHaveBeenLastCalledWith(
+      "task-b",
+      "profile-b",
+      "Use named profile",
     );
     expect(focusState).toEqual({ taskId: "task-a", tabId: "tab-a" });
     expect(focusEffects.activate).not.toHaveBeenCalled();

@@ -72,7 +72,9 @@ Reuse `clientMessageId` when retrying a send. Delivery remains pending until ack
 ## Control tabs
 
 ```sh
-node "$HELPER" createTab '{"taskId":"<id>","profileId":"<profile-id>","initialPrompt":"Start with the failing test"}'
+node "$HELPER" createTab '{"taskId":"<id>","profileName":"pi-luna","initialPrompt":"Start with the failing test"}'
+# Or use canonical UUID: {"taskId":"<id>","profileId":"<profile-id>",...}
+# Exactly one of profileName/profileId is required; profileName must match exactly.
 node "$HELPER" interruptTab '{"target":{"taskId":"<id>","tabId":"<id>","generation":1}}'
 node "$HELPER" closeTab '{"target":{"taskId":"<id>","tabId":"<id>","generation":1}}'
 ```

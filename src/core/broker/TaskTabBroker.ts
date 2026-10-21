@@ -51,6 +51,7 @@ const AUDIT_LIMIT = 1_000;
 export type { BrokerCapability } from "../agents/AgentProfile";
 export type BrokerMethod =
   | "listCategories"
+  | "listProfiles"
   | "listTasks"
   | "getTask"
   | "listTabs"
@@ -82,6 +83,7 @@ export interface BrokerError {
     | "AUTH_FAILED"
     | "CAPABILITY_DENIED"
     | "INVALID_ARGUMENT"
+    | "AMBIGUOUS_PROFILE"
     | "LIMIT_EXCEEDED"
     | "NOT_FOUND"
     | "STALE_TARGET"
@@ -98,6 +100,12 @@ export interface BrokerError {
 export type BrokerResponse =
   | { v: 1; type: "response"; id: string | null; ok: true; result: unknown }
   | { v: 1; type: "response"; id: string | null; ok: false; error: BrokerError };
+
+export interface BrokerProfileSummary {
+  id: string;
+  name: string;
+  agentType: string;
+}
 
 export interface BrokerTaskCatalogue {
   listCategories(): Promise<TaskCategorySummary[]>;
@@ -233,6 +241,7 @@ export class TaskTabBroker {
   private readonly vaultId: string;
   private readonly catalogue: BrokerTaskCatalogue;
   private readonly getProfileCapabilities: (profileId: string) => readonly string[];
+  private readonly listProfiles: () => readonly BrokerProfileSummary[];
   private readonly now: () => number;
   private readonly brokerEpoch: string;
   private readonly hosts = new Map<string, BrokerTerminalHost>();
@@ -255,6 +264,7 @@ export class TaskTabBroker {
     vaultId: string;
     catalogue: BrokerTaskCatalogue;
     getProfileCapabilities: (profileId: string) => readonly string[];
+    listProfiles?: () => readonly BrokerProfileSummary[];
     now?: () => number;
     runtimeState?: BrokerRuntimeState;
   }) {
@@ -262,6 +272,7 @@ export class TaskTabBroker {
     this.vaultId = options.vaultId;
     this.catalogue = options.catalogue;
     this.getProfileCapabilities = options.getProfileCapabilities;
+    this.listProfiles = options.listProfiles ?? (() => []);
     this.now = options.now ?? Date.now;
     this.brokerEpoch = cryptoModule().randomUUID();
     const runtime = options.runtimeState;
@@ -494,6 +505,9 @@ export class TaskTabBroker {
       const paramsError = validateParams(request.method, params);
       if (paramsError) return { v: 1, type: "response", id, ok: false, error: paramsError };
 
+      if (request.method === "listProfiles") {
+        return success(id, { profiles: this.listProfiles() });
+      }
       if (request.method === "listCategories") {
         const page = parseListPage(id, params);
         if ("response" in page) return page.response;
@@ -527,6 +541,25 @@ export class TaskTabBroker {
       const task = await this.catalogue.getTask(taskId);
       if (!task) return failure(id, "NOT_FOUND", "The task was not found");
       if (request.method === "createTab") {
+        const profileId = params.profileId as string | undefined;
+        const profileName = params.profileName as string | undefined;
+        const matches =
+          profileName === undefined
+            ? []
+            : this.listProfiles().filter((profile) => profile.name === profileName);
+        if (profileName !== undefined && matches.length !== 1) {
+          return failure(
+            id,
+            matches.length === 0 ? "NOT_FOUND" : "AMBIGUOUS_PROFILE",
+            matches.length === 0
+              ? "The profile name was not found"
+              : "The profile name is ambiguous",
+            false,
+            { argument: "profileName" },
+          );
+        }
+        const resolvedProfileId = matches[0]?.id ?? profileId;
+        if (!resolvedProfileId) return invalidArgumentError("profileId");
         const tabs = this.collectTabs(taskId);
         if (hasDuplicateTargets(tabs)) {
           return failure(id, "TARGET_UNAVAILABLE", "A tab has multiple host owners", true);
@@ -546,7 +579,7 @@ export class TaskTabBroker {
         try {
           created = await owners[0].createProfileTab(
             taskId,
-            params.profileId as string,
+            resolvedProfileId,
             params.initialPrompt as string | undefined,
           );
         } finally {
@@ -1355,7 +1388,7 @@ function paginate<T>(
   values: readonly T[],
   offset: number,
   limit: number,
-  key: "categories" | "tabs",
+  key: "categories" | "profiles" | "tabs",
 ): BrokerResponse {
   const items = values.slice(offset, offset + limit);
   return fitPage(id, items, offset, offset + items.length < values.length, key);
@@ -1366,7 +1399,7 @@ function fitPage<T>(
   values: readonly T[],
   offset: number,
   hasMore: boolean,
-  key: "categories" | "tasks" | "tabs",
+  key: "categories" | "profiles" | "tasks" | "tabs",
 ): BrokerResponse {
   const items = [...values];
   let truncated = hasMore;
@@ -1415,6 +1448,7 @@ function validateParams(method: string, params: unknown): BrokerError | null {
   }
   const allowed: Record<string, readonly string[]> = {
     listCategories: ["limit", "cursor"],
+    listProfiles: [],
     listTasks: ["categoryId", "limit", "cursor"],
     getTask: ["taskId"],
     listTabs: ["taskId", "limit", "cursor"],
@@ -1425,7 +1459,7 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     sendMessage: ["target", "clientMessageId", "kind", "payload"],
     receiveMessages: ["limit"],
     ackMessages: ["messageIds"],
-    createTab: ["taskId", "profileId", "initialPrompt"],
+    createTab: ["taskId", "profileId", "profileName", "initialPrompt"],
     promptTab: ["target", "prompt"],
     interruptTab: ["target"],
     closeTab: ["target"],
@@ -1434,8 +1468,22 @@ function validateParams(method: string, params: unknown): BrokerError | null {
   const unexpected = Object.keys(params).find((key) => !allowed[method].includes(key));
   if (unexpected) return invalidArgumentError(unexpected);
   if (method === "createTab") {
-    if (!validIdentifier((params as Record<string, unknown>).profileId)) {
+    const profileId = (params as Record<string, unknown>).profileId;
+    const profileName = (params as Record<string, unknown>).profileName;
+    if ((profileId === undefined) === (profileName === undefined)) {
+      return invalidArgumentError(profileId === undefined ? "profileId" : "profileName");
+    }
+    if (profileId !== undefined && !validIdentifier(profileId)) {
       return invalidArgumentError("profileId");
+    }
+    if (
+      profileName !== undefined &&
+      (typeof profileName !== "string" ||
+        profileName.length === 0 ||
+        /[\x00-\x08\x0b-\x1f\x7f]/.test(profileName) ||
+        Buffer.byteLength(profileName) > BROKER_IDENTIFIER_MAX_BYTES)
+    ) {
+      return invalidArgumentError("profileName");
     }
     const initialPrompt = (params as Record<string, unknown>).initialPrompt;
     if (initialPrompt !== undefined) return validatePrompt("initialPrompt", initialPrompt);
