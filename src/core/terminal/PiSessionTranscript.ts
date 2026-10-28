@@ -1,6 +1,7 @@
 import { electronRequire } from "../utils";
 
 const MAX_TRANSCRIPT_LENGTH = 8_000;
+const FIRST_MESSAGE_LENGTH = 2_000;
 const MAX_SESSION_FILE_LENGTH = 2_000_000;
 
 interface PiSessionMapping {
@@ -128,5 +129,11 @@ export function parsePiSessionTranscript(jsonl: string): string | null {
     })
     .join("\n");
 
-  return text ? text.slice(-MAX_TRANSCRIPT_LENGTH) : null;
+  if (!text) return null;
+  if (text.length <= MAX_TRANSCRIPT_LENGTH) return text;
+  const firstUserEnd = text.indexOf("\nAssistant:");
+  const first = firstUserEnd > 0 ? text.slice(0, Math.min(firstUserEnd, FIRST_MESSAGE_LENGTH)) : "";
+  const marker = first ? "\n\n[Earlier context truncated]\n\n" : "";
+  const tailLength = MAX_TRANSCRIPT_LENGTH - first.length - marker.length;
+  return `${first}${marker}${text.slice(-Math.max(0, tailLength))}`;
 }

@@ -134,6 +134,28 @@ describe("PiSessionTranscript", () => {
     expect(rmSync).toHaveBeenCalledWith("/maps/dead.json", { force: true });
   });
 
+  it("preserves the first user request when bounding a long transcript", () => {
+    const entries = [
+      { id: "u1", parentId: null, role: "user", content: "Fix the durable session title behavior" },
+      { id: "a1", parentId: "u1", role: "assistant", content: "old context ".repeat(500) },
+      { id: "u2", parentId: "a1", role: "user", content: "recent context ".repeat(500) },
+    ];
+    const result = parsePiSessionTranscript(
+      entries
+        .map((entry) =>
+          JSON.stringify({
+            type: "message",
+            id: entry.id,
+            parentId: entry.parentId,
+            message: { role: entry.role, content: entry.content },
+          }),
+        )
+        .join("\n"),
+    );
+    expect(result).toMatch(/^User: Fix the durable session title behavior/);
+    expect(result).toContain("[Earlier context truncated]");
+  });
+
   it("loads the mapped session while its process is alive", () => {
     files.set(
       "map",
