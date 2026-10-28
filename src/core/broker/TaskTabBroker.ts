@@ -693,14 +693,26 @@ export class TaskTabBroker {
     const target = parseTarget(params.target);
     const targetTaskId = params.targetTaskId;
     if (!target || !validIdentifier(targetTaskId)) {
-      return failure(id, "INVALID_ARGUMENT", "A valid target and targetTaskId are required", false, {
-        argument: !target ? "target" : "targetTaskId",
-      });
+      return failure(
+        id,
+        "INVALID_ARGUMENT",
+        "A valid target and targetTaskId are required",
+        false,
+        {
+          argument: !target ? "target" : "targetTaskId",
+        },
+      );
     }
     if (target.taskId === targetTaskId) {
-      return failure(id, "INVALID_ARGUMENT", "The target task must differ from the current task", false, {
-        argument: "targetTaskId",
-      });
+      return failure(
+        id,
+        "INVALID_ARGUMENT",
+        "The target task must differ from the current task",
+        false,
+        {
+          argument: "targetTaskId",
+        },
+      );
     }
     const resolved = this.resolveControlTarget(id, target);
     if ("response" in resolved) return resolved.response;
