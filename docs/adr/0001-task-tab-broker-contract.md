@@ -125,6 +125,7 @@ Capabilities do not imply one another. Knowing an ID does not bypass a grant. Ea
 | `prompt-tab`    | `promptTab`                                                                           | Submit one bounded prompt through the host prompt primitive. Not arbitrary key input.                                                                    |
 | `interrupt-tab` | `interruptTab`                                                                        | Request interruption through the host process primitive.                                                                                                 |
 | `close-tab`     | `closeTab`                                                                            | Close the exact generation, including a running process. Destructive and disabled by default.                                                            |
+| `move-tab`      | `moveTab`                                                                            | Move a live tab to another task, preserving tab ID, generation, and process.                                                                              |
 
 Discovery is read-only but still opt-in. All mutation capabilities are disabled by default and granted per profile. A caller may use a mutating capability with a known exact target without also receiving `discover`, `read`, or `wait`.
 
@@ -149,7 +150,7 @@ Tab summaries contain `taskId`, `tabId`, `generation`, label, session type/profi
 
 `createTab` accepts a target task ID, an enabled profile ID, and an optional initial prompt. It creates the tab in the caller tab's owning terminal host and returns its tab summary. Profile configuration remains host-owned; callers cannot supply commands, arguments, environment, or a working directory.
 
-`promptTab`, `interruptTab`, and `closeTab` return the target and `affectedGeneration`. `closeTab` additionally reports whether the process was running. Acknowledgement means that the host operation ran, not that an agent understood a prompt or completed interrupted work.
+`promptTab`, `interruptTab`, `closeTab`, and `moveTab` return the target and `affectedGeneration`. `moveTab` additionally requires `targetTaskId`, preserves the live process, tab ID, and generation, then makes the old target stale. `closeTab` additionally reports whether the process was running. Acknowledgement means that the host operation ran, not that an agent understood a prompt or completed interrupted work.
 
 ### Mailbox delivery and acknowledgement
 

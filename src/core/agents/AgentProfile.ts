@@ -69,6 +69,7 @@ export const BROKER_CAPABILITIES = [
   "prompt-tab",
   "interrupt-tab",
   "close-tab",
+  "move-tab",
 ] as const;
 export type BrokerCapability = (typeof BROKER_CAPABILITIES)[number];
 

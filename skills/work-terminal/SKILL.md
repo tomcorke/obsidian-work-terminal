@@ -77,7 +77,10 @@ node "$HELPER" createTab '{"taskId":"<id>","profileName":"pi-luna","initialPromp
 # Exactly one of profileName/profileId is required; profileName must match exactly.
 node "$HELPER" interruptTab '{"target":{"taskId":"<id>","tabId":"<id>","generation":1}}'
 node "$HELPER" closeTab '{"target":{"taskId":"<id>","tabId":"<id>","generation":1}}'
+node "$HELPER" moveTab '{"target":{"taskId":"<source-task-id>","tabId":"<id>","generation":1},"targetTaskId":"<destination-task-id>"}'
 ```
+
+`moveTab` preserves live process, tab ID, and generation. It updates ownership to destination task; old target is stale. Use returned target for later calls. Caller identity may refresh on next request; injected task env is launch-time context.
 
 Capabilities are exact. `CAPABILITY_DENIED` requires user profile changes. Control methods preserve focus; `closeTab` is destructive. Reconcile target state before retrying any mutation whose completion is unknown.
 

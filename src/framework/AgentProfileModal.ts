@@ -50,6 +50,7 @@ const BROKER_CAPABILITY_LABELS: Record<BrokerCapability, string> = {
   "prompt-tab": "Prompt existing tabs",
   "interrupt-tab": "Interrupt tab processes",
   "close-tab": "Close tabs (destructive)",
+  "move-tab": "Move tabs between tasks",
 };
 
 const BORDER_STYLE_LABELS: Record<BorderStyle, string> = {

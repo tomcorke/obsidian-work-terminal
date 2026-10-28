@@ -1432,6 +1432,12 @@ export class TerminalPanelView {
       promptTab: (target, prompt) => this.tabManager.promptTab(target, prompt),
       interruptTab: (target) => this.tabManager.interruptTab(target),
       closeTab: (target) => this.tabManager.closeHostTab(target),
+      moveTab: (target, targetTaskId) => {
+        const sourceTabs = this.tabManager.getTabs(target.taskId);
+        const index = sourceTabs.findIndex((tab) => tab.getHostSnapshot().tabId === target.tabId && tab.getHostSnapshot().generation === target.generation);
+        const moved = index < 0 ? null : this.tabManager.moveTabToItem(target.taskId, index, targetTaskId);
+        return moved?.getHostSnapshot() ?? null;
+      },
     };
   }
 
