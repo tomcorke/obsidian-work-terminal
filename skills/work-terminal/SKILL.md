@@ -9,6 +9,8 @@ description: Coordinate Work Terminal tasks and agent tabs through its authentic
 
 Use broker only when all `WORK_TERMINAL_BROKER_*` variables plus `WORK_TERMINAL_TASK_ID`, `WORK_TERMINAL_TAB_ID`, and `WORK_TERMINAL_TAB_GENERATION` are present. Otherwise stop: this session has no authenticated broker context.
 
+Task files are created through the `task-agent` skill, not this broker. When asked to create, ingest, update, or relate a task, load and follow `task-agent` (including its task-format, rules, and update-discipline references), then write the task Markdown file in the configured vault. Use broker task methods only to discover or inspect existing tasks and tabs. The broker currently has no `createTask` or `createSubtask` method.
+
 Resolve `scripts/task-tab-broker.js` relative to this `SKILL.md` and invoke it by absolute path. Never invent endpoint, caller IDs, generation, or token.
 
 ```sh
@@ -17,6 +19,16 @@ node "$HELPER" listCategories
 ```
 
 Helper prints one JSON response. Exit `0` means success, `1` means broker/transport failure, `2` means invalid context or usage.
+
+## Create tasks
+
+Use `task-agent` for task creation and sub-task relationships:
+
+```text
+use task-agent
+```
+
+Follow its duplicate check, frontmatter/task-format, parent-link, state-folder, activity-log, and post-action-review rules. Do not invent a broker task-creation call.
 
 ## Discover before acting
 
