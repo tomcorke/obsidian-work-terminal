@@ -42,6 +42,7 @@ const METHODS = [
   "promptTab",
   "interruptTab",
   "closeTab",
+  "moveTab",
 ];
 const method = process.argv[2];
 if (method === "--help" || method === "-h") {

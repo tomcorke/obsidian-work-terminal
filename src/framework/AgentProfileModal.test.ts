@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { BROKER_CAPABILITIES } from "../core/agents/AgentProfile";
 import type { AgentProfile, AgentType } from "../core/agents/AgentProfile";
 
 const { NoticeMock } = vi.hoisted(() => ({
@@ -275,7 +276,9 @@ describe("AgentProfileEditModal validation", () => {
       ".wt-broker-capabilities",
     ) as HTMLElement | null;
     expect(brokerSection?.textContent).toContain("Task tab broker");
-    expect(brokerSection?.querySelectorAll('input[type="checkbox"]')).toHaveLength(8);
+    expect(brokerSection?.querySelectorAll('input[type="checkbox"]')).toHaveLength(
+      BROKER_CAPABILITIES.length,
+    );
     expect(
       Array.from(
         brokerSection?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') ?? [],

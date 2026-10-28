@@ -179,6 +179,7 @@ describe("zod validation", () => {
       "prompt-tab",
       "interrupt-tab",
       "close-tab",
+      "move-tab",
     ]);
     expect(
       AgentProfileSchema.safeParse({

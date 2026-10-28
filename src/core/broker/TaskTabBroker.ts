@@ -65,7 +65,8 @@ export type BrokerMethod =
   | "createTab"
   | "promptTab"
   | "interruptTab"
-  | "closeTab";
+  | "closeTab"
+  | "moveTab";
 
 export interface BrokerRequest {
   v: number;
@@ -151,6 +152,7 @@ export interface BrokerTerminalHost {
   ): "accepted" | "exited" | "unavailable" | null;
   interruptTab?(target: TerminalTabTarget): "accepted" | "exited" | "unavailable" | null;
   closeTab?(target: TerminalTabTarget): { processWasRunning: boolean } | null;
+  moveTab?(target: TerminalTabTarget, targetTaskId: string): TerminalTabHostSnapshot | null;
 }
 
 export interface BrokerCallerGrant {
@@ -535,6 +537,7 @@ export class TaskTabBroker {
       if (request.method === "promptTab") return this.promptTab(id, params);
       if (request.method === "interruptTab") return this.interruptTab(id, params);
       if (request.method === "closeTab") return this.closeTab(id, params);
+      if (request.method === "moveTab") return await this.moveTab(id, params);
 
       const taskId = params.taskId;
       if (!validIdentifier(taskId)) return invalidIdentifier(id, "taskId");
@@ -684,6 +687,44 @@ export class TaskTabBroker {
       target: resolved.target,
       affectedGeneration: resolved.target.generation,
     });
+  }
+
+  private async moveTab(id: string, params: Record<string, unknown>): Promise<BrokerResponse> {
+    const target = parseTarget(params.target);
+    const targetTaskId = params.targetTaskId;
+    if (!target || !validIdentifier(targetTaskId)) {
+      return failure(
+        id,
+        "INVALID_ARGUMENT",
+        "A valid target and targetTaskId are required",
+        false,
+        {
+          argument: !target ? "target" : "targetTaskId",
+        },
+      );
+    }
+    if (target.taskId === targetTaskId) {
+      return failure(
+        id,
+        "INVALID_ARGUMENT",
+        "The target task must differ from the current task",
+        false,
+        {
+          argument: "targetTaskId",
+        },
+      );
+    }
+    const resolved = this.resolveControlTarget(id, target);
+    if ("response" in resolved) return resolved.response;
+    const task = await this.catalogue.getTask(targetTaskId);
+    if (!task) return failure(id, "NOT_FOUND", "The target task was not found");
+    if (!resolved.host.moveTab) {
+      return failure(id, "TARGET_UNAVAILABLE", "The target host is unavailable", true);
+    }
+    const moved = resolved.host.moveTab(target, targetTaskId);
+    if (!moved) return failure(id, "STALE_TARGET", "The target became stale");
+    this.rememberTab(moved);
+    return success(id, { target: moved, affectedGeneration: moved.generation });
   }
 
   private closeTab(id: string, params: Record<string, unknown>): BrokerResponse {
@@ -1282,6 +1323,7 @@ function requiredCapability(method: string): BrokerCapability {
   if (method === "promptTab") return "prompt-tab";
   if (method === "interruptTab") return "interrupt-tab";
   if (method === "closeTab") return "close-tab";
+  if (method === "moveTab") return "move-tab";
   return "discover";
 }
 
@@ -1463,6 +1505,7 @@ function validateParams(method: string, params: unknown): BrokerError | null {
     promptTab: ["target", "prompt"],
     interruptTab: ["target"],
     closeTab: ["target"],
+    moveTab: ["target", "targetTaskId"],
   };
   if (!Object.prototype.hasOwnProperty.call(allowed, method)) return invalidArgumentError("method");
   const unexpected = Object.keys(params).find((key) => !allowed[method].includes(key));
