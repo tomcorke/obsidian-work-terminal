@@ -429,6 +429,8 @@ The endpoint is a user-private Unix socket (or a Windows named pipe), never a ne
 
 A standard agent skill is included at `skills/work-terminal/SKILL.md`. Install it manually by copying the whole `tab-broker` directory into the agent's user or project skill directory. Keep its `scripts/` directory with it.
 
+The broker does not create task files or sub-tasks. For task creation, ingestion, updates, or parent/child relationships, agents must use the `task-agent` skill, which defines the vault Markdown format and update rules. The Work Terminal skill points agents to this workflow; broker methods are for task/tab discovery and tab control.
+
 ```sh
 # Pi
 mkdir -p ~/.pi/agent/skills/work-terminal
