@@ -246,6 +246,9 @@ export class MainView extends ItemView {
 
     // Initial data load
     const items = await this.refreshList();
+    // Keep the terminal panel's item lookup in sync before restoring selection.
+    // Agent profile launches resolve their context item through this cache.
+    this.terminalPanel?.setItems(items);
 
     // Recover selection from hot-reload AFTER list is populated
     const recoveredId = this.terminalPanel?.getRecoveredItemId();
@@ -478,6 +481,9 @@ export class MainView extends ItemView {
       settings,
       // onSelect callback
       (item: WorkItem | null) => {
+        // Agent profile launches resolve the selected item through the terminal
+        // panel, so keep its lookup cache aligned with the board selection.
+        if (item) this.terminalPanel?.setItems(this.allItems);
         this.terminalPanel?.setActiveItem(item?.id ?? null);
         this.terminalPanel?.setTitle(item);
         if (item && typeof this.adapter.createDetailView === "function") {
@@ -829,6 +835,9 @@ export class MainView extends ItemView {
     items = (await this.listPanel.syncInheritedSubTaskStates?.(items)) ?? items;
     await this.listPanel.syncPinnedStates(items);
     this.allItems = items;
+    // Context-enabled profile launches resolve the selected item through the
+    // terminal panel, so publish the fresh item cache before rendering cards.
+    this.terminalPanel?.setItems(items);
     const groups = this.parser.groupByColumn(items);
     this.seedActivityTimestamps(items);
     if (items.length > 0) {
@@ -926,7 +935,6 @@ export class MainView extends ItemView {
     const data = (await this.pluginRef.loadData()) || {};
     const customOrder = this.pendingCustomOrderOverride || data.customOrder || {};
     this.listPanel.render(groups, customOrder);
-    this.terminalPanel?.setItems(items);
     return items;
   }
 
