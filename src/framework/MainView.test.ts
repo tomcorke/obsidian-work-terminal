@@ -94,7 +94,11 @@ describe("MainView foreground enrichment", () => {
   });
 
   it("preselects the foreground-created task in the list panel", () => {
-    const view = new MainView({} as any, {} as any, {} as any);
+    const view = new MainView(
+      {} as any,
+      {} as any,
+      { loadData: vi.fn().mockResolvedValue({}), isReloading: false } as any,
+    );
     const spawnPromise = Promise.resolve();
     const terminalPanel = {
       setItems: vi.fn(),
@@ -140,7 +144,11 @@ describe("MainView foreground enrichment", () => {
   });
 
   it("does not throw if the terminal panel is unavailable during foreground launch", () => {
-    const view = new MainView({} as any, {} as any, {} as any);
+    const view = new MainView(
+      {} as any,
+      {} as any,
+      { loadData: vi.fn().mockResolvedValue({}), isReloading: false } as any,
+    );
     (view as any).adapter = { config: { itemName: "task" } };
     (view as any).settings = {};
     (view as any).allItems = [];
@@ -378,6 +386,41 @@ describe("MainView selection ID backfill", () => {
     await (view as any).refreshList();
 
     expect(listPanel.render).toHaveBeenCalledWith({ todo: [] }, { todo: ["uuid-123"] });
+  });
+
+  it("publishes refreshed items before card rendering", async () => {
+    const view = new MainView(
+      {} as any,
+      {} as any,
+      { loadData: vi.fn().mockResolvedValue({}), isReloading: false } as any,
+    );
+    const item = makeItem({ id: "task-1" });
+    const terminalPanel = { setItems: vi.fn() };
+    const listPanel = {
+      syncInheritedSubTaskStates: vi.fn().mockResolvedValue([item]),
+      syncPinnedStates: vi.fn().mockResolvedValue(undefined),
+      setPinnedCustomStates: vi.fn(),
+      render: vi.fn(() => {
+        throw new Error("card render failed");
+      }),
+    };
+    const parser = {
+      loadAll: vi.fn().mockResolvedValue([item]),
+      groupByColumn: vi.fn(() => ({ active: [item] })),
+    };
+
+    (view as any).listPanel = listPanel;
+    (view as any).parser = parser;
+    (view as any).terminalPanel = terminalPanel;
+    (view as any).adapter = {
+      config: { columns: [{ id: "active", label: "Active", folderName: "active" }] },
+    };
+    (view as any).settings = {};
+    (view as any).lastActiveStore = { pruneMissingPathIds: vi.fn() };
+    (view as any).seedActivityTimestamps = vi.fn();
+
+    await expect((view as any).refreshList()).rejects.toThrow("card render failed");
+    expect(terminalPanel.setItems).toHaveBeenCalledWith([item]);
   });
 });
 
