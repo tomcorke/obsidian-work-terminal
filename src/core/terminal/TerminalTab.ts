@@ -1680,9 +1680,6 @@ export class TerminalTab {
       console.warn(
         "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
       );
-      console.warn(
-        "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
-      );
       requestAnimationFrame(() => {
         if (tab._isDisposed) return;
         tab.terminal.refresh(0, tab.terminal.rows - 1);
