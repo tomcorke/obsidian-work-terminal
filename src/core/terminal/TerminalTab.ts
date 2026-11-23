@@ -15,6 +15,7 @@ import { StringDecoder } from "string_decoder";
 import { Notice } from "obsidian";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
+import { supportsXtermWebglFontRendering } from "./WebglCompatibility";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase, attachInputCapture } from "./KeyboardCapture";
 import {
@@ -450,6 +451,13 @@ export class TerminalTab {
   }
 
   private loadWebglAddon(): void {
+    if (!supportsXtermWebglFontRendering()) {
+      console.warn(
+        "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+      );
+      return;
+    }
+
     let addon: WebglAddon | null = null;
     try {
       addon = new WebglAddon();
@@ -478,17 +486,18 @@ export class TerminalTab {
       return;
     }
 
-    // Capture addon before detach clears the reference, then dispose it
-    // to release the GPU context. detachTrackedWebglAddon removes it from
-    // xterm's addon manager; dispose() releases the actual GL resources.
+    // Dispose through xterm's addon-manager wrapper first: it removes the
+    // tracking entry and runs the real dispose that releases the GPU context.
+    // Detaching first makes the wrapper throw, so detach only afterwards to
+    // clear the context-loss listener and reference.
     const addon = this.webglAddon;
-    this.detachTrackedWebglAddon(addon);
     try {
       addon.dispose();
     } catch {
       // WebGL addon may not have been fully loaded (e.g. process spawn failed
       // before the addon was registered with xterm's addon manager).
     }
+    this.detachTrackedWebglAddon(addon);
     this._webglSuspended = true;
 
     // Force canvas renderer to paint the buffer content
@@ -1653,10 +1662,29 @@ export class TerminalTab {
     tab.recoverLegacyAddonRefs();
     // Restore the live webglAddon reference so recovered tabs still dispose it
     // correctly, then re-subscribe onContextLoss with a callback bound to the
-    // new tab instance created during reload recovery.
+    // new tab instance created during reload recovery. An Obsidian/Electron
+    // upgrade can make a previously healthy addon incompatible, so dispose it
+    // during recovery when the canvas font probe fails.
     const restoredWebglAddon = tab.webglAddon;
     stored.webglContextLossListener?.dispose();
-    if (restoredWebglAddon) {
+    if (restoredWebglAddon && !supportsXtermWebglFontRendering()) {
+      // Dispose through xterm's addon-manager wrapper first: it removes the
+      // tracking entry and runs the real dispose. Calling detach first makes the
+      // wrapper throw "Could not dispose an addon that has not been loaded".
+      try {
+        restoredWebglAddon.dispose();
+      } catch {
+        tab.detachTrackedWebglAddon(restoredWebglAddon);
+      }
+      tab.webglAddon = null;
+      console.warn(
+        "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+      );
+      requestAnimationFrame(() => {
+        if (tab._isDisposed) return;
+        tab.terminal.refresh(0, tab.terminal.rows - 1);
+      });
+    } else if (restoredWebglAddon) {
       tab.trackWebglAddon(restoredWebglAddon);
     }
     tab._webglSuspended = false;

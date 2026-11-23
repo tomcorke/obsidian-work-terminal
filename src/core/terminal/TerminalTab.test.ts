@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => {
     attachBubbleCapture: vi.fn(() => vi.fn()),
     attachCapturePhase: vi.fn(() => vi.fn()),
     attachInputCapture: vi.fn(() => vi.fn()),
+    supportsXtermWebglFontRendering: vi.fn(() => true),
     electronShell: { openExternal: vi.fn() },
     fsModule: {
       existsSync: vi.fn(() => false),
@@ -75,6 +76,10 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("./XtermCss", () => ({
   injectXtermCss: mocks.injectXtermCss,
+}));
+
+vi.mock("./WebglCompatibility", () => ({
+  supportsXtermWebglFontRendering: mocks.supportsXtermWebglFontRendering,
 }));
 
 vi.mock("./ScrollButton", () => ({
@@ -187,6 +192,8 @@ describe("TerminalTab hot-reload addon handling", () => {
     mocks.attachBubbleCapture.mockClear();
     mocks.attachCapturePhase.mockClear();
     mocks.attachInputCapture.mockClear();
+    mocks.supportsXtermWebglFontRendering.mockReset();
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(true);
     mocks.electronShell.openExternal.mockClear();
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
     vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
@@ -1004,6 +1011,8 @@ describe("resolvePtyWrapperPath", () => {
 describe("TerminalTab WebGL recovery", () => {
   beforeEach(() => {
     mocks.MockWebglAddon.instances.length = 0;
+    mocks.supportsXtermWebglFontRendering.mockReset();
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(true);
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
     vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
       callback(0);
@@ -1200,6 +1209,60 @@ describe("TerminalTab WebGL recovery", () => {
     ).toBe(addonEntries);
   });
 
+  it("disposes a restored webgl addon when the runtime font probe fails", () => {
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(false);
+    const addon = new mocks.MockWebglAddon();
+    // Mirror xterm's AddonManager: loadAddon wraps dispose, which throws when
+    // the tracking entry is already gone and removes it otherwise.
+    const addonEntries: Array<{ instance: unknown; dispose: () => void; isDisposed: boolean }> = [];
+    const realDispose = addon.dispose;
+    const entry = { instance: addon, dispose: realDispose, isDisposed: false };
+    addonEntries.push(entry);
+    addon.dispose = vi.fn(() => {
+      if (entry.isDisposed) return;
+      const index = addonEntries.indexOf(entry);
+      if (index === -1) throw new Error("Could not dispose an addon that has not been loaded");
+      entry.isDisposed = true;
+      entry.dispose.apply(addon);
+      addonEntries.splice(index, 1);
+    });
+    const refresh = vi.fn();
+    const storedListener = { dispose: vi.fn() };
+    const stored = {
+      id: "term-1",
+      taskPath: "task.md",
+      label: "Shell",
+      sessionType: "shell" as const,
+      terminal: {
+        options: {},
+        attachCustomKeyEventHandler: vi.fn(),
+        focus: vi.fn(),
+        scrollToBottom: vi.fn(),
+        refresh,
+        cols: 80,
+        rows: 24,
+        _addonManager: { _addons: addonEntries },
+      },
+      fitAddon: {},
+      searchAddon: {},
+      containerEl: new FakeElement() as unknown as HTMLElement,
+      process: null,
+      webglAddon: addon,
+      webglContextLossListener: storedListener,
+      documentListeners: [],
+      resizeObserver: new MockResizeObserver(() => {}) as unknown as ResizeObserver,
+    };
+
+    const tab = TerminalTab.fromStored(stored, new FakeElement() as unknown as HTMLElement);
+
+    expect(storedListener.dispose).toHaveBeenCalledTimes(1);
+    expect(addon.dispose).toHaveBeenCalledTimes(1);
+    expect(entry.isDisposed).toBe(true);
+    expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBeNull();
+    expect(stored.terminal._addonManager._addons).toHaveLength(0);
+    expect(refresh).toHaveBeenCalledWith(0, 23);
+  });
+
   it("restores a null webgl addon reference for repeated reload cycles", () => {
     const containerEl = new FakeElement() as unknown as HTMLElement;
     const parentEl = new FakeElement() as unknown as HTMLElement;
@@ -1284,6 +1347,85 @@ describe("TerminalTab WebGL recovery", () => {
     ).toBeNull();
     expect(addon.getHandlerCount()).toBe(0);
     expect(terminalRefresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  it("suspends webgl by disposing the real addon through xterm's wrapper", () => {
+    const addonEntries: Array<{ instance: unknown; dispose: () => void; isDisposed: boolean }> = [];
+    const addon = new mocks.MockWebglAddon();
+    const realDispose = addon.dispose;
+    const entry = { instance: addon, dispose: realDispose, isDisposed: false };
+    addonEntries.push(entry);
+    addon.dispose = vi.fn(() => {
+      if (entry.isDisposed) return;
+      const index = addonEntries.indexOf(entry);
+      if (index === -1) throw new Error("Could not dispose an addon that has not been loaded");
+      entry.isDisposed = true;
+      entry.dispose.apply(addon);
+      addonEntries.splice(index, 1);
+    });
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+    tab.terminal = {
+      rows: 24,
+      refresh: vi.fn(),
+      _addonManager: { _addons: addonEntries },
+    } as never;
+    tab.webglAddon = addon as never;
+    tab.webglContextLossListener = null;
+    tab._isDisposed = false;
+    tab._webglSuspended = false;
+
+    (tab as unknown as { suspendWebGl: () => void }).suspendWebGl();
+
+    expect(addon.dispose).toHaveBeenCalledTimes(1);
+    expect(entry.isDisposed).toBe(true);
+    expect(addonEntries).toHaveLength(0);
+    expect(tab.webglAddon).toBeNull();
+    expect(tab._webglSuspended).toBe(true);
+  });
+
+  it("clears the webgl reference and tracking entry when dispose throws during suspend", () => {
+    const addonEntries: Array<{ instance: unknown; dispose: () => void; isDisposed: boolean }> = [];
+    const addon = new mocks.MockWebglAddon();
+    const entry = { instance: addon, dispose: addon.dispose, isDisposed: false };
+    addonEntries.push(entry);
+    addon.dispose = vi.fn(() => {
+      entry.isDisposed = true;
+      throw new Error("GL context lost");
+    });
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+    tab.terminal = {
+      rows: 24,
+      refresh: vi.fn(),
+      _addonManager: { _addons: addonEntries },
+    } as never;
+    tab.webglAddon = addon as never;
+    tab.webglContextLossListener = null;
+    tab._isDisposed = false;
+    tab._webglSuspended = false;
+
+    expect(() => (tab as unknown as { suspendWebGl: () => void }).suspendWebGl()).not.toThrow();
+
+    expect(addon.dispose).toHaveBeenCalledTimes(1);
+    expect(addonEntries).toHaveLength(0);
+    expect(tab.webglAddon).toBeNull();
+    expect(tab._webglSuspended).toBe(true);
+  });
+
+  it("does not load webgl when the runtime rejects xterm's canvas font", () => {
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(false);
+    const loadAddon = vi.fn();
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+    tab.terminal = { loadAddon } as never;
+    tab.webglAddon = null;
+    tab.webglContextLossListener = null;
+
+    (tab as unknown as { loadWebglAddon: () => void }).loadWebglAddon();
+
+    expect(loadAddon).not.toHaveBeenCalled();
+    expect(mocks.MockWebglAddon.instances).toHaveLength(0);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+    );
   });
 
   it("disposes a created webgl addon if terminal.loadAddon throws", () => {
