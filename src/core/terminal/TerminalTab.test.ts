@@ -56,6 +56,7 @@ const mocks = vi.hoisted(() => {
     attachBubbleCapture: vi.fn(() => vi.fn()),
     attachCapturePhase: vi.fn(() => vi.fn()),
     attachInputCapture: vi.fn(() => vi.fn()),
+    supportsXtermWebglFontRendering: vi.fn(() => true),
     electronShell: { openExternal: vi.fn() },
     fsModule: {
       existsSync: vi.fn(() => false),
@@ -75,6 +76,10 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("./XtermCss", () => ({
   injectXtermCss: mocks.injectXtermCss,
+}));
+
+vi.mock("./WebglCompatibility", () => ({
+  supportsXtermWebglFontRendering: mocks.supportsXtermWebglFontRendering,
 }));
 
 vi.mock("./ScrollButton", () => ({
@@ -187,6 +192,8 @@ describe("TerminalTab hot-reload addon handling", () => {
     mocks.attachBubbleCapture.mockClear();
     mocks.attachCapturePhase.mockClear();
     mocks.attachInputCapture.mockClear();
+    mocks.supportsXtermWebglFontRendering.mockReset();
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(true);
     mocks.electronShell.openExternal.mockClear();
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
     vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
@@ -1004,6 +1011,8 @@ describe("resolvePtyWrapperPath", () => {
 describe("TerminalTab WebGL recovery", () => {
   beforeEach(() => {
     mocks.MockWebglAddon.instances.length = 0;
+    mocks.supportsXtermWebglFontRendering.mockReset();
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(true);
     vi.stubGlobal("ResizeObserver", MockResizeObserver as unknown as typeof ResizeObserver);
     vi.stubGlobal("requestAnimationFrame", ((callback: FrameRequestCallback) => {
       callback(0);
@@ -1200,6 +1209,45 @@ describe("TerminalTab WebGL recovery", () => {
     ).toBe(addonEntries);
   });
 
+  it("disposes a restored webgl addon when the runtime font probe fails", () => {
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(false);
+    const addon = new mocks.MockWebglAddon();
+    const refresh = vi.fn();
+    const storedListener = { dispose: vi.fn() };
+    const stored = {
+      id: "term-1",
+      taskPath: "task.md",
+      label: "Shell",
+      sessionType: "shell" as const,
+      terminal: {
+        options: {},
+        attachCustomKeyEventHandler: vi.fn(),
+        focus: vi.fn(),
+        scrollToBottom: vi.fn(),
+        refresh,
+        cols: 80,
+        rows: 24,
+        _addonManager: { _addons: [{ instance: addon, isDisposed: false }] },
+      },
+      fitAddon: {},
+      searchAddon: {},
+      containerEl: new FakeElement() as unknown as HTMLElement,
+      process: null,
+      webglAddon: addon,
+      webglContextLossListener: storedListener,
+      documentListeners: [],
+      resizeObserver: new MockResizeObserver(() => {}) as unknown as ResizeObserver,
+    };
+
+    const tab = TerminalTab.fromStored(stored, new FakeElement() as unknown as HTMLElement);
+
+    expect(storedListener.dispose).toHaveBeenCalledTimes(1);
+    expect(addon.dispose).toHaveBeenCalledTimes(1);
+    expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBeNull();
+    expect(stored.terminal._addonManager._addons).toHaveLength(0);
+    expect(refresh).toHaveBeenCalledWith(0, 23);
+  });
+
   it("restores a null webgl addon reference for repeated reload cycles", () => {
     const containerEl = new FakeElement() as unknown as HTMLElement;
     const parentEl = new FakeElement() as unknown as HTMLElement;
@@ -1284,6 +1332,23 @@ describe("TerminalTab WebGL recovery", () => {
     ).toBeNull();
     expect(addon.getHandlerCount()).toBe(0);
     expect(terminalRefresh).toHaveBeenCalledWith(0, 23);
+  });
+
+  it("does not load webgl when the runtime rejects xterm's canvas font", () => {
+    mocks.supportsXtermWebglFontRendering.mockReturnValue(false);
+    const loadAddon = vi.fn();
+    const tab = Object.create(TerminalTab.prototype) as TerminalTab & Record<string, unknown>;
+    tab.terminal = { loadAddon } as never;
+    tab.webglAddon = null;
+    tab.webglContextLossListener = null;
+
+    (tab as unknown as { loadWebglAddon: () => void }).loadWebglAddon();
+
+    expect(loadAddon).not.toHaveBeenCalled();
+    expect(mocks.MockWebglAddon.instances).toHaveLength(0);
+    expect(console.warn).toHaveBeenCalledWith(
+      "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+    );
   });
 
   it("disposes a created webgl addon if terminal.loadAddon throws", () => {
