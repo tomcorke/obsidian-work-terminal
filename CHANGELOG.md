@@ -6,16 +6,29 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-23
+
+### Highlights
+- Terminal text renders at the configured size again on Obsidian 1.15 and other affected Electron builds. The plugin detects the broken WebGL font path and uses the DOM renderer there. (#616)
+- Agent tabs can optionally update their title after completed work cycles using the Pi CLI, with editable model/provider arguments. The feature is off by default. (#566, #568, #576)
+- Agent profiles are stored in `~/.config/obsidian-work-terminal/profiles.json`, so they can be hand-edited, backed up, and version-controlled. (#550)
+
 ### Improvements
 - The bundled `work-terminal` skill uses immediate prompt pushes by default, identifies reply routes with exact source task/tab/generation IDs instead of labels, includes reply guidance when useful, and reserves mailbox messages for explicit poll-and-ack workflows. (#597)
 - Task frontmatter is now authoritative for pin membership; existing plugin-data pins migrate automatically, while plugin data remains a best-effort display-order cache. (#586)
-- Agent tabs can optionally update their title after observed completed work cycles using the Pi CLI. Titles are limited to four words and 22 characters to fit the tab. The feature is disabled by default, exposes editable Pi arguments for model/provider selection, skips generation when Pi is unavailable, and stops updating after a manual rename. Right-clicking can re-enable and immediately trigger naming. (#566, #568, #576)
 - The tab **Move to task** menu now nests tasks by category for faster navigation, with pinned tasks grouped first, omitted from their status categories, and ordered like the task list. (#568, #572, #574)
-- Agent profiles are stored in `~/.config/obsidian-work-terminal/profiles.json` instead of the plugin `data.json`, so they can be hand-edited, bulk-edited, backed up, and version-controlled. The Profile Manager shows the path and gains a **Reload from file** button. Existing profiles migrate on first load and the old `agentProfiles` key is left in place for downgrades. (#550)
 - **Keep sub-tasks with top-level parent** can keep every non-done descendant in its highest-level parent's state. Done descendants remain independent. (#561)
 
 ### Fixes
+- Terminal text is no longer tiny after the Obsidian 1.15 update. Affected Electron builds reject xterm's WebGL canvas font, so the plugin now detects this at runtime and uses the DOM renderer there. Other builds keep WebGL. Existing sessions recover on plugin reload. (#616)
 - Re-parenting a task now moves it to the new parent's state. (#561)
+
+### Upgrade notes
+- Manual installations must update `pty-wrapper.py` alongside `main.js`.
+- Agent profiles move to `~/.config/obsidian-work-terminal/profiles.json` and migrate on first load. The old `agentProfiles` key is left in `data.json` so downgrades still work.
+
+### Full changelog
+- Compare with 0.7.1: https://github.com/tomcorke/obsidian-work-terminal/compare/0.7.1...0.8.0
 
 ## [0.7.1] - 2026-08-07
 
