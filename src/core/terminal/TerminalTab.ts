@@ -15,6 +15,7 @@ import { StringDecoder } from "string_decoder";
 import { Notice } from "obsidian";
 import { expandTilde, stripAnsi, electronRequire } from "../utils";
 import { injectXtermCss } from "./XtermCss";
+import { supportsXtermWebglFontRendering } from "./WebglCompatibility";
 import { attachScrollButton } from "./ScrollButton";
 import { attachBubbleCapture, attachCapturePhase, attachInputCapture } from "./KeyboardCapture";
 import {
@@ -397,6 +398,13 @@ export class TerminalTab {
   }
 
   private loadWebglAddon(): void {
+    if (!supportsXtermWebglFontRendering()) {
+      console.warn(
+        "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+      );
+      return;
+    }
+
     let addon: WebglAddon | null = null;
     try {
       addon = new WebglAddon();
@@ -1347,10 +1355,19 @@ export class TerminalTab {
     tab.recoverLegacyAddonRefs();
     // Restore the live webglAddon reference so recovered tabs still dispose it
     // correctly, then re-subscribe onContextLoss with a callback bound to the
-    // new tab instance created during reload recovery.
+    // new tab instance created during reload recovery. An Obsidian/Electron
+    // upgrade can make a previously healthy addon incompatible, so dispose it
+    // during recovery when the canvas font probe fails.
     const restoredWebglAddon = tab.webglAddon;
     stored.webglContextLossListener?.dispose();
-    if (restoredWebglAddon) {
+    if (restoredWebglAddon && !supportsXtermWebglFontRendering()) {
+      tab.detachTrackedWebglAddon(restoredWebglAddon);
+      restoredWebglAddon.dispose();
+      requestAnimationFrame(() => {
+        if (tab._isDisposed) return;
+        tab.terminal.refresh(0, tab.terminal.rows - 1);
+      });
+    } else if (restoredWebglAddon) {
       tab.trackWebglAddon(restoredWebglAddon);
     }
     tab._webglSuspended = false;
