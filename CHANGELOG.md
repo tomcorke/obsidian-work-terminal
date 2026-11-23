@@ -6,6 +6,14 @@ GitHub release notes should mirror these entries rather than pasting the raw aut
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-23
+
+### Fixes
+- Terminal text is no longer tiny after the Obsidian 1.15 update. Affected Electron builds reject xterm's WebGL canvas font, so the plugin now detects this at runtime and uses the DOM renderer there. Other builds keep WebGL. Existing sessions recover on plugin reload. Backported from 0.8.0. (#616)
+
+### Full changelog
+- Compare with 0.7.1: https://github.com/tomcorke/obsidian-work-terminal/compare/0.7.1...0.7.2
+
 ## [0.7.1] - 2026-08-07
 
 ### Fixes
