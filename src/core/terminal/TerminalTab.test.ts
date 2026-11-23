@@ -1212,6 +1212,20 @@ describe("TerminalTab WebGL recovery", () => {
   it("disposes a restored webgl addon when the runtime font probe fails", () => {
     mocks.supportsXtermWebglFontRendering.mockReturnValue(false);
     const addon = new mocks.MockWebglAddon();
+    // Mirror xterm's AddonManager: loadAddon wraps dispose, which throws when
+    // the tracking entry is already gone and removes it otherwise.
+    const addonEntries: Array<{ instance: unknown; dispose: () => void; isDisposed: boolean }> = [];
+    const realDispose = addon.dispose;
+    const entry = { instance: addon, dispose: realDispose, isDisposed: false };
+    addonEntries.push(entry);
+    addon.dispose = vi.fn(() => {
+      if (entry.isDisposed) return;
+      const index = addonEntries.indexOf(entry);
+      if (index === -1) throw new Error("Could not dispose an addon that has not been loaded");
+      entry.isDisposed = true;
+      entry.dispose.apply(addon);
+      addonEntries.splice(index, 1);
+    });
     const refresh = vi.fn();
     const storedListener = { dispose: vi.fn() };
     const stored = {
@@ -1227,7 +1241,7 @@ describe("TerminalTab WebGL recovery", () => {
         refresh,
         cols: 80,
         rows: 24,
-        _addonManager: { _addons: [{ instance: addon, isDisposed: false }] },
+        _addonManager: { _addons: addonEntries },
       },
       fitAddon: {},
       searchAddon: {},
@@ -1243,6 +1257,7 @@ describe("TerminalTab WebGL recovery", () => {
 
     expect(storedListener.dispose).toHaveBeenCalledTimes(1);
     expect(addon.dispose).toHaveBeenCalledTimes(1);
+    expect(entry.isDisposed).toBe(true);
     expect((tab as unknown as { webglAddon: unknown }).webglAddon).toBeNull();
     expect(stored.terminal._addonManager._addons).toHaveLength(0);
     expect(refresh).toHaveBeenCalledWith(0, 23);

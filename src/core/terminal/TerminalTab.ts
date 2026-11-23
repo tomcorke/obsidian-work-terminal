@@ -490,13 +490,14 @@ export class TerminalTab {
     // to release the GPU context. detachTrackedWebglAddon removes it from
     // xterm's addon manager; dispose() releases the actual GL resources.
     const addon = this.webglAddon;
-    this.detachTrackedWebglAddon(addon);
     try {
       addon.dispose();
     } catch {
       // WebGL addon may not have been fully loaded (e.g. process spawn failed
       // before the addon was registered with xterm's addon manager).
+      this.detachTrackedWebglAddon(addon);
     }
+    this.detachTrackedWebglAddon(addon);
     this._webglSuspended = true;
 
     // Force canvas renderer to paint the buffer content
@@ -1667,8 +1668,21 @@ export class TerminalTab {
     const restoredWebglAddon = tab.webglAddon;
     stored.webglContextLossListener?.dispose();
     if (restoredWebglAddon && !supportsXtermWebglFontRendering()) {
-      tab.detachTrackedWebglAddon(restoredWebglAddon);
-      restoredWebglAddon.dispose();
+      // Dispose through xterm's addon-manager wrapper first: it removes the
+      // tracking entry and runs the real dispose. Calling detach first makes the
+      // wrapper throw "Could not dispose an addon that has not been loaded".
+      try {
+        restoredWebglAddon.dispose();
+      } catch {
+        tab.detachTrackedWebglAddon(restoredWebglAddon);
+      }
+      tab.webglAddon = null;
+      console.warn(
+        "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+      );
+      console.warn(
+        "[work-terminal] WebGL font rendering is broken in this Electron build, using DOM renderer",
+      );
       requestAnimationFrame(() => {
         if (tab._isDisposed) return;
         tab.terminal.refresh(0, tab.terminal.rows - 1);
