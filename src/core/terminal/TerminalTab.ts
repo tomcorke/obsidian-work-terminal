@@ -433,16 +433,16 @@ export class TerminalTab {
       return;
     }
 
-    // Capture addon before detach clears the reference, then dispose it
-    // to release the GPU context. detachTrackedWebglAddon removes it from
-    // xterm's addon manager; dispose() releases the actual GL resources.
+    // Dispose through xterm's addon-manager wrapper first: it removes the
+    // tracking entry and runs the real dispose that releases the GPU context.
+    // Detaching first makes the wrapper throw, so detach only afterwards to
+    // clear the context-loss listener and reference.
     const addon = this.webglAddon;
     try {
       addon.dispose();
     } catch {
       // WebGL addon may not have been fully loaded (e.g. process spawn failed
       // before the addon was registered with xterm's addon manager).
-      this.detachTrackedWebglAddon(addon);
     }
     this.detachTrackedWebglAddon(addon);
     this._webglSuspended = true;
