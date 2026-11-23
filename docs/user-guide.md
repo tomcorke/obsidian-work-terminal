@@ -427,7 +427,7 @@ Use `prompt-tab` to push instructions to active agents immediately. The bundled 
 
 The endpoint is a user-private Unix socket (or a Windows named pipe), never a network listener. Calls are limited to the current vault, bounded by resource and concurrency limits, and do not focus Work Terminal. Authenticated local requests and failed authentication attempts are not rate-limited. Tokens and message payloads are not persisted or logged. Live sessions can reconnect after plugin hot reload, but clients must list current tabs and drain their mailbox again because runtime events are not durable. Pending waits are cancelled on disconnect or reload and must be started again against the newly listed generation. This is a local capability boundary, not a sandbox against another process running as the same OS user, which may be able to inspect process memory or environment.
 
-A standard agent skill is included at `skills/work-terminal/SKILL.md`. Install it manually by copying the whole `tab-broker` directory into the agent's user or project skill directory. Keep its `scripts/` directory with it.
+A standard agent skill is included at `skills/work-terminal/SKILL.md`. Install it manually by copying the whole `work-terminal` directory into the agent's user or project skill directory. Keep its `scripts/` directory with it.
 
 The broker does not create task files or sub-tasks. For task creation, ingestion, updates, or parent/child relationships, agents must use the `task-agent` skill, which defines the vault Markdown format and update rules. The Work Terminal skill points agents to this workflow; broker methods are for task/tab discovery and tab control.
 
