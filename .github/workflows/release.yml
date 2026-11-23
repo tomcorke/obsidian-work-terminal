@@ -30,7 +30,7 @@ jobs:
 
       - run: pnpm run build
 
-      - run: tar -czf work-terminal-skill.tar.gz -C skills tab-broker
+      - run: tar -czf work-terminal-skill.tar.gz -C skills work-terminal
 
       - uses: softprops/action-gh-release@v3
         with:
